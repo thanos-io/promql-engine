@@ -1,4 +1,4 @@
-package plan
+package executionplan
 
 import (
 	"context"
@@ -35,26 +35,29 @@ load 30s
 	require.NoError(t, err)
 
 	out, err := plan.Next(context.Background())
-	result := make([]promql.Matrix, 0, len(out))
+	result := make([]promql.Vector, 0, len(out))
 	for r := range out {
+		sort.Slice(r, func(i, j int) bool {
+			return r[i].Metric.Hash() < r[j].Metric.Hash()
+		})
 		for _, s := range r {
 			sort.Sort(s.Metric)
 		}
 		result = append(result, r)
 	}
 
-	expected := []promql.Matrix{
+	expected := []promql.Vector{
 		{
-			{Metric: labels.FromStrings("pod", "nginx-1"), Points: []promql.Point{{T: 0, V: 1}}},
-			{Metric: labels.FromStrings("pod", "nginx-2"), Points: []promql.Point{{T: 0, V: 1}}},
+			{Metric: labels.FromStrings("pod", "nginx-1"), Point: promql.Point{T: 0, V: 1}},
+			{Metric: labels.FromStrings("pod", "nginx-2"), Point: promql.Point{T: 0, V: 1}},
 		},
 		{
-			{Metric: labels.FromStrings("pod", "nginx-1"), Points: []promql.Point{{T: 60000, V: 3}}},
-			{Metric: labels.FromStrings("pod", "nginx-2"), Points: []promql.Point{{T: 60000, V: 5}}},
+			{Metric: labels.FromStrings("pod", "nginx-1"), Point: promql.Point{T: 60000, V: 3}},
+			{Metric: labels.FromStrings("pod", "nginx-2"), Point: promql.Point{T: 60000, V: 5}},
 		},
 		{
-			{Metric: labels.FromStrings("pod", "nginx-1"), Points: []promql.Point{{T: 120000, V: 5}}},
-			{Metric: labels.FromStrings("pod", "nginx-2"), Points: []promql.Point{{T: 120000, V: 9}}},
+			{Metric: labels.FromStrings("pod", "nginx-1"), Point: promql.Point{T: 120000, V: 5}},
+			{Metric: labels.FromStrings("pod", "nginx-2"), Point: promql.Point{T: 120000, V: 9}},
 		},
 	}
 

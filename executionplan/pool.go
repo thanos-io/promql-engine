@@ -1,4 +1,4 @@
-package plan
+package executionplan
 
 import (
 	"github.com/prometheus/prometheus/promql"

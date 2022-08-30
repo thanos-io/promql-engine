@@ -1,4 +1,4 @@
-package plan
+package executionplan
 
 import (
 	"context"
@@ -15,7 +15,7 @@ type storageSeries struct {
 	samples chunkenc.Iterator
 }
 
-type selector struct {
+type vectorSelector struct {
 	storage storage.Storage
 	points  *points
 
@@ -28,34 +28,27 @@ type selector struct {
 	selectRange int64
 }
 
-func NewSelector(
-	storage storage.Storage,
-	matchers []*labels.Matcher,
-	hints *storage.SelectHints,
-	mint, maxt time.Time,
-	step, selectRange time.Duration,
-) Operator {
-	return &selector{
+func NewSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
+	return &vectorSelector{
 		storage: storage,
 		points:  newPointPool(),
 
-		matchers:    matchers,
-		hints:       hints,
-		mint:        mint.UnixMilli(),
-		maxt:        maxt.UnixMilli(),
-		step:        step.Milliseconds(),
-		selectRange: selectRange.Milliseconds(),
+		matchers: matchers,
+		hints:    hints,
+		mint:     mint.UnixMilli(),
+		maxt:     maxt.UnixMilli(),
+		step:     step.Milliseconds(),
 	}
 }
 
-func (o *selector) Next(ctx context.Context) (<-chan promql.Matrix, error) {
+func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error) {
 	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
 	if err != nil {
 		return nil, err
 	}
 
 	numSteps := (o.maxt-o.mint)/o.step + 1
-	out := make(chan promql.Matrix, numSteps)
+	out := make(chan promql.Vector, numSteps)
 	go func() {
 		defer querier.Close()
 		defer close(out)
@@ -64,49 +57,34 @@ func (o *selector) Next(ctx context.Context) (<-chan promql.Matrix, error) {
 		seriesSet := querier.Select(true, o.hints, o.matchers...)
 		for seriesSet.Next() {
 			s := seriesSet.At()
+			it := s.Iterator()
+			it.Seek(o.mint)
 			series = append(series, storageSeries{
 				labels:  s.Labels(),
-				samples: s.Iterator(),
+				samples: it,
 			})
 		}
 
-		matrix := make(promql.Matrix, len(series))
-		for i := 0; i < len(series); i++ {
-			matrix[i] = promql.Series{
-				Metric: series[i].labels,
-				Points: make([]promql.Point, 0, numSteps),
-			}
-		}
 		for stepTs := o.mint; stepTs <= o.maxt; stepTs += o.step {
-			for i, s := range series {
-				resultSeries := &matrix[i]
+			vector := make(promql.Vector, len(series))
 
-				maxt := stepTs
-				mint := stepTs - o.selectRange
-				if mint < 0 {
-					mint = 0
-				}
-
-				if ok := s.samples.Seek(mint); !ok {
-					continue
-				}
+			for i := 0; i < len(series); i++ {
+				s := series[i]
+				vector[i].Metric = s.labels
 				for {
 					t, v := s.samples.At()
-					if t > maxt {
+					vector[i].T = t
+					vector[i].V = v
+					if t >= stepTs {
 						break
 					}
-					resultSeries.Points = append(resultSeries.Points, promql.Point{
-						T: t,
-						V: v,
-					})
 					if !s.samples.Next() {
 						break
 					}
 				}
 			}
-			if len(matrix) > 0 {
-				out <- matrix
-			}
+
+			out <- vector
 		}
 	}()
 

@@ -1,4 +1,4 @@
-package plan
+package executionplan
 
 import (
 	"context"
@@ -9,19 +9,15 @@ import (
 	"time"
 )
 
-type Operator interface {
-	Next(ctx context.Context) (<-chan promql.Matrix, error)
+type VectorOperator interface {
+	Next(ctx context.Context) (<-chan promql.Vector, error)
 }
 
-type plan struct {
-	rootOperator Operator
-}
-
-func New(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (Operator, error) {
+func New(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	return newOperator(expr, storage, mint, maxt, step)
 }
 
-func newOperator(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (Operator, error) {
+func newOperator(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		next, err := newOperator(e.Expr, storage, mint, maxt, step)
@@ -30,7 +26,7 @@ func newOperator(expr parser.Expr, storage storage.Storage, mint, maxt time.Time
 		}
 		return NewAggregate(next, e.Op, !e.Without, e.Grouping)
 	case *parser.VectorSelector:
-		return NewSelector(storage, e.LabelMatchers, nil, mint, maxt, step, 0), nil
+		return NewSelector(storage, e.LabelMatchers, nil, mint, maxt, step), nil
 	default:
 		return nil, fmt.Errorf("unsupported expression %s", e)
 	}

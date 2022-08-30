@@ -1,9 +1,9 @@
-package plan_test
+package executionplan_test
 
 import (
 	"context"
 	"fmt"
-	"fpetkovski/promql-engine/plan"
+	"fpetkovski/promql-engine/executionplan"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -64,18 +64,12 @@ func TestSelector(t *testing.T) {
 			start := tc.start
 			end := tc.end
 			step := tc.interval
-			selectRange := tc.selectRange
 			matchers := []*labels.Matcher{nameMatcher}
-			selector := plan.NewSelector(
-				test.Storage(),
-				matchers,
-				nil,
-				start, end, step, selectRange,
-			)
+			selector := executionplan.NewSelector(test.Storage(), matchers, nil, start, end, step)
 			out, err := selector.Next(context.Background())
 			require.NoError(t, err)
 
-			result := make([]promql.Matrix, 0, len(out))
+			result := make([]promql.Vector, 0, len(out))
 			for r := range out {
 				result = append(result, r)
 			}
