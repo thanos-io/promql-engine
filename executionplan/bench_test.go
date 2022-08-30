@@ -14,6 +14,7 @@ import (
 var queries = []string{
 	"http_requests_total",
 	"sum by (pod) (http_requests_total)",
+	"max by (pod) (http_requests_total)",
 }
 
 func BenchmarkExecutionPlan(b *testing.B) {

@@ -21,19 +21,16 @@ func (c *chanOperator) Next(ctx context.Context) (<-chan promql.Vector, error) {
 
 func TestAggregate(t *testing.T) {
 	in := make(chan promql.Vector, 1)
-	in <- promql.Vector{
-		promql.Sample{
-			Metric: labels.FromStrings("__name__", "metric", "label", "v1"),
-			Point:  promql.Point{T: 10, V: 20},
-		},
-		promql.Sample{
-			Metric: labels.FromStrings("__name__", "metric", "label", "v1"),
-			Point:  promql.Point{T: 10, V: 40},
-		},
-		promql.Sample{
-			Metric: labels.FromStrings("__name__", "metric", "label", "v2"),
-			Point:  promql.Point{T: 10, V: 50},
-		},
+	in <- []promql.Sample{{
+		Metric: labels.FromStrings("__name__", "metric", "label", "v1"),
+		Point:  promql.Point{T: 10, V: 20},
+	}, {
+		Metric: labels.FromStrings("__name__", "metric", "label", "v1"),
+		Point:  promql.Point{T: 10, V: 40},
+	}, {
+		Metric: labels.FromStrings("__name__", "metric", "label", "v2"),
+		Point:  promql.Point{T: 10, V: 50},
+	},
 	}
 	close(in)
 
@@ -50,18 +47,13 @@ func TestAggregate(t *testing.T) {
 		})
 		result = append(result, r)
 	}
-	expected := []promql.Vector{
-		{
-			{
-				Metric: labels.FromStrings("__name__", "metric", "label", "v2"),
-				Point:  promql.Point{T: 10, V: 50},
-			},
-			{
-				Metric: labels.FromStrings("__name__", "metric", "label", "v1"),
-				Point:  promql.Point{T: 10, V: 60},
-			},
-		},
-	}
+	expected := []promql.Vector{{{
+		Metric: labels.FromStrings("__name__", "metric", "label", "v2"),
+		Point:  promql.Point{T: 10, V: 50},
+	}, {
+		Metric: labels.FromStrings("__name__", "metric", "label", "v1"),
+		Point:  promql.Point{T: 10, V: 60},
+	}}}
 
 	require.Equal(t, expected, result)
 }
