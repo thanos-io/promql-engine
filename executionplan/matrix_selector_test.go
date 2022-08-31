@@ -19,57 +19,81 @@ func TestMatrixSelector(t *testing.T) {
 		end         time.Time
 		interval    time.Duration
 		selectRange time.Duration
-		expected    []promql.Matrix
+		expected    []promql.Vector
 	}{
 		{
 			name: "timestamps match with step",
 			load: `load 30s
-              bar 0 1 10 100`,
+              bar 0 3 12 24`,
 			start:       time.Unix(0, 0),
 			end:         time.Unix(120, 0),
 			interval:    30 * time.Second,
 			selectRange: 30 * time.Second,
-			expected: []promql.Matrix{
+			expected: []promql.Vector{
 				{
-					seriesWithPoints("bar", promql.Point{T: 0, V: 0}),
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 0, V: 0},
+					},
+				}, {
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 30000, V: 0.1},
+					},
+				}, {
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 60000, V: 0.3},
+					},
+				}, {
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 90000, V: 0.4},
+					},
 				},
 				{
-					seriesWithPoints("bar", []promql.Point{{T: 0, V: 0}, {T: 30000, V: 1}}...),
-				},
-				{
-					seriesWithPoints("bar", []promql.Point{{T: 30000, V: 1}, {T: 60000, V: 10}}...),
-				},
-				{
-					seriesWithPoints("bar", []promql.Point{{T: 60000, V: 10}, {T: 90000, V: 100}}...),
-				},
-				{
-					seriesWithPoints("bar", []promql.Point{{T: 90000, V: 100}}...),
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 0, V: 0},
+					},
 				},
 			},
 		},
 		{
 			name: "timestamps match with step",
-			load: `load 29s
-              bar 0 1 10 100`,
+			load: `load 20s
+              bar 0 4 6 24`,
 			start:       time.Unix(0, 0),
 			end:         time.Unix(120, 0),
 			interval:    30 * time.Second,
 			selectRange: 30 * time.Second,
-			expected: []promql.Matrix{
+			expected: []promql.Vector{
 				{
-					seriesWithPoints("bar", promql.Point{T: 0, V: 0}),
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 0, V: 0},
+					},
+				}, {
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 30000, V: 0.2},
+					},
+				}, {
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 60000, V: 0.8},
+					},
+				}, {
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 0, V: 0.0},
+					},
 				},
 				{
-					seriesWithPoints("bar", []promql.Point{{T: 0, V: 0}, {T: 29000, V: 1}}...),
-				},
-				{
-					seriesWithPoints("bar", []promql.Point{{T: 58000, V: 10}}...),
-				},
-				{
-					seriesWithPoints("bar", []promql.Point{{T: 87000, V: 100}}...),
-				},
-				{
-					seriesWithPoints("bar", nil...),
+					{
+						Metric: labels.FromStrings(labels.MetricName, "bar"),
+						Point:  promql.Point{T: 0, V: 0},
+					},
 				},
 			},
 		},

@@ -24,7 +24,7 @@ load 30s
 	err = test.Run()
 	require.NoError(t, err)
 
-	query := "sum by (pod) (rate(http_requests_total[1m]))"
+	query := "sum by (pod) (http_requests_total)"
 	expr, err := parser.ParseExpr(query)
 	require.NoError(t, err)
 
