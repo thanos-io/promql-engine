@@ -86,7 +86,7 @@ func TestSelector(t *testing.T) {
 
 			err = test.Run()
 			require.NoError(t, err)
-			
+
 			nameMatcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, "bar")
 			require.NoError(t, err)
 			matchers := []*labels.Matcher{nameMatcher}

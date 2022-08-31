@@ -11,12 +11,6 @@ import (
 	"time"
 )
 
-var queries = []string{
-	"http_requests_total",
-	"sum by (pod) (http_requests_total)",
-	"max by (pod) (http_requests_total)",
-}
-
 func BenchmarkExecutionPlan(b *testing.B) {
 	test := setupStorage(b)
 	defer test.Close()
@@ -25,9 +19,15 @@ func BenchmarkExecutionPlan(b *testing.B) {
 	end := start.Add(1 * time.Hour)
 	step := time.Second * 30
 
+	var queries = []string{
+		"http_requests_total",
+		"sum by (pod) (http_requests_total)",
+		"max by (pod) (http_requests_total)",
+	}
+
 	for _, q := range queries {
-		b.Run("current_engine", func(b *testing.B) {
-			b.Run(q, func(b *testing.B) {
+		b.Run(q, func(b *testing.B) {
+			b.Run("current_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:     nil,
 					Reg:        nil,
@@ -46,24 +46,24 @@ func BenchmarkExecutionPlan(b *testing.B) {
 					require.NoError(b, res.Err)
 				}
 			})
-		})
-		b.Run("new_engine", func(b *testing.B) {
-			b.Run(q, func(b *testing.B) {
-				b.ResetTimer()
-				b.ReportAllocs()
+			b.Run("new_engine", func(b *testing.B) {
+				b.Run(q, func(b *testing.B) {
+					b.ResetTimer()
+					b.ReportAllocs()
 
-				for i := 0; i < b.N; i++ {
-					expr, err := parser.ParseExpr(q)
-					require.NoError(b, err)
+					for i := 0; i < b.N; i++ {
+						expr, err := parser.ParseExpr(q)
+						require.NoError(b, err)
 
-					p, err := executionplan.New(expr, test.Storage(), start, end, step)
-					require.NoError(b, err)
+						p, err := executionplan.New(expr, test.Storage(), start, end, step)
+						require.NoError(b, err)
 
-					out, err := p.Next(context.Background())
-					require.NoError(b, err)
-					for range out {
+						out, err := p.Next(context.Background())
+						require.NoError(b, err)
+						for range out {
+						}
 					}
-				}
+				})
 			})
 		})
 	}

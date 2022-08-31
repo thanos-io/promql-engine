@@ -57,12 +57,16 @@ func (t *aggregateTable) addSample(seriesID int, sample promql.Sample) {
 		}
 	}
 
+	t.table[key].timestamp = sample.T
 	t.table[key].accumulator.AddFunc(sample.Point)
 }
 
 func (t *aggregateTable) reset() {
-	for k := range t.table {
-		delete(t.table, k)
+	for k, v := range t.table {
+		t.table[k] = &aggregateResult{
+			metric:      v.metric,
+			accumulator: t.makeAccumulatorFunc(),
+		}
 	}
 }
 
