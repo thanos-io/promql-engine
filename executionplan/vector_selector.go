@@ -3,7 +3,7 @@ package executionplan
 import (
 	"context"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/model/value"
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
@@ -12,7 +12,7 @@ import (
 
 type storageSeries struct {
 	labels  labels.Labels
-	samples chunkenc.Iterator
+	samples *storage.MemoizedSeriesIterator
 }
 
 type vectorSelector struct {
@@ -57,11 +57,10 @@ func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 		seriesSet := querier.Select(true, o.hints, o.matchers...)
 		for seriesSet.Next() {
 			s := seriesSet.At()
-			it := s.Iterator()
-			it.Seek(o.mint)
+
 			series = append(series, storageSeries{
 				labels:  s.Labels(),
-				samples: it,
+				samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
 			})
 		}
 
@@ -71,16 +70,10 @@ func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 			for i := 0; i < len(series); i++ {
 				s := series[i]
 				vector[i].Metric = s.labels
-				for {
-					t, v := s.samples.At()
-					vector[i].T = t
+				_, v, ok := selectPoint(s.samples, stepTs)
+				if ok {
 					vector[i].V = v
-					if t >= stepTs {
-						break
-					}
-					if !s.samples.Next() {
-						break
-					}
+					vector[i].T = stepTs
 				}
 			}
 
@@ -89,4 +82,27 @@ func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 	}()
 
 	return out, nil
+}
+
+func selectPoint(it *storage.MemoizedSeriesIterator, ts int64) (int64, float64, bool) {
+	lookbackDelta := 5 * time.Minute.Milliseconds()
+	refTime := ts
+	var t int64
+	var v float64
+
+	ok := it.Seek(refTime)
+	if ok {
+		t, v = it.At()
+	}
+
+	if !ok || t > refTime {
+		t, v, ok = it.PeekPrev()
+		if !ok || t < refTime-lookbackDelta {
+			return 0, 0, false
+		}
+	}
+	if value.IsStaleNaN(v) {
+		return 0, 0, false
+	}
+	return t, v, true
 }
