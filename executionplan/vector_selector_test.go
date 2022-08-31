@@ -91,7 +91,7 @@ func TestSelector(t *testing.T) {
 			require.NoError(t, err)
 			matchers := []*labels.Matcher{nameMatcher}
 
-			selector := executionplan.NewSelector(test.Storage(), matchers, nil, tc.start, tc.end, tc.interval)
+			selector := executionplan.NewVectorSelector(test.Storage(), matchers, nil, tc.start, tc.end, tc.interval)
 			out, err := selector.Next(context.Background())
 			require.NoError(t, err)
 

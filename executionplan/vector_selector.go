@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type storageSeries struct {
+type vectorSamples struct {
 	labels  labels.Labels
 	samples *storage.MemoizedSeriesIterator
 }
@@ -22,13 +22,13 @@ type vectorSelector struct {
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
 
-	mint        int64
-	maxt        int64
-	step        int64
-	selectRange int64
+	mint int64
+	maxt int64
+	step int64
 }
 
-func NewSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
+func NewVectorSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
+	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage: storage,
 		points:  newPointPool(),
@@ -53,12 +53,12 @@ func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 		defer querier.Close()
 		defer close(out)
 
-		series := make([]storageSeries, 0)
+		series := make([]vectorSamples, 0)
 		seriesSet := querier.Select(true, o.hints, o.matchers...)
 		for seriesSet.Next() {
 			s := seriesSet.At()
 
-			series = append(series, storageSeries{
+			series = append(series, vectorSamples{
 				labels:  s.Labels(),
 				samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
 			})
@@ -84,6 +84,7 @@ func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 	return out, nil
 }
 
+// TODO(fpetkovski): Add error handling and max samples limit.
 func selectPoint(it *storage.MemoizedSeriesIterator, ts int64) (int64, float64, bool) {
 	lookbackDelta := 5 * time.Minute.Milliseconds()
 	refTime := ts

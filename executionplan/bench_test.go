@@ -19,14 +19,26 @@ func BenchmarkExecutionPlan(b *testing.B) {
 	end := start.Add(1 * time.Hour)
 	step := time.Second * 30
 
-	var queries = []string{
-		"http_requests_total",
-		"sum by (pod) (http_requests_total)",
-		"max by (pod) (http_requests_total)",
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "vector selector",
+			query: "http_requests_total",
+		},
+		{
+			name:  "aggregation",
+			query: "sum by (pod) (http_requests_total)",
+		},
+		{
+			name:  "sum-rate",
+			query: "sum by (pod) (rate(http_requests_total[1m]))",
+		},
 	}
 
-	for _, q := range queries {
-		b.Run(q, func(b *testing.B) {
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
 			b.Run("current_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:     nil,
@@ -39,7 +51,7 @@ func BenchmarkExecutionPlan(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
+					qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
 					require.NoError(b, err)
 
 					res := qry.Exec(test.Context())
@@ -47,23 +59,21 @@ func BenchmarkExecutionPlan(b *testing.B) {
 				}
 			})
 			b.Run("new_engine", func(b *testing.B) {
-				b.Run(q, func(b *testing.B) {
-					b.ResetTimer()
-					b.ReportAllocs()
+				b.ResetTimer()
+				b.ReportAllocs()
 
-					for i := 0; i < b.N; i++ {
-						expr, err := parser.ParseExpr(q)
-						require.NoError(b, err)
+				for i := 0; i < b.N; i++ {
+					expr, err := parser.ParseExpr(tc.query)
+					require.NoError(b, err)
 
-						p, err := executionplan.New(expr, test.Storage(), start, end, step)
-						require.NoError(b, err)
+					p, err := executionplan.New(expr, test.Storage(), start, end, step)
+					require.NoError(b, err)
 
-						out, err := p.Next(context.Background())
-						require.NoError(b, err)
-						for range out {
-						}
+					out, err := p.Next(context.Background())
+					require.NoError(b, err)
+					for range out {
 					}
-				})
+				}
 			})
 		})
 	}
