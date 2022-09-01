@@ -12,6 +12,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func BenchmarkSingleQuery(b *testing.B) {
+	test := setupStorage(b)
+	defer test.Close()
+
+	start := time.Unix(0, 0)
+	end := start.Add(6 * time.Hour)
+	step := time.Second * 30
+
+	query := "sum by (pod) (rate(http_requests_total[1m]))"
+	b.ResetTimer()
+	b.ReportAllocs()
+	for i := 0; i < b.N; i++ {
+		executeQuery(b, query, test, start, end, step)
+	}
+}
+
 func BenchmarkExecutionPlan(b *testing.B) {
 	test := setupStorage(b)
 	defer test.Close()
@@ -64,22 +80,26 @@ func BenchmarkExecutionPlan(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					expr, err := parser.ParseExpr(tc.query)
-					require.NoError(b, err)
-
-					p, err := executionplan.New(expr, test.Storage(), start, end, step)
-					require.NoError(b, err)
-
-					for {
-						r, err := p.Next(context.Background())
-						require.NoError(b, err)
-						if r == nil {
-							break
-						}
-					}
+					executeQuery(b, tc.query, test, start, end, step)
 				}
 			})
 		})
+	}
+}
+
+func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) {
+	expr, err := parser.ParseExpr(q)
+	require.NoError(b, err)
+
+	p, err := executionplan.New(expr, test.Storage(), start, end, step)
+	require.NoError(b, err)
+
+	for {
+		r, err := p.Next(context.Background())
+		require.NoError(b, err)
+		if r == nil {
+			break
+		}
 	}
 }
 
