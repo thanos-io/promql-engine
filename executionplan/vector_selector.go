@@ -2,9 +2,10 @@ package executionplan
 
 import (
 	"context"
+	"time"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"time"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -17,7 +18,6 @@ type vectorScan struct {
 
 type vectorSelector struct {
 	storage storage.Storage
-	points  *points
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
@@ -31,7 +31,6 @@ func NewVectorSelector(storage storage.Storage, matchers []*labels.Matcher, hint
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage: storage,
-		points:  newPointPool(),
 
 		matchers: matchers,
 		hints:    hints,

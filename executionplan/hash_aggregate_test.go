@@ -3,12 +3,13 @@ package executionplan_test
 import (
 	"context"
 	"fpetkovski/promql-engine/executionplan"
+	"sort"
+	"testing"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"sort"
-	"testing"
 )
 
 type chanOperator struct {

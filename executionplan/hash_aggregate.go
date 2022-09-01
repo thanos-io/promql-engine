@@ -3,9 +3,10 @@ package executionplan
 import (
 	"context"
 	"fmt"
+	"math"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"math"
 )
 
 type aggregate struct {

@@ -3,10 +3,11 @@ package executionplan
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"time"
 )
 
 type VectorOperator interface {

@@ -3,11 +3,12 @@ package executionplan_test
 import (
 	"context"
 	"fpetkovski/promql-engine/executionplan"
+	"testing"
+	"time"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 func TestSelector(t *testing.T) {

@@ -1,15 +1,16 @@
-package executionplan
+package points
 
 import (
-	"github.com/prometheus/prometheus/promql"
 	"sync"
+
+	"github.com/prometheus/prometheus/promql"
 )
 
 type points struct {
 	pool sync.Pool
 }
 
-func newPointPool() *points {
+func NewPool() *points {
 	return &points{
 		pool: sync.Pool{
 			New: func() any {

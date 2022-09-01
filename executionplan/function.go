@@ -1,8 +1,9 @@
 package executionplan
 
 import (
-	"github.com/prometheus/prometheus/promql"
 	"time"
+
+	"github.com/prometheus/prometheus/promql"
 )
 
 type FunctionCall func(points []promql.Point, stepTime time.Time) *promql.Point

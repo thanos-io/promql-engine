@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 	"fpetkovski/promql-engine/executionplan"
+	"testing"
+	"time"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
-	"testing"
-	"time"
 )
 
 func BenchmarkExecutionPlan(b *testing.B) {

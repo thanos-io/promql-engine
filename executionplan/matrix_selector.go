@@ -2,9 +2,10 @@ package executionplan
 
 import (
 	"context"
+	"time"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"time"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
@@ -18,7 +19,6 @@ type matrixScan struct {
 
 type matrixSelector struct {
 	storage storage.Storage
-	points  *points
 	call    FunctionCall
 
 	matchers []*labels.Matcher
@@ -34,7 +34,6 @@ func NewMatrixSelector(storage storage.Storage, matchers []*labels.Matcher, hint
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
 		storage: storage,
-		points:  newPointPool(),
 		call:    NewRate(selectRange),
 
 		matchers:    matchers,
