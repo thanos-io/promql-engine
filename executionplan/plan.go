@@ -36,13 +36,15 @@ func newOperator(expr parser.Expr, storage storage.Storage, mint, maxt time.Time
 		return concurrent(aggregate), nil
 
 	case *parser.VectorSelector:
-		selector := NewVectorSelector(storage, e.LabelMatchers, nil, mint, maxt, step)
+		seriesFilter := newSeriesFilter(storage, mint, maxt, e.LabelMatchers)
+		selector := NewVectorSelector(seriesFilter, nil, mint, maxt, step, 0, 1)
 		return concurrent(selector), nil
 	case *parser.Call:
 		switch t := e.Args[0].(type) {
 		case *parser.MatrixSelector:
 			vs := t.VectorSelector.(*parser.VectorSelector)
-			selector := NewMatrixSelector(storage, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
+			seriesFilter := newSeriesFilter(storage, mint, maxt, vs.LabelMatchers)
+			selector := NewMatrixSelector(seriesFilter, nil, mint, maxt, step, t.Range, 0, 1)
 			return concurrent(selector), nil
 		}
 		return nil, fmt.Errorf("unsupported expression %s", e)

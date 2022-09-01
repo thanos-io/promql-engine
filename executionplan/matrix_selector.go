@@ -2,6 +2,7 @@ package executionplan
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -18,9 +19,10 @@ type matrixScan struct {
 }
 
 type matrixSelector struct {
-	call    FunctionCall
-	storage storage.Storage
-	series  []matrixScan
+	call           FunctionCall
+	seriesSelector *seriesSelector
+	series         []matrixScan
+	once           sync.Once
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
@@ -30,21 +32,32 @@ type matrixSelector struct {
 	step        int64
 	selectRange int64
 	currentStep int64
+
+	shard     int
+	numShards int
 }
 
-func NewMatrixSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
+func NewMatrixSelector(
+	seriesSelector *seriesSelector,
+	hints *storage.SelectHints,
+	mint, maxt time.Time,
+	step, selectRange time.Duration,
+	shard, numShards int,
+) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
-		storage: storage,
-		call:    NewRate(selectRange),
+		seriesSelector: seriesSelector,
+		call:           NewRate(selectRange),
 
-		matchers:    matchers,
 		hints:       hints,
 		mint:        mint.UnixMilli(),
 		maxt:        maxt.UnixMilli(),
 		step:        step.Milliseconds(),
 		selectRange: selectRange.Milliseconds(),
 		currentStep: mint.UnixMilli() - step.Milliseconds(),
+
+		shard:     shard,
+		numShards: numShards,
 	}
 }
 
@@ -54,10 +67,10 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 		return nil, nil
 	}
 
-	if o.series == nil {
-		if err := o.initializeSeries(ctx); err != nil {
-			return nil, err
-		}
+	var err error
+	o.once.Do(func() { err = o.initializeSeries(ctx) })
+	if err != nil {
+		return nil, err
 	}
 
 	vector := make(promql.Vector, len(o.series))
@@ -89,24 +102,20 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 }
 
 func (o *matrixSelector) initializeSeries(ctx context.Context) error {
-	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
+	series, err := o.seriesSelector.Series(ctx, o.shard, o.numShards)
 	if err != nil {
 		return err
 	}
-	defer querier.Close()
 
-	series := make([]matrixScan, 0)
-	seriesSet := querier.Select(true, o.hints, o.matchers...)
-	for seriesSet.Next() {
-		s := seriesSet.At()
-
-		series = append(series, matrixScan{
+	scanners := make([]matrixScan, 0)
+	for _, s := range series {
+		scanners = append(scanners, matrixScan{
 			labels:         s.Labels(),
 			previousPoints: make([]promql.Point, 0),
 			samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
 		})
 	}
-	o.series = series
+	o.series = scanners
 
 	return nil
 }

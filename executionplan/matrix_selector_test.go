@@ -1,9 +1,8 @@
-package executionplan_test
+package executionplan
 
 import (
 	"context"
 	"fmt"
-	"fpetkovski/promql-engine/executionplan"
 	"testing"
 	"time"
 
@@ -117,7 +116,8 @@ func TestMatrixSelector(t *testing.T) {
 			require.NoError(t, err)
 			matchers := []*labels.Matcher{nameMatcher}
 
-			selector := executionplan.NewMatrixSelector(test.Storage(), matchers, nil, tc.start, tc.end, tc.interval, tc.selectRange)
+			seriesFilter := newSeriesFilter(test.Storage(), tc.start, tc.end, matchers)
+			selector := NewMatrixSelector(seriesFilter, nil, tc.start, tc.end, tc.interval, tc.selectRange, 0, 1)
 			result := make([]promql.Vector, 0)
 			for {
 				r, err := selector.Next(context.Background())

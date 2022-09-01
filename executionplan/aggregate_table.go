@@ -90,7 +90,6 @@ type groupingKeyFunc func(metric labels.Labels) (uint64, labels.Labels)
 // resulting labels value pairs for the given metric and grouping labels.
 func newGroupingKeyGenerator(grouping []string, without bool, buf []byte) groupingKeyFunc {
 	return func(metric labels.Labels) (uint64, labels.Labels) {
-		buf = buf[:0]
 		if without {
 			lb := labels.NewBuilder(metric)
 			lb.Del(grouping...)

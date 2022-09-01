@@ -2,6 +2,7 @@ package executionplan
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -17,30 +18,41 @@ type vectorScan struct {
 }
 
 type vectorSelector struct {
-	storage storage.Storage
-	series  []vectorScan
+	once     sync.Once
+	selector *seriesSelector
+	series   []vectorScan
 
-	matchers []*labels.Matcher
-	hints    *storage.SelectHints
+	hints *storage.SelectHints
 
 	mint        int64
 	maxt        int64
 	step        int64
 	currentStep int64
+
+	shard     int
+	numShards int
 }
 
-func NewVectorSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
-	// TODO(fpetkovski): Add offset parameter.
+func NewVectorSelector(
+	selector *seriesSelector,
+	hints *storage.SelectHints,
+	mint, maxt time.Time,
+	step time.Duration,
+	shard, numShards int,
+) VectorOperator {
 	return &vectorSelector{
-		storage: storage,
+		selector: selector,
 
-		matchers: matchers,
-		hints:    hints,
+		hints: hints,
 
+		// TODO(fpetkovski): Add offset parameter.
 		mint:        mint.UnixMilli(),
 		maxt:        maxt.UnixMilli(),
 		step:        step.Milliseconds(),
 		currentStep: mint.UnixMilli() - step.Milliseconds(),
+
+		shard:     shard,
+		numShards: numShards,
 	}
 }
 
@@ -50,10 +62,10 @@ func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
 		return nil, nil
 	}
 
-	if o.series == nil {
-		if err := o.initializeSeries(ctx); err != nil {
-			return nil, err
-		}
+	var err error
+	o.once.Do(func() { err = o.initializeSeries(ctx) })
+	if err != nil {
+		return nil, err
 	}
 
 	vector := make(promql.Vector, len(o.series))
@@ -71,23 +83,19 @@ func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
 }
 
 func (o *vectorSelector) initializeSeries(ctx context.Context) error {
-	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
+	series, err := o.selector.Series(ctx, o.shard, o.numShards)
 	if err != nil {
 		return err
 	}
-	defer querier.Close()
 
-	series := make([]vectorScan, 0)
-	seriesSet := querier.Select(true, o.hints, o.matchers...)
-	for seriesSet.Next() {
-		s := seriesSet.At()
-
-		series = append(series, vectorScan{
+	scanners := make([]vectorScan, 0)
+	for _, s := range series {
+		scanners = append(scanners, vectorScan{
 			labels:  s.Labels(),
 			samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
 		})
 	}
-	o.series = series
+	o.series = scanners
 
 	return nil
 }
