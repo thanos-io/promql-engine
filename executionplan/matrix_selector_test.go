@@ -118,21 +118,16 @@ func TestMatrixSelector(t *testing.T) {
 			matchers := []*labels.Matcher{nameMatcher}
 
 			selector := executionplan.NewMatrixSelector(test.Storage(), matchers, nil, tc.start, tc.end, tc.interval, tc.selectRange)
-			out, err := selector.Next(context.Background())
-			require.NoError(t, err)
-
-			result := make([]promql.Vector, 0, len(out))
-			for r := range out {
+			result := make([]promql.Vector, 0)
+			for {
+				r, err := selector.Next(context.Background())
+				require.NoError(t, err)
+				if r == nil {
+					break
+				}
 				result = append(result, r)
 			}
-			fmt.Println(result)
 			require.Equal(t, tc.expected, result)
 		})
-	}
-}
-
-func seriesWithPoints(name string, points ...promql.Point) promql.Series {
-	return promql.Series{
-		Metric: labels.FromStrings("__name__", name), Points: points,
 	}
 }

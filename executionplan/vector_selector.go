@@ -18,13 +18,15 @@ type vectorScan struct {
 
 type vectorSelector struct {
 	storage storage.Storage
+	series  []vectorScan
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
 
-	mint int64
-	maxt int64
-	step int64
+	mint        int64
+	maxt        int64
+	step        int64
+	currentStep int64
 }
 
 func NewVectorSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
@@ -34,53 +36,60 @@ func NewVectorSelector(storage storage.Storage, matchers []*labels.Matcher, hint
 
 		matchers: matchers,
 		hints:    hints,
-		mint:     mint.UnixMilli(),
-		maxt:     maxt.UnixMilli(),
-		step:     step.Milliseconds(),
+
+		mint:        mint.UnixMilli(),
+		maxt:        maxt.UnixMilli(),
+		step:        step.Milliseconds(),
+		currentStep: mint.UnixMilli() - step.Milliseconds(),
 	}
 }
 
-func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error) {
-	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
-	if err != nil {
-		return nil, err
+func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
+	o.currentStep += o.step
+	if o.currentStep > o.maxt {
+		return nil, nil
 	}
 
-	numSteps := (o.maxt-o.mint)/o.step + 1
-	out := make(chan promql.Vector, numSteps)
-	go func() {
-		defer querier.Close()
-		defer close(out)
+	if o.series == nil {
+		if err := o.initializeSeries(ctx); err != nil {
+			return nil, err
+		}
+	}
 
-		series := make([]vectorScan, 0)
-		seriesSet := querier.Select(true, o.hints, o.matchers...)
-		for seriesSet.Next() {
-			s := seriesSet.At()
-
-			series = append(series, vectorScan{
-				labels:  s.Labels(),
-				samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
-			})
+	vector := make(promql.Vector, len(o.series))
+	for i := 0; i < len(o.series); i++ {
+		s := o.series[i]
+		vector[i].Metric = s.labels
+		_, v, ok := selectPoint(s.samples, o.currentStep)
+		if ok {
+			vector[i].V = v
+			vector[i].T = o.currentStep
 		}
 
-		for stepTs := o.mint; stepTs <= o.maxt; stepTs += o.step {
-			vector := make(promql.Vector, len(series))
+	}
+	return vector, nil
+}
 
-			for i := 0; i < len(series); i++ {
-				s := series[i]
-				vector[i].Metric = s.labels
-				_, v, ok := selectPoint(s.samples, stepTs)
-				if ok {
-					vector[i].V = v
-					vector[i].T = stepTs
-				}
-			}
+func (o *vectorSelector) initializeSeries(ctx context.Context) error {
+	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
+	if err != nil {
+		return err
+	}
+	defer querier.Close()
 
-			out <- vector
-		}
-	}()
+	series := make([]vectorScan, 0)
+	seriesSet := querier.Select(true, o.hints, o.matchers...)
+	for seriesSet.Next() {
+		s := seriesSet.At()
 
-	return out, nil
+		series = append(series, vectorScan{
+			labels:  s.Labels(),
+			samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
+		})
+	}
+	o.series = series
+
+	return nil
 }
 
 // TODO(fpetkovski): Add error handling and max samples limit.

@@ -70,9 +70,12 @@ func BenchmarkExecutionPlan(b *testing.B) {
 					p, err := executionplan.New(expr, test.Storage(), start, end, step)
 					require.NoError(b, err)
 
-					out, err := p.Next(context.Background())
-					require.NoError(b, err)
-					for range out {
+					for {
+						r, err := p.Next(context.Background())
+						require.NoError(b, err)
+						if r == nil {
+							break
+						}
 					}
 				}
 			})

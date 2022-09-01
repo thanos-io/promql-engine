@@ -11,11 +11,11 @@ import (
 )
 
 type VectorOperator interface {
-	Next(ctx context.Context) (<-chan promql.Vector, error)
+	Next(ctx context.Context) (promql.Vector, error)
 }
 
 type MatrixOperator interface {
-	Next(ctx context.Context) (<-chan promql.Matrix, error)
+	Next(ctx context.Context) (promql.Matrix, error)
 }
 
 func New(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
@@ -29,14 +29,21 @@ func newOperator(expr parser.Expr, storage storage.Storage, mint, maxt time.Time
 		if err != nil {
 			return nil, err
 		}
-		return NewAggregate(next, e.Op, !e.Without, e.Grouping)
+		aggregate, err := NewAggregate(next, e.Op, !e.Without, e.Grouping)
+		if err != nil {
+			return nil, err
+		}
+		return concurrent(aggregate), nil
+
 	case *parser.VectorSelector:
-		return NewVectorSelector(storage, e.LabelMatchers, nil, mint, maxt, step), nil
+		selector := NewVectorSelector(storage, e.LabelMatchers, nil, mint, maxt, step)
+		return concurrent(selector), nil
 	case *parser.Call:
 		switch t := e.Args[0].(type) {
 		case *parser.MatrixSelector:
 			vs := t.VectorSelector.(*parser.VectorSelector)
-			return NewMatrixSelector(storage, vs.LabelMatchers, nil, mint, maxt, step, t.Range), nil
+			selector := NewMatrixSelector(storage, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
+			return concurrent(selector), nil
 		}
 		return nil, fmt.Errorf("unsupported expression %s", e)
 	default:

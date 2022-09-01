@@ -11,32 +11,20 @@ import (
 
 type aggregate struct {
 	operator VectorOperator
-	by       bool
-	labels   []string
+	hashBuf  []byte
 
+	by          bool
+	labels      []string
 	aggregation parser.ItemType
+	table       *aggregateTable
 }
 
 func NewAggregate(input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
-	return &aggregate{
-		operator:    input,
-		by:          by,
-		aggregation: aggregation,
-		labels:      labels,
-	}, nil
-}
-
-func (a *aggregate) Next(ctx context.Context) (<-chan promql.Vector, error) {
-	in, err := a.operator.Next(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	buf := make([]byte, 1024)
+	hashBuf := make([]byte, 1024)
 	table := newAggregateTable(
-		newGroupingKeyGenerator(a.labels, !a.by, buf),
+		newGroupingKeyGenerator(labels, !by, hashBuf),
 		func() *accumulator {
-			f, err := newAccumulator(a.aggregation)
+			f, err := newAccumulator(aggregation)
 			if err != nil {
 				panic(err)
 			}
@@ -44,36 +32,31 @@ func (a *aggregate) Next(ctx context.Context) (<-chan promql.Vector, error) {
 		},
 	)
 
-	out := make(chan promql.Vector, 121)
-	go func() {
-		defer close(out)
+	return &aggregate{
+		operator: input,
+		table:    table,
 
-		for vector := range in {
-			table.reset()
-			for i, series := range vector {
-				table.addSample(i, series)
-			}
-
-			a.send(table, out)
-		}
-	}()
-
-	return out, nil
+		by:          by,
+		aggregation: aggregation,
+		labels:      labels,
+	}, nil
 }
 
-func (a *aggregate) send(table *aggregateTable, out chan promql.Vector) {
-	result := make(promql.Vector, 0, len(table.table))
-	for _, v := range table.table {
-		result = append(result, promql.Sample{
-			Metric: v.metric,
-			Point: promql.Point{
-				T: v.timestamp,
-				V: v.accumulator.ValueFunc(),
-			},
-		})
+func (a *aggregate) Next(ctx context.Context) (promql.Vector, error) {
+	in, err := a.operator.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in == nil {
+		return nil, nil
 	}
 
-	out <- result
+	a.table.reset()
+	for i, series := range in {
+		a.table.addSample(i, series)
+	}
+
+	return a.table.toVector(), nil
 }
 
 type newAccumulatorFunc func() *accumulator

@@ -70,12 +70,27 @@ func (t *aggregateTable) reset() {
 	}
 }
 
+func (t *aggregateTable) toVector() promql.Vector {
+	result := make(promql.Vector, 0, len(t.table))
+	for _, v := range t.table {
+		result = append(result, promql.Sample{
+			Metric: v.metric,
+			Point: promql.Point{
+				T: v.timestamp,
+				V: v.accumulator.ValueFunc(),
+			},
+		})
+	}
+	return result
+}
+
 type groupingKeyFunc func(metric labels.Labels) (uint64, labels.Labels)
 
-// groupingKey builds and returns the grouping key and series labels
-// for the given metric and grouping labels.
+// groupingKey builds and returns the grouping key and the
+// resulting labels value pairs for the given metric and grouping labels.
 func newGroupingKeyGenerator(grouping []string, without bool, buf []byte) groupingKeyFunc {
 	return func(metric labels.Labels) (uint64, labels.Labels) {
+		buf = buf[:0]
 		if without {
 			lb := labels.NewBuilder(metric)
 			lb.Del(grouping...)

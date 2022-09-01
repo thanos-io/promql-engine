@@ -93,13 +93,16 @@ func TestSelector(t *testing.T) {
 			matchers := []*labels.Matcher{nameMatcher}
 
 			selector := executionplan.NewVectorSelector(test.Storage(), matchers, nil, tc.start, tc.end, tc.interval)
-			out, err := selector.Next(context.Background())
-			require.NoError(t, err)
-
-			result := make([]promql.Vector, 0, len(out))
-			for r := range out {
+			result := make([]promql.Vector, 0)
+			for {
+				r, err := selector.Next(context.Background())
+				require.NoError(t, err)
+				if r == nil {
+					break
+				}
 				result = append(result, r)
 			}
+
 			require.Equal(t, tc.expected, result)
 		})
 	}

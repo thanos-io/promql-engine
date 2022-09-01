@@ -18,8 +18,9 @@ type matrixScan struct {
 }
 
 type matrixSelector struct {
-	storage storage.Storage
 	call    FunctionCall
+	storage storage.Storage
+	series  []matrixScan
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
@@ -28,6 +29,7 @@ type matrixSelector struct {
 	maxt        int64
 	step        int64
 	selectRange int64
+	currentStep int64
 }
 
 func NewMatrixSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
@@ -42,65 +44,71 @@ func NewMatrixSelector(storage storage.Storage, matchers []*labels.Matcher, hint
 		maxt:        maxt.UnixMilli(),
 		step:        step.Milliseconds(),
 		selectRange: selectRange.Milliseconds(),
+		currentStep: mint.UnixMilli() - step.Milliseconds(),
 	}
 }
 
-func (o *matrixSelector) Next(ctx context.Context) (<-chan promql.Vector, error) {
-	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
-	if err != nil {
-		return nil, err
+func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
+	o.currentStep += o.step
+	if o.currentStep > o.maxt {
+		return nil, nil
 	}
 
-	numSteps := (o.maxt-o.mint)/o.step + 1
-	out := make(chan promql.Vector, numSteps)
-	go func() {
-		defer querier.Close()
-		defer close(out)
+	if o.series == nil {
+		if err := o.initializeSeries(ctx); err != nil {
+			return nil, err
+		}
+	}
 
-		series := make([]matrixScan, 0)
-		seriesSet := querier.Select(true, o.hints, o.matchers...)
-		for seriesSet.Next() {
-			s := seriesSet.At()
+	vector := make(promql.Vector, len(o.series))
+	for i := 0; i < len(o.series); i++ {
+		s := &o.series[i]
+		vector[i].Metric = s.labels
 
-			series = append(series, matrixScan{
-				labels:         s.Labels(),
-				previousPoints: make([]promql.Point, 0),
-				samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
-			})
+		maxt := o.currentStep
+		mint := maxt - o.selectRange
+
+		rangePoints := selectPoints(s.samples, mint, maxt, o.series[i].previousPoints)
+		result := o.call(rangePoints, time.UnixMilli(o.currentStep))
+		if result != nil {
+			vector[i].Point = *result
+			o.series[i].previousPoints = rangePoints
+		} else {
+			continue
 		}
 
-		for stepTs := o.mint; stepTs <= o.maxt; stepTs += o.step {
-			vector := make(promql.Vector, len(series))
-
-			for i := 0; i < len(series); i++ {
-				s := &series[i]
-				vector[i].Metric = s.labels
-
-				maxt := stepTs
-				mint := maxt - o.selectRange
-
-				rangePoints := selectPoints(s.samples, mint, maxt, series[i].previousPoints)
-				result := o.call(rangePoints, time.UnixMilli(stepTs))
-				if result != nil {
-					vector[i].Point = *result
-					series[i].previousPoints = rangePoints
-				} else {
-					continue
-				}
-
-				// Only buffer stepRange milliseconds from the second step on.
-				stepRange := o.selectRange
-				if stepRange > o.step {
-					stepRange = o.step
-				}
-				s.samples.ReduceDelta(stepRange)
-			}
-
-			out <- vector
+		// Only buffer stepRange milliseconds from the second step on.
+		stepRange := o.selectRange
+		if stepRange > o.currentStep {
+			stepRange = o.currentStep
 		}
-	}()
+		s.samples.ReduceDelta(stepRange)
+	}
 
-	return out, nil
+	return vector, nil
+}
+
+func (o *matrixSelector) initializeSeries(ctx context.Context) error {
+	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
+	if err != nil {
+		return err
+	}
+	defer querier.Close()
+
+	series := make([]matrixScan, 0)
+	seriesSet := querier.Select(true, o.hints, o.matchers...)
+	for seriesSet.Next() {
+		s := seriesSet.At()
+
+		series = append(series, matrixScan{
+			labels:         s.Labels(),
+			previousPoints: make([]promql.Point, 0),
+			samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
+		})
+	}
+	o.series = series
+
+	return nil
 }
 
 // matrixIterSlice populates a matrix vector covering the requested range for a

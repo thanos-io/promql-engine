@@ -86,9 +86,13 @@ load 30s
 			plan, err := New(expr, test.Storage(), start, end, step)
 			require.NoError(t, err)
 
-			out, err := plan.Next(context.Background())
-			result := make([]promql.Vector, 0, len(out))
-			for r := range out {
+			result := make([]promql.Vector, 0)
+			for {
+				r, err := plan.Next(context.Background())
+				require.NoError(t, err)
+				if r == nil {
+					break
+				}
 				sort.Slice(r, func(i, j int) bool {
 					return r[i].Metric.Hash() < r[j].Metric.Hash()
 				})
