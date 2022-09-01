@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type vectorSamples struct {
+type vectorScan struct {
 	labels  labels.Labels
 	samples *storage.MemoizedSeriesIterator
 }
@@ -53,12 +53,12 @@ func (o *vectorSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 		defer querier.Close()
 		defer close(out)
 
-		series := make([]vectorSamples, 0)
+		series := make([]vectorScan, 0)
 		seriesSet := querier.Select(true, o.hints, o.matchers...)
 		for seriesSet.Next() {
 			s := seriesSet.At()
 
-			series = append(series, vectorSamples{
+			series = append(series, vectorScan{
 				labels:  s.Labels(),
 				samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
 			})

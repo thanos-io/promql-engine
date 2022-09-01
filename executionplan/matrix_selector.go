@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type matrixSamples struct {
+type matrixScan struct {
 	labels         labels.Labels
 	previousPoints []promql.Point
 	samples        *storage.BufferedSeriesIterator
@@ -58,12 +58,12 @@ func (o *matrixSelector) Next(ctx context.Context) (<-chan promql.Vector, error)
 		defer querier.Close()
 		defer close(out)
 
-		series := make([]matrixSamples, 0)
+		series := make([]matrixScan, 0)
 		seriesSet := querier.Select(true, o.hints, o.matchers...)
 		for seriesSet.Next() {
 			s := seriesSet.At()
 
-			series = append(series, matrixSamples{
+			series = append(series, matrixScan{
 				labels:         s.Labels(),
 				previousPoints: make([]promql.Point, 0),
 				samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
