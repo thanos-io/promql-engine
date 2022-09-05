@@ -19,7 +19,7 @@ type matrixScan struct {
 
 type matrixSelector struct {
 	call    FunctionCall
-	storage storage.Storage
+	storage storage.Queryable
 	series  []matrixScan
 
 	matchers []*labels.Matcher
@@ -32,7 +32,7 @@ type matrixSelector struct {
 	currentStep int64
 }
 
-func NewMatrixSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
+func NewMatrixSelector(storage storage.Queryable, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
 		storage: storage,
@@ -74,6 +74,7 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 			vector[i].Point = *result
 			o.series[i].previousPoints = rangePoints
 		} else {
+			vector[i].Point.T = -1
 			continue
 		}
 

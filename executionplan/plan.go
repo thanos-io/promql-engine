@@ -18,11 +18,11 @@ type MatrixOperator interface {
 	Next(ctx context.Context) (promql.Matrix, error)
 }
 
-func New(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
+func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	return newOperator(expr, storage, mint, maxt, step)
 }
 
-func newOperator(expr parser.Expr, storage storage.Storage, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
+func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		next, err := newOperator(e.Expr, storage, mint, maxt, step)

@@ -17,7 +17,7 @@ type vectorScan struct {
 }
 
 type vectorSelector struct {
-	storage storage.Storage
+	storage storage.Queryable
 	series  []vectorScan
 
 	matchers []*labels.Matcher
@@ -29,7 +29,7 @@ type vectorSelector struct {
 	currentStep int64
 }
 
-func NewVectorSelector(storage storage.Storage, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
+func NewVectorSelector(storage storage.Queryable, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage: storage,
