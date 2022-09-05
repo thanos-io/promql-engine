@@ -3,6 +3,9 @@ package engine
 import (
 	"context"
 	"fpetkovski/promql-engine/executionplan"
+	"sort"
+
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -22,6 +25,10 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	if err != nil {
 		return newErrResult(err)
 	}
+
+	sort.Slice(r, func(i, j int) bool {
+		return labels.Compare(r[i].Metric, r[j].Metric) < 0
+	})
 
 	return &promql.Result{
 		Value: r,
