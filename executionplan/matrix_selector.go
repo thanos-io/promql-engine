@@ -90,7 +90,8 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 }
 
 func (o *matrixSelector) initializeSeries(ctx context.Context) error {
-	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
+	mint := o.mint - 5*time.Minute.Milliseconds()
+	querier, err := o.storage.Querier(ctx, mint, o.maxt)
 	if err != nil {
 		return err
 	}

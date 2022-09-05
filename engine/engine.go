@@ -12,14 +12,18 @@ import (
 
 type engine struct {
 	logger promql.QueryLogger
+
+	lookbackDelta time.Duration
 }
 
 func New() v1.QueryEngine {
-	return &engine{}
+	return &engine{
+		lookbackDelta: 5 * time.Minute,
+	}
 }
 
 func (e *engine) SetQueryLogger(l promql.QueryLogger) {
-	e.logger = e.logger
+	e.logger = l
 }
 
 func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -33,7 +37,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	return newQuery(plan), nil
+	return newInstantQuery(plan), nil
 }
 
 func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
@@ -47,5 +51,5 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
-	return newQuery(plan), nil
+	return newRangeQuery(plan), nil
 }

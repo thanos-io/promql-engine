@@ -10,15 +10,15 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 )
 
-type query struct {
+type rangeQuery struct {
 	plan executionplan.VectorOperator
 }
 
-func newQuery(plan executionplan.VectorOperator) promql.Query {
-	return &query{plan: plan}
+func newRangeQuery(plan executionplan.VectorOperator) promql.Query {
+	return &rangeQuery{plan: plan}
 }
 
-func (q *query) Exec(ctx context.Context) *promql.Result {
+func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 	var result promql.Matrix = nil
 	for {
 		r, err := q.plan.Next(ctx)
@@ -46,27 +46,27 @@ func (q *query) Exec(ctx context.Context) *promql.Result {
 	}
 }
 
-func (q *query) Close() {
+func (q *rangeQuery) Close() {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q *query) Statement() parser.Statement {
+func (q *rangeQuery) Statement() parser.Statement {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q *query) Stats() *stats.Statistics {
+func (q *rangeQuery) Stats() *stats.Statistics {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q *query) Cancel() {
+func (q *rangeQuery) Cancel() {
 	//TODO implement me
 	panic("implement me")
 }
 
-func (q *query) String() string {
+func (q *rangeQuery) String() string {
 	//TODO implement me
 	panic("implement me")
 }
