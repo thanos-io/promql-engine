@@ -16,7 +16,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 	defer test.Close()
 
 	start := time.Unix(0, 0)
-	end := start.Add(6 * time.Hour)
+	end := start.Add(1 * time.Hour)
 	step := time.Second * 30
 
 	query := "sum by (pod) (rate(http_requests_total[1m]))"
@@ -95,7 +95,7 @@ func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, en
 }
 
 func setupStorage(b *testing.B) *promql.Test {
-	load := synthesizeLoad(1000, 3)
+	load := synthesizeLoad(10000, 3)
 	test, err := promql.NewTest(b, load)
 	require.NoError(b, err)
 	require.NoError(b, test.Run())

@@ -70,15 +70,9 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 
 		rangePoints := selectPoints(s.samples, mint, maxt, o.series[i].previousPoints)
 		result := o.call(s.labels, rangePoints, time.UnixMilli(o.currentStep))
-		if result != nil {
-			vector[i].Metric = result.Metric
-			vector[i].Point = result.Point
-			o.series[i].previousPoints = rangePoints
-
-		} else {
-			vector[i].Point.T = -1
-			continue
-		}
+		vector[i].Metric = result.Metric
+		vector[i].Point = result.Point
+		o.series[i].previousPoints = rangePoints
 
 		// Only buffer stepRange milliseconds from the second step on.
 		stepRange := o.selectRange
@@ -86,6 +80,7 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 			stepRange = o.step
 		}
 		s.samples.ReduceDelta(stepRange)
+
 	}
 
 	return vector, nil
@@ -107,7 +102,7 @@ func (o *matrixSelector) initializeSeries(ctx context.Context) error {
 		lbls := s.Labels()
 		sort.Sort(lbls)
 		series = append(series, matrixScan{
-			labels:         lbls,
+			labels:         dropMetricName(lbls),
 			previousPoints: make([]promql.Point, 0),
 			samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
 		})

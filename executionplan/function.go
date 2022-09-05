@@ -11,29 +11,26 @@ import (
 	"github.com/prometheus/prometheus/promql"
 )
 
-type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) *promql.Sample
+type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample
 
 func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCall, error) {
 	switch f.Name {
 	case "sum_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) *promql.Sample {
-			return &promql.Sample{
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
 				Point: promql.Point{
 					T: stepTime.UnixMilli(),
 					V: sumOverTime(points),
 				},
-				Metric: dropMetricName(labels),
+				Metric: labels,
 			}
 		}, nil
 	case "rate":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) *promql.Sample {
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			point := extrapolatedRate(points, true, true, stepTime, selectRange)
-			if point == nil {
-				return nil
-			}
-			return &promql.Sample{
-				Point:  *point,
-				Metric: dropMetricName(labels),
+			return promql.Sample{
+				Point:  point,
+				Metric: labels,
 			}
 		}, nil
 	default:
@@ -45,14 +42,14 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime time.Time, selectRange time.Duration) *promql.Point {
+func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime time.Time, selectRange time.Duration) promql.Point {
 	var (
 		rangeStart = stepTime.UnixMilli() - selectRange.Milliseconds()
 		rangeEnd   = stepTime.UnixMilli()
 	)
 
 	if len(samples) < 2 {
-		return nil
+		return promql.Point{T: -1}
 	}
 
 	resultValue := samples[len(samples)-1].V - samples[0].V
@@ -109,7 +106,7 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime t
 		resultValue = resultValue / selectRange.Seconds()
 	}
 
-	return &promql.Point{
+	return promql.Point{
 		T: stepTime.UnixMilli(),
 		V: resultValue,
 	}
