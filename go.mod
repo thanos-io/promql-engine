@@ -3,7 +3,6 @@ module fpetkovski/promql-engine
 go 1.18
 
 require (
-	github.com/prometheus/alertmanager v0.24.0
 	github.com/prometheus/prometheus v0.38.0
 )
 
