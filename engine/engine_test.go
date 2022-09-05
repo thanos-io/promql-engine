@@ -27,30 +27,23 @@ func TestRangeQuery(t *testing.T) {
 	}{
 		{
 			name: "sum by pod",
-			load: `
-load 30s
-  http_requests_total{pod="nginx-1"} 1+1x4
-  http_requests_total{pod="nginx-2"} 1+2x4
-`,
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum by (pod) (http_requests_total)",
 		},
-
 		{
 			name: "sum rate",
-			load: `
-load 30s
-  http_requests_total{pod="nginx-1"} 1+1x4
-  http_requests_total{pod="nginx-2"} 1+2x4
-`,
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 		{
 			name: "sum rate with stale series",
-			load: `
-load 30s
-  http_requests_total{pod="nginx-1"} 1+1x4
-  http_requests_total{pod="nginx-2"} 1+2x20
-`,
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 	}
@@ -94,29 +87,23 @@ func TestInstantQuery(t *testing.T) {
 	}{
 		{
 			name: "sum by pod",
-			load: `
-load 30s
-  http_requests_total{pod="nginx-1"} 1+1x4
-  http_requests_total{pod="nginx-2"} 1+2x4
-`,
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{
 			name: "sum rate",
-			load: `
-load 30s
-  http_requests_total{pod="nginx-1"} 1+1x4
-  http_requests_total{pod="nginx-2"} 1+2x4
-`,
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 		{
 			name: "sum rate with stale series",
-			load: `
-load 30s
-  http_requests_total{pod="nginx-1"} 1+1x4
-  http_requests_total{pod="nginx-2"} 1+2x20
-`,
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 	}
