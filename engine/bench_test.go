@@ -3,9 +3,10 @@ package engine_test
 import (
 	"context"
 	"fmt"
-	"fpetkovski/promql-engine/engine"
 	"testing"
 	"time"
+
+	"fpetkovski/promql-engine/engine"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"
@@ -95,7 +96,7 @@ func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, en
 }
 
 func setupStorage(b *testing.B) *promql.Test {
-	load := synthesizeLoad(10000, 3)
+	load := synthesizeLoad(1000, 3)
 	test, err := promql.NewTest(b, load)
 	require.NoError(b, err)
 	require.NoError(b, test.Run())

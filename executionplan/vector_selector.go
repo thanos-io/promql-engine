@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"fpetkovski/promql-engine/points"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 
@@ -19,6 +21,7 @@ type vectorScan struct {
 type vectorSelector struct {
 	storage storage.Queryable
 	series  []vectorScan
+	pool    *points.Pool
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
@@ -29,10 +32,11 @@ type vectorSelector struct {
 	currentStep int64
 }
 
-func NewVectorSelector(storage storage.Queryable, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
+func NewVectorSelector(pool *points.Pool, storage storage.Queryable, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage: storage,
+		pool:    pool,
 
 		matchers: matchers,
 		hints:    hints,
@@ -56,7 +60,10 @@ func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
 		}
 	}
 
-	vector := make(promql.Vector, len(o.series))
+	vector := o.pool.Get()
+	if len(vector) < len(o.series) {
+		vector = make(promql.Vector, len(o.series))
+	}
 	for i := 0; i < len(o.series); i++ {
 		s := o.series[i]
 		vector[i].Metric = s.labels

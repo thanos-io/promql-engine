@@ -5,6 +5,8 @@ import (
 	"sort"
 	"time"
 
+	"fpetkovski/promql-engine/points"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 
@@ -25,6 +27,7 @@ type matrixSelector struct {
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
+	pool     *points.Pool
 
 	mint        int64
 	maxt        int64
@@ -33,12 +36,12 @@ type matrixSelector struct {
 	currentStep int64
 }
 
-func NewMatrixSelector(storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
+func NewMatrixSelector(pool *points.Pool, storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
-		storage: storage,
-		call:    call,
-
+		storage:     storage,
+		call:        call,
+		pool:        pool,
 		matchers:    matchers,
 		hints:       hints,
 		mint:        mint.UnixMilli(),
@@ -61,7 +64,10 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 		}
 	}
 
-	vector := make(promql.Vector, len(o.series))
+	vector := o.pool.Get()
+	if len(vector) < len(o.series) {
+		vector = make(promql.Vector, len(o.series))
+	}
 	for i := 0; i < len(o.series); i++ {
 		s := &o.series[i]
 

@@ -2,9 +2,10 @@ package engine_test
 
 import (
 	"context"
-	"fpetkovski/promql-engine/engine"
 	"testing"
 	"time"
+
+	"fpetkovski/promql-engine/engine"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/stretchr/testify/require"

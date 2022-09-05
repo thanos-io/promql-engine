@@ -6,24 +6,24 @@ import (
 	"github.com/prometheus/prometheus/promql"
 )
 
-type points struct {
+type Pool struct {
 	pool sync.Pool
 }
 
-func NewPool() *points {
-	return &points{
+func NewPool() *Pool {
+	return &Pool{
 		pool: sync.Pool{
 			New: func() any {
-				return &promql.Point{}
+				return make(promql.Vector, 0)
 			},
 		},
 	}
 }
 
-func (p *points) get() *promql.Point {
-	return p.pool.Get().(*promql.Point)
+func (p *Pool) Get() promql.Vector {
+	return p.pool.Get().(promql.Vector)
 }
 
-func (p *points) put(point *promql.Point) {
+func (p *Pool) Put(point promql.Vector) {
 	p.pool.Put(point)
 }

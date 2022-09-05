@@ -5,13 +5,17 @@ import (
 	"fmt"
 	"math"
 
+	"fpetkovski/promql-engine/points"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type aggregate struct {
 	operator VectorOperator
-	hashBuf  []byte
+
+	hashBuf []byte
+	points  *points.Pool
 
 	by          bool
 	labels      []string
@@ -19,7 +23,7 @@ type aggregate struct {
 	table       *aggregateTable
 }
 
-func NewAggregate(input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
+func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
 	hashBuf := make([]byte, 1024)
 	table := newAggregateTable(
 		newGroupingKeyGenerator(labels, !by, hashBuf),
@@ -36,6 +40,8 @@ func NewAggregate(input VectorOperator, aggregation parser.ItemType, by bool, la
 		operator: input,
 		table:    table,
 
+		points: points,
+
 		by:          by,
 		aggregation: aggregation,
 		labels:      labels,
@@ -50,6 +56,7 @@ func (a *aggregate) Next(ctx context.Context) (promql.Vector, error) {
 	if in == nil {
 		return nil, nil
 	}
+	defer a.points.Put(in)
 
 	a.table.reset()
 	for i, series := range in {

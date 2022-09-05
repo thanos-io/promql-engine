@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"fpetkovski/promql-engine/points"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -19,24 +21,25 @@ type MatrixOperator interface {
 }
 
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
-	return newOperator(expr, storage, mint, maxt, step)
+	pool := points.NewPool()
+	return newOperator(pool, expr, storage, mint, maxt, step)
 }
 
-func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
+func newOperator(pool *points.Pool, expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
-		next, err := newOperator(e.Expr, storage, mint, maxt, step)
+		next, err := newOperator(pool, e.Expr, storage, mint, maxt, step)
 		if err != nil {
 			return nil, err
 		}
-		aggregate, err := NewAggregate(next, e.Op, !e.Without, e.Grouping)
+		aggregate, err := NewAggregate(pool, next, e.Op, !e.Without, e.Grouping)
 		if err != nil {
 			return nil, err
 		}
 		return concurrent(aggregate), nil
 
 	case *parser.VectorSelector:
-		selector := NewVectorSelector(storage, e.LabelMatchers, nil, mint, maxt, step)
+		selector := NewVectorSelector(pool, storage, e.LabelMatchers, nil, mint, maxt, step)
 		return concurrent(selector), nil
 	case *parser.Call:
 		switch t := e.Args[0].(type) {
@@ -46,7 +49,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 			if err != nil {
 				return nil, err
 			}
-			selector := NewMatrixSelector(storage, call, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
+			selector := NewMatrixSelector(pool, storage, call, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
 			return concurrent(selector), nil
 		}
 		return nil, fmt.Errorf("unsupported expression %s", e)

@@ -1,9 +1,10 @@
 package engine_test
 
 import (
-	"fpetkovski/promql-engine/engine"
 	"testing"
 	"time"
+
+	"fpetkovski/promql-engine/engine"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
