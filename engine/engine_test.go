@@ -44,6 +44,15 @@ load 30s
 `,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
+		{
+			name: "sum rate with stale series",
+			load: `
+load 30s
+  http_requests_total{pod="nginx-1"} 1+1x4
+  http_requests_total{pod="nginx-2"} 1+2x20
+`,
+			query: "sum(rate(http_requests_total[1m]))",
+		},
 	}
 
 	for _, tc := range cases {
