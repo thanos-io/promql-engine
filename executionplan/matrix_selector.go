@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"fpetkovski/promql-engine/points"
+	"github.com/fpetkovski/promql-engine/points"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"

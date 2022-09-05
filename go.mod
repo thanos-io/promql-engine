@@ -1,4 +1,4 @@
-module fpetkovski/promql-engine
+module github.com/fpetkovski/promql-engine
 
 go 1.18
 

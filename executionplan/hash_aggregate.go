@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"math"
 
-	"fpetkovski/promql-engine/points"
+	"github.com/fpetkovski/promql-engine/points"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"

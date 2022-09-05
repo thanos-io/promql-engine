@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"fpetkovski/promql-engine/engine"
+	"github.com/fpetkovski/promql-engine/engine"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"

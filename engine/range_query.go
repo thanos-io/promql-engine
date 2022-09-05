@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"fpetkovski/promql-engine/executionplan"
+	"github.com/fpetkovski/promql-engine/executionplan"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
