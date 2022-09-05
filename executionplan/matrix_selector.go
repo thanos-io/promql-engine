@@ -2,6 +2,7 @@ package executionplan
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -32,11 +33,11 @@ type matrixSelector struct {
 	currentStep int64
 }
 
-func NewMatrixSelector(storage storage.Queryable, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
+func NewMatrixSelector(storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
 		storage: storage,
-		call:    NewRate(selectRange),
+		call:    call,
 
 		matchers:    matchers,
 		hints:       hints,
@@ -63,16 +64,17 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 	vector := make(promql.Vector, len(o.series))
 	for i := 0; i < len(o.series); i++ {
 		s := &o.series[i]
-		vector[i].Metric = s.labels
 
 		maxt := o.currentStep
 		mint := maxt - o.selectRange
 
 		rangePoints := selectPoints(s.samples, mint, maxt, o.series[i].previousPoints)
-		result := o.call(rangePoints, time.UnixMilli(o.currentStep))
+		result := o.call(s.labels, rangePoints, time.UnixMilli(o.currentStep))
 		if result != nil {
-			vector[i].Point = *result
+			vector[i].Metric = result.Metric
+			vector[i].Point = result.Point
 			o.series[i].previousPoints = rangePoints
+
 		} else {
 			vector[i].Point.T = -1
 			continue
@@ -80,8 +82,8 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 
 		// Only buffer stepRange milliseconds from the second step on.
 		stepRange := o.selectRange
-		if stepRange > o.currentStep {
-			stepRange = o.currentStep
+		if stepRange > o.step {
+			stepRange = o.step
 		}
 		s.samples.ReduceDelta(stepRange)
 	}
@@ -102,8 +104,10 @@ func (o *matrixSelector) initializeSeries(ctx context.Context) error {
 	for seriesSet.Next() {
 		s := seriesSet.At()
 
+		lbls := s.Labels()
+		sort.Sort(lbls)
 		series = append(series, matrixScan{
-			labels:         s.Labels(),
+			labels:         lbls,
 			previousPoints: make([]promql.Point, 0),
 			samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
 		})

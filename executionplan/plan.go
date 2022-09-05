@@ -42,7 +42,11 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		switch t := e.Args[0].(type) {
 		case *parser.MatrixSelector:
 			vs := t.VectorSelector.(*parser.VectorSelector)
-			selector := NewMatrixSelector(storage, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
+			call, err := NewFunctionCall(e.Func, t.Range)
+			if err != nil {
+				return nil, err
+			}
+			selector := NewMatrixSelector(storage, call, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
 			return concurrent(selector), nil
 		}
 		return nil, fmt.Errorf("unsupported expression %s", e)

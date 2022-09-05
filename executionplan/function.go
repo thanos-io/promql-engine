@@ -1,16 +1,42 @@
 package executionplan
 
 import (
+	"fmt"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
+	"math"
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
 )
 
-type FunctionCall func(points []promql.Point, stepTime time.Time) *promql.Point
+type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) *promql.Sample
 
-func NewRate(selectRange time.Duration) FunctionCall {
-	return func(points []promql.Point, stepTime time.Time) *promql.Point {
-		return extrapolatedRate(points, true, true, stepTime, selectRange)
+func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCall, error) {
+	switch f.Name {
+	case "sum_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) *promql.Sample {
+			return &promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: sumOverTime(points),
+				},
+				Metric: dropMetricName(labels),
+			}
+		}, nil
+	case "rate":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) *promql.Sample {
+			point := extrapolatedRate(points, true, true, stepTime, selectRange)
+			if point == nil {
+				return nil
+			}
+			return &promql.Sample{
+				Point:  *point,
+				Metric: dropMetricName(labels),
+			}
+		}, nil
+	default:
+		return nil, fmt.Errorf("unknown function %s", f.Name)
 	}
 }
 
@@ -86,4 +112,29 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime t
 		T: stepTime.UnixMilli(),
 		V: resultValue,
 	}
+}
+
+func sumOverTime(points []promql.Point) float64 {
+	var sum, c float64
+	for _, v := range points {
+		sum, c = kahanSumInc(v.V, sum, c)
+	}
+	if math.IsInf(sum, 0) {
+		return sum
+	}
+	return sum + c
+}
+
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	// Using Neumaier improvement, swap if next term larger than sum.
+	if math.Abs(sum) >= math.Abs(inc) {
+		c += (sum - t) + inc
+	} else {
+		c += (inc - t) + sum
+	}
+	return t, c
+}
+func dropMetricName(l labels.Labels) labels.Labels {
+	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
 }
