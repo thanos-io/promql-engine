@@ -16,10 +16,6 @@ type VectorOperator interface {
 	Next(ctx context.Context) (promql.Vector, error)
 }
 
-type MatrixOperator interface {
-	Next(ctx context.Context) (promql.Matrix, error)
-}
-
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	pool := points.NewPool()
 	return newOperator(pool, expr, storage, mint, maxt, step)

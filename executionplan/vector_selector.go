@@ -91,7 +91,6 @@ func (o *vectorSelector) initializeSeries(ctx context.Context) error {
 	seriesSet := querier.Select(true, o.hints, o.matchers...)
 	for seriesSet.Next() {
 		s := seriesSet.At()
-
 		series = append(series, vectorScan{
 			labels:  s.Labels(),
 			samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
