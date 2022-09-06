@@ -3,6 +3,7 @@ package executionplan
 import (
 	"context"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/fpetkovski/promql-engine/points"
@@ -24,6 +25,7 @@ type matrixSelector struct {
 	call    FunctionCall
 	storage storage.Queryable
 	series  []matrixScan
+	once    sync.Once
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
@@ -58,10 +60,12 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 		return nil, nil
 	}
 
-	if o.series == nil {
-		if err := o.initializeSeries(ctx); err != nil {
-			return nil, err
-		}
+	var err error
+	o.once.Do(func() {
+		err = o.initializeSeries(ctx)
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	vector := o.pool.Get()

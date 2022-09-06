@@ -2,27 +2,26 @@ package executionplan
 
 import (
 	"context"
+	"sync"
 
 	"github.com/prometheus/prometheus/promql"
 )
 
 type concurrencyOperator struct {
-	next    VectorOperator
-	buffer  chan promql.Vector
-	started bool
+	next   VectorOperator
+	buffer chan promql.Vector
+	once   sync.Once
 }
 
 func concurrent(next VectorOperator) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
-		buffer: make(chan promql.Vector, 128),
+		buffer: make(chan promql.Vector, 300),
 	}
 }
 
 func (c *concurrencyOperator) Next(ctx context.Context) (promql.Vector, error) {
-	if !c.started {
-		c.start(ctx)
-	}
+	c.once.Do(func() { c.pull(ctx) })
 
 	r, ok := <-c.buffer
 	if !ok {
@@ -31,8 +30,7 @@ func (c *concurrencyOperator) Next(ctx context.Context) (promql.Vector, error) {
 	return r, nil
 }
 
-func (c *concurrencyOperator) start(ctx context.Context) {
-	c.started = true
+func (c *concurrencyOperator) pull(ctx context.Context) {
 	go func() {
 		defer close(c.buffer)
 		for {

@@ -2,6 +2,7 @@ package executionplan
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/fpetkovski/promql-engine/points"
@@ -21,6 +22,7 @@ type vectorScan struct {
 type vectorSelector struct {
 	storage storage.Queryable
 	series  []vectorScan
+	once    sync.Once
 	pool    *points.Pool
 
 	matchers []*labels.Matcher
@@ -54,10 +56,10 @@ func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
 		return nil, nil
 	}
 
-	if o.series == nil {
-		if err := o.initializeSeries(ctx); err != nil {
-			return nil, err
-		}
+	var err error
+	o.once.Do(func() { err = o.initializeSeries(ctx) })
+	if err != nil {
+		return nil, err
 	}
 
 	vector := o.pool.Get()
