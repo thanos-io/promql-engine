@@ -47,30 +47,20 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 	}
 }
 
-func (q *rangeQuery) Close() {
-	//TODO implement me
-	panic("implement me")
-}
+// TODO(fpetkovski): Check if any resources can be released.
+func (q *rangeQuery) Close() {}
 
 func (q *rangeQuery) Statement() parser.Statement {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (q *rangeQuery) Stats() *stats.Statistics {
-	//TODO implement me
-	panic("implement me")
+	return &stats.Statistics{}
 }
 
-func (q *rangeQuery) Cancel() {
-	//TODO implement me
-	panic("implement me")
-}
+func (q *rangeQuery) Cancel() {}
 
-func (q *rangeQuery) String() string {
-	//TODO implement me
-	panic("implement me")
-}
+func (q *rangeQuery) String() string { return "" }
 
 func newErrResult(err error) *promql.Result {
 	return &promql.Result{Err: err}

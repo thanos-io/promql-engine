@@ -36,27 +36,17 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	}
 }
 
-func (q *instantQuery) Close() {
-	//TODO implement me
-	panic("implement me")
-}
+// TODO(fpetkovski): Check if any resources can be released.
+func (q *instantQuery) Close() {}
 
 func (q *instantQuery) Statement() parser.Statement {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (q *instantQuery) Stats() *stats.Statistics {
-	//TODO implement me
-	panic("implement me")
+	return &stats.Statistics{}
 }
 
-func (q *instantQuery) Cancel() {
-	//TODO implement me
-	panic("implement me")
-}
+func (q *instantQuery) Cancel() {}
 
-func (q *instantQuery) String() string {
-	//TODO implement me
-	panic("implement me")
-}
+func (q *instantQuery) String() string { return "" }
