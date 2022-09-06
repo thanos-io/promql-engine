@@ -28,7 +28,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 	}
 }
 
-func BenchmarkExecutionPlan(b *testing.B) {
+func BenchmarkOldEngine(b *testing.B) {
 	test := setupStorage(b)
 	defer test.Close()
 
