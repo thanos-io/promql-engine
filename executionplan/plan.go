@@ -36,8 +36,14 @@ func newOperator(pool *points.Pool, expr parser.Expr, storage storage.Queryable,
 		return concurrent(aggregate), nil
 
 	case *parser.VectorSelector:
-		selector := NewVectorSelector(pool, storage, e.LabelMatchers, nil, mint, maxt, step)
-		return concurrent(selector), nil
+		filter := newSeriesFilter(storage, mint, maxt, e.LabelMatchers)
+		numShards := 8
+		operators := make([]VectorOperator, 0, numShards)
+		for i := 0; i < numShards; i++ {
+			operators = append(operators, concurrent(NewVectorSelector(pool, filter, mint, maxt, step, i, numShards)))
+		}
+		return coalesce(operators...), nil
+
 	//case *parser.Call:
 	//	switch t := e.Args[0].(type) {
 	//	case *parser.MatrixSelector:
@@ -50,6 +56,7 @@ func newOperator(pool *points.Pool, expr parser.Expr, storage storage.Queryable,
 	//		return concurrent(selector), nil
 	//	}
 	//	return nil, fmt.Errorf("unsupported expression %s", e)
+
 	default:
 		return nil, fmt.Errorf("unsupported expression %s", e)
 	}

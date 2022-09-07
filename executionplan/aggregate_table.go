@@ -1,28 +1,27 @@
 package executionplan
 
 import (
+	"github.com/fpetkovski/promql-engine/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-
-	"github.com/fpetkovski/promql-engine/model"
 )
 
 type groupingKey struct {
-	hash      uint64
-	signature string
-	labels    labels.Labels
+	hash     uint64
+	sampleID uint64
+	labels   labels.Labels
 }
 
 type aggregateResult struct {
 	metric      labels.Labels
-	signature   string
+	sampleID    uint64
 	timestamp   int64
 	accumulator *accumulator
 }
 
 type aggregateTable struct {
 	// hashKeyCache is a map from series index to the cache key for the series.
-	hashKeyCache        map[string]groupingKey
+	groupingKeys        []groupingKey
 	table               map[uint64]*aggregateResult
 	makeAccumulatorFunc newAccumulatorFunc
 	groupingKeyFunc     groupingKeyFunc
@@ -30,7 +29,7 @@ type aggregateTable struct {
 
 func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc) *aggregateTable {
 	return &aggregateTable{
-		hashKeyCache:        make(map[string]groupingKey),
+		groupingKeys:        make([]groupingKey, 100000),
 		table:               make(map[uint64]*aggregateResult),
 		makeAccumulatorFunc: f,
 		groupingKeyFunc:     g,
@@ -39,33 +38,35 @@ func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc) *aggregateTable 
 
 func (t *aggregateTable) addSample(sample model.Sample) {
 	var (
-		key       uint64
-		signature string
-		lbls      labels.Labels
+		key      uint64
+		sampleID uint64
+		lbls     labels.Labels
 	)
-	if cachedResult, ok := t.hashKeyCache[sample.Signature]; ok {
+
+	cachedResult := t.groupingKeys[sample.ID]
+	if cachedResult.labels != nil {
 		key = cachedResult.hash
 		lbls = cachedResult.labels
-		signature = cachedResult.signature
+		sampleID = cachedResult.sampleID
 	} else {
-		key, signature, lbls = t.groupingKeyFunc(sample.Metric)
-		t.hashKeyCache[signature] = groupingKey{
-			hash:      key,
-			labels:    lbls,
-			signature: signature,
+		key, _, lbls = t.groupingKeyFunc(sample.Metric)
+		sampleID = key
+		t.groupingKeys[sample.ID] = groupingKey{
+			hash:     key,
+			labels:   lbls,
+			sampleID: sampleID,
 		}
 	}
 
 	if _, ok := t.table[key]; !ok {
 		t.table[key] = &aggregateResult{
-			signature:   signature,
+			sampleID:    sampleID,
 			metric:      lbls,
 			timestamp:   sample.T,
 			accumulator: t.makeAccumulatorFunc(),
 		}
 	}
 
-	t.table[key].signature = signature
 	t.table[key].timestamp = sample.T
 	t.table[key].accumulator.AddFunc(sample.Point)
 }
@@ -73,6 +74,7 @@ func (t *aggregateTable) addSample(sample model.Sample) {
 func (t *aggregateTable) reset() {
 	for k, v := range t.table {
 		t.table[k] = &aggregateResult{
+			sampleID:    v.sampleID,
 			metric:      v.metric,
 			accumulator: t.makeAccumulatorFunc(),
 		}
@@ -90,7 +92,7 @@ func (t *aggregateTable) toVector() model.Vector {
 					V: v.accumulator.ValueFunc(),
 				},
 			},
-			Signature: v.signature,
+			ID: v.sampleID,
 		})
 	}
 	return result

@@ -16,7 +16,7 @@ type concurrencyOperator struct {
 func concurrent(next VectorOperator) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
-		buffer: make(chan []model.Vector, 300),
+		buffer: make(chan []model.Vector, 30),
 	}
 }
 

@@ -20,7 +20,7 @@ func newRangeQuery(plan executionplan.VectorOperator) promql.Query {
 }
 
 func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
-	seriesMap := make(map[string]*promql.Series)
+	seriesMap := make(map[uint64]*promql.Series)
 	for {
 		r, err := q.plan.Next(ctx)
 		if err != nil {
@@ -29,16 +29,17 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 		if r == nil {
 			break
 		}
+
 		for _, vector := range r {
 			for _, sample := range vector {
-				if _, ok := seriesMap[sample.Signature]; !ok {
-					seriesMap[sample.Signature] = &promql.Series{
+				if _, ok := seriesMap[sample.ID]; !ok {
+					seriesMap[sample.ID] = &promql.Series{
 						Metric: sample.Metric,
 						Points: make([]promql.Point, 0),
 					}
 				}
-				series := seriesMap[sample.Signature]
-				series.Points = append(seriesMap[sample.Signature].Points, sample.Point)
+				series := seriesMap[sample.ID]
+				series.Points = append(seriesMap[sample.ID].Points, sample.Point)
 			}
 		}
 	}

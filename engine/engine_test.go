@@ -29,15 +29,17 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		{
 			name: "sum",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum (http_requests_total)",
 		},
 		{
 			name: "sum by pod",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-3"} 1+2x20
+					http_requests_total{pod="nginx-4"} 1+2x50`,
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{

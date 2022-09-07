@@ -2,7 +2,7 @@ package executionplan
 
 import (
 	"context"
-	"strconv"
+	"math"
 	"sync"
 	"time"
 
@@ -19,38 +19,38 @@ import (
 
 type vectorScan struct {
 	labels    labels.Labels
-	signature string
+	signature uint64
 	samples   *storage.MemoizedSeriesIterator
 }
 
 type vectorSelector struct {
-	storage storage.Queryable
+	storage *seriesSelector
 	series  []vectorScan
 	once    sync.Once
 	pool    *points.Pool
-
-	matchers []*labels.Matcher
-	hints    *storage.SelectHints
 
 	mint        int64
 	maxt        int64
 	step        int64
 	currentStep int64
+
+	shard     int
+	numShards int
 }
 
-func NewVectorSelector(pool *points.Pool, storage storage.Queryable, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step time.Duration) VectorOperator {
+func NewVectorSelector(pool *points.Pool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage: storage,
 		pool:    pool,
 
-		matchers: matchers,
-		hints:    hints,
-
 		mint:        mint.UnixMilli(),
 		maxt:        maxt.UnixMilli(),
 		step:        step.Milliseconds(),
-		currentStep: mint.UnixMilli() - step.Milliseconds(),
+		currentStep: mint.UnixMilli(),
+
+		shard:     shard,
+		numShards: numShards,
 	}
 }
 
@@ -65,7 +65,10 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 		return nil, err
 	}
 
-	numSteps := 30
+	stepsBatch := 30
+	totalSteps := (o.maxt+o.mint)/o.step + 1
+	numSteps := int(math.Min(float64(stepsBatch), float64(totalSteps)))
+
 	vectors := make([]model.Vector, 0, numSteps)
 	ts := o.currentStep
 	for i := 0; i < len(o.series); i++ {
@@ -75,20 +78,18 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 		)
 
 		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
+			if len(vectors) <= currStep {
+				vectors = append(vectors, make(model.Vector, 0, len(o.series)))
+			}
 			_, v, ok := selectPoint(series.samples, seriesTs)
 			if ok {
-				if len(vectors) <= currStep {
-					vectors = append(vectors, make(model.Vector, 0))
-				}
 				vectors[currStep] = append(vectors[currStep], model.Sample{
-					Signature: series.signature,
+					ID: series.signature,
 					Sample: promql.Sample{
 						Metric: series.labels,
 						Point:  promql.Point{T: seriesTs, V: v},
 					},
 				})
-			} else {
-				break
 			}
 			seriesTs += o.step
 		}
@@ -99,26 +100,11 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 }
 
 func (o *vectorSelector) initializeSeries(ctx context.Context) error {
-	mint := o.mint - 5*time.Minute.Milliseconds()
-	querier, err := o.storage.Querier(ctx, mint, o.maxt)
+	seriesShard, err := o.storage.Series(ctx, o.shard, o.numShards)
 	if err != nil {
 		return err
 	}
-	defer querier.Close()
-
-	series := make([]vectorScan, 0)
-	seriesSet := querier.Select(true, o.hints, o.matchers...)
-	i := 0
-	for seriesSet.Next() {
-		s := seriesSet.At()
-		series = append(series, vectorScan{
-			signature: strconv.Itoa(i),
-			labels:    s.Labels(),
-			samples:   storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
-		})
-		i++
-	}
-	o.series = series
+	o.series = seriesShard
 
 	return nil
 }

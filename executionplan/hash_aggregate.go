@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/fpetkovski/promql-engine/model"
 
@@ -22,25 +23,28 @@ type aggregate struct {
 	by          bool
 	labels      []string
 	aggregation parser.ItemType
-	table       *aggregateTable
+	tables      []*aggregateTable
 }
 
 func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
-	hashBuf := make([]byte, 1024)
-	table := newAggregateTable(
-		newGroupingKeyGenerator(labels, !by, hashBuf),
-		func() *accumulator {
-			f, err := newAccumulator(aggregation)
-			if err != nil {
-				panic(err)
-			}
-			return f
-		},
-	)
+	tables := make([]*aggregateTable, 30)
+	for i := 0; i < 30; i++ {
+		hashBuf := make([]byte, 128)
+		tables[i] = newAggregateTable(
+			newGroupingKeyGenerator(labels, !by, hashBuf),
+			func() *accumulator {
+				f, err := newAccumulator(aggregation)
+				if err != nil {
+					panic(err)
+				}
+				return f
+			},
+		)
+	}
 
 	return &aggregate{
 		operator: input,
-		table:    table,
+		tables:   tables,
 
 		points: points,
 
@@ -59,14 +63,21 @@ func (a *aggregate) Next(ctx context.Context) ([]model.Vector, error) {
 		return nil, nil
 	}
 
-	result := make([]model.Vector, 0, len(in))
-	for _, vector := range in {
-		a.table.reset()
-		for _, series := range vector {
-			a.table.addSample(series)
-		}
-		result = append(result, a.table.toVector())
+	result := make([]model.Vector, len(in))
+	var wg sync.WaitGroup
+	for i, vector := range in {
+		wg.Add(1)
+		go func(i int, vector model.Vector) {
+			defer wg.Done()
+			table := a.tables[i]
+			table.reset()
+			for _, series := range vector {
+				table.addSample(series)
+			}
+			result[i] = table.toVector()
+		}(i, vector)
 	}
+	wg.Wait()
 	return result, nil
 }
 

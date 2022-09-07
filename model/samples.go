@@ -5,7 +5,7 @@ import "github.com/prometheus/prometheus/promql"
 type Sample struct {
 	promql.Sample
 
-	Signature string
+	ID uint64
 }
 
 type Vector []Sample
