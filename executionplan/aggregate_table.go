@@ -3,22 +3,26 @@ package executionplan
 import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+
+	"github.com/fpetkovski/promql-engine/model"
 )
 
 type groupingKey struct {
-	hash   uint64
-	labels labels.Labels
+	hash      uint64
+	signature string
+	labels    labels.Labels
 }
 
 type aggregateResult struct {
 	metric      labels.Labels
+	signature   string
 	timestamp   int64
 	accumulator *accumulator
 }
 
 type aggregateTable struct {
 	// hashKeyCache is a map from series index to the cache key for the series.
-	hashKeyCache        map[int]groupingKey
+	hashKeyCache        map[string]groupingKey
 	table               map[uint64]*aggregateResult
 	makeAccumulatorFunc newAccumulatorFunc
 	groupingKeyFunc     groupingKeyFunc
@@ -26,37 +30,42 @@ type aggregateTable struct {
 
 func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc) *aggregateTable {
 	return &aggregateTable{
-		hashKeyCache:        make(map[int]groupingKey),
+		hashKeyCache:        make(map[string]groupingKey),
 		table:               make(map[uint64]*aggregateResult),
 		makeAccumulatorFunc: f,
 		groupingKeyFunc:     g,
 	}
 }
 
-func (t *aggregateTable) addSample(seriesID int, sample promql.Sample) {
+func (t *aggregateTable) addSample(sample model.Sample) {
 	var (
-		key  uint64
-		lbls labels.Labels
+		key       uint64
+		signature string
+		lbls      labels.Labels
 	)
-	if cachedResult, ok := t.hashKeyCache[seriesID]; ok {
+	if cachedResult, ok := t.hashKeyCache[sample.Signature]; ok {
 		key = cachedResult.hash
 		lbls = cachedResult.labels
+		signature = cachedResult.signature
 	} else {
-		key, lbls = t.groupingKeyFunc(sample.Metric)
-		t.hashKeyCache[seriesID] = groupingKey{
-			hash:   key,
-			labels: lbls,
+		key, signature, lbls = t.groupingKeyFunc(sample.Metric)
+		t.hashKeyCache[signature] = groupingKey{
+			hash:      key,
+			labels:    lbls,
+			signature: signature,
 		}
 	}
 
 	if _, ok := t.table[key]; !ok {
 		t.table[key] = &aggregateResult{
+			signature:   signature,
 			metric:      lbls,
 			timestamp:   sample.T,
 			accumulator: t.makeAccumulatorFunc(),
 		}
 	}
 
+	t.table[key].signature = signature
 	t.table[key].timestamp = sample.T
 	t.table[key].accumulator.AddFunc(sample.Point)
 }
@@ -70,41 +79,44 @@ func (t *aggregateTable) reset() {
 	}
 }
 
-func (t *aggregateTable) toVector() promql.Vector {
-	result := make(promql.Vector, 0, len(t.table))
+func (t *aggregateTable) toVector() model.Vector {
+	result := make(model.Vector, 0, len(t.table))
 	for _, v := range t.table {
-		result = append(result, promql.Sample{
-			Metric: v.metric,
-			Point: promql.Point{
-				T: v.timestamp,
-				V: v.accumulator.ValueFunc(),
+		result = append(result, model.Sample{
+			Sample: promql.Sample{
+				Metric: v.metric,
+				Point: promql.Point{
+					T: v.timestamp,
+					V: v.accumulator.ValueFunc(),
+				},
 			},
+			Signature: v.signature,
 		})
 	}
 	return result
 }
 
-type groupingKeyFunc func(metric labels.Labels) (uint64, labels.Labels)
+type groupingKeyFunc func(metric labels.Labels) (uint64, string, labels.Labels)
 
 // groupingKey builds and returns the grouping key and the
 // resulting labels value pairs for the given metric and grouping labels.
 func newGroupingKeyGenerator(grouping []string, without bool, buf []byte) groupingKeyFunc {
-	return func(metric labels.Labels) (uint64, labels.Labels) {
+	return func(metric labels.Labels) (uint64, string, labels.Labels) {
 		buf = buf[:0]
 		if without {
 			lb := labels.NewBuilder(metric)
 			lb.Del(grouping...)
-			key, _ := metric.HashWithoutLabels(buf, grouping...)
-			return key, lb.Labels()
+			key, bytes := metric.HashWithoutLabels(buf, grouping...)
+			return key, string(bytes), lb.Labels()
 		}
 
 		if len(grouping) == 0 {
-			return 0, labels.Labels{}
+			return 0, "", labels.Labels{}
 		}
 
 		lb := labels.NewBuilder(metric)
 		lb.Keep(grouping...)
-		key, _ := metric.HashForLabels(buf, grouping...)
-		return key, lb.Labels()
+		key, bytes := metric.HashForLabels(buf, grouping...)
+		return key, string(bytes), lb.Labels()
 	}
 }

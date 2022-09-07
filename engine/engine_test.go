@@ -27,6 +27,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		expected []promql.Vector
 	}{
 		{
+			name: "sum",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
+			query: "sum (http_requests_total)",
+		},
+		{
 			name: "sum by pod",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x4

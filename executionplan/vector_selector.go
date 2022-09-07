@@ -2,8 +2,11 @@ package executionplan
 
 import (
 	"context"
+	"strconv"
 	"sync"
 	"time"
+
+	"github.com/fpetkovski/promql-engine/model"
 
 	"github.com/fpetkovski/promql-engine/points"
 
@@ -15,8 +18,9 @@ import (
 )
 
 type vectorScan struct {
-	labels  labels.Labels
-	samples *storage.MemoizedSeriesIterator
+	labels    labels.Labels
+	signature string
+	samples   *storage.MemoizedSeriesIterator
 }
 
 type vectorSelector struct {
@@ -50,8 +54,7 @@ func NewVectorSelector(pool *points.Pool, storage storage.Queryable, matchers []
 	}
 }
 
-func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
-	o.currentStep += o.step
+func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
@@ -62,21 +65,37 @@ func (o *vectorSelector) Next(ctx context.Context) (promql.Vector, error) {
 		return nil, err
 	}
 
-	vector := o.pool.Get()
-	if len(vector) < len(o.series) {
-		vector = make(promql.Vector, len(o.series))
-	}
+	numSteps := 30
+	vectors := make([]model.Vector, 0, numSteps)
+	ts := o.currentStep
 	for i := 0; i < len(o.series); i++ {
-		s := o.series[i]
-		vector[i].Metric = s.labels
-		_, v, ok := selectPoint(s.samples, o.currentStep)
-		if ok {
-			vector[i].V = v
-			vector[i].T = o.currentStep
-		}
+		var (
+			series   = o.series[i]
+			seriesTs = ts
+		)
 
+		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
+			_, v, ok := selectPoint(series.samples, seriesTs)
+			if ok {
+				if len(vectors) <= currStep {
+					vectors = append(vectors, make(model.Vector, 0))
+				}
+				vectors[currStep] = append(vectors[currStep], model.Sample{
+					Signature: series.signature,
+					Sample: promql.Sample{
+						Metric: series.labels,
+						Point:  promql.Point{T: seriesTs, V: v},
+					},
+				})
+			} else {
+				break
+			}
+			seriesTs += o.step
+		}
 	}
-	return vector, nil
+	o.currentStep += o.step * int64(numSteps)
+
+	return vectors, nil
 }
 
 func (o *vectorSelector) initializeSeries(ctx context.Context) error {
@@ -89,12 +108,15 @@ func (o *vectorSelector) initializeSeries(ctx context.Context) error {
 
 	series := make([]vectorScan, 0)
 	seriesSet := querier.Select(true, o.hints, o.matchers...)
+	i := 0
 	for seriesSet.Next() {
 		s := seriesSet.At()
 		series = append(series, vectorScan{
-			labels:  s.Labels(),
-			samples: storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
+			signature: strconv.Itoa(i),
+			labels:    s.Labels(),
+			samples:   storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
 		})
+		i++
 	}
 	o.series = series
 

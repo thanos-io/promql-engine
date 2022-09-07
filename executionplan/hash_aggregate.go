@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/fpetkovski/promql-engine/model"
+
 	"github.com/fpetkovski/promql-engine/points"
 
 	"github.com/prometheus/prometheus/promql"
@@ -48,7 +50,7 @@ func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.
 	}, nil
 }
 
-func (a *aggregate) Next(ctx context.Context) (promql.Vector, error) {
+func (a *aggregate) Next(ctx context.Context) ([]model.Vector, error) {
 	in, err := a.operator.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -56,14 +58,16 @@ func (a *aggregate) Next(ctx context.Context) (promql.Vector, error) {
 	if in == nil {
 		return nil, nil
 	}
-	defer a.points.Put(in)
 
-	a.table.reset()
-	for i, series := range in {
-		a.table.addSample(i, series)
+	result := make([]model.Vector, 0, len(in))
+	for _, vector := range in {
+		a.table.reset()
+		for _, series := range vector {
+			a.table.addSample(series)
+		}
+		result = append(result, a.table.toVector())
 	}
-
-	return a.table.toVector(), nil
+	return result, nil
 }
 
 type newAccumulatorFunc func() *accumulator

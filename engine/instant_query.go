@@ -2,11 +2,8 @@ package engine
 
 import (
 	"context"
-	"sort"
 
 	"github.com/fpetkovski/promql-engine/executionplan"
-
-	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -22,18 +19,25 @@ func newInstantQuery(plan executionplan.VectorOperator) promql.Query {
 }
 
 func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
-	r, err := q.plan.Next(ctx)
-	if err != nil {
-		return newErrResult(err)
-	}
+	return nil
 
-	sort.Slice(r, func(i, j int) bool {
-		return labels.Compare(r[i].Metric, r[j].Metric) < 0
-	})
-
-	return &promql.Result{
-		Value: r,
-	}
+	//vs, err := q.plan.Next(ctx)
+	//if err != nil {
+	//	return newErrResult(err)
+	//}
+	//
+	//if len(vs) == 0 {
+	//	return &promql.Result{}
+	//}
+	//r := vs[len(vs)-1]
+	//
+	//sort.Slice(r, func(i, j int) bool {
+	//	return labels.Compare(r[i].Metric, r[j].Metric) < 0
+	//})
+	//
+	//return &promql.Result{
+	//	Value: r,
+	//}
 }
 
 // TODO(fpetkovski): Check if any resources can be released.

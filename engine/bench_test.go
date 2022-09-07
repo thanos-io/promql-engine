@@ -32,6 +32,8 @@ func BenchmarkChunkDecoding(b *testing.B) {
 	b.Run("iterate by series", func(b *testing.B) {
 		b.ResetTimer()
 		for c := 0; c < b.N; c++ {
+			numIterations := 0
+
 			ss := querier.Select(false, nil, matcher)
 			series := make([]chunkenc.Iterator, 0)
 			for ss.Next() {
@@ -39,7 +41,10 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			}
 			for i := 0; i < len(series); i++ {
 				for ts := start.UnixMilli(); ts <= end.UnixMilli(); ts += step.Milliseconds() {
-					series[i].Seek(ts)
+					numIterations++
+					if ok := series[i].Seek(ts); !ok {
+						break
+					}
 				}
 			}
 		}
@@ -47,15 +52,26 @@ func BenchmarkChunkDecoding(b *testing.B) {
 	b.Run("iterate by time", func(b *testing.B) {
 		b.ResetTimer()
 		for c := 0; c < b.N; c++ {
+			numIterations := 0
 			ss := querier.Select(false, nil, matcher)
 			series := make([]chunkenc.Iterator, 0)
 			for ss.Next() {
 				series = append(series, ss.At().Iterator())
 			}
-			for ts := start.UnixMilli(); ts <= end.UnixMilli(); ts += step.Milliseconds() {
+			stepCount := 60
+			ts := start.UnixMilli()
+			for ts <= end.UnixMilli() {
 				for i := 0; i < len(series); i++ {
-					series[i].Seek(ts)
+					seriesTs := ts
+					for currStep := 0; currStep < stepCount && seriesTs <= end.UnixMilli(); currStep++ {
+						numIterations++
+						if ok := series[i].Seek(seriesTs); !ok {
+							break
+						}
+						seriesTs += step.Milliseconds()
+					}
 				}
+				ts += step.Milliseconds() * int64(stepCount)
 			}
 		}
 	})

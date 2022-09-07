@@ -38,7 +38,7 @@ type matrixSelector struct {
 	currentStep int64
 }
 
-func NewMatrixSelector(pool *points.Pool, storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) VectorOperator {
+func NewMatrixSelector(pool *points.Pool, storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) *matrixSelector {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
 		storage:     storage,

@@ -4,23 +4,23 @@ import (
 	"context"
 	"sync"
 
-	"github.com/prometheus/prometheus/promql"
+	"github.com/fpetkovski/promql-engine/model"
 )
 
 type concurrencyOperator struct {
 	next   VectorOperator
-	buffer chan promql.Vector
+	buffer chan []model.Vector
 	once   sync.Once
 }
 
 func concurrent(next VectorOperator) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
-		buffer: make(chan promql.Vector, 300),
+		buffer: make(chan []model.Vector, 300),
 	}
 }
 
-func (c *concurrencyOperator) Next(ctx context.Context) (promql.Vector, error) {
+func (c *concurrencyOperator) Next(ctx context.Context) ([]model.Vector, error) {
 	c.once.Do(func() { c.pull(ctx) })
 
 	r, ok := <-c.buffer
