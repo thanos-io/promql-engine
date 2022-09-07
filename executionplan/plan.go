@@ -7,8 +7,6 @@ import (
 
 	"github.com/fpetkovski/promql-engine/model"
 
-	"github.com/fpetkovski/promql-engine/points"
-
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 )
@@ -18,11 +16,11 @@ type VectorOperator interface {
 }
 
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
-	pool := points.NewPool()
+	pool := model.NewPool()
 	return newOperator(pool, expr, storage, mint, maxt, step)
 }
 
-func newOperator(pool *points.Pool, expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
+func newOperator(pool *model.VectorPool, expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		next, err := newOperator(pool, e.Expr, storage, mint, maxt, step)
