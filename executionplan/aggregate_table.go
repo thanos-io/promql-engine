@@ -1,13 +1,15 @@
 package executionplan
 
 import (
+	"sync"
+
 	"github.com/fpetkovski/promql-engine/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
 type groupingKey struct {
-	isSet    bool
+	once     *sync.Once
 	hash     uint64
 	sampleID uint64
 	labels   labels.Labels
@@ -28,9 +30,9 @@ type aggregateTable struct {
 	groupingKeyFunc     groupingKeyFunc
 }
 
-func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc) *aggregateTable {
+func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc, groupingKeys []groupingKey) *aggregateTable {
 	return &aggregateTable{
-		groupingKeys:        make([]groupingKey, 50000),
+		groupingKeys:        groupingKeys,
 		table:               make(map[uint64]*aggregateResult),
 		makeAccumulatorFunc: f,
 		groupingKeyFunc:     g,
@@ -44,21 +46,22 @@ func (t *aggregateTable) addSample(sample model.Sample) {
 		lbls     labels.Labels
 	)
 
-	if t.groupingKeys[sample.ID].isSet {
-		cachedResult := t.groupingKeys[sample.ID]
-		key = cachedResult.hash
-		lbls = cachedResult.labels
-		sampleID = cachedResult.sampleID
-	} else {
+	once := t.groupingKeys[sample.ID].once
+	once.Do(func() {
 		key, _, lbls = t.groupingKeyFunc(sample.Metric)
 		sampleID = key
 		t.groupingKeys[sample.ID] = groupingKey{
 			hash:     key,
 			labels:   lbls,
 			sampleID: sampleID,
-			isSet:    true,
+			once:     once,
 		}
-	}
+	})
+
+	cachedResult := t.groupingKeys[sample.ID]
+	key = cachedResult.hash
+	lbls = cachedResult.labels
+	sampleID = cachedResult.sampleID
 
 	if _, ok := t.table[key]; !ok {
 		t.table[key] = &aggregateResult{

@@ -27,6 +27,12 @@ type aggregate struct {
 }
 
 func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
+	keys := make([]groupingKey, 100000)
+	for i := 0; i < len(keys); i++ {
+		keys[i] = groupingKey{
+			once: &sync.Once{},
+		}
+	}
 	tables := make([]*aggregateTable, 30)
 	for i := 0; i < 30; i++ {
 		hashBuf := make([]byte, 128)
@@ -39,6 +45,7 @@ func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.
 				}
 				return f
 			},
+			keys,
 		)
 	}
 
