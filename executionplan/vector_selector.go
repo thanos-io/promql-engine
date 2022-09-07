@@ -8,8 +8,6 @@ import (
 
 	"github.com/fpetkovski/promql-engine/model"
 
-	"github.com/fpetkovski/promql-engine/points"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 
@@ -23,10 +21,10 @@ type vectorScan struct {
 }
 
 type vectorSelector struct {
-	storage *seriesSelector
-	series  []vectorScan
-	once    sync.Once
-	pool    *points.Pool
+	storage    *seriesSelector
+	series     []vectorScan
+	once       sync.Once
+	vectorPool *model.VectorPool
 
 	mint        int64
 	maxt        int64
@@ -37,11 +35,11 @@ type vectorSelector struct {
 	numShards int
 }
 
-func NewVectorSelector(pool *points.Pool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) VectorOperator {
+func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
-		storage: storage,
-		pool:    pool,
+		storage:    storage,
+		vectorPool: pool,
 
 		mint:        mint.UnixMilli(),
 		maxt:        maxt.UnixMilli(),
@@ -68,7 +66,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	totalSteps := (o.maxt+o.mint)/o.step + 1
 	numSteps := int(math.Min(float64(stepsBatch), float64(totalSteps)))
 
-	vectors := make([]model.StepVector, 0, numSteps)
+	vectors := o.vectorPool.Get()
 	ts := o.currentStep
 	for i := 0; i < len(o.series); i++ {
 		var (

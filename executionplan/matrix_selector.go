@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/points"
+	"github.com/fpetkovski/promql-engine/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
@@ -29,7 +29,7 @@ type matrixSelector struct {
 
 	matchers []*labels.Matcher
 	hints    *storage.SelectHints
-	pool     *points.Pool
+	pool     *model.VectorPool
 
 	mint        int64
 	maxt        int64
@@ -38,7 +38,7 @@ type matrixSelector struct {
 	currentStep int64
 }
 
-func NewMatrixSelector(pool *points.Pool, storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) *matrixSelector {
+func NewMatrixSelector(pool *model.VectorPool, storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) *matrixSelector {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
 		storage:     storage,
@@ -68,10 +68,7 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 		return nil, err
 	}
 
-	vector := o.pool.Get()
-	if len(vector) < len(o.series) {
-		vector = make(promql.Vector, len(o.series))
-	}
+	vector := make(promql.Vector, len(o.series))
 	for i := 0; i < len(o.series); i++ {
 		s := &o.series[i]
 
@@ -90,7 +87,6 @@ func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
 			stepRange = o.step
 		}
 		s.samples.ReduceDelta(stepRange)
-
 	}
 
 	return vector, nil

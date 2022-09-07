@@ -8,16 +8,14 @@ import (
 
 	"github.com/fpetkovski/promql-engine/model"
 
-	"github.com/fpetkovski/promql-engine/points"
-
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type aggregate struct {
 	operator VectorOperator
 
-	hashBuf []byte
-	points  *points.Pool
+	hashBuf    []byte
+	vectorPool *model.VectorPool
 
 	by          bool
 	labels      []string
@@ -25,7 +23,7 @@ type aggregate struct {
 	tables      []*aggregateTable
 }
 
-func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
+func NewAggregate(points *model.VectorPool, input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
 	keys := make([]groupingKey, 100000)
 	for i := 0; i < len(keys); i++ {
 		keys[i] = groupingKey{
@@ -52,7 +50,7 @@ func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.
 		operator: input,
 		tables:   tables,
 
-		points: points,
+		vectorPool: points,
 
 		by:          by,
 		aggregation: aggregation,
@@ -69,12 +67,15 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, nil
 	}
 
+	defer a.vectorPool.Put(in)
+
 	result := make([]model.StepVector, len(in))
 	var wg sync.WaitGroup
 	for i, vector := range in {
 		wg.Add(1)
 		go func(i int, vector model.StepVector) {
 			defer wg.Done()
+
 			table := a.tables[i]
 			table.reset()
 			for _, series := range vector.Samples {
