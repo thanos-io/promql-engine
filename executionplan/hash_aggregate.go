@@ -10,7 +10,6 @@ import (
 
 	"github.com/fpetkovski/promql-engine/points"
 
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
@@ -78,8 +77,8 @@ func (a *aggregate) Next(ctx context.Context) ([]model.Vector, error) {
 			defer wg.Done()
 			table := a.tables[i]
 			table.reset()
-			for _, series := range vector {
-				table.addSample(series)
+			for _, series := range vector.Samples {
+				table.addSample(vector.T, series)
 			}
 			result[i] = table.toVector()
 		}(i, vector)
@@ -91,7 +90,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.Vector, error) {
 type newAccumulatorFunc func() *accumulator
 
 type accumulator struct {
-	AddFunc   func(p promql.Point)
+	AddFunc   func(v float64)
 	ValueFunc func() float64
 }
 
@@ -101,8 +100,8 @@ func newAccumulator(expr parser.ItemType) (*accumulator, error) {
 	case "sum":
 		var value float64
 		return &accumulator{
-			AddFunc: func(p promql.Point) {
-				value += p.V
+			AddFunc: func(v float64) {
+				value += v
 			},
 			ValueFunc: func() float64 {
 				return value
@@ -111,8 +110,8 @@ func newAccumulator(expr parser.ItemType) (*accumulator, error) {
 	case "max":
 		var value float64
 		return &accumulator{
-			AddFunc: func(p promql.Point) {
-				value = math.Max(value, p.V)
+			AddFunc: func(v float64) {
+				value = math.Max(value, v)
 			},
 			ValueFunc: func() float64 {
 				return value
@@ -121,8 +120,8 @@ func newAccumulator(expr parser.ItemType) (*accumulator, error) {
 	case "min":
 		var value float64
 		return &accumulator{
-			AddFunc: func(p promql.Point) {
-				value = math.Min(value, p.V)
+			AddFunc: func(v float64) {
+				value = math.Min(value, v)
 			},
 			ValueFunc: func() float64 {
 				return value
@@ -131,7 +130,7 @@ func newAccumulator(expr parser.ItemType) (*accumulator, error) {
 	case "count":
 		var value float64
 		return &accumulator{
-			AddFunc: func(p promql.Point) {
+			AddFunc: func(v float64) {
 				value += 1
 			},
 			ValueFunc: func() float64 {
@@ -141,9 +140,9 @@ func newAccumulator(expr parser.ItemType) (*accumulator, error) {
 	case "avg":
 		var count, sum float64
 		return &accumulator{
-			AddFunc: func(p promql.Point) {
+			AddFunc: func(v float64) {
 				count += 1
-				sum += p.V
+				sum += v
 			},
 			ValueFunc: func() float64 {
 				return sum / count

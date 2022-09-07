@@ -27,12 +27,15 @@ func (c coalesceOperator) Next(ctx context.Context) ([]model.Vector, error) {
 		if len(in) > 0 && out == nil {
 			out = make([]model.Vector, len(in))
 			for i := 0; i < len(in); i++ {
-				size := len(in[i]) * len(c.operators)
-				out[i] = make(model.Vector, 0, size)
+				size := len(in[i].Samples) * len(c.operators)
+				out[i] = model.Vector{
+					T:       in[i].T,
+					Samples: make([]model.Sample, 0, size),
+				}
 			}
 		}
 		for i := 0; i < len(in); i++ {
-			out[i] = append(out[i], in[i]...)
+			out[i].Samples = append(out[i].Samples, in[i].Samples...)
 		}
 	}
 	if out == nil {

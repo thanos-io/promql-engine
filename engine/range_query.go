@@ -31,7 +31,7 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 		}
 
 		for _, vector := range r {
-			for _, sample := range vector {
+			for _, sample := range vector.Samples {
 				if _, ok := seriesMap[sample.ID]; !ok {
 					seriesMap[sample.ID] = &promql.Series{
 						Metric: sample.Metric,
@@ -39,7 +39,10 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 					}
 				}
 				series := seriesMap[sample.ID]
-				series.Points = append(seriesMap[sample.ID].Points, sample.Point)
+				series.Points = append(seriesMap[sample.ID].Points, promql.Point{
+					T: vector.T,
+					V: sample.V,
+				})
 			}
 		}
 	}

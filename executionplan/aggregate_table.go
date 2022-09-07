@@ -5,7 +5,6 @@ import (
 
 	"github.com/fpetkovski/promql-engine/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
 )
 
 type groupingKey struct {
@@ -39,7 +38,7 @@ func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc, groupingKeys []g
 	}
 }
 
-func (t *aggregateTable) addSample(sample model.Sample) {
+func (t *aggregateTable) addSample(ts int64, sample model.Sample) {
 	var (
 		key      uint64
 		sampleID uint64
@@ -67,13 +66,13 @@ func (t *aggregateTable) addSample(sample model.Sample) {
 		t.table[key] = &aggregateResult{
 			sampleID:    sampleID,
 			metric:      lbls,
-			timestamp:   sample.T,
+			timestamp:   ts,
 			accumulator: t.makeAccumulatorFunc(),
 		}
 	}
 
-	t.table[key].timestamp = sample.T
-	t.table[key].accumulator.AddFunc(sample.Point)
+	t.table[key].timestamp = ts
+	t.table[key].accumulator.AddFunc(sample.V)
 }
 
 func (t *aggregateTable) reset() {
@@ -87,17 +86,15 @@ func (t *aggregateTable) reset() {
 }
 
 func (t *aggregateTable) toVector() model.Vector {
-	result := make(model.Vector, 0, len(t.table))
+	result := model.Vector{
+		Samples: make([]model.Sample, 0, len(t.table)),
+	}
 	for _, v := range t.table {
-		result = append(result, model.Sample{
-			Sample: promql.Sample{
-				Metric: v.metric,
-				Point: promql.Point{
-					T: v.timestamp,
-					V: v.accumulator.ValueFunc(),
-				},
-			},
-			ID: v.sampleID,
+		result.T = v.timestamp
+		result.Samples = append(result.Samples, model.Sample{
+			Metric: v.metric,
+			V:      v.accumulator.ValueFunc(),
+			ID:     v.sampleID,
 		})
 	}
 	return result

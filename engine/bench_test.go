@@ -98,7 +98,7 @@ func BenchmarkOldEngine(b *testing.B) {
 	defer test.Close()
 
 	start := time.Unix(0, 0)
-	end := start.Add(1 * time.Hour)
+	end := start.Add(2 * time.Hour)
 	step := time.Second * 30
 
 	cases := []struct {

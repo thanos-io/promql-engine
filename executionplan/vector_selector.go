@@ -13,7 +13,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -79,16 +78,17 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 
 		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
 			if len(vectors) <= currStep {
-				vectors = append(vectors, make(model.Vector, 0, len(o.series)))
+				vectors = append(vectors, model.Vector{
+					T:       seriesTs,
+					Samples: make([]model.Sample, 0),
+				})
 			}
 			_, v, ok := selectPoint(series.samples, seriesTs)
 			if ok {
-				vectors[currStep] = append(vectors[currStep], model.Sample{
-					ID: series.signature,
-					Sample: promql.Sample{
-						Metric: series.labels,
-						Point:  promql.Point{T: seriesTs, V: v},
-					},
+				vectors[currStep].Samples = append(vectors[currStep].Samples, model.Sample{
+					ID:     series.signature,
+					Metric: series.labels,
+					V:      v,
 				})
 			}
 			seriesTs += o.step
