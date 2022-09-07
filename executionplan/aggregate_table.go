@@ -7,6 +7,7 @@ import (
 )
 
 type groupingKey struct {
+	isSet    bool
 	hash     uint64
 	sampleID uint64
 	labels   labels.Labels
@@ -29,7 +30,7 @@ type aggregateTable struct {
 
 func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc) *aggregateTable {
 	return &aggregateTable{
-		groupingKeys:        make([]groupingKey, 100000),
+		groupingKeys:        make([]groupingKey, 50000),
 		table:               make(map[uint64]*aggregateResult),
 		makeAccumulatorFunc: f,
 		groupingKeyFunc:     g,
@@ -43,8 +44,8 @@ func (t *aggregateTable) addSample(sample model.Sample) {
 		lbls     labels.Labels
 	)
 
-	cachedResult := t.groupingKeys[sample.ID]
-	if cachedResult.labels != nil {
+	if t.groupingKeys[sample.ID].isSet {
+		cachedResult := t.groupingKeys[sample.ID]
 		key = cachedResult.hash
 		lbls = cachedResult.labels
 		sampleID = cachedResult.sampleID
@@ -55,6 +56,7 @@ func (t *aggregateTable) addSample(sample model.Sample) {
 			hash:     key,
 			labels:   lbls,
 			sampleID: sampleID,
+			isSet:    true,
 		}
 	}
 

@@ -37,7 +37,7 @@ func newOperator(pool *points.Pool, expr parser.Expr, storage storage.Queryable,
 
 	case *parser.VectorSelector:
 		filter := newSeriesFilter(storage, mint, maxt, e.LabelMatchers)
-		numShards := 8
+		numShards := 7
 		operators := make([]VectorOperator, 0, numShards)
 		for i := 0; i < numShards; i++ {
 			operators = append(operators, concurrent(NewVectorSelector(pool, filter, mint, maxt, step, i, numShards)))
