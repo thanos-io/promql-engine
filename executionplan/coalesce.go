@@ -14,8 +14,8 @@ func coalesce(operators ...VectorOperator) VectorOperator {
 	return &coalesceOperator{operators: operators}
 }
 
-func (c coalesceOperator) Next(ctx context.Context) ([]model.Vector, error) {
-	var out []model.Vector = nil
+func (c coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	var out []model.StepVector = nil
 	for _, o := range c.operators {
 		in, err := o.Next(ctx)
 		if err != nil {
@@ -25,12 +25,12 @@ func (c coalesceOperator) Next(ctx context.Context) ([]model.Vector, error) {
 			continue
 		}
 		if len(in) > 0 && out == nil {
-			out = make([]model.Vector, len(in))
+			out = make([]model.StepVector, len(in))
 			for i := 0; i < len(in); i++ {
 				size := len(in[i].Samples) * len(c.operators)
-				out[i] = model.Vector{
+				out[i] = model.StepVector{
 					T:       in[i].T,
-					Samples: make([]model.Sample, 0, size),
+					Samples: make([]model.StepSample, 0, size),
 				}
 			}
 		}

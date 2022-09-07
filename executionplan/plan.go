@@ -14,7 +14,7 @@ import (
 )
 
 type VectorOperator interface {
-	Next(ctx context.Context) ([]model.Vector, error)
+	Next(ctx context.Context) ([]model.StepVector, error)
 }
 
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {

@@ -60,7 +60,7 @@ func NewAggregate(points *points.Pool, input VectorOperator, aggregation parser.
 	}, nil
 }
 
-func (a *aggregate) Next(ctx context.Context) ([]model.Vector, error) {
+func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	in, err := a.operator.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -69,11 +69,11 @@ func (a *aggregate) Next(ctx context.Context) ([]model.Vector, error) {
 		return nil, nil
 	}
 
-	result := make([]model.Vector, len(in))
+	result := make([]model.StepVector, len(in))
 	var wg sync.WaitGroup
 	for i, vector := range in {
 		wg.Add(1)
-		go func(i int, vector model.Vector) {
+		go func(i int, vector model.StepVector) {
 			defer wg.Done()
 			table := a.tables[i]
 			table.reset()

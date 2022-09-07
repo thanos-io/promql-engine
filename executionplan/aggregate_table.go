@@ -38,7 +38,7 @@ func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc, groupingKeys []g
 	}
 }
 
-func (t *aggregateTable) addSample(ts int64, sample model.Sample) {
+func (t *aggregateTable) addSample(ts int64, sample model.StepSample) {
 	var (
 		key      uint64
 		sampleID uint64
@@ -85,13 +85,13 @@ func (t *aggregateTable) reset() {
 	}
 }
 
-func (t *aggregateTable) toVector() model.Vector {
-	result := model.Vector{
-		Samples: make([]model.Sample, 0, len(t.table)),
+func (t *aggregateTable) toVector() model.StepVector {
+	result := model.StepVector{
+		Samples: make([]model.StepSample, 0, len(t.table)),
 	}
 	for _, v := range t.table {
 		result.T = v.timestamp
-		result.Samples = append(result.Samples, model.Sample{
+		result.Samples = append(result.Samples, model.StepSample{
 			Metric: v.metric,
 			V:      v.accumulator.ValueFunc(),
 			ID:     v.sampleID,

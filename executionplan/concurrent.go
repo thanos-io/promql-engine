@@ -9,18 +9,18 @@ import (
 
 type concurrencyOperator struct {
 	next   VectorOperator
-	buffer chan []model.Vector
+	buffer chan []model.StepVector
 	once   sync.Once
 }
 
 func concurrent(next VectorOperator) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
-		buffer: make(chan []model.Vector, 30),
+		buffer: make(chan []model.StepVector, 30),
 	}
 }
 
-func (c *concurrencyOperator) Next(ctx context.Context) ([]model.Vector, error) {
+func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	c.once.Do(func() { c.pull(ctx) })
 
 	r, ok := <-c.buffer

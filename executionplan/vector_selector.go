@@ -53,7 +53,7 @@ func NewVectorSelector(pool *points.Pool, storage *seriesSelector, mint, maxt ti
 	}
 }
 
-func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
+func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
@@ -68,7 +68,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 	totalSteps := (o.maxt+o.mint)/o.step + 1
 	numSteps := int(math.Min(float64(stepsBatch), float64(totalSteps)))
 
-	vectors := make([]model.Vector, 0, numSteps)
+	vectors := make([]model.StepVector, 0, numSteps)
 	ts := o.currentStep
 	for i := 0; i < len(o.series); i++ {
 		var (
@@ -78,14 +78,14 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.Vector, error) {
 
 		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
 			if len(vectors) <= currStep {
-				vectors = append(vectors, model.Vector{
+				vectors = append(vectors, model.StepVector{
 					T:       seriesTs,
-					Samples: make([]model.Sample, 0),
+					Samples: make([]model.StepSample, 0),
 				})
 			}
 			_, v, ok := selectPoint(series.samples, seriesTs)
 			if ok {
-				vectors[currStep].Samples = append(vectors[currStep].Samples, model.Sample{
+				vectors[currStep].Samples = append(vectors[currStep].Samples, model.StepSample{
 					ID:     series.signature,
 					Metric: series.labels,
 					V:      v,
