@@ -22,7 +22,7 @@ type seriesSelector struct {
 func newSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, matchers []*labels.Matcher) *seriesSelector {
 	return &seriesSelector{
 		storage:  storage,
-		mint:     mint.UnixMilli(),
+		mint:     mint.UnixMilli() - 5*time.Minute.Milliseconds(),
 		maxt:     maxt.UnixMilli(),
 		matchers: matchers,
 	}
