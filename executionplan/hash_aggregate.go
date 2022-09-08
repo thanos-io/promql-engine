@@ -93,61 +93,63 @@ type newAccumulatorFunc func() *accumulator
 type accumulator struct {
 	AddFunc   func(v float64)
 	ValueFunc func() float64
+	HasValue  func() bool
 }
 
 func newAccumulator(expr parser.ItemType) (*accumulator, error) {
+	hasValue := false
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
 		var value float64
 		return &accumulator{
 			AddFunc: func(v float64) {
+				hasValue = true
 				value += v
 			},
-			ValueFunc: func() float64 {
-				return value
-			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
 		}, nil
 	case "max":
 		var value float64
 		return &accumulator{
 			AddFunc: func(v float64) {
+				hasValue = true
 				value = math.Max(value, v)
 			},
-			ValueFunc: func() float64 {
-				return value
-			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
 		}, nil
 	case "min":
 		var value float64
 		return &accumulator{
 			AddFunc: func(v float64) {
+				hasValue = true
 				value = math.Min(value, v)
 			},
-			ValueFunc: func() float64 {
-				return value
-			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
 		}, nil
 	case "count":
 		var value float64
 		return &accumulator{
 			AddFunc: func(v float64) {
+				hasValue = true
 				value += 1
 			},
-			ValueFunc: func() float64 {
-				return value
-			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
 		}, nil
 	case "avg":
 		var count, sum float64
 		return &accumulator{
 			AddFunc: func(v float64) {
+				hasValue = true
 				count += 1
 				sum += v
 			},
-			ValueFunc: func() float64 {
-				return sum / count
-			},
+			ValueFunc: func() float64 { return sum / count },
+			HasValue:  func() bool { return hasValue },
 		}, nil
 	}
 	return nil, fmt.Errorf("unknown aggregation function %s", t)

@@ -90,12 +90,14 @@ func (t *aggregateTable) toVector() model.StepVector {
 		Samples: make([]model.StepSample, 0, len(t.table)),
 	}
 	for _, v := range t.table {
-		result.T = v.timestamp
-		result.Samples = append(result.Samples, model.StepSample{
-			Metric: v.metric,
-			V:      v.accumulator.ValueFunc(),
-			ID:     v.sampleID,
-		})
+		if v.accumulator.HasValue() {
+			result.T = v.timestamp
+			result.Samples = append(result.Samples, model.StepSample{
+				Metric: v.metric,
+				V:      v.accumulator.ValueFunc(),
+				ID:     v.sampleID,
+			})
+		}
 	}
 	return result
 }

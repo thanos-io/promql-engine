@@ -24,6 +24,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		load     string
 		name     string
 		query    string
+		start    time.Time
+		end      time.Time
 		expected []promql.Vector
 	}{
 		{
@@ -41,6 +43,15 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-3"} 1+2x20
 					http_requests_total{pod="nginx-4"} 1+2x50`,
 			query: "sum by (pod) (http_requests_total)",
+		},
+		{
+			name: "query in the future",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "sum by (pod) (http_requests_total)",
+			start: time.Unix(400, 0),
+			end:   time.Unix(3000, 0),
 		},
 		{
 			name: "sum rate",
@@ -67,13 +78,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			err = test.Run()
 			require.NoError(t, err)
 
+			if tc.start.UnixMilli() == 0 {
+				tc.start = start
+			}
+			if tc.end.UnixMilli() == 0 {
+				tc.end = end
+			}
+
 			newEngine := engine.New()
-			q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, start, end, step)
+			q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
 			require.NoError(t, err)
 			newResult := q1.Exec(context.Background())
 
 			oldEngine := promql.NewEngine(opts)
-			q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, start, end, step)
+			q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
 			require.NoError(t, err)
 			oldResult := q2.Exec(context.Background())
 
