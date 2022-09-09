@@ -4,6 +4,8 @@ import (
 	"context"
 	"sort"
 
+	"github.com/fpetkovski/promql-engine/model"
+
 	"github.com/fpetkovski/promql-engine/executionplan"
 
 	"github.com/prometheus/prometheus/promql"
@@ -12,11 +14,15 @@ import (
 )
 
 type rangeQuery struct {
+	pool *model.VectorPool
 	plan executionplan.VectorOperator
 }
 
-func newRangeQuery(plan executionplan.VectorOperator) promql.Query {
-	return &rangeQuery{plan: plan}
+func newRangeQuery(plan executionplan.VectorOperator, pool *model.VectorPool) promql.Query {
+	return &rangeQuery{
+		pool: pool,
+		plan: plan,
+	}
 }
 
 func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
@@ -44,7 +50,9 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 					V: sample.V,
 				})
 			}
+			q.plan.GetPool().PutSamples(vector.Samples)
 		}
+		q.plan.GetPool().PutVectors(r)
 	}
 
 	result := make(promql.Matrix, 0, len(seriesMap))

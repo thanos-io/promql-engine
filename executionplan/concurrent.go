@@ -13,6 +13,10 @@ type concurrencyOperator struct {
 	once   sync.Once
 }
 
+func (c *concurrencyOperator) GetPool() *model.VectorPool {
+	return c.next.GetPool()
+}
+
 func concurrent(next VectorOperator) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,

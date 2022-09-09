@@ -12,7 +12,7 @@ import (
 )
 
 type aggregate struct {
-	operator VectorOperator
+	downstream VectorOperator
 
 	hashBuf    []byte
 	vectorPool *model.VectorPool
@@ -23,8 +23,8 @@ type aggregate struct {
 	tables      []*aggregateTable
 }
 
-func NewAggregate(points *model.VectorPool, input VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
-	keys := make([]groupingKey, 100000)
+func NewAggregate(points *model.VectorPool, downstream VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
+	keys := make([]groupingKey, 300000)
 	for i := 0; i < len(keys); i++ {
 		keys[i] = groupingKey{
 			once: &sync.Once{},
@@ -47,8 +47,8 @@ func NewAggregate(points *model.VectorPool, input VectorOperator, aggregation pa
 	}
 
 	return &aggregate{
-		operator: input,
-		tables:   tables,
+		downstream: downstream,
+		tables:     tables,
 
 		vectorPool: points,
 
@@ -58,16 +58,19 @@ func NewAggregate(points *model.VectorPool, input VectorOperator, aggregation pa
 	}, nil
 }
 
+func (a *aggregate) GetPool() *model.VectorPool {
+	return a.vectorPool
+}
+
 func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
-	in, err := a.operator.Next(ctx)
+	in, err := a.downstream.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if in == nil {
 		return nil, nil
 	}
-
-	defer a.vectorPool.Put(in)
+	defer a.downstream.GetPool().PutVectors(in)
 
 	result := make([]model.StepVector, len(in))
 	var wg sync.WaitGroup
@@ -81,7 +84,8 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 			for _, series := range vector.Samples {
 				table.addSample(vector.T, series)
 			}
-			result[i] = table.toVector()
+			result[i] = table.toVector(a.vectorPool)
+			a.downstream.GetPool().PutSamples(vector.Samples)
 		}(i, vector)
 	}
 	wg.Wait()

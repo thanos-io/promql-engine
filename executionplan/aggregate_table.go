@@ -85,9 +85,9 @@ func (t *aggregateTable) reset() {
 	}
 }
 
-func (t *aggregateTable) toVector() model.StepVector {
+func (t *aggregateTable) toVector(pool *model.VectorPool) model.StepVector {
 	result := model.StepVector{
-		Samples: make([]model.StepSample, 0, len(t.table)),
+		Samples: pool.GetSamples(),
 	}
 	for _, v := range t.table {
 		if v.accumulator.HasValue() {

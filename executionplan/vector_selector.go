@@ -51,13 +51,20 @@ func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, ma
 	}
 }
 
+func (o *vectorSelector) GetPool() *model.VectorPool {
+	return o.vectorPool
+}
+
 func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
 
 	var err error
-	o.once.Do(func() { err = o.initializeSeries(ctx) })
+	o.once.Do(func() {
+		err = o.initializeSeries(ctx)
+		o.vectorPool.SetStepSamplesSize(len(o.series))
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +73,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	totalSteps := (o.maxt+o.mint)/o.step + 1
 	numSteps := int(math.Min(float64(stepsBatch), float64(totalSteps)))
 
-	vectors := o.vectorPool.Get()
+	vectors := o.vectorPool.GetVectors()
 	ts := o.currentStep
 	for i := 0; i < len(o.series); i++ {
 		var (
@@ -78,7 +85,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, model.StepVector{
 					T:       seriesTs,
-					Samples: make([]model.StepSample, 0),
+					Samples: o.vectorPool.GetSamples(),
 				})
 			}
 			_, v, ok := selectPoint(series.samples, seriesTs)

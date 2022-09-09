@@ -5,23 +5,44 @@ import (
 )
 
 type VectorPool struct {
-	pool sync.Pool
+	vectors sync.Pool
+
+	numSamples int
+	samples    sync.Pool
 }
 
 func NewPool() *VectorPool {
-	return &VectorPool{
-		pool: sync.Pool{
-			New: func() any {
-				return make([]StepVector, 0, 30)
-			},
+	pool := &VectorPool{}
+	pool.vectors = sync.Pool{
+		New: func() any {
+			return make([]StepVector, 0, 30)
 		},
 	}
+	pool.samples = sync.Pool{
+		New: func() any {
+			return make([]StepSample, 0, pool.numSamples)
+		},
+	}
+
+	return pool
 }
 
-func (p *VectorPool) Get() []StepVector {
-	return p.pool.Get().([]StepVector)
+func (p *VectorPool) GetVectors() []StepVector {
+	return p.vectors.Get().([]StepVector)
 }
 
-func (p *VectorPool) Put(vector []StepVector) {
-	p.pool.Put(vector[:0])
+func (p *VectorPool) PutVectors(vector []StepVector) {
+	p.vectors.Put(vector[:0])
+}
+
+func (p *VectorPool) GetSamples() []StepSample {
+	return p.samples.Get().([]StepSample)
+}
+
+func (p *VectorPool) PutSamples(samples []StepSample) {
+	p.samples.Put(samples[:0])
+}
+
+func (p *VectorPool) SetStepSamplesSize(n int) {
+	p.numSamples = n
 }

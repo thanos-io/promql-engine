@@ -3,6 +3,8 @@ package engine
 import (
 	"time"
 
+	"github.com/fpetkovski/promql-engine/model"
+
 	"github.com/fpetkovski/promql-engine/executionplan"
 
 	"github.com/prometheus/prometheus/promql"
@@ -13,12 +15,14 @@ import (
 
 type engine struct {
 	logger promql.QueryLogger
+	pool   *model.VectorPool
 
 	lookbackDelta time.Duration
 }
 
 func New() v1.QueryEngine {
 	return &engine{
+		pool:          model.NewPool(),
 		lookbackDelta: 5 * time.Minute,
 	}
 }
@@ -33,7 +37,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	plan, err := executionplan.New(expr, q, ts, ts, 0)
+	plan, err := executionplan.New(expr, e.pool, q, ts, ts, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -47,10 +51,10 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
-	plan, err := executionplan.New(expr, q, start, end, interval)
+	plan, err := executionplan.New(expr, e.pool, q, start, end, interval)
 	if err != nil {
 		return nil, err
 	}
 
-	return newRangeQuery(plan), nil
+	return newRangeQuery(plan, e.pool), nil
 }

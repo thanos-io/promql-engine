@@ -7,14 +7,22 @@ import (
 )
 
 type coalesceOperator struct {
+	pool      *model.VectorPool
 	operators []VectorOperator
 }
 
-func coalesce(operators ...VectorOperator) VectorOperator {
-	return &coalesceOperator{operators: operators}
+func coalesce(pool *model.VectorPool, operators ...VectorOperator) VectorOperator {
+	return &coalesceOperator{
+		pool:      pool,
+		operators: operators,
+	}
 }
 
-func (c coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (c *coalesceOperator) GetPool() *model.VectorPool {
+	return c.pool
+}
+
+func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	var out []model.StepVector = nil
 	for _, o := range c.operators {
 		in, err := o.Next(ctx)
@@ -25,18 +33,20 @@ func (c coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error) 
 			continue
 		}
 		if len(in) > 0 && out == nil {
-			out = make([]model.StepVector, len(in))
+			c.pool.SetStepSamplesSize(len(in) * len(c.operators))
+			out = c.pool.GetVectors()
 			for i := 0; i < len(in); i++ {
-				size := len(in[i].Samples) * len(c.operators)
-				out[i] = model.StepVector{
+				out = append(out, model.StepVector{
 					T:       in[i].T,
-					Samples: make([]model.StepSample, 0, size),
-				}
+					Samples: c.pool.GetSamples(),
+				})
 			}
 		}
 		for i := 0; i < len(in); i++ {
 			out[i].Samples = append(out[i].Samples, in[i].Samples...)
+			o.GetPool().PutSamples(in[i].Samples)
 		}
+		o.GetPool().PutVectors(in)
 	}
 	if out == nil {
 		return nil, nil

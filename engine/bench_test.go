@@ -111,6 +111,10 @@ func BenchmarkOldEngine(b *testing.B) {
 		},
 		{
 			name:  "aggregation",
+			query: "sum(http_requests_total)",
+		},
+		{
+			name:  "aggregation by pod",
 			query: "sum by (pod) (http_requests_total)",
 		},
 		//{
