@@ -2,6 +2,7 @@ package executionplan
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -45,6 +46,10 @@ func (o *seriesSelector) Series(ctx context.Context, shard int, numShards int) (
 }
 
 func (o *seriesSelector) loadSeries(ctx context.Context) error {
+	start := time.Now()
+	defer func() {
+		fmt.Println("Done fetching series", time.Since(start))
+	}()
 	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
 	if err != nil {
 		return err

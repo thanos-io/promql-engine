@@ -26,7 +26,7 @@ func newRangeQuery(plan executionplan.VectorOperator, pool *model.VectorPool) pr
 }
 
 func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
-	seriesMap := make([]*promql.Series, 3000)
+	seriesMap := make(map[uint64]*promql.Series)
 	for {
 		r, err := q.plan.Next(ctx)
 		if err != nil {
@@ -38,7 +38,7 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 
 		for _, vector := range r {
 			for _, sample := range vector.Samples {
-				if seriesMap[sample.ID] == nil {
+				if _, ok := seriesMap[sample.ID]; !ok {
 					seriesMap[sample.ID] = &promql.Series{
 						Metric: sample.Metric,
 						Points: make([]promql.Point, 0),
@@ -56,9 +56,7 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 
 	result := make(promql.Matrix, 0, len(seriesMap))
 	for _, series := range seriesMap {
-		if series != nil {
-			result = append(result, *series)
-		}
+		result = append(result, *series)
 	}
 
 	sort.Sort(result)
