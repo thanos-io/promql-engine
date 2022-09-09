@@ -21,8 +21,10 @@ type vectorScan struct {
 }
 
 type vectorSelector struct {
-	storage    *seriesSelector
-	series     []vectorScan
+	storage  *seriesSelector
+	scanners []vectorScan
+	series   []labels.Labels
+
 	once       sync.Once
 	vectorPool *model.VectorPool
 
@@ -33,6 +35,13 @@ type vectorSelector struct {
 
 	shard     int
 	numShards int
+}
+
+func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+	return o.series, nil
 }
 
 func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) VectorOperator {
@@ -60,12 +69,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, nil
 	}
 
-	var err error
-	o.once.Do(func() {
-		err = o.initializeSeries(ctx)
-		o.vectorPool.SetStepSamplesSize(len(o.series))
-	})
-	if err != nil {
+	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
 
@@ -75,9 +79,9 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectors()
 	ts := o.currentStep
-	for i := 0; i < len(o.series); i++ {
+	for i := 0; i < len(o.scanners); i++ {
 		var (
-			series   = o.series[i]
+			series   = o.scanners[i]
 			seriesTs = ts
 		)
 
@@ -104,14 +108,19 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	return vectors, nil
 }
 
-func (o *vectorSelector) initializeSeries(ctx context.Context) error {
-	seriesShard, err := o.storage.Series(ctx, o.shard, o.numShards)
-	if err != nil {
-		return err
-	}
-	o.series = seriesShard
+func (o *vectorSelector) loadSeries(ctx context.Context) error {
+	var err error
+	o.once.Do(func() {
+		scanners, seriesShard, loadErr := o.storage.Series(ctx, o.shard, o.numShards)
+		if loadErr != nil {
+			err = loadErr
+			return
+		}
 
-	return nil
+		o.scanners = scanners
+		o.series = seriesShard
+	})
+	return err
 }
 
 // TODO(fpetkovski): Add error handling and max samples limit.

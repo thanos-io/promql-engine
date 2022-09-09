@@ -2,11 +2,17 @@ package executionplan
 
 import (
 	"context"
+	"sync"
+
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/fpetkovski/promql-engine/model"
 )
 
 type coalesceOperator struct {
+	once   sync.Once
+	series []labels.Labels
+
 	pool      *model.VectorPool
 	operators []VectorOperator
 }
@@ -20,6 +26,42 @@ func coalesce(pool *model.VectorPool, operators ...VectorOperator) VectorOperato
 
 func (c *coalesceOperator) GetPool() *model.VectorPool {
 	return c.pool
+}
+
+func (c *coalesceOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	var err error
+	c.once.Do(func() { err = c.loadSeries(ctx) })
+	if err != nil {
+		return nil, err
+	}
+	return c.series, nil
+}
+
+func (c *coalesceOperator) loadSeries(ctx context.Context) error {
+	size := 0
+	for i := 0; i < len(c.operators); i++ {
+		series, err := c.operators[i].Series(ctx)
+		if err != nil {
+			return err
+		}
+		size += len(series)
+	}
+
+	idx := 0
+	result := make([]labels.Labels, size)
+	for _, o := range c.operators {
+		series, err := o.Series(ctx)
+		if err != nil {
+			return err
+		}
+		for i := 0; i < len(series); i++ {
+			result[idx] = series[i]
+			idx++
+		}
+	}
+	c.series = result
+
+	return nil
 }
 
 func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error) {

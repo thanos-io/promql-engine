@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 
+	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/fpetkovski/promql-engine/model"
 )
 
@@ -13,15 +15,19 @@ type concurrencyOperator struct {
 	once   sync.Once
 }
 
-func (c *concurrencyOperator) GetPool() *model.VectorPool {
-	return c.next.GetPool()
-}
-
 func concurrent(next VectorOperator, bufferSize int) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
 		buffer: make(chan []model.StepVector, bufferSize),
 	}
+}
+
+func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	return c.next.Series(ctx)
+}
+
+func (c *concurrencyOperator) GetPool() *model.VectorPool {
+	return c.next.GetPool()
 }
 
 func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, error) {

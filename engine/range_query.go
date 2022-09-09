@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"sort"
+	"sync"
 
 	"github.com/fpetkovski/promql-engine/model"
 
@@ -16,6 +17,7 @@ import (
 type rangeQuery struct {
 	pool *model.VectorPool
 	plan executionplan.VectorOperator
+	once sync.Once
 }
 
 func newRangeQuery(plan executionplan.VectorOperator, pool *model.VectorPool) promql.Query {
@@ -26,7 +28,15 @@ func newRangeQuery(plan executionplan.VectorOperator, pool *model.VectorPool) pr
 }
 
 func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
-	seriesMap := make(map[uint64]*promql.Series)
+	resultSeries, err := q.plan.Series(ctx)
+	if err != nil {
+		return newErrResult(err)
+	}
+
+	series := make([]promql.Series, len(resultSeries))
+	for i := 0; i < len(resultSeries); i++ {
+		series[i].Metric = resultSeries[i]
+	}
 	for {
 		r, err := q.plan.Next(ctx)
 		if err != nil {
@@ -38,13 +48,10 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 
 		for _, vector := range r {
 			for _, sample := range vector.Samples {
-				if _, ok := seriesMap[sample.ID]; !ok {
-					seriesMap[sample.ID] = &promql.Series{
-						Metric: sample.Metric,
-						Points: make([]promql.Point, 0),
-					}
+				if len(series[sample.ID].Points) == 0 {
+					series[sample.ID].Points = make([]promql.Point, 0, 121)
 				}
-				seriesMap[sample.ID].Points = append(seriesMap[sample.ID].Points, promql.Point{
+				series[sample.ID].Points = append(series[sample.ID].Points, promql.Point{
 					T: vector.T,
 					V: sample.V,
 				})
@@ -54,9 +61,11 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 		q.plan.GetPool().PutVectors(r)
 	}
 
-	result := make(promql.Matrix, 0, len(seriesMap))
-	for _, series := range seriesMap {
-		result = append(result, *series)
+	result := make(promql.Matrix, 0, len(series))
+	for _, s := range series {
+		if len(s.Points) > 0 {
+			result = append(result, s)
+		}
 	}
 
 	sort.Sort(result)
