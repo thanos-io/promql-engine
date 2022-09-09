@@ -37,7 +37,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	plan, err := executionplan.New(expr, e.pool, q, ts, ts, 0)
+	plan, err := executionplan.New(expr, q, ts, ts, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
-	plan, err := executionplan.New(expr, e.pool, q, start, end, interval)
+	plan, err := executionplan.New(expr, q, start, end, interval)
 	if err != nil {
 		return nil, err
 	}

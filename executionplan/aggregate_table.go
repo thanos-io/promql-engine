@@ -8,10 +8,9 @@ import (
 )
 
 type groupingKey struct {
-	once     *sync.Once
-	hash     uint64
-	sampleID uint64
-	labels   labels.Labels
+	once   *sync.Once
+	hash   uint64
+	labels labels.Labels
 }
 
 type aggregateResult struct {
@@ -40,39 +39,40 @@ func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc, groupingKeys []g
 
 func (t *aggregateTable) addSample(ts int64, sample model.StepSample) {
 	var (
-		key      uint64
-		sampleID uint64
-		lbls     labels.Labels
+		key  uint64
+		lbls labels.Labels
 	)
 
 	once := t.groupingKeys[sample.ID].once
 	once.Do(func() {
 		key, _, lbls = t.groupingKeyFunc(sample.Metric)
-		sampleID = key
 		t.groupingKeys[sample.ID] = groupingKey{
-			hash:     key,
-			labels:   lbls,
-			sampleID: sampleID,
-			once:     once,
+			hash:   key,
+			labels: lbls,
+			once:   once,
 		}
 	})
 
 	cachedResult := t.groupingKeys[sample.ID]
 	key = cachedResult.hash
 	lbls = cachedResult.labels
-	sampleID = cachedResult.sampleID
 
 	if _, ok := t.table[key]; !ok {
 		t.table[key] = &aggregateResult{
-			sampleID:    sampleID,
+			sampleID:    sample.ID,
 			metric:      lbls,
 			timestamp:   ts,
 			accumulator: t.makeAccumulatorFunc(),
 		}
 	}
 
-	t.table[key].timestamp = ts
+	group := t.table[key]
+	if group.sampleID > sample.ID {
+		group.sampleID = sample.ID
+	}
+	group.timestamp = ts
 	t.table[key].accumulator.AddFunc(sample.V)
+
 }
 
 func (t *aggregateTable) reset() {

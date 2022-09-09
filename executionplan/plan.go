@@ -16,32 +16,31 @@ type VectorOperator interface {
 	GetPool() *model.VectorPool
 }
 
-func New(expr parser.Expr, pool *model.VectorPool, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
-	return newOperator(pool, expr, storage, mint, maxt, step)
+func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
+	return newOperator(expr, storage, mint, maxt, step)
 }
 
-func newOperator(enginePool *model.VectorPool, expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
+func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
-		next, err := newOperator(enginePool, e.Expr, storage, mint, maxt, step)
+		next, err := newOperator(e.Expr, storage, mint, maxt, step)
 		if err != nil {
 			return nil, err
 		}
-		aggregate, err := NewAggregate(enginePool, next, e.Op, !e.Without, e.Grouping)
+		aggregate, err := NewAggregate(model.NewPool(), next, e.Op, !e.Without, e.Grouping)
 		if err != nil {
 			return nil, err
 		}
 		return concurrent(aggregate), nil
 
 	case *parser.VectorSelector:
-		pool := model.NewPool()
 		filter := newSeriesFilter(storage, mint, maxt, e.LabelMatchers)
 		numShards := 7
 		operators := make([]VectorOperator, 0, numShards)
 		for i := 0; i < numShards; i++ {
-			operators = append(operators, concurrent(NewVectorSelector(pool, filter, mint, maxt, step, i, numShards)))
+			operators = append(operators, concurrent(NewVectorSelector(model.NewPool(), filter, mint, maxt, step, i, numShards)))
 		}
-		return coalesce(enginePool, operators...), nil
+		return coalesce(model.NewPool(), operators...), nil
 
 	//case *parser.Call:
 	//	switch t := e.Args[0].(type) {
