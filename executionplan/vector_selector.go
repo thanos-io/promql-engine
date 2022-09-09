@@ -69,7 +69,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	stepsBatch := 30
+	stepsBatch := 10
 	totalSteps := (o.maxt+o.mint)/o.step + 1
 	numSteps := int(math.Min(float64(stepsBatch), float64(totalSteps)))
 
