@@ -71,7 +71,7 @@ func (t *aggregateTable) addSample(ts int64, sample model.StepSample) {
 		group.sampleID = sample.ID
 	}
 	group.timestamp = ts
-	t.table[key].accumulator.AddFunc(sample.V)
+	group.accumulator.AddFunc(sample.V)
 
 }
 

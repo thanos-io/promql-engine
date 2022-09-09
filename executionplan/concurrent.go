@@ -17,10 +17,10 @@ func (c *concurrencyOperator) GetPool() *model.VectorPool {
 	return c.next.GetPool()
 }
 
-func concurrent(next VectorOperator) VectorOperator {
+func concurrent(next VectorOperator, bufferSize int) VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
-		buffer: make(chan []model.StepVector, 30),
+		buffer: make(chan []model.StepVector, bufferSize),
 	}
 }
 
