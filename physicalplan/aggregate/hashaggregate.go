@@ -27,7 +27,7 @@ type aggregate struct {
 	aggregation parser.ItemType
 
 	once   sync.Once
-	tables []*aggregateTable
+	tables []aggregateTable
 	series []labels.Labels
 
 	stepsBatch int
@@ -59,7 +59,7 @@ func NewHashAggregate(
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
-	a.once.Do(func() { err = a.initOutputBuffers(ctx) })
+	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +74,7 @@ func (a *aggregate) GetPool() *model.VectorPool {
 func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	in, err := a.next.Next(ctx)
 	if err != nil {
+		a.workers.Shutdown()
 		return nil, err
 	}
 	if in == nil {
@@ -82,95 +83,76 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	defer a.next.GetPool().PutVectors(in)
 
-	a.once.Do(func() { err = a.initOutputBuffers(ctx) })
+	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
+		a.workers.Shutdown()
 		return nil, err
 	}
 
-	result := make([]model.StepVector, len(in))
+	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
 		a.workers[i].Send(vector)
 	}
 
 	for i, vector := range in {
 		a.workers[i].Done()
-		result[i] = a.workers[i].GetOutput()
-		a.next.GetPool().PutSamples(vector.Samples)
-
+		result = append(result, a.workers[i].GetOutput())
+		a.next.GetPool().PutStepVector(vector)
 	}
+
 	return result, nil
 }
 
-func (a *aggregate) shutdownWorkers() {
-	for i := 0; i < len(a.workers); i++ {
-		a.workers[i].Shutdown()
-	}
-}
-
-func (a *aggregate) initOutputBuffers(ctx context.Context) error {
+func (a *aggregate) initializeTables(ctx context.Context) error {
 	series, err := a.next.Series(ctx)
 	if err != nil {
 		return err
 	}
 
-	inputCache := make([]uint64, len(series))
-	outputMap := make(map[uint64]*aggregateResult)
-	outputCache := make([]*aggregateResult, 0)
+	if a.by && len(a.labels) == 0 {
+		tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
+		if err != nil {
+			return err
+		}
+		a.tables = tables
+		a.series = []labels.Labels{{}}
+		a.vectorPool.SetStepSize(1)
+		return nil
+	}
 
+	inputCache := make([]uint64, len(series))
+	outputMap := make(map[uint64]*model.Series)
+	outputCache := make([]*model.Series, 0)
+	buf := make([]byte, 128)
 	for i := 0; i < len(series); i++ {
-		buf := make([]byte, 128)
 		hash, _, lbls := hashMetric(series[i], !a.by, a.labels, buf)
 
 		output, ok := outputMap[hash]
 		if !ok {
-			output = &aggregateResult{
-				metric:   lbls,
-				sampleID: uint64(len(outputCache)),
+			output = &model.Series{
+				Metric: lbls,
+				ID:     uint64(len(outputCache)),
 			}
 			outputMap[hash] = output
 			outputCache = append(outputCache, output)
 		}
 
-		inputCache[i] = output.sampleID
+		inputCache[i] = output.ID
 	}
 
-	var wg sync.WaitGroup
 	a.series = make([]labels.Labels, len(outputCache))
 	for i := 0; i < len(outputCache); i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			a.series[i] = outputCache[i].metric
-		}(i)
+		a.series[i] = outputCache[i].Metric
 	}
-	wg.Wait()
 
-	tables := make([]*aggregateTable, a.stepsBatch)
-	for i := 0; i < len(tables); i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
-			tables[i] = newAggregateTable(inputCache, outputCache, func() *accumulator {
-				f, err := newAccumulator(a.aggregation)
-				if err != nil {
-					panic(err)
-				}
-				return f
-			})
-		}(i)
-	}
-	wg.Wait()
+	a.tables = newScalarTables(a.stepsBatch, inputCache, outputCache, a.aggregation)
+	a.vectorPool.SetStepSize(len(outputCache))
 
-	a.vectorPool.SetStepSamplesSize(len(outputCache))
-	a.tables = tables
 	return nil
 }
 
 func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.StepVector {
 	table := a.tables[workerID]
-	table.reset()
-	for _, series := range vector.Samples {
-		table.addSample(vector.T, series)
-	}
+	table.aggregate(vector)
 	return table.toVector(a.vectorPool)
 }

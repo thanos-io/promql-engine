@@ -11,8 +11,6 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/thanos-community/promql-engine/physicalplan"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -21,7 +19,6 @@ import (
 
 type engine struct {
 	logger promql.QueryLogger
-	pool   *model.VectorPool
 
 	lookbackDelta time.Duration
 }
@@ -46,7 +43,6 @@ func New(opts Opts) v1.QueryEngine {
 	}
 
 	core := &engine{
-		pool:          model.NewVectorPool(),
 		lookbackDelta: opts.LookbackDelta,
 	}
 	if opts.DisableFallback {
@@ -124,5 +120,5 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
-	return newRangeQuery(plan, e.pool), nil
+	return newRangeQuery(plan), nil
 }

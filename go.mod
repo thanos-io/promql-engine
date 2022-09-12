@@ -4,7 +4,9 @@ go 1.18
 
 require (
 	github.com/efficientgo/core v1.0.0-rc.0
+	github.com/go-kit/log v0.2.1
 	github.com/prometheus/prometheus v0.38.0
+	gonum.org/v1/gonum v0.12.0
 )
 
 require (
@@ -16,7 +18,6 @@ require (
 	github.com/dennwc/varint v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect
 	github.com/felixge/httpsnoop v1.0.3 // indirect
-	github.com/go-kit/log v0.2.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
 	github.com/go-logr/logr v1.2.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
