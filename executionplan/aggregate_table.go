@@ -1,87 +1,45 @@
 package executionplan
 
 import (
-	"sync"
-
 	"github.com/fpetkovski/promql-engine/model"
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type groupingKey struct {
-	once   *sync.Once
-	hash   uint64
-	labels labels.Labels
-}
-
 type aggregateResult struct {
-	metric      labels.Labels
-	sampleID    uint64
-	timestamp   int64
-	accumulator *accumulator
+	metric   labels.Labels
+	sampleID uint64
 }
 
 type aggregateTable struct {
-	// hashKeyCache is a map from series index to the cache key for the series.
-	groupingKeys        []groupingKey
-	table               map[uint64]*aggregateResult
-	makeAccumulatorFunc newAccumulatorFunc
-	groupingKeyFunc     groupingKeyFunc
+	timestamp    int64
+	inputs       []uint64
+	outputs      []*aggregateResult
+	accumulators []*accumulator
 }
 
-func newAggregateTable(g groupingKeyFunc, f newAccumulatorFunc, groupingKeys []groupingKey) *aggregateTable {
+func newAggregateTable(inputSampleIDs []uint64, outputs []*aggregateResult, makeAccumulator newAccumulatorFunc) *aggregateTable {
+	accumulators := make([]*accumulator, len(outputs))
+	for i := 0; i < len(outputs); i++ {
+		accumulators[i] = makeAccumulator()
+	}
 	return &aggregateTable{
-		groupingKeys:        groupingKeys,
-		table:               make(map[uint64]*aggregateResult),
-		makeAccumulatorFunc: f,
-		groupingKeyFunc:     g,
+		inputs:       inputSampleIDs,
+		outputs:      outputs,
+		accumulators: accumulators,
 	}
 }
 
 func (t *aggregateTable) addSample(ts int64, sample model.StepSample) {
-	var (
-		key  uint64
-		lbls labels.Labels
-	)
+	outputSampleID := t.inputs[sample.ID]
+	output := t.outputs[outputSampleID]
 
-	once := t.groupingKeys[sample.ID].once
-	once.Do(func() {
-		key, _, lbls = t.groupingKeyFunc(sample.Metric)
-		t.groupingKeys[sample.ID] = groupingKey{
-			hash:   key,
-			labels: lbls,
-			once:   once,
-		}
-	})
-
-	cachedResult := t.groupingKeys[sample.ID]
-	key = cachedResult.hash
-	lbls = cachedResult.labels
-
-	if _, ok := t.table[key]; !ok {
-		t.table[key] = &aggregateResult{
-			sampleID:    sample.ID,
-			metric:      lbls,
-			timestamp:   ts,
-			accumulator: t.makeAccumulatorFunc(),
-		}
-	}
-
-	group := t.table[key]
-	if group.sampleID > sample.ID {
-		group.sampleID = sample.ID
-	}
-	group.timestamp = ts
-	group.accumulator.AddFunc(sample.V)
-
+	t.timestamp = ts
+	t.accumulators[output.sampleID].AddFunc(sample.V)
 }
 
 func (t *aggregateTable) reset() {
-	for k, v := range t.table {
-		t.table[k] = &aggregateResult{
-			sampleID:    v.sampleID,
-			metric:      v.metric,
-			accumulator: t.makeAccumulatorFunc(),
-		}
+	for i := range t.outputs {
+		t.accumulators[i].Reset()
 	}
 }
 
@@ -89,12 +47,13 @@ func (t *aggregateTable) toVector(pool *model.VectorPool) model.StepVector {
 	result := model.StepVector{
 		Samples: pool.GetSamples(),
 	}
-	for _, v := range t.table {
-		if v.accumulator.HasValue() {
-			result.T = v.timestamp
+
+	for i, v := range t.outputs {
+		if t.accumulators[i].HasValue() {
+			result.T = t.timestamp
 			result.Samples = append(result.Samples, model.StepSample{
 				Metric: v.metric,
-				V:      v.accumulator.ValueFunc(),
+				V:      t.accumulators[i].ValueFunc(),
 				ID:     v.sampleID,
 			})
 		}
@@ -102,27 +61,21 @@ func (t *aggregateTable) toVector(pool *model.VectorPool) model.StepVector {
 	return result
 }
 
-type groupingKeyFunc func(metric labels.Labels) (uint64, string, labels.Labels)
-
-// groupingKey builds and returns the grouping key and the
-// resulting labels value pairs for the given metric and grouping labels.
-func newGroupingKeyGenerator(grouping []string, without bool, buf []byte) groupingKeyFunc {
-	return func(metric labels.Labels) (uint64, string, labels.Labels) {
-		buf = buf[:0]
-		if without {
-			lb := labels.NewBuilder(metric)
-			lb.Del(grouping...)
-			key, bytes := metric.HashWithoutLabels(buf, grouping...)
-			return key, string(bytes), lb.Labels()
-		}
-
-		if len(grouping) == 0 {
-			return 0, "", labels.Labels{}
-		}
-
+func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byte) (uint64, string, labels.Labels) {
+	buf = buf[:0]
+	if without {
 		lb := labels.NewBuilder(metric)
-		lb.Keep(grouping...)
-		key, bytes := metric.HashForLabels(buf, grouping...)
+		lb.Del(grouping...)
+		key, bytes := metric.HashWithoutLabels(buf, grouping...)
 		return key, string(bytes), lb.Labels()
 	}
+
+	if len(grouping) == 0 {
+		return 0, "", labels.Labels{}
+	}
+
+	lb := labels.NewBuilder(metric)
+	lb.Keep(grouping...)
+	key, bytes := metric.HashForLabels(buf, grouping...)
+	return key, string(bytes), lb.Labels()
 }

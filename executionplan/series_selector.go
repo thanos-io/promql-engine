@@ -2,7 +2,6 @@ package executionplan
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -18,22 +17,24 @@ type seriesSelector struct {
 
 	once     sync.Once
 	scanners []vectorScan
+	series   []labels.Labels
 }
 
 func newSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, matchers []*labels.Matcher) *seriesSelector {
 	return &seriesSelector{
-		storage:  storage,
+		storage: storage,
+
 		mint:     mint.UnixMilli() - 5*time.Minute.Milliseconds(),
 		maxt:     maxt.UnixMilli(),
 		matchers: matchers,
 	}
 }
 
-func (o *seriesSelector) Series(ctx context.Context, shard int, numShards int) ([]vectorScan, error) {
+func (o *seriesSelector) Series(ctx context.Context, shard int, numShards int) ([]vectorScan, []labels.Labels, error) {
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	start := shard * len(o.scanners) / numShards
@@ -41,15 +42,15 @@ func (o *seriesSelector) Series(ctx context.Context, shard int, numShards int) (
 	if end > len(o.scanners) {
 		end = len(o.scanners)
 	}
-	return o.scanners[start:end], nil
+	return o.scanners[start:end], o.series[start:end], nil
 
 }
 
 func (o *seriesSelector) loadSeries(ctx context.Context) error {
-	start := time.Now()
-	defer func() {
-		fmt.Println("Done fetching series", time.Since(start))
-	}()
+	//start := time.Now()
+	//defer func() {
+	//	fmt.Println("Done fetching series", time.Since(start))
+	//}()
 	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
 	if err != nil {
 		return err
@@ -65,8 +66,10 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 			signature: uint64(i),
 			samples:   storage.NewMemoizedIterator(series.Iterator(), 5*time.Minute.Milliseconds()),
 		})
+		o.series = append(o.series, series.Labels())
 		i++
 	}
+	//fmt.Println("Total series fetched", len(o.series))
 
 	return nil
 }

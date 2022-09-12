@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/fpetkovski/promql-engine/model"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -13,6 +15,7 @@ import (
 
 type VectorOperator interface {
 	Next(ctx context.Context) ([]model.StepVector, error)
+	Series(ctx context.Context) ([]labels.Labels, error)
 	GetPool() *model.VectorPool
 }
 
@@ -35,10 +38,10 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 
 	case *parser.VectorSelector:
 		filter := newSeriesFilter(storage, mint, maxt, e.LabelMatchers)
-		numShards := 13
+		numShards := 4
 		operators := make([]VectorOperator, 0, numShards)
 		for i := 0; i < numShards; i++ {
-			operators = append(operators, concurrent(NewVectorSelector(model.NewPool(), filter, mint, maxt, step, i, numShards), 2))
+			operators = append(operators, concurrent(NewVectorSelector(model.NewPool(), filter, mint, maxt, step, i, numShards), 3))
 		}
 		return coalesce(model.NewPool(), operators...), nil
 
