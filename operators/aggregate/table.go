@@ -1,7 +1,7 @@
-package executionplan
+package aggregate
 
 import (
-	"github.com/fpetkovski/promql-engine/model"
+	"github.com/fpetkovski/promql-engine/operators/model"
 	"github.com/prometheus/prometheus/model/labels"
 )
 

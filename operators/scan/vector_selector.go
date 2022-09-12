@@ -1,4 +1,4 @@
-package executionplan
+package scan
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/model"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
@@ -44,7 +44,7 @@ func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 	return o.series, nil
 }
 
-func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) VectorOperator {
+func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) model.Vector {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage:    storage,

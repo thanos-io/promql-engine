@@ -1,21 +1,21 @@
-package executionplan
+package exchange
 
 import (
 	"context"
 	"sync"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
-	"github.com/fpetkovski/promql-engine/model"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type concurrencyOperator struct {
-	next   VectorOperator
+	next   model.Vector
 	buffer chan []model.StepVector
 	once   sync.Once
 }
 
-func concurrent(next VectorOperator, bufferSize int) VectorOperator {
+func NewConcurrent(next model.Vector, bufferSize int) model.Vector {
 	return &concurrencyOperator{
 		next:   next,
 		buffer: make(chan []model.StepVector, bufferSize),

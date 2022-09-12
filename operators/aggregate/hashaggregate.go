@@ -1,4 +1,4 @@
-package executionplan
+package aggregate
 
 import (
 	"context"
@@ -6,15 +6,15 @@ import (
 	"math"
 	"sync"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
-	"github.com/fpetkovski/promql-engine/model"
+	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type aggregate struct {
-	downstream VectorOperator
+	next model.Vector
 
 	hashBuf    []byte
 	vectorPool *model.VectorPool
@@ -28,9 +28,15 @@ type aggregate struct {
 	series []labels.Labels
 }
 
-func NewAggregate(points *model.VectorPool, downstream VectorOperator, aggregation parser.ItemType, by bool, labels []string) (VectorOperator, error) {
+func NewHashAggregate(
+	points *model.VectorPool,
+	next model.Vector,
+	aggregation parser.ItemType,
+	by bool,
+	labels []string,
+) (model.Vector, error) {
 	return &aggregate{
-		downstream: downstream,
+		next:       next,
 		vectorPool: points,
 
 		by:          by,
@@ -50,7 +56,7 @@ func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 }
 
 func (a *aggregate) initOutputBuffers(ctx context.Context) error {
-	series, err := a.downstream.Series(ctx)
+	series, err := a.next.Series(ctx)
 	if err != nil {
 		return err
 	}
@@ -112,14 +118,14 @@ func (a *aggregate) GetPool() *model.VectorPool {
 }
 
 func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
-	in, err := a.downstream.Next(ctx)
+	in, err := a.next.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if in == nil {
 		return nil, nil
 	}
-	defer a.downstream.GetPool().PutVectors(in)
+	defer a.next.GetPool().PutVectors(in)
 
 	a.once.Do(func() { err = a.initOutputBuffers(ctx) })
 	if err != nil {
@@ -139,7 +145,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 				table.addSample(vector.T, series)
 			}
 			result[i] = table.toVector(a.vectorPool)
-			a.downstream.GetPool().PutSamples(vector.Samples)
+			a.next.GetPool().PutSamples(vector.Samples)
 		}(i, vector)
 	}
 	wg.Wait()

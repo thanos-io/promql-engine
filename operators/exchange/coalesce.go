@@ -1,12 +1,11 @@
-package executionplan
+package exchange
 
 import (
 	"context"
 	"sync"
 
+	"github.com/fpetkovski/promql-engine/operators/model"
 	"github.com/prometheus/prometheus/model/labels"
-
-	"github.com/fpetkovski/promql-engine/model"
 )
 
 type coalesceOperator struct {
@@ -14,10 +13,10 @@ type coalesceOperator struct {
 	series []labels.Labels
 
 	pool      *model.VectorPool
-	operators []VectorOperator
+	operators []model.Vector
 }
 
-func coalesce(pool *model.VectorPool, operators ...VectorOperator) VectorOperator {
+func NewCoalesce(pool *model.VectorPool, operators ...model.Vector) model.Vector {
 	return &coalesceOperator{
 		pool:      pool,
 		operators: operators,

@@ -11,7 +11,7 @@ type VectorPool struct {
 	samples    sync.Pool
 }
 
-func NewPool() *VectorPool {
+func NewVectorPool() *VectorPool {
 	pool := &VectorPool{}
 	pool.vectors = sync.Pool{
 		New: func() any {

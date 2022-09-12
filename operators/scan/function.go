@@ -1,4 +1,4 @@
-package executionplan
+package scan
 
 import (
 	"fmt"

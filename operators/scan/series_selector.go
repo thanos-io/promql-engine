@@ -1,4 +1,4 @@
-package executionplan
+package scan
 
 import (
 	"context"
@@ -20,7 +20,7 @@ type seriesSelector struct {
 	series   []labels.Labels
 }
 
-func newSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, matchers []*labels.Matcher) *seriesSelector {
+func NewSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, matchers []*labels.Matcher) *seriesSelector {
 	return &seriesSelector{
 		storage: storage,
 

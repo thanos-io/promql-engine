@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 
-	"github.com/fpetkovski/promql-engine/executionplan"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -11,10 +11,10 @@ import (
 )
 
 type instantQuery struct {
-	plan executionplan.VectorOperator
+	plan model.Vector
 }
 
-func newInstantQuery(plan executionplan.VectorOperator) promql.Query {
+func newInstantQuery(plan model.Vector) promql.Query {
 	return &instantQuery{plan: plan}
 }
 

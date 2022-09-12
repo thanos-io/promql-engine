@@ -3,7 +3,7 @@ package engine
 import (
 	"time"
 
-	"github.com/fpetkovski/promql-engine/model"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
 	"github.com/fpetkovski/promql-engine/executionplan"
 
@@ -22,7 +22,7 @@ type engine struct {
 
 func New() v1.QueryEngine {
 	return &engine{
-		pool:          model.NewPool(),
+		pool:          model.NewVectorPool(),
 		lookbackDelta: 5 * time.Minute,
 	}
 }

@@ -1,4 +1,4 @@
-package executionplan
+package scan
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/model"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"

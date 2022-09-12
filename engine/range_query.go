@@ -5,9 +5,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/fpetkovski/promql-engine/model"
-
-	"github.com/fpetkovski/promql-engine/executionplan"
+	"github.com/fpetkovski/promql-engine/operators/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -16,11 +14,11 @@ import (
 
 type rangeQuery struct {
 	pool *model.VectorPool
-	plan executionplan.VectorOperator
+	plan model.Vector
 	once sync.Once
 }
 
-func newRangeQuery(plan executionplan.VectorOperator, pool *model.VectorPool) promql.Query {
+func newRangeQuery(plan model.Vector, pool *model.VectorPool) promql.Query {
 	return &rangeQuery{
 		pool: pool,
 		plan: plan,
