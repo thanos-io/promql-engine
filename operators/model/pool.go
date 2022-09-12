@@ -15,7 +15,7 @@ func NewVectorPool() *VectorPool {
 	pool := &VectorPool{}
 	pool.vectors = sync.Pool{
 		New: func() any {
-			return make([]StepVector, 0, 30)
+			return make([]StepVector, 0, 10)
 		},
 	}
 	pool.samples = sync.Pool{

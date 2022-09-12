@@ -59,6 +59,7 @@ func (c *coalesceOperator) loadSeries(ctx context.Context) error {
 		}
 	}
 	c.series = result
+	c.pool.SetStepSamplesSize(len(c.series))
 
 	return nil
 }
@@ -74,7 +75,6 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			continue
 		}
 		if len(in) > 0 && out == nil {
-			c.pool.SetStepSamplesSize(len(in) * len(c.operators))
 			out = c.pool.GetVectors()
 			for i := 0; i < len(in); i++ {
 				out = append(out, model.StepVector{
@@ -83,6 +83,7 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 				})
 			}
 		}
+
 		for i := 0; i < len(in); i++ {
 			out[i].Samples = append(out[i].Samples, in[i].Samples...)
 			o.GetPool().PutSamples(in[i].Samples)
