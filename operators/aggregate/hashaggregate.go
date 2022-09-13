@@ -2,9 +2,9 @@ package aggregate
 
 import (
 	"context"
-	"fmt"
-	"math"
 	"sync"
+
+	"github.com/fpetkovski/promql-engine/worker"
 
 	"github.com/fpetkovski/promql-engine/operators/model"
 
@@ -26,6 +26,8 @@ type aggregate struct {
 	once   sync.Once
 	tables []*aggregateTable
 	series []labels.Labels
+
+	workers []*worker.Worker
 }
 
 func NewHashAggregate(
@@ -35,14 +37,23 @@ func NewHashAggregate(
 	by bool,
 	labels []string,
 ) (model.Vector, error) {
-	return &aggregate{
+	a := &aggregate{
 		next:       next,
 		vectorPool: points,
 
 		by:          by,
 		aggregation: aggregation,
 		labels:      labels,
-	}, nil
+	}
+
+	workers := make([]*worker.Worker, 10)
+	for i := 0; i < 10; i++ {
+		workers[i] = worker.New(a.newVectorProcessor(i))
+		go workers[i].Start()
+	}
+	a.workers = workers
+
+	return a, nil
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -53,6 +64,41 @@ func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	}
 
 	return a.series, nil
+}
+
+func (a *aggregate) GetPool() *model.VectorPool {
+	return a.vectorPool
+}
+
+func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
+	in, err := a.next.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in == nil {
+		for i := 0; i < len(a.workers); i++ {
+			a.workers[i].Shutdown()
+		}
+		return nil, nil
+	}
+	defer a.next.GetPool().PutVectors(in)
+
+	a.once.Do(func() { err = a.initOutputBuffers(ctx) })
+	if err != nil {
+		return nil, err
+	}
+
+	result := make([]model.StepVector, len(in))
+	for i, vector := range in {
+		a.workers[i].Send(vector)
+	}
+
+	for i, vector := range in {
+		result[i] = a.workers[i].GetOutput()
+		a.next.GetPool().PutSamples(vector.Samples)
+
+	}
+	return result, nil
 }
 
 func (a *aggregate) initOutputBuffers(ctx context.Context) error {
@@ -114,130 +160,13 @@ func (a *aggregate) initOutputBuffers(ctx context.Context) error {
 	return nil
 }
 
-func (a *aggregate) GetPool() *model.VectorPool {
-	return a.vectorPool
-}
-
-func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
-	in, err := a.next.Next(ctx)
-	if err != nil {
-		return nil, err
+func (a *aggregate) newVectorProcessor(i int) func(vector model.StepVector) model.StepVector {
+	return func(vector model.StepVector) model.StepVector {
+		table := a.tables[i]
+		table.reset()
+		for _, series := range vector.Samples {
+			table.addSample(vector.T, series)
+		}
+		return table.toVector(a.vectorPool)
 	}
-	if in == nil {
-		return nil, nil
-	}
-	defer a.next.GetPool().PutVectors(in)
-
-	a.once.Do(func() { err = a.initOutputBuffers(ctx) })
-	if err != nil {
-		return nil, err
-	}
-
-	result := make([]model.StepVector, len(in))
-	var wg sync.WaitGroup
-	for i, vector := range in {
-		wg.Add(1)
-		go func(i int, vector model.StepVector) {
-			defer wg.Done()
-
-			table := a.tables[i]
-			table.reset()
-			for _, series := range vector.Samples {
-				table.addSample(vector.T, series)
-			}
-			result[i] = table.toVector(a.vectorPool)
-			a.next.GetPool().PutSamples(vector.Samples)
-		}(i, vector)
-	}
-	wg.Wait()
-	return result, nil
-}
-
-type newAccumulatorFunc func() *accumulator
-
-type accumulator struct {
-	AddFunc   func(v float64)
-	ValueFunc func() float64
-	HasValue  func() bool
-	Reset     func()
-}
-
-func newAccumulator(expr parser.ItemType) (*accumulator, error) {
-	hasValue := false
-	t := parser.ItemTypeStr[expr]
-	switch t {
-	case "sum":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value += v
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
-		}, nil
-	case "max":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value = math.Max(value, v)
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
-		}, nil
-	case "min":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value = math.Min(value, v)
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
-		}, nil
-	case "count":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value += 1
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
-		}, nil
-	case "avg":
-		var count, sum float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				count += 1
-				sum += v
-			},
-			ValueFunc: func() float64 { return sum / count },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				sum = 0
-				count = 0
-			},
-		}, nil
-	}
-	return nil, fmt.Errorf("unknown aggregation function %s", t)
 }
