@@ -2,6 +2,7 @@ package executionplan
 
 import (
 	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/fpetkovski/promql-engine/operators/model"
@@ -33,7 +34,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 
 	case *parser.VectorSelector:
 		filter := scan.NewSeriesFilter(storage, mint, maxt, e.LabelMatchers)
-		numShards := 4
+		numShards := runtime.NumCPU() / 2
 		operators := make([]model.Vector, 0, numShards)
 		for i := 0; i < numShards; i++ {
 			operators = append(operators, exchange.NewConcurrent(scan.NewVectorSelector(model.NewVectorPool(), filter, mint, maxt, step, i, numShards), 3))
