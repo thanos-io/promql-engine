@@ -32,19 +32,13 @@ type vectorSelector struct {
 	maxt        int64
 	step        int64
 	currentStep int64
+	stepsBatch  int
 
 	shard     int
 	numShards int
 }
 
-func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
-	if err := o.loadSeries(ctx); err != nil {
-		return nil, err
-	}
-	return o.series, nil
-}
-
-func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, shard, numShards int) model.Vector {
+func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, stepsBatch, shard, numShards int) model.Vector {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage:    storage,
@@ -54,10 +48,18 @@ func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, ma
 		maxt:        maxt.UnixMilli(),
 		step:        step.Milliseconds(),
 		currentStep: mint.UnixMilli(),
+		stepsBatch:  stepsBatch,
 
 		shard:     shard,
 		numShards: numShards,
 	}
+}
+
+func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+	return o.series, nil
 }
 
 func (o *vectorSelector) GetPool() *model.VectorPool {
@@ -73,9 +75,8 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	stepsBatch := 10
 	totalSteps := (o.maxt+o.mint)/o.step + 1
-	numSteps := int(math.Min(float64(stepsBatch), float64(totalSteps)))
+	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
 
 	vectors := o.vectorPool.GetVectors()
 	ts := o.currentStep

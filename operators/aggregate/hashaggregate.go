@@ -27,7 +27,8 @@ type aggregate struct {
 	tables []*aggregateTable
 	series []labels.Labels
 
-	workers worker.Group
+	stepsBatch int
+	workers    worker.Group
 }
 
 func NewHashAggregate(
@@ -36,6 +37,7 @@ func NewHashAggregate(
 	aggregation parser.ItemType,
 	by bool,
 	labels []string,
+	stepsBatch int,
 ) (model.Vector, error) {
 	a := &aggregate{
 		next:       next,
@@ -44,8 +46,9 @@ func NewHashAggregate(
 		by:          by,
 		aggregation: aggregation,
 		labels:      labels,
+		stepsBatch:  stepsBatch,
 	}
-	a.workers = worker.NewGroup(10, a.workerTask)
+	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
 	a.workers.Start()
 
 	return a, nil
@@ -139,7 +142,7 @@ func (a *aggregate) initOutputBuffers(ctx context.Context) error {
 	}
 	wg.Wait()
 
-	tables := make([]*aggregateTable, 10)
+	tables := make([]*aggregateTable, a.stepsBatch)
 	for i := 0; i < len(tables); i++ {
 		wg.Add(1)
 		go func(i int) {

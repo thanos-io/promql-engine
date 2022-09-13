@@ -15,6 +15,8 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
+const stepsBatch = 10
+
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.Vector, error) {
 	return newOperator(expr, storage, mint, maxt, step)
 }
@@ -26,7 +28,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		if err != nil {
 			return nil, err
 		}
-		a, err := aggregate.NewHashAggregate(model.NewVectorPool(), next, e.Op, !e.Without, e.Grouping)
+		a, err := aggregate.NewHashAggregate(model.NewVectorPool(), next, e.Op, !e.Without, e.Grouping, stepsBatch)
 		if err != nil {
 			return nil, err
 		}
@@ -37,7 +39,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		numShards := runtime.NumCPU() / 2
 		operators := make([]model.Vector, 0, numShards)
 		for i := 0; i < numShards; i++ {
-			operators = append(operators, exchange.NewConcurrent(scan.NewVectorSelector(model.NewVectorPool(), filter, mint, maxt, step, i, numShards), 3))
+			operators = append(operators, exchange.NewConcurrent(scan.NewVectorSelector(model.NewVectorPool(), filter, mint, maxt, step, stepsBatch, i, numShards), 3))
 		}
 		return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
 
