@@ -27,7 +27,7 @@ type aggregate struct {
 	tables []*aggregateTable
 	series []labels.Labels
 
-	workers []*worker.Worker
+	workers worker.Group
 }
 
 func NewHashAggregate(
@@ -45,13 +45,8 @@ func NewHashAggregate(
 		aggregation: aggregation,
 		labels:      labels,
 	}
-
-	workers := make([]*worker.Worker, 10)
-	for i := 0; i < 10; i++ {
-		workers[i] = worker.New(a.newVectorProcessor(i))
-		go workers[i].Start()
-	}
-	a.workers = workers
+	a.workers = worker.NewGroup(10, a.workerTask)
+	a.workers.Start()
 
 	return a, nil
 }
@@ -76,9 +71,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 	if in == nil {
-		for i := 0; i < len(a.workers); i++ {
-			a.workers[i].Shutdown()
-		}
+		a.workers.Shutdown()
 		return nil, nil
 	}
 	defer a.next.GetPool().PutVectors(in)
@@ -94,11 +87,18 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	for i, vector := range in {
+		a.workers[i].Done()
 		result[i] = a.workers[i].GetOutput()
 		a.next.GetPool().PutSamples(vector.Samples)
 
 	}
 	return result, nil
+}
+
+func (a *aggregate) shutdownWorkers() {
+	for i := 0; i < len(a.workers); i++ {
+		a.workers[i].Shutdown()
+	}
 }
 
 func (a *aggregate) initOutputBuffers(ctx context.Context) error {
@@ -160,13 +160,11 @@ func (a *aggregate) initOutputBuffers(ctx context.Context) error {
 	return nil
 }
 
-func (a *aggregate) newVectorProcessor(i int) func(vector model.StepVector) model.StepVector {
-	return func(vector model.StepVector) model.StepVector {
-		table := a.tables[i]
-		table.reset()
-		for _, series := range vector.Samples {
-			table.addSample(vector.T, series)
-		}
-		return table.toVector(a.vectorPool)
+func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.StepVector {
+	table := a.tables[workerID]
+	table.reset()
+	for _, series := range vector.Samples {
+		table.addSample(vector.T, series)
 	}
+	return table.toVector(a.vectorPool)
 }
