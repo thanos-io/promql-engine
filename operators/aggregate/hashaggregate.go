@@ -109,6 +109,7 @@ func (a *aggregate) initOutputBuffers(ctx context.Context) error {
 	}
 	wg.Wait()
 
+	a.vectorPool.SetStepSamplesSize(len(outputCache))
 	a.tables = tables
 	return nil
 }
