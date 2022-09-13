@@ -16,7 +16,7 @@ import (
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
-	test := setupStorage(b)
+	test := setupStorage(b, 1000, 3)
 	defer test.Close()
 
 	start := time.Unix(0, 0)
@@ -78,14 +78,14 @@ func BenchmarkChunkDecoding(b *testing.B) {
 }
 
 func BenchmarkSingleQuery(b *testing.B) {
-	test := setupStorage(b)
+	test := setupStorage(b, 5000, 3)
 	defer test.Close()
 
 	start := time.Unix(0, 0)
-	end := start.Add(1 * time.Hour)
+	end := start.Add(6 * time.Hour)
 	step := time.Second * 30
 
-	query := "sum(http_requests_total)"
+	query := "sum by (pod) (http_requests_total)"
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
@@ -94,7 +94,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 }
 
 func BenchmarkOldEngine(b *testing.B) {
-	test := setupStorage(b)
+	test := setupStorage(b, 1000, 3)
 	defer test.Close()
 
 	start := time.Unix(0, 0)
@@ -164,8 +164,8 @@ func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, en
 	qry.Exec(context.Background())
 }
 
-func setupStorage(b *testing.B) *promql.Test {
-	load := synthesizeLoad(1000, 3)
+func setupStorage(b *testing.B, numLabelsA int, numLabelsB int) *promql.Test {
+	load := synthesizeLoad(numLabelsA, numLabelsB)
 	test, err := promql.NewTest(b, load)
 	require.NoError(b, err)
 	require.NoError(b, test.Run())
