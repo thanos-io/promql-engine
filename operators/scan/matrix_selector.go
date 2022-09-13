@@ -2,6 +2,7 @@ package scan
 
 import (
 	"context"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -15,107 +16,156 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type matrixScan struct {
+type matrixScanner struct {
 	labels         labels.Labels
+	signature      uint64
 	previousPoints []promql.Point
 	samples        *storage.BufferedSeriesIterator
 }
 
 type matrixSelector struct {
-	call    FunctionCall
-	storage storage.Queryable
-	series  []matrixScan
-	once    sync.Once
+	call     FunctionCall
+	selector *seriesSelector
+	scanners []matrixScanner
+	series   []labels.Labels
+	once     sync.Once
 
-	matchers []*labels.Matcher
-	hints    *storage.SelectHints
-	pool     *model.VectorPool
+	matchers   []*labels.Matcher
+	hints      *storage.SelectHints
+	vectorPool *model.VectorPool
 
 	mint        int64
 	maxt        int64
 	step        int64
 	selectRange int64
 	currentStep int64
+	stepsBatch  int
+
+	shard     int
+	numShards int
 }
 
-func NewMatrixSelector(pool *model.VectorPool, storage storage.Queryable, call FunctionCall, matchers []*labels.Matcher, hints *storage.SelectHints, mint, maxt time.Time, step, selectRange time.Duration) *matrixSelector {
+func NewMatrixSelector(
+	pool *model.VectorPool,
+	selector *seriesSelector,
+	call FunctionCall,
+	mint, maxt time.Time,
+	stepsBatch int,
+	step, selectRange time.Duration,
+	shard, numShard int,
+) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
-		storage:     storage,
-		call:        call,
-		pool:        pool,
-		matchers:    matchers,
-		hints:       hints,
-		mint:        mint.UnixMilli(),
-		maxt:        maxt.UnixMilli(),
-		step:        step.Milliseconds(),
+		selector:   selector,
+		call:       call,
+		vectorPool: pool,
+
+		mint:       mint.UnixMilli(),
+		maxt:       maxt.UnixMilli(),
+		step:       step.Milliseconds(),
+		stepsBatch: stepsBatch,
+
 		selectRange: selectRange.Milliseconds(),
-		currentStep: mint.UnixMilli() - step.Milliseconds(),
+		currentStep: mint.UnixMilli(),
+
+		shard:     shard,
+		numShards: numShard,
 	}
 }
 
-func (o *matrixSelector) Next(ctx context.Context) (promql.Vector, error) {
-	o.currentStep += o.step
+func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+	return o.series, nil
+}
+
+func (o *matrixSelector) GetPool() *model.VectorPool {
+	return o.vectorPool
+}
+
+func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
 
-	var err error
-	o.once.Do(func() {
-		err = o.initializeSeries(ctx)
-	})
-	if err != nil {
+	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
 
-	vector := make(promql.Vector, len(o.series))
-	for i := 0; i < len(o.series); i++ {
-		s := &o.series[i]
+	totalSteps := (o.maxt+o.mint)/o.step + 1
+	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
 
-		maxt := o.currentStep
-		mint := maxt - o.selectRange
+	vectors := o.vectorPool.GetVectors()
+	ts := o.currentStep
+	for i := 0; i < len(o.scanners); i++ {
+		var (
+			series   = o.scanners[i]
+			seriesTs = ts
+		)
 
-		rangePoints := selectPoints(s.samples, mint, maxt, o.series[i].previousPoints)
-		result := o.call(s.labels, rangePoints, time.UnixMilli(o.currentStep))
-		vector[i].Metric = result.Metric
-		vector[i].Point = result.Point
-		o.series[i].previousPoints = rangePoints
+		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
+			if len(vectors) <= currStep {
+				vectors = append(vectors, model.StepVector{
+					T:       seriesTs,
+					Samples: o.vectorPool.GetSamples(),
+				})
+			}
+			maxt := seriesTs
+			mint := maxt - o.selectRange
 
-		// Only buffer stepRange milliseconds from the second step on.
-		stepRange := o.selectRange
-		if stepRange > o.step {
-			stepRange = o.step
+			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
+			result := o.call(series.labels, rangePoints, time.UnixMilli(seriesTs))
+			if result.T >= 0 {
+				vectors[currStep].T = result.T
+				vectors[currStep].Samples = append(vectors[currStep].Samples, model.StepSample{
+					ID:     series.signature,
+					Metric: series.labels,
+					V:      result.V,
+				})
+			}
+			o.scanners[i].previousPoints = rangePoints
+
+			// Only buffer stepRange milliseconds from the second step on.
+			stepRange := o.selectRange
+			if stepRange > o.step {
+				stepRange = o.step
+			}
+			series.samples.ReduceDelta(stepRange)
+
+			seriesTs += o.step
 		}
-		s.samples.ReduceDelta(stepRange)
 	}
+	o.currentStep += o.step * int64(numSteps)
 
-	return vector, nil
+	return vectors, nil
+
 }
 
-func (o *matrixSelector) initializeSeries(ctx context.Context) error {
-	mint := o.mint - 5*time.Minute.Milliseconds()
-	querier, err := o.storage.Querier(ctx, mint, o.maxt)
-	if err != nil {
-		return err
-	}
-	defer querier.Close()
+func (o *matrixSelector) loadSeries(ctx context.Context) error {
+	var err error
+	o.once.Do(func() {
+		series, loadErr := o.selector.getSeries(ctx, o.shard, o.numShards)
+		if loadErr != nil {
+			err = loadErr
+			return
+		}
 
-	series := make([]matrixScan, 0)
-	seriesSet := querier.Select(true, o.hints, o.matchers...)
-	for seriesSet.Next() {
-		s := seriesSet.At()
+		o.scanners = make([]matrixScanner, len(series))
+		o.series = make([]labels.Labels, len(series))
+		for i, s := range series {
+			lbls := dropMetricName(s.Labels())
+			sort.Sort(lbls)
 
-		lbls := s.Labels()
-		sort.Sort(lbls)
-		series = append(series, matrixScan{
-			labels:         dropMetricName(lbls),
-			previousPoints: make([]promql.Point, 0),
-			samples:        storage.NewBufferIterator(s.Iterator(), o.selectRange),
-		})
-	}
-	o.series = series
-
-	return nil
+			o.scanners[i] = matrixScanner{
+				labels:    lbls,
+				signature: s.signature,
+				samples:   storage.NewBufferIterator(s.Iterator(), o.selectRange),
+			}
+			o.series[i] = lbls
+		}
+	})
+	return err
 }
 
 // matrixIterSlice populates a matrix vector covering the requested range for a

@@ -13,10 +13,10 @@ type coalesceOperator struct {
 	series []labels.Labels
 
 	pool      *model.VectorPool
-	operators []model.Vector
+	operators []model.VectorOperator
 }
 
-func NewCoalesce(pool *model.VectorPool, operators ...model.Vector) model.Vector {
+func NewCoalesce(pool *model.VectorPool, operators ...model.VectorOperator) model.VectorOperator {
 	return &coalesceOperator{
 		pool:      pool,
 		operators: operators,

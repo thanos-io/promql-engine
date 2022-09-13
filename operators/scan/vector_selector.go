@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type vectorScan struct {
+type vectorScanner struct {
 	labels    labels.Labels
 	signature uint64
 	samples   *storage.MemoizedSeriesIterator
@@ -22,7 +22,7 @@ type vectorScan struct {
 
 type vectorSelector struct {
 	storage  *seriesSelector
-	scanners []vectorScan
+	scanners []vectorScanner
 	series   []labels.Labels
 
 	once       sync.Once
@@ -38,7 +38,7 @@ type vectorSelector struct {
 	numShards int
 }
 
-func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, stepsBatch, shard, numShards int) model.Vector {
+func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, stepsBatch, shard, numShards int) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage:    storage,
@@ -112,14 +112,22 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
-		scanners, seriesShard, loadErr := o.storage.Series(ctx, o.shard, o.numShards)
+		series, loadErr := o.storage.getSeries(ctx, o.shard, o.numShards)
 		if loadErr != nil {
 			err = loadErr
 			return
 		}
 
-		o.scanners = scanners
-		o.series = seriesShard
+		o.scanners = make([]vectorScanner, len(series))
+		o.series = make([]labels.Labels, len(series))
+		for i, s := range series {
+			o.scanners[i] = vectorScanner{
+				labels:    s.Labels(),
+				signature: s.signature,
+				samples:   storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
+			}
+			o.series[i] = s.Labels()
+		}
 	})
 	return err
 }

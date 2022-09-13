@@ -6,7 +6,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type Vector interface {
+type VectorOperator interface {
 	Next(ctx context.Context) ([]StepVector, error)
 	Series(ctx context.Context) ([]labels.Labels, error)
 	GetPool() *VectorPool

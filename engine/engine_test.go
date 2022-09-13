@@ -26,6 +26,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		query    string
 		start    time.Time
 		end      time.Time
+		step     time.Duration
 		expected []promql.Vector
 	}{
 		{
@@ -54,6 +55,19 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 		},
 		{
+			name: "rate",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "rate(http_requests_total[1m])",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
 			name: "sum rate",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x4
@@ -63,9 +77,15 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		{
 			name: "sum rate with stale series",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x20`,
+					http_requests_total{pod="nginx-1"} 1+1x40
+					http_requests_total{pod="nginx-2"} 1+2x50
+					http_requests_total{pod="nginx-4"} 1+2x50
+					http_requests_total{pod="nginx-5"} 1+2x50
+					http_requests_total{pod="nginx-6"} 1+2x50`,
 			query: "sum(rate(http_requests_total[1m]))",
+			start: time.Unix(421, 0),
+			end:   time.Unix(3230, 0),
+			step:  28 * time.Second,
 		},
 	}
 
@@ -83,6 +103,9 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			}
 			if tc.end.UnixMilli() == 0 {
 				tc.end = end
+			}
+			if tc.step == 0 {
+				tc.step = step
 			}
 
 			newEngine := engine.New()
