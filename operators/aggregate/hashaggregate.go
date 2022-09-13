@@ -14,7 +14,7 @@ import (
 )
 
 type aggregate struct {
-	next model.Vector
+	next model.VectorOperator
 
 	hashBuf    []byte
 	vectorPool *model.VectorPool
@@ -33,12 +33,12 @@ type aggregate struct {
 
 func NewHashAggregate(
 	points *model.VectorPool,
-	next model.Vector,
+	next model.VectorOperator,
 	aggregation parser.ItemType,
 	by bool,
 	labels []string,
 	stepsBatch int,
-) (model.Vector, error) {
+) (model.VectorOperator, error) {
 	a := &aggregate{
 		next:       next,
 		vectorPool: points,

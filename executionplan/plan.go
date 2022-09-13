@@ -17,11 +17,11 @@ import (
 
 const stepsBatch = 10
 
-func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.Vector, error) {
+func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
 	return newOperator(expr, storage, mint, maxt, step)
 }
 
-func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.Vector, error) {
+func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.AggregateExpr:
 		next, err := newOperator(e.Expr, storage, mint, maxt, step)
@@ -35,26 +35,35 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		return exchange.NewConcurrent(a, 2), nil
 
 	case *parser.VectorSelector:
-		filter := scan.NewSeriesFilter(storage, mint, maxt, e.LabelMatchers)
+		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, e.LabelMatchers)
 		numShards := runtime.NumCPU() / 2
-		operators := make([]model.Vector, 0, numShards)
+		operators := make([]model.VectorOperator, 0, numShards)
 		for i := 0; i < numShards; i++ {
 			operators = append(operators, exchange.NewConcurrent(scan.NewVectorSelector(model.NewVectorPool(), filter, mint, maxt, step, stepsBatch, i, numShards), 3))
 		}
 		return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
 
-	//case *parser.Call:
-	//	switch t := e.Args[0].(type) {
-	//	case *parser.MatrixSelector:
-	//		vs := t.VectorSelector.(*parser.VectorSelector)
-	//		call, err := NewFunctionCall(e.Func, t.Range)
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		selector := NewMatrixSelector(pool, storage, call, vs.LabelMatchers, nil, mint, maxt, step, t.Range)
-	//		return concurrent(selector), nil
-	//	}
-	//	return nil, fmt.Errorf("unsupported expression %s", e)
+	case *parser.Call:
+		switch t := e.Args[0].(type) {
+		case *parser.MatrixSelector:
+			vs := t.VectorSelector.(*parser.VectorSelector)
+			call, err := scan.NewFunctionCall(e.Func, t.Range)
+			if err != nil {
+				return nil, err
+			}
+
+			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, vs.LabelMatchers)
+			numShards := runtime.NumCPU() / 2
+			operators := make([]model.VectorOperator, 0, numShards)
+			for i := 0; i < numShards; i++ {
+				operators = append(operators, exchange.NewConcurrent(
+					scan.NewMatrixSelector(model.NewVectorPool(), filter, call, mint, maxt, stepsBatch, step, t.Range, i, numShards), 3),
+				)
+			}
+
+			return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
+		}
+		return nil, fmt.Errorf("unsupported expression %s", e)
 
 	default:
 		return nil, fmt.Errorf("unsupported expression %s", e)

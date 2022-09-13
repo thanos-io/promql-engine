@@ -14,11 +14,11 @@ import (
 
 type rangeQuery struct {
 	pool *model.VectorPool
-	plan model.Vector
+	plan model.VectorOperator
 	once sync.Once
 }
 
-func newRangeQuery(plan model.Vector, pool *model.VectorPool) promql.Query {
+func newRangeQuery(plan model.VectorOperator, pool *model.VectorPool) promql.Query {
 	return &rangeQuery{
 		pool: pool,
 		plan: plan,

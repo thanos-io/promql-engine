@@ -117,10 +117,18 @@ func BenchmarkOldEngine(b *testing.B) {
 			name:  "aggregation by pod",
 			query: "sum by (pod) (http_requests_total)",
 		},
-		//{
-		//	name:  "sum-rate",
-		//	query: "sum by (pod) (rate(http_requests_total[1m]))",
-		//},
+		{
+			name:  "rate",
+			query: "rate(http_requests_total[1m])",
+		},
+		{
+			name:  "sum-rate",
+			query: "sum(rate(http_requests_total[1m]))",
+		},
+		{
+			name:  "sum-by-rate",
+			query: "sum by (pod) (rate(http_requests_total[1m]))",
+		},
 	}
 
 	for _, tc := range cases {

@@ -10,12 +10,12 @@ import (
 )
 
 type concurrencyOperator struct {
-	next   model.Vector
+	next   model.VectorOperator
 	buffer chan []model.StepVector
 	once   sync.Once
 }
 
-func NewConcurrent(next model.Vector, bufferSize int) model.Vector {
+func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
 		buffer: make(chan []model.StepVector, bufferSize),

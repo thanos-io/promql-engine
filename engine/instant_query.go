@@ -11,10 +11,10 @@ import (
 )
 
 type instantQuery struct {
-	plan model.Vector
+	plan model.VectorOperator
 }
 
-func newInstantQuery(plan model.Vector) promql.Query {
+func newInstantQuery(plan model.VectorOperator) promql.Query {
 	return &instantQuery{plan: plan}
 }
 

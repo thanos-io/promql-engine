@@ -9,48 +9,51 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-type seriesSelector struct {
-	storage  storage.Queryable
-	mint     int64
-	maxt     int64
-	matchers []*labels.Matcher
-
-	once     sync.Once
-	scanners []vectorScan
-	series   []labels.Labels
+type signedSeries struct {
+	storage.Series
+	signature uint64
 }
 
-func NewSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, matchers []*labels.Matcher) *seriesSelector {
+type seriesSelector struct {
+	storage     storage.Queryable
+	mint        int64
+	maxt        int64
+	selectRange int64
+	matchers    []*labels.Matcher
+
+	once sync.Once
+
+	series []signedSeries
+}
+
+func NewSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, selectRange time.Duration, matchers []*labels.Matcher) *seriesSelector {
 	return &seriesSelector{
 		storage: storage,
 
-		mint:     mint.UnixMilli() - 5*time.Minute.Milliseconds(),
-		maxt:     maxt.UnixMilli(),
-		matchers: matchers,
+		mint:        mint.UnixMilli() - 5*time.Minute.Milliseconds(),
+		maxt:        maxt.UnixMilli(),
+		selectRange: selectRange.Milliseconds(),
+		matchers:    matchers,
 	}
 }
 
-func (o *seriesSelector) Series(ctx context.Context, shard int, numShards int) ([]vectorScan, []labels.Labels, error) {
+func (o *seriesSelector) getSeries(ctx context.Context, shard int, numShards int) ([]signedSeries, error) {
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	start := shard * len(o.scanners) / numShards
-	end := (shard + 1) * len(o.scanners) / numShards
-	if end > len(o.scanners) {
-		end = len(o.scanners)
+	start := shard * len(o.series) / numShards
+	end := (shard + 1) * len(o.series) / numShards
+	if end > len(o.series) {
+		end = len(o.series)
 	}
-	return o.scanners[start:end], o.series[start:end], nil
+	return o.series[start:end], nil
 
 }
 
 func (o *seriesSelector) loadSeries(ctx context.Context) error {
-	//start := time.Now()
-	//defer func() {
-	//	fmt.Println("Done fetching series", time.Since(start))
-	//}()
 	querier, err := o.storage.Querier(ctx, o.mint, o.maxt)
 	if err != nil {
 		return err
@@ -60,16 +63,13 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	seriesSet := querier.Select(false, nil, o.matchers...)
 	i := 0
 	for seriesSet.Next() {
-		series := seriesSet.At()
-		o.scanners = append(o.scanners, vectorScan{
-			labels:    series.Labels(),
+		s := seriesSet.At()
+		o.series = append(o.series, signedSeries{
+			Series:    s,
 			signature: uint64(i),
-			samples:   storage.NewMemoizedIterator(series.Iterator(), 5*time.Minute.Milliseconds()),
 		})
-		o.series = append(o.series, series.Labels())
 		i++
 	}
-	//fmt.Println("Total series fetched", len(o.series))
 
 	return nil
 }
