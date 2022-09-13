@@ -1,8 +1,12 @@
 package aggregate
 
 import (
+	"fmt"
+	"math"
+
 	"github.com/fpetkovski/promql-engine/operators/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 type aggregateResult struct {
@@ -78,4 +82,93 @@ func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byt
 	lb.Keep(grouping...)
 	key, bytes := metric.HashForLabels(buf, grouping...)
 	return key, string(bytes), lb.Labels()
+}
+
+type newAccumulatorFunc func() *accumulator
+
+type accumulator struct {
+	AddFunc   func(v float64)
+	ValueFunc func() float64
+	HasValue  func() bool
+	Reset     func()
+}
+
+func newAccumulator(expr parser.ItemType) (*accumulator, error) {
+	hasValue := false
+	t := parser.ItemTypeStr[expr]
+	switch t {
+	case "sum":
+		var value float64
+		return &accumulator{
+			AddFunc: func(v float64) {
+				hasValue = true
+				value += v
+			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
+			Reset: func() {
+				hasValue = false
+				value = 0
+			},
+		}, nil
+	case "max":
+		var value float64
+		return &accumulator{
+			AddFunc: func(v float64) {
+				hasValue = true
+				value = math.Max(value, v)
+			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
+			Reset: func() {
+				hasValue = false
+				value = 0
+			},
+		}, nil
+	case "min":
+		var value float64
+		return &accumulator{
+			AddFunc: func(v float64) {
+				hasValue = true
+				value = math.Min(value, v)
+			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
+			Reset: func() {
+				hasValue = false
+				value = 0
+			},
+		}, nil
+	case "count":
+		var value float64
+		return &accumulator{
+			AddFunc: func(v float64) {
+				hasValue = true
+				value += 1
+			},
+			ValueFunc: func() float64 { return value },
+			HasValue:  func() bool { return hasValue },
+			Reset: func() {
+				hasValue = false
+				value = 0
+			},
+		}, nil
+	case "avg":
+		var count, sum float64
+		return &accumulator{
+			AddFunc: func(v float64) {
+				hasValue = true
+				count += 1
+				sum += v
+			},
+			ValueFunc: func() float64 { return sum / count },
+			HasValue:  func() bool { return hasValue },
+			Reset: func() {
+				hasValue = false
+				sum = 0
+				count = 0
+			},
+		}, nil
+	}
+	return nil, fmt.Errorf("unknown aggregation function %s", t)
 }
