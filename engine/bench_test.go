@@ -110,11 +110,11 @@ func BenchmarkOldEngine(b *testing.B) {
 			query: "http_requests_total",
 		},
 		{
-			name:  "aggregation",
+			name:  "sum",
 			query: "sum(http_requests_total)",
 		},
 		{
-			name:  "aggregation by pod",
+			name:  "sum by pod",
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{
@@ -122,11 +122,11 @@ func BenchmarkOldEngine(b *testing.B) {
 			query: "rate(http_requests_total[1m])",
 		},
 		{
-			name:  "sum-rate",
+			name:  "sum rate",
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 		{
-			name:  "sum-by-rate",
+			name:  "sum by rate",
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
 		},
 	}
