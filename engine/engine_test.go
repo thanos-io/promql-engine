@@ -13,8 +13,8 @@ import (
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
 	start := time.Unix(0, 0)
-	end := time.Unix(120, 0)
-	step := time.Second * 60
+	end := time.Unix(240, 0)
+	step := time.Second * 30
 	opts := promql.EngineOpts{
 		Timeout:    1 * time.Hour,
 		MaxSamples: 1e10,
@@ -35,6 +35,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum (http_requests_total)",
+		},
+		{
+			name: "count",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "count(http_requests_total)",
+		},
+		{
+			name: "average",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "avg(http_requests_total)",
 		},
 		{
 			name: "sum by pod",
@@ -98,10 +112,10 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			err = test.Run()
 			require.NoError(t, err)
 
-			if tc.start.UnixMilli() == 0 {
+			if tc.start.Equal(time.Time{}) {
 				tc.start = start
 			}
-			if tc.end.UnixMilli() == 0 {
+			if tc.end.Equal(time.Time{}) {
 				tc.end = end
 			}
 			if tc.step == 0 {
