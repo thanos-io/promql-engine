@@ -16,6 +16,7 @@ The following table shows operations which are currenly supported by the engine
 | Aggregations           | Partial support (sum, max, min, avg and count) | Medium   |
 | Aggregations over time | Partial support (sum_over_time)                | Medium   |
 | Functions              | No support                                     | Medium   |
+| Quantiles              | No support                                     | High     |
 | Binary expressions     | No support                                     | High     |
 | Instant queries        | No support                                     | High     |
 
