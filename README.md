@@ -4,6 +4,23 @@ A multi-threaded implementation of a PromQL Query Engine based on the [Volcano/I
 
 The project is currently under active development.
 
+## Roadmap
+
+The engine intends to have full compatibility with the original engine used in Prometheus. Since implementing the full specification will take time, we aim to add support for most commonly used expressions while falling back to the original engine for operations that are not yet supported. This will allow us to have smaller and faster releases, and gather feedback on regular basis. Instructions on using the engine will be added after we have enough confidence on its correctness.
+
+The following table shows operations which are currenly supported by the engine
+
+| Type                   | Supported                                      | Priority |
+|------------------------|------------------------------------------------|----------|
+| Rate                   | Full support                                   |          |
+| Aggregations           | Partial support (sum, max, min, avg and count) | Medium   |
+| Aggregations over time | Partial support (sum_over_time)                | Medium   |
+| Functions              | No support                                     | Medium   |
+| Binary expressions     | No support                                     | High     |
+| Instant queries        | No support                                     | High     |
+
+In addition to implementing multi-threading, we would ultimately like to end up with a distributed execution model.
+
 ## Design
 
 At the beginning of a PromQL query execution, the query engine computes a physical plan consisting of multiple independent operators, each responsible for calculating one part of the query expression.
@@ -18,7 +35,7 @@ This model allows for samples from individual time series to flow one execution 
 
 In addition to operators that have a one-to-one mapping with PromQL constructs, the Volcano model also describes so-called Exchange operators which can be used for flow control and optimizations, such as concurrency or batched selects. An example of an _Exchange_ operator is described in the [Intra-operator parallelism](#intra-operator-parallelism) section.
 
-## Inter-operator parallelism
+### Inter-operator parallelism
 
 Since operators are independent and rely on a common interface for pulling data, they can be run in parallel to each other. As soon as one operator has processed data from an evaluation step, it can pass the result onward so that its upstream can immediately start working on it.
 
@@ -27,7 +44,7 @@ Since operators are independent and rely on a common interface for pulling data,
 </p>
 
 
-## Intra-operator parallelism
+### Intra-operator parallelism
 
 Parallelism can also be added within individual operators using a parallel coalesce exchange operator. Such exchange operators are indistinguishable from regular operators to their upstreams since they respect the same `Next()` interface.
 
@@ -36,9 +53,9 @@ Parallelism can also be added within individual operators using a parallel coale
 </p>
 
 
-## Memory management 
+### Memory management
 
-### Step vector allocations
+#### Step vector allocations
 
 One challenge with the streamed execution model is knowing how much memory to allocate in each operator for each step. 
 
@@ -49,14 +66,20 @@ Even though this might look like an expensive operation, its cost is identical t
 * use arrays instead of maps for indexing data, leading to faster execution times due to having less allocations and using index-based lookups, and
 * use tight loops in operators by eliminating conditional statements associated with maps.
 
-### Vector pools
+#### Vector pools
 
 Since time series are decoded one step at a time, vectors between execution execution steps can be recycled manually instead of relying on the garbage collector. Each operator has its own pool that it uses to allocate new step vectors and send results to its upstream. Whenever the upstream operator is finished with processing a step vector, it will return that vector to the pool of its downstream so that it can be reused again for subsequent steps.
 
-## Concurrency control
+#### Memory limits
 
-The current implementation uses goroutines very liberally which means the query will use as many cores as possible. Limiting the number of cores which a query can use is not yet implemented. 
+There are currently no mechanisms to apply memory limits to queries within the engine. This is a highly desirable feature, and we would like to explore ways in which we can support it.  
 
-## Plan optimization
+### Concurrency control
+
+The current implementation uses goroutines very liberally which means the query will use as many cores as possible. Limiting the number of cores which a query can use is not yet implemented but we would eventually like to have support for it. 
+
+### Plan optimization
 
 The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
+
+
