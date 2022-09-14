@@ -58,7 +58,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			for ss.Next() {
 				series = append(series, ss.At().Iterator())
 			}
-			stepCount := 60
+			stepCount := 10
 			ts := start.UnixMilli()
 			for ts <= end.UnixMilli() {
 				for i := 0; i < len(series); i++ {
