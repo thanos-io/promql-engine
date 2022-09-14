@@ -1,15 +1,15 @@
-package executionplan
+package physicalplan
 
 import (
 	"fmt"
 	"runtime"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/operators/model"
+	"github.com/fpetkovski/promql-engine/physicalplan/model"
 
-	"github.com/fpetkovski/promql-engine/operators/aggregate"
-	"github.com/fpetkovski/promql-engine/operators/exchange"
-	"github.com/fpetkovski/promql-engine/operators/scan"
+	"github.com/fpetkovski/promql-engine/physicalplan/aggregate"
+	"github.com/fpetkovski/promql-engine/physicalplan/exchange"
+	"github.com/fpetkovski/promql-engine/physicalplan/scan"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"

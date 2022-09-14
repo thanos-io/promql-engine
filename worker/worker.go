@@ -3,7 +3,7 @@ package worker
 import (
 	"sync"
 
-	"github.com/fpetkovski/promql-engine/operators/model"
+	"github.com/fpetkovski/promql-engine/physicalplan/model"
 )
 
 type Group []*Worker

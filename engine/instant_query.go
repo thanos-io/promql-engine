@@ -3,7 +3,7 @@ package engine
 import (
 	"context"
 
-	"github.com/fpetkovski/promql-engine/operators/model"
+	"github.com/fpetkovski/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"

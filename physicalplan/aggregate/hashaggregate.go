@@ -6,7 +6,7 @@ import (
 
 	"github.com/fpetkovski/promql-engine/worker"
 
-	"github.com/fpetkovski/promql-engine/operators/model"
+	"github.com/fpetkovski/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 

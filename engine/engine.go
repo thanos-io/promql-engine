@@ -3,9 +3,9 @@ package engine
 import (
 	"time"
 
-	"github.com/fpetkovski/promql-engine/operators/model"
+	"github.com/fpetkovski/promql-engine/physicalplan"
 
-	"github.com/fpetkovski/promql-engine/executionplan"
+	"github.com/fpetkovski/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -37,7 +37,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	plan, err := executionplan.New(expr, q, ts, ts, 0)
+	plan, err := physicalplan.New(expr, q, ts, ts, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
-	plan, err := executionplan.New(expr, q, start, end, interval)
+	plan, err := physicalplan.New(expr, q, start, end, interval)
 	if err != nil {
 		return nil, err
 	}
