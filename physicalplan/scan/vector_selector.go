@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package scan
 
 import (
@@ -6,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"

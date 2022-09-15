@@ -1,10 +1,10 @@
-module github.com/fpetkovski/promql-engine
+module github.com/thanos-community/promql-engine
 
 go 1.18
 
 require (
+	github.com/efficientgo/core v1.0.0-rc.0
 	github.com/prometheus/prometheus v0.38.0
-	k8s.io/apimachinery v0.24.3
 )
 
 require (
@@ -47,6 +47,7 @@ require (
 	go.opentelemetry.io/otel/trace v1.9.0 // indirect
 	go.uber.org/atomic v1.9.0 // indirect
 	go.uber.org/goleak v1.1.12 // indirect
+	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.0.0-20220809184613-07c6da5e1ced // indirect
 	golang.org/x/oauth2 v0.0.0-20220808172628-8227340efae7 // indirect
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4 // indirect
@@ -57,6 +58,11 @@ require (
 	google.golang.org/protobuf v1.28.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/klog/v2 v2.70.0 // indirect
-	k8s.io/utils v0.0.0-20220210201930-3a6ce19ff2f9 // indirect
+)
+
+exclude (
+	// Exclude erronous modules that cause go mod tidy with go 1.19.1 to fail with
+	// ambiguous import: found package cloud.google.com/go/compute/metadata in multiple modules.
+	cloud.google.com/go v0.34.0
+	cloud.google.com/go v0.65.0
 )
