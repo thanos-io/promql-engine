@@ -23,6 +23,10 @@ type engine struct {
 	lookbackDelta time.Duration
 }
 
+type Opts struct {
+	LookbackDelta time.Duration
+}
+
 func New() v1.QueryEngine {
 	return &engine{
 		pool:          model.NewVectorPool(),
