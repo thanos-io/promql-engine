@@ -4,7 +4,6 @@
 package physicalplan
 
 import (
-	"fmt"
 	"runtime"
 	"time"
 
@@ -21,7 +20,7 @@ import (
 
 const stepsBatch = 10
 
-var ErrNotImplementedExpr = errors.New("unsupported expression")
+var ErrNotSupportedExpr = errors.New("unsupported expression")
 
 // New creates new physical query execution plan for a given query expression.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
@@ -69,9 +68,9 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 			}
 			return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
 		default:
-			return nil, fmt.Errorf("unsupported expression %s", t)
+			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
 		}
 	default:
-		return nil, fmt.Errorf("unsupported expression %s", e)
+		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
 	}
 }

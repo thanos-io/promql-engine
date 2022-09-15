@@ -166,7 +166,7 @@ func BenchmarkOldEngine(b *testing.B) {
 }
 
 func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) {
-	ng := engine.New()
+	ng := engine.New(engine.Opts{DisableFallback: true})
 	qry, err := ng.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
 	testutil.Ok(b, err)
 
