@@ -4,7 +4,6 @@
 package physicalplan
 
 import (
-	"fmt"
 	"runtime"
 	"time"
 
@@ -14,12 +13,16 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/exchange"
 	"github.com/thanos-community/promql-engine/physicalplan/scan"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 )
 
 const stepsBatch = 10
 
+var ErrNotSupportedExpr = errors.New("unsupported expression")
+
+// New creates new physical query execution plan for a given query expression.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
 	return newOperator(expr, storage, mint, maxt, step)
 }
@@ -63,12 +66,11 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 					scan.NewMatrixSelector(model.NewVectorPool(), filter, call, mint, maxt, stepsBatch, step, t.Range, i, numShards), 3),
 				)
 			}
-
 			return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
+		default:
+			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
 		}
-		return nil, fmt.Errorf("unsupported expression %s", e)
-
 	default:
-		return nil, fmt.Errorf("unsupported expression %s", e)
+		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
 	}
 }

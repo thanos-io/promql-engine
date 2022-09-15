@@ -117,7 +117,7 @@ func TestRangeQuery(t *testing.T) {
 		},
 	}
 
-	ng := engine.New()
+	ng := engine.New(engine.Opts{})
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {

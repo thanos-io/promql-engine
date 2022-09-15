@@ -5,6 +5,7 @@ package engine_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -123,27 +124,29 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				tc.step = step
 			}
 
-			newEngine := engine.New()
-			q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-			testutil.Ok(t, err)
-			newResult := q1.Exec(context.Background())
-			testutil.Ok(t, newResult.Err)
+			for _, disableFallback := range []bool{false, true} {
+				t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+					newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
+					q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
+					testutil.Ok(t, err)
+					newResult := q1.Exec(context.Background())
+					testutil.Ok(t, newResult.Err)
 
-			oldEngine := promql.NewEngine(opts)
-			q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-			testutil.Ok(t, err)
+					oldEngine := promql.NewEngine(opts)
+					q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
+					testutil.Ok(t, err)
 
-			oldResult := q2.Exec(context.Background())
-			testutil.Ok(t, oldResult.Err)
+					oldResult := q2.Exec(context.Background())
+					testutil.Ok(t, oldResult.Err)
 
-			testutil.Equals(t, oldResult, newResult)
+					testutil.Equals(t, oldResult, newResult)
+				})
+			}
 		})
 	}
 }
 
 func TestInstantQuery(t *testing.T) {
-	t.Skip("Instant queries are not supported.")
-
 	queryTime := time.Unix(50, 0)
 	opts := promql.EngineOpts{
 		Timeout:    1 * time.Hour,
@@ -187,19 +190,29 @@ func TestInstantQuery(t *testing.T) {
 
 			testutil.Ok(t, test.Run())
 
-			newEngine := engine.New()
-			q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-			testutil.Ok(t, err)
-			newResult := q1.Exec(context.Background())
-			testutil.Ok(t, newResult.Err)
+			t.Run("disabled fallback", func(t *testing.T) {
+				newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: true})
+				_, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+				testutil.NotOk(t, err)
+				testutil.Equals(t, "instant query: not implemented", err.Error())
+			})
 
-			oldEngine := promql.NewEngine(opts)
-			q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-			testutil.Ok(t, err)
-			oldResult := q2.Exec(context.Background())
-			testutil.Ok(t, oldResult.Err)
+			t.Run("enabled fallback", func(t *testing.T) {
+				newEngine := engine.New(engine.Opts{EngineOpts: opts})
+				q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+				testutil.Ok(t, err)
+				newResult := q1.Exec(context.Background())
+				testutil.Ok(t, newResult.Err)
 
-			testutil.Equals(t, oldResult, newResult)
+				oldEngine := promql.NewEngine(opts)
+				q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+				testutil.Ok(t, err)
+				oldResult := q2.Exec(context.Background())
+				testutil.Ok(t, oldResult.Err)
+
+				testutil.Equals(t, oldResult, newResult)
+			})
+
 		})
 	}
 }
