@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package physicalplan
 
 import (
@@ -5,11 +8,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/model"
 
-	"github.com/fpetkovski/promql-engine/physicalplan/aggregate"
-	"github.com/fpetkovski/promql-engine/physicalplan/exchange"
-	"github.com/fpetkovski/promql-engine/physicalplan/scan"
+	"github.com/thanos-community/promql-engine/physicalplan/aggregate"
+	"github.com/thanos-community/promql-engine/physicalplan/exchange"
+	"github.com/thanos-community/promql-engine/physicalplan/scan"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"

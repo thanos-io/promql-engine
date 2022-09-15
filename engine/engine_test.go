@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package engine_test
 
 import (
@@ -5,10 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/engine"
-
+	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/stretchr/testify/require"
+	"github.com/thanos-community/promql-engine/engine"
 )
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
@@ -106,11 +108,10 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			test, err := promql.NewTest(t, tc.load)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			defer test.Close()
 
-			err = test.Run()
-			require.NoError(t, err)
+			testutil.Ok(t, test.Run())
 
 			if tc.start.Equal(time.Time{}) {
 				tc.start = start
@@ -124,20 +125,25 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 
 			newEngine := engine.New()
 			q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
+			testutil.Ok(t, newResult.Err)
 
 			oldEngine := promql.NewEngine(opts)
 			q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-			require.NoError(t, err)
-			oldResult := q2.Exec(context.Background())
+			testutil.Ok(t, err)
 
-			require.Equal(t, oldResult, newResult)
+			oldResult := q2.Exec(context.Background())
+			testutil.Ok(t, oldResult.Err)
+
+			testutil.Equals(t, oldResult, newResult)
 		})
 	}
 }
 
 func TestInstantQuery(t *testing.T) {
+	t.Skip("Instant queries are not supported.")
+
 	queryTime := time.Unix(50, 0)
 	opts := promql.EngineOpts{
 		Timeout:    1 * time.Hour,
@@ -176,23 +182,24 @@ func TestInstantQuery(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			test, err := promql.NewTest(t, tc.load)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			defer test.Close()
 
-			err = test.Run()
-			require.NoError(t, err)
+			testutil.Ok(t, test.Run())
 
 			newEngine := engine.New()
 			q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
+			testutil.Ok(t, newResult.Err)
 
 			oldEngine := promql.NewEngine(opts)
 			q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			oldResult := q2.Exec(context.Background())
+			testutil.Ok(t, oldResult.Err)
 
-			require.Equal(t, oldResult, newResult)
+			testutil.Equals(t, oldResult, newResult)
 		})
 	}
 }

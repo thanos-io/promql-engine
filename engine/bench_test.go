@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package engine_test
 
 import (
@@ -6,13 +9,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/fpetkovski/promql-engine/engine"
-
 	"github.com/prometheus/prometheus/promql"
-	"github.com/stretchr/testify/require"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/thanos-community/promql-engine/engine"
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
@@ -24,10 +25,10 @@ func BenchmarkChunkDecoding(b *testing.B) {
 	step := time.Second * 30
 
 	querier, err := test.Storage().Querier(test.Context(), start.UnixMilli(), end.UnixMilli())
-	require.NoError(b, err)
+	testutil.Ok(b, err)
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, "http_requests_total")
-	require.NoError(b, err)
+	testutil.Ok(b, err)
 
 	b.Run("iterate by series", func(b *testing.B) {
 		b.ResetTimer()
@@ -146,10 +147,10 @@ func BenchmarkOldEngine(b *testing.B) {
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
 					qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
-					require.NoError(b, err)
+					testutil.Ok(b, err)
 
 					res := qry.Exec(test.Context())
-					require.NoError(b, res.Err)
+					testutil.Ok(b, res.Err)
 				}
 			})
 			b.Run("new_engine", func(b *testing.B) {
@@ -167,7 +168,7 @@ func BenchmarkOldEngine(b *testing.B) {
 func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) {
 	ng := engine.New()
 	qry, err := ng.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
-	require.NoError(b, err)
+	testutil.Ok(b, err)
 
 	qry.Exec(context.Background())
 }
@@ -175,8 +176,8 @@ func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, en
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int) *promql.Test {
 	load := synthesizeLoad(numLabelsA, numLabelsB)
 	test, err := promql.NewTest(b, load)
-	require.NoError(b, err)
-	require.NoError(b, test.Run())
+	testutil.Ok(b, err)
+	testutil.Ok(b, test.Run())
 
 	return test
 }

@@ -1,11 +1,14 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package engine
 
 import (
 	"time"
 
-	"github.com/fpetkovski/promql-engine/physicalplan"
+	"github.com/thanos-community/promql-engine/physicalplan"
 
-	"github.com/fpetkovski/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"

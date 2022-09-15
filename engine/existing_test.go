@@ -1,15 +1,18 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package engine_test
 
 import (
 	"testing"
 	"time"
 
-	"github.com/fpetkovski/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/engine"
 
+	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/stretchr/testify/require"
 )
 
 func TestRangeQuery(t *testing.T) {
@@ -119,17 +122,17 @@ func TestRangeQuery(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
 			test, err := promql.NewTest(t, c.Load)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			defer test.Close()
 
 			err = test.Run()
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 			qry, err := ng.NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
-			require.NoError(t, err)
+			testutil.Ok(t, err)
 
 			res := qry.Exec(test.Context())
-			require.NoError(t, res.Err)
-			require.Equal(t, c.Result, res.Value)
+			testutil.Ok(t, res.Err)
+			testutil.Equals(t, c.Result, res.Value)
 		})
 	}
 }

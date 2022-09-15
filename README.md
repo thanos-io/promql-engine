@@ -26,7 +26,7 @@ In addition to implementing multi-threading, we would ultimately like to end up 
 
 At the beginning of a PromQL query execution, the query engine computes a physical plan consisting of multiple independent operators, each responsible for calculating one part of the query expression.
 
-Operators are assembled in a tree-like structure with every operator calling `Next()` on its dependants until there is no more data to be returned. The result of the `Next()` function is a _column vector_  (also called a _step vector_) with elements in the vector representing samples with the same timestamp from different time series.
+Operators are assembled in a tree-like structure with every operator calling `Next()` on its dependants until there is no more data to be returned. The result of the `Next()` function is a *column vector* (also called a *step vector*) with elements in the vector representing samples with the same timestamp from different time series.
 
 <p align="center">
   <img src="./assets/design.png" />
@@ -34,7 +34,7 @@ Operators are assembled in a tree-like structure with every operator calling `Ne
 
 This model allows for samples from individual time series to flow one execution step at a time from the left-most operators to the one at the very right. Since most PromQL expressions are aggregations, samples are reduced in number as they are pulled by the operators on the right. Because of this, samples from original timeseries can be decoded and kept in memory in batches instead of being fully expanded.
 
-In addition to operators that have a one-to-one mapping with PromQL constructs, the Volcano model also describes so-called Exchange operators which can be used for flow control and optimizations, such as concurrency or batched selects. An example of an _Exchange_ operator is described in the [Intra-operator parallelism](#intra-operator-parallelism) section.
+In addition to operators that have a one-to-one mapping with PromQL constructs, the Volcano model also describes so-called Exchange operators which can be used for flow control and optimizations, such as concurrency or batched selects. An example of an *Exchange* operator is described in the [Intra-operator parallelism](#intra-operator-parallelism) section.
 
 ### Inter-operator parallelism
 
@@ -44,7 +44,6 @@ Since operators are independent and rely on a common interface for pulling data,
   <img src="./assets/promql-pipeline.png" />
 </p>
 
-
 ### Intra-operator parallelism
 
 Parallelism can also be added within individual operators using a parallel coalesce exchange operator. Such exchange operators are indistinguishable from regular operators to their upstreams since they respect the same `Next()` interface.
@@ -53,16 +52,15 @@ Parallelism can also be added within individual operators using a parallel coale
   <img src="./assets/parallel-coalesce.png" />
 </p>
 
-
 ### Memory management
 
 #### Step vector allocations
 
-One challenge with the streamed execution model is knowing how much memory to allocate in each operator for each step. 
+One challenge with the streamed execution model is knowing how much memory to allocate in each operator for each step.
 
 To work around this issue, operators expose a `Series()` method which returns the labels for all time series that they will ever produce (for all `Next()` calls). Operators at the very bottom of the tree, like vector and matrix selectors, have this information since they are responsible for loading data from storage. Other operators can then call `Series()` on the downstream operator and pre-compute all possible outputs.
 
-Even though this might look like an expensive operation, its cost is identical to just one evaluation step. Knowing sizes of input and output vectors also allows us to:   
+Even though this might look like an expensive operation, its cost is identical to just one evaluation step. Knowing sizes of input and output vectors also allows us to:
 * allocate memory very precisely by properly sizing vector pools (see section bellow),
 * use arrays instead of maps for indexing data, leading to faster execution times due to having less allocations and using index-based lookups, and
 * use tight loops in operators by eliminating conditional statements associated with maps.
@@ -73,14 +71,12 @@ Since time series are decoded one step at a time, vectors between execution exec
 
 #### Memory limits
 
-There are currently no mechanisms to apply memory limits to queries within the engine. This is a highly desirable feature, and we would like to explore ways in which we can support it.  
+There are currently no mechanisms to apply memory limits to queries within the engine. This is a highly desirable feature, and we would like to explore ways in which we can support it.
 
 ### Concurrency control
 
-The current implementation uses goroutines very liberally which means the query will use as many cores as possible. Limiting the number of cores which a query can use is not yet implemented but we would eventually like to have support for it. 
+The current implementation uses goroutines very liberally which means the query will use as many cores as possible. Limiting the number of cores which a query can use is not yet implemented but we would eventually like to have support for it.
 
 ### Plan optimization
 
 The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
-
-

@@ -1,0 +1,70 @@
+name: Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  skip-check:
+    name: Skip check
+    continue-on-error: true
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.skip-check.outputs.should_skip }}
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - id: skip-check
+        uses: fkirc/skip-duplicate-actions@v4
+        with:
+          do_not_skip: '["schedule", "workflow_dispatch"]'
+          paths: |-
+            [
+              "**.go",
+              ".github/workflows/test.yml",
+              ".go-version",
+              "go.mod",
+              "go.sum"
+            ]
+          skip_after_successful_duplicate: false
+
+  lint:
+    runs-on: ubuntu-latest
+    name: Linters (Static Analysis) for Go
+    env:
+      GOBIN: /tmp/.bin
+    steps:
+      - name: Checkout code into the Go module directory.
+        uses: actions/checkout@v3
+
+      - name: Install Go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: Format
+        run: make format
+
+      - name: Lint
+        run: make lint
+  test:
+    runs-on: ubuntu-latest
+    name: Run tests
+    env:
+      GOBIN: /tmp/.bin
+    steps:
+      - name: Check out code into the Go module directory.
+        uses: actions/checkout@v3
+
+      - name: Install Go.
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: .go-version
+          cache: true
+
+      - name: Run unit tests
+        run: make test

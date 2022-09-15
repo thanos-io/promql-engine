@@ -1,12 +1,15 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package aggregate
 
 import (
 	"fmt"
 	"math"
 
-	"github.com/fpetkovski/promql-engine/physicalplan/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
 type aggregateResult struct {
