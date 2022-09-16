@@ -28,6 +28,46 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "max_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: maxOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "min_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: minOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "avg_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: avgOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "count_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: countOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
 	case "rate":
 		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			point := extrapolatedRate(points, true, true, stepTime, selectRange)
@@ -180,6 +220,60 @@ func instantValue(samples []promql.Point, isRate bool, stepTime time.Time, selec
 		T: stepTime.UnixMilli(),
 		V: resultValue,
 	}
+}
+
+func maxOverTime(points []promql.Point) float64 {
+	max := points[0].V
+	for _, v := range points {
+		if v.V > max || math.IsNaN(max) {
+			max = v.V
+		}
+	}
+	return max
+}
+
+func minOverTime(points []promql.Point) float64 {
+	min := points[0].V
+	for _, v := range points {
+		if v.V < min || math.IsNaN(min) {
+			min = v.V
+		}
+	}
+	return min
+}
+
+func countOverTime(points []promql.Point) float64 {
+	return float64(len(points))
+}
+
+func avgOverTime(points []promql.Point) float64 {
+	var mean, count, c float64
+	for _, v := range points {
+		count++
+		if math.IsInf(mean, 0) {
+			if math.IsInf(v.V, 0) && (mean > 0) == (v.V > 0) {
+				// The `mean` and `v.V` values are `Inf` of the same sign.  They
+				// can't be subtracted, but the value of `mean` is correct
+				// already.
+				continue
+			}
+			if !math.IsInf(v.V, 0) && !math.IsNaN(v.V) {
+				// At this stage, the mean is an infinite. If the added
+				// value is neither an Inf or a Nan, we can keep that mean
+				// value.
+				// This is required because our calculation below removes
+				// the mean value, which would look like Inf += x - Inf and
+				// end up as a NaN.
+				continue
+			}
+		}
+		mean, c = kahanSumInc(v.V/count-mean/count, mean, c)
+	}
+
+	if math.IsInf(mean, 0) {
+		return mean
+	}
+	return mean + c
 }
 
 func sumOverTime(points []promql.Point) float64 {
