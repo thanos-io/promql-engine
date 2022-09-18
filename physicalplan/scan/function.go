@@ -36,6 +36,38 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "delta":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			point := extrapolatedRate(points, false, false, stepTime, selectRange)
+			return promql.Sample{
+				Point:  point,
+				Metric: labels,
+			}
+		}, nil
+	case "increase":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			point := extrapolatedRate(points, true, false, stepTime, selectRange)
+			return promql.Sample{
+				Point:  point,
+				Metric: labels,
+			}
+		}, nil
+	case "irate":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			point := instantValue(points, true, stepTime, selectRange)
+			return promql.Sample{
+				Point:  point,
+				Metric: labels,
+			}
+		}, nil
+	case "idelta":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			point := instantValue(points, false, stepTime, selectRange)
+			return promql.Sample{
+				Point:  point,
+				Metric: labels,
+			}
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown function %s", f.Name)
 	}
@@ -107,6 +139,41 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime t
 	resultValue = resultValue * (extrapolateToInterval / sampledInterval)
 	if isRate {
 		resultValue = resultValue / selectRange.Seconds()
+	}
+
+	return promql.Point{
+		T: stepTime.UnixMilli(),
+		V: resultValue,
+	}
+}
+
+func instantValue(samples []promql.Point, isRate bool, stepTime time.Time, selectRange time.Duration) promql.Point {
+	// No sense in trying to compute a rate without at least two points. Drop
+	// this Vector element.
+	if len(samples) < 2 {
+		return promql.Point{T: -1}
+	}
+
+	lastSample := samples[len(samples)-1]
+	previousSample := samples[len(samples)-2]
+
+	var resultValue float64
+	if isRate && lastSample.V < previousSample.V {
+		// Counter reset.
+		resultValue = lastSample.V
+	} else {
+		resultValue = lastSample.V - previousSample.V
+	}
+
+	sampledInterval := lastSample.T - previousSample.T
+	if sampledInterval == 0 {
+		// Avoid dividing by 0.
+		return promql.Point{T: -1}
+	}
+
+	if isRate {
+		// Convert to per-second.
+		resultValue /= float64(sampledInterval) / 1000
 	}
 
 	return promql.Point{

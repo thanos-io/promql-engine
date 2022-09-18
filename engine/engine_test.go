@@ -104,6 +104,58 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3230, 0),
 			step:  28 * time.Second,
 		},
+		{
+			name: "delta",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "delta(http_requests_total[1m])",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "increase",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "increase(http_requests_total[1m])",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "irate",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "irate(http_requests_total[1m])",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "idelta",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "idelta(http_requests_total[1m])",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 	}
 
 	for _, tc := range cases {
@@ -179,6 +231,34 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x4
 					http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(rate(http_requests_total[1m]))",
+		},
+		{
+			name: "delta",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
+			query: "delta(http_requests_total[1m])",
+		},
+		{
+			name: "increase",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
+			query: "increase(http_requests_total[1m])",
+		},
+		{
+			name: "sum irate",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
+			query: "sum(irate(http_requests_total[1m]))",
+		},
+		{
+			name: "sum irate with stale series",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x20`,
+			query: "sum(irate(http_requests_total[1m]))",
 		},
 	}
 
