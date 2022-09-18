@@ -70,6 +70,8 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		default:
 			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
 		}
+	case *parser.StringLiteral:
+		return nil, nil
 	default:
 		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
 	}

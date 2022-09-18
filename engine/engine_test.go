@@ -284,6 +284,11 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(irate(http_requests_total[1m]))",
 		},
+		{
+			name:  "string literal",
+			load:  "",
+			query: `"hello"`,
+		},
 	}
 
 	for _, tc := range cases {

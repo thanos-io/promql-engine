@@ -117,6 +117,11 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
+	// Use same check as Prometheus.
+	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
+		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
+	}
+
 	plan, err := physicalplan.New(expr, q, start, end, interval)
 	if err != nil {
 		return nil, err

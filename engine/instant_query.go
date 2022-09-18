@@ -32,6 +32,13 @@ func newInstantQuery(plan model.VectorOperator, pool *model.VectorPool, expr par
 }
 
 func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
+	// Handle case with strings early on as this does not need us to process samples.
+	// TODO(saswatamcode): Modify models.StepVector to support all types and check during plan creation.
+	switch e := q.expr.(type) {
+	case *parser.StringLiteral:
+		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
+	}
+
 	vs, err := q.plan.Next(ctx)
 	if err != nil {
 		return newErrResult(err)
