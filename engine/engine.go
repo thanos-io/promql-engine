@@ -98,19 +98,17 @@ func triggerFallback(err error) bool {
 var errNotImplemented = errors.New("not implemented")
 
 func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	return nil, errors.Wrap(errNotImplemented, "instant query")
+	expr, err := parser.ParseExpr(qs)
+	if err != nil {
+		return nil, err
+	}
 
-	//expr, err := parser.ParseExpr(qs)
-	//if err != nil {
-	//	return nil, err
-	//}
+	plan, err := physicalplan.New(expr, q, ts, ts, 0)
+	if err != nil {
+		return nil, err
+	}
 
-	//plan, err := physicalplan.New(expr, q, ts, ts, 0)
-	//if err != nil {
-	//	return nil, err
-	//}
-	//
-	//return newInstantQuery(plan), nil
+	return newInstantQuery(plan, e.pool, expr, ts), nil
 }
 
 func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {

@@ -219,6 +219,30 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{
+			name: "count",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "count(http_requests_total)",
+		},
+		{
+			name: "average",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "avg(http_requests_total)",
+		},
+		{
+			name: "rate",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "rate(http_requests_total[1m])",
+		},
+		{
 			name: "sum rate",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x4
@@ -270,29 +294,24 @@ func TestInstantQuery(t *testing.T) {
 
 			testutil.Ok(t, test.Run())
 
-			t.Run("disabled fallback", func(t *testing.T) {
-				newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: true})
-				_, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-				testutil.NotOk(t, err)
-				testutil.Equals(t, "instant query: not implemented", err.Error())
-			})
+			for _, disableFallback := range []bool{false, true} {
+				t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+					newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
+					q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+					testutil.Ok(t, err)
+					newResult := q1.Exec(context.Background())
+					testutil.Ok(t, newResult.Err)
 
-			t.Run("enabled fallback", func(t *testing.T) {
-				newEngine := engine.New(engine.Opts{EngineOpts: opts})
-				q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-				testutil.Ok(t, err)
-				newResult := q1.Exec(context.Background())
-				testutil.Ok(t, newResult.Err)
+					oldEngine := promql.NewEngine(opts)
+					q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+					testutil.Ok(t, err)
 
-				oldEngine := promql.NewEngine(opts)
-				q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-				testutil.Ok(t, err)
-				oldResult := q2.Exec(context.Background())
-				testutil.Ok(t, oldResult.Err)
+					oldResult := q2.Exec(context.Background())
+					testutil.Ok(t, oldResult.Err)
 
-				testutil.Equals(t, oldResult, newResult)
-			})
-
+					testutil.Equals(t, oldResult, newResult)
+				})
+			}
 		})
 	}
 }

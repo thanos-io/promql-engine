@@ -11,3 +11,7 @@ examples/tmp/
 
 # Ignore the MacOS Trash (DS-Store)
 .DS_Store
+
+# Ignore benchmarking output
+benchmarks/
+engine.test
