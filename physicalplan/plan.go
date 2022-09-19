@@ -34,7 +34,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		if err != nil {
 			return nil, err
 		}
-		a, err := aggregate.NewHashAggregate(model.NewVectorPool(), next, e.Op, !e.Without, e.Grouping, stepsBatch)
+		a, err := aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, e.Op, !e.Without, e.Grouping, stepsBatch)
 		if err != nil {
 			return nil, err
 		}
@@ -45,9 +45,9 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		numShards := runtime.NumCPU() / 2
 		operators := make([]model.VectorOperator, 0, numShards)
 		for i := 0; i < numShards; i++ {
-			operators = append(operators, exchange.NewConcurrent(scan.NewVectorSelector(model.NewVectorPool(), filter, mint, maxt, step, stepsBatch, i, numShards), 3))
+			operators = append(operators, exchange.NewConcurrent(scan.NewVectorSelector(model.NewVectorPool(stepsBatch), filter, mint, maxt, step, stepsBatch, i, numShards), 2))
 		}
-		return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
+		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 
 	case *parser.Call:
 		switch t := e.Args[0].(type) {
@@ -62,11 +62,10 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 			numShards := runtime.NumCPU() / 2
 			operators := make([]model.VectorOperator, 0, numShards)
 			for i := 0; i < numShards; i++ {
-				operators = append(operators, exchange.NewConcurrent(
-					scan.NewMatrixSelector(model.NewVectorPool(), filter, call, mint, maxt, stepsBatch, step, t.Range, i, numShards), 3),
-				)
+				selector := scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, mint, maxt, stepsBatch, step, t.Range, i, numShards)
+				operators = append(operators, exchange.NewConcurrent(selector, 2))
 			}
-			return exchange.NewCoalesce(model.NewVectorPool(), operators...), nil
+			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 		default:
 			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
 		}

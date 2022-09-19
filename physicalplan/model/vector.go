@@ -5,14 +5,13 @@ package model
 
 import "github.com/prometheus/prometheus/model/labels"
 
-type StepSample struct {
-	ID uint64
-
+type Series struct {
+	ID     uint64
 	Metric labels.Labels
-	V      float64
 }
 
 type StepVector struct {
-	T       int64
-	Samples []StepSample
+	T         int64
+	SampleIDs []uint64
+	Samples   []float64
 }

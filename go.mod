@@ -6,6 +6,7 @@ require (
 	github.com/efficientgo/core v1.0.0-rc.0
 	github.com/go-kit/log v0.2.1
 	github.com/prometheus/prometheus v0.38.0
+	gonum.org/v1/gonum v0.12.0
 )
 
 require (

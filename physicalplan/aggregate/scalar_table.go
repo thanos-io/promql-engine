@@ -12,60 +12,79 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
-type aggregateResult struct {
-	metric   labels.Labels
-	sampleID uint64
+type aggregateTable interface {
+	aggregate(vector model.StepVector)
+	toVector(pool *model.VectorPool) model.StepVector
+	size() int
 }
 
-type aggregateTable struct {
+type scalarTable struct {
 	timestamp    int64
 	inputs       []uint64
-	outputs      []*aggregateResult
+	outputs      []*model.Series
 	accumulators []*accumulator
 }
 
-func newAggregateTable(inputSampleIDs []uint64, outputs []*aggregateResult, makeAccumulator newAccumulatorFunc) *aggregateTable {
+func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, a parser.ItemType) []aggregateTable {
+	tables := make([]aggregateTable, stepsBatch)
+	for i := 0; i < len(tables); i++ {
+		tables[i] = newScalarTable(inputCache, outputCache, func() *accumulator {
+			f, err := newAccumulator(a)
+			if err != nil {
+				panic(err)
+			}
+			return f
+		})
+	}
+	return tables
+}
+
+func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, makeAccumulator newAccumulatorFunc) *scalarTable {
 	accumulators := make([]*accumulator, len(outputs))
 	for i := 0; i < len(outputs); i++ {
 		accumulators[i] = makeAccumulator()
 	}
-	return &aggregateTable{
+	return &scalarTable{
 		inputs:       inputSampleIDs,
 		outputs:      outputs,
 		accumulators: accumulators,
 	}
 }
 
-func (t *aggregateTable) addSample(ts int64, sample model.StepSample) {
-	outputSampleID := t.inputs[sample.ID]
+func (t *scalarTable) aggregate(vector model.StepVector) {
+	t.reset()
+	for i := range vector.Samples {
+		t.addSample(vector.T, vector.SampleIDs[i], vector.Samples[i])
+	}
+}
+
+func (t *scalarTable) addSample(ts int64, sampleID uint64, sample float64) {
+	outputSampleID := t.inputs[sampleID]
 	output := t.outputs[outputSampleID]
 
 	t.timestamp = ts
-	t.accumulators[output.sampleID].AddFunc(sample.V)
+	t.accumulators[output.ID].AddFunc(sample)
 }
 
-func (t *aggregateTable) reset() {
+func (t *scalarTable) reset() {
 	for i := range t.outputs {
 		t.accumulators[i].Reset()
 	}
 }
 
-func (t *aggregateTable) toVector(pool *model.VectorPool) model.StepVector {
-	result := model.StepVector{
-		Samples: pool.GetSamples(),
-	}
-
+func (t *scalarTable) toVector(pool *model.VectorPool) model.StepVector {
+	result := pool.GetStepVector(t.timestamp)
 	for i, v := range t.outputs {
 		if t.accumulators[i].HasValue() {
-			result.T = t.timestamp
-			result.Samples = append(result.Samples, model.StepSample{
-				Metric: v.metric,
-				V:      t.accumulators[i].ValueFunc(),
-				ID:     v.sampleID,
-			})
+			result.SampleIDs = append(result.SampleIDs, v.ID)
+			result.Samples = append(result.Samples, t.accumulators[i].ValueFunc())
 		}
 	}
 	return result
+}
+
+func (t *scalarTable) size() int {
+	return len(t.outputs)
 }
 
 func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byte) (uint64, string, labels.Labels) {

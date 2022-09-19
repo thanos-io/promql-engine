@@ -103,7 +103,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
 
-	vectors := o.vectorPool.GetVectors()
+	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
 		var (
@@ -113,10 +113,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
 			if len(vectors) <= currStep {
-				vectors = append(vectors, model.StepVector{
-					T:       seriesTs,
-					Samples: o.vectorPool.GetSamples(),
-				})
+				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
 			maxt := seriesTs
 			mint := maxt - o.selectRange
@@ -125,11 +122,8 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			result := o.call(series.labels, rangePoints, time.UnixMilli(seriesTs))
 			if result.T >= 0 {
 				vectors[currStep].T = result.T
-				vectors[currStep].Samples = append(vectors[currStep].Samples, model.StepSample{
-					ID:     series.signature,
-					Metric: series.labels,
-					V:      result.V,
-				})
+				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
+				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 			}
 			o.scanners[i].previousPoints = rangePoints
 
@@ -171,6 +165,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			}
 			o.series[i] = lbls
 		}
+		o.vectorPool.SetStepSize(len(series))
 	})
 	return err
 }

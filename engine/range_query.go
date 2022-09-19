@@ -16,14 +16,12 @@ import (
 )
 
 type rangeQuery struct {
-	pool *model.VectorPool
-	plan model.VectorOperator
 	once sync.Once
+	plan model.VectorOperator
 }
 
-func newRangeQuery(plan model.VectorOperator, pool *model.VectorPool) promql.Query {
+func newRangeQuery(plan model.VectorOperator) promql.Query {
 	return &rangeQuery{
-		pool: pool,
 		plan: plan,
 	}
 }
@@ -37,6 +35,7 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 	series := make([]promql.Series, len(resultSeries))
 	for i := 0; i < len(resultSeries); i++ {
 		series[i].Metric = resultSeries[i]
+		series[i].Points = make([]promql.Point, 0, 121)
 	}
 	for {
 		r, err := q.plan.Next(ctx)
@@ -48,16 +47,13 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 		}
 
 		for _, vector := range r {
-			for _, sample := range vector.Samples {
-				if len(series[sample.ID].Points) == 0 {
-					series[sample.ID].Points = make([]promql.Point, 0, 121)
-				}
-				series[sample.ID].Points = append(series[sample.ID].Points, promql.Point{
+			for i, s := range vector.SampleIDs {
+				series[s].Points = append(series[s].Points, promql.Point{
 					T: vector.T,
-					V: sample.V,
+					V: vector.Samples[i],
 				})
 			}
-			q.plan.GetPool().PutSamples(vector.Samples)
+			q.plan.GetPool().PutStepVector(vector)
 		}
 		q.plan.GetPool().PutVectors(r)
 	}
