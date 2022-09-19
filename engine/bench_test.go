@@ -90,11 +90,11 @@ func BenchmarkSingleQuery(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		executeQuery(b, query, test, start, end, step)
+		executeRangeQuery(b, query, test, start, end, step)
 	}
 }
 
-func BenchmarkOldEngine(b *testing.B) {
+func BenchmarkOldEngineRange(b *testing.B) {
 	test := setupStorage(b, 1000, 3)
 	defer test.Close()
 
@@ -158,16 +158,101 @@ func BenchmarkOldEngine(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					executeQuery(b, tc.query, test, start, end, step)
+					executeRangeQuery(b, tc.query, test, start, end, step)
 				}
 			})
 		})
 	}
 }
 
-func executeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) {
-	ng := engine.New(engine.Opts{DisableFallback: true})
+func BenchmarkOldEngineInstant(b *testing.B) {
+	test := setupStorage(b, 1000, 3)
+	defer test.Close()
+
+	queryTime := time.Unix(50, 0)
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "vector selector",
+			query: "http_requests_total",
+		},
+		{
+			name:  "count",
+			query: "count(http_requests_total)",
+		},
+		{
+			name:  "avg",
+			query: "avg(http_requests_total)",
+		},
+		{
+			name:  "sum",
+			query: "sum(http_requests_total)",
+		},
+		{
+			name:  "sum by pod",
+			query: "sum by (pod) (http_requests_total)",
+		},
+		{
+			name:  "rate",
+			query: "rate(http_requests_total[1m])",
+		},
+		{
+			name:  "sum rate",
+			query: "sum(rate(http_requests_total[1m]))",
+		},
+		{
+			name:  "sum by rate",
+			query: "sum by (pod) (rate(http_requests_total[1m]))",
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("current_engine", func(b *testing.B) {
+				opts := promql.EngineOpts{
+					Logger:     nil,
+					Reg:        nil,
+					MaxSamples: 50000000,
+					Timeout:    100 * time.Second,
+				}
+				engine := promql.NewEngine(opts)
+
+				b.ResetTimer()
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, queryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(test.Context())
+					testutil.Ok(b, res.Err)
+				}
+			})
+			b.Run("new_engine", func(b *testing.B) {
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					executeInstantQuery(b, tc.query, test, queryTime)
+				}
+			})
+		})
+	}
+}
+
+func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) {
+	ng := engine.New(engine.Opts{})
 	qry, err := ng.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
+	testutil.Ok(b, err)
+
+	qry.Exec(context.Background())
+}
+
+func executeInstantQuery(b *testing.B, q string, test *promql.Test, start time.Time) {
+	ng := engine.New(engine.Opts{})
+	qry, err := ng.NewInstantQuery(test.Queryable(), nil, q, start)
 	testutil.Ok(b, err)
 
 	qry.Exec(context.Background())
