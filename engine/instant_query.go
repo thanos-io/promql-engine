@@ -61,14 +61,14 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	for _, vector := range vs {
 		for _, sample := range vector.Samples {
 			if len(series[sample.ID].Points) == 0 {
-				series[sample.ID].Points = make([]promql.Point, 0, 121)
+				series[sample.ID].Points = make([]promql.Point, 0, 1)
 			}
 			series[sample.ID].Points = append(series[sample.ID].Points, promql.Point{
 				T: vector.T,
 				V: sample.V,
 			})
-			q.plan.GetPool().PutSamples(vector.Samples)
 		}
+		q.plan.GetPool().PutSamples(vector.Samples)
 	}
 	q.plan.GetPool().PutVectors(vs)
 
