@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/thanos-community/promql-engine/physicalplan/binary"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/thanos-community/promql-engine/physicalplan/aggregate"
@@ -78,6 +80,24 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		}
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val, nil), nil
+
+	case *parser.BinaryExpr:
+		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
+			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
+		}
+		if len(e.VectorMatching.Include) > 0 {
+			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
+		}
+		leftOperator, err := newOperator(e.LHS, storage, mint, maxt, step)
+		if err != nil {
+			return nil, err
+		}
+		rightOperator, err := newOperator(e.RHS, storage, mint, maxt, step)
+		if err != nil {
+			return nil, err
+		}
+		return binary.NewOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
+
 	case *parser.StringLiteral:
 		return nil, nil
 	default:

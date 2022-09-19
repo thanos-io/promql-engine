@@ -207,6 +207,38 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			name:  "vector",
 			load:  "",
 			query: "vector(24)",
+		}, {
+			// Example from https://prometheus.io/docs/prometheus/latest/querying/operators/#many-to-one-and-one-to-many-vector-matches
+			name: "binary operation with group_left",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20
+				foo{method="put", code="501"} 4+3.4x60
+				foo{method="post", code="500"} 1+5.1x40
+				foo{method="post", code="404"} 2+3.7x40
+				bar{method="get", path="/a"} 3+7.4x10
+				bar{method="del", path="/b"} 8+6.1x30  
+				bar{method="post", path="/c"} 1+2.1x40`,
+			query: `foo * ignoring(code, path) group_left bar`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(600, 0),
+		},
+		{
+			// Example from https://prometheus.io/docs/prometheus/latest/querying/operators/#many-to-one-and-one-to-many-vector-matches
+			name: "binary operation with group_right",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20
+				foo{method="put", code="501"} 4+3.4x60
+				foo{method="post", code="500"} 1+5.1x40
+				foo{method="post", code="404"} 2+3.7x40
+				bar{method="get", path="/a"} 3+7.4x10
+				bar{method="del", path="/b"} 8+6.1x30  
+				bar{method="post", path="/c"} 1+2.1x40`,
+			query: `bar * ignoring(code, path) group_right foo`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
 		},
 	}
 
