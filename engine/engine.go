@@ -104,7 +104,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	return newInstantQuery(plan, e.pool, expr, ts), nil
+	return newInstantQuery(plan, expr, ts), nil
 }
 
 func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {

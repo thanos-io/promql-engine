@@ -17,15 +17,13 @@ import (
 
 type instantQuery struct {
 	plan model.VectorOperator
-	pool *model.VectorPool
 	expr parser.Expr
 	ts   time.Time
 }
 
-func newInstantQuery(plan model.VectorOperator, pool *model.VectorPool, expr parser.Expr, ts time.Time) promql.Query {
+func newInstantQuery(plan model.VectorOperator, expr parser.Expr, ts time.Time) promql.Query {
 	return &instantQuery{
 		plan: plan,
-		pool: pool,
 		expr: expr,
 		ts:   ts,
 	}
@@ -60,13 +58,13 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	for _, vector := range vs {
-		for _, sample := range vector.Samples {
-			series[sample.ID].Points = append(series[sample.ID].Points, promql.Point{
+		for i, sample := range vector.SampleIDs {
+			series[sample].Points = append(series[sample].Points, promql.Point{
 				T: vector.T,
-				V: sample.V,
+				V: vector.Samples[i],
 			})
 		}
-		q.plan.GetPool().PutSamples(vector.Samples)
+		q.plan.GetPool().PutStepVector(vector)
 	}
 	q.plan.GetPool().PutVectors(vs)
 
