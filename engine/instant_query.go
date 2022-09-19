@@ -56,13 +56,11 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	series := make([]promql.Series, len(resultSeries))
 	for i := 0; i < len(resultSeries); i++ {
 		series[i].Metric = resultSeries[i]
+		series[i].Points = make([]promql.Point, 0, 1)
 	}
 
 	for _, vector := range vs {
 		for _, sample := range vector.Samples {
-			if len(series[sample.ID].Points) == 0 {
-				series[sample.ID].Points = make([]promql.Point, 0, 1)
-			}
 			series[sample.ID].Points = append(series[sample.ID].Points, promql.Point{
 				T: vector.T,
 				V: sample.V,
