@@ -69,10 +69,10 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 			}
 		}, nil
 	case "vector":
-		return func(_ labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			return promql.Sample{
 				Point:  points[0],
-				Metric: labels.New(),
+				Metric: labels,
 			}
 		}, nil
 	default:

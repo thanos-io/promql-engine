@@ -6,6 +6,7 @@ package scan
 import (
 	"context"
 	"math"
+	"sync"
 	"time"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
@@ -24,6 +25,7 @@ type numberLiteralSelector struct {
 	currentStep int64
 	stepsBatch  int
 	series      []labels.Labels
+	once        sync.Once
 
 	val  float64
 	call FunctionCall
@@ -97,9 +99,11 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 
 func (o *numberLiteralSelector) loadSeries() {
 	// If number literal is included within function, []labels.labels must be initialized.
-	o.series = make([]labels.Labels, 1)
+	o.once.Do(func() {
+		o.series = make([]labels.Labels, 1)
 
-	if o.call != nil {
-		o.series = []labels.Labels{labels.New()}
-	}
+		if o.call != nil {
+			o.series = []labels.Labels{labels.New()}
+		}
+	})
 }
