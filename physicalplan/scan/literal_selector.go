@@ -23,6 +23,7 @@ type numberLiteralSelector struct {
 	step        int64
 	currentStep int64
 	stepsBatch  int
+	series      []labels.Labels
 
 	val  float64
 	call FunctionCall
@@ -42,11 +43,8 @@ func NewNumberLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step
 }
 
 func (o *numberLiteralSelector) Series(ctx context.Context) ([]labels.Labels, error) {
-	// If number literal is included within function, []labels.labels must be initialized.
-	if o.call != nil {
-		return []labels.Labels{labels.New()}, nil
-	}
-	return make([]labels.Labels, 1), nil
+	o.loadSeries()
+	return o.series, nil
 }
 
 func (o *numberLiteralSelector) GetPool() *model.VectorPool {
@@ -58,14 +56,15 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		return nil, nil
 	}
 
+	o.loadSeries()
+
 	totalSteps := int64(1)
 	if o.step != 0 {
 		totalSteps = (o.maxt-o.mint)/o.step + 1
 	}
 
-	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
-
 	vectors := o.vectorPool.GetVectorBatch()
+	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
 	ts := o.currentStep
 
 	for currStep := 0; currStep < numSteps && ts <= o.maxt; currStep++ {
@@ -81,7 +80,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		}
 
 		if o.call != nil {
-			result = o.call(labels.New(), []promql.Point{result.Point}, time.UnixMilli(ts))
+			result = o.call(o.series[0], []promql.Point{result.Point}, time.UnixMilli(ts))
 		}
 
 		vectors[currStep].T = result.T
@@ -94,4 +93,13 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 	o.currentStep += o.step * int64(numSteps)
 
 	return vectors, nil
+}
+
+func (o *numberLiteralSelector) loadSeries() {
+	// If number literal is included within function, []labels.labels must be initialized.
+	o.series = make([]labels.Labels, 1)
+
+	if o.call != nil {
+		o.series = []labels.Labels{labels.New()}
+	}
 }
