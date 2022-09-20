@@ -40,6 +40,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "sum (http_requests_total)",
 		},
 		{
+			name: "sum_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "sum_over_time(http_requests_total[30s])",
+		},
+		{
 			name: "count",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -47,11 +54,46 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "count(http_requests_total)",
 		},
 		{
+			name: "count_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "count_over_time(http_requests_total[30s])",
+		},
+		{
 			name: "average",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg(http_requests_total)",
+		},
+		{
+			name: "avg_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "avg_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "max_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "max_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "min_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "min_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "count_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "count_over_time(http_requests_total[30s])",
 		},
 		{
 			name: "sum by pod",
