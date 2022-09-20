@@ -11,6 +11,7 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 )
 
 // numberLiteralSelector returns []model.StepVector with same sample value across time range.
@@ -23,10 +24,11 @@ type numberLiteralSelector struct {
 	currentStep int64
 	stepsBatch  int
 
-	val float64
+	val  float64
+	call FunctionCall
 }
 
-func NewNumberLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step time.Duration, stepsBatch int, val float64) model.VectorOperator {
+func NewNumberLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step time.Duration, stepsBatch int, val float64, call FunctionCall) model.VectorOperator {
 	return &numberLiteralSelector{
 		vectorPool:  pool,
 		mint:        mint.UnixMilli(),
@@ -35,10 +37,15 @@ func NewNumberLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step
 		currentStep: mint.UnixMilli(),
 		stepsBatch:  stepsBatch,
 		val:         val,
+		call:        call,
 	}
 }
 
 func (o *numberLiteralSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+	// If number literal is included within function, []labels.labels must be initialized.
+	if o.call != nil {
+		return []labels.Labels{labels.New()}, nil
+	}
 	return make([]labels.Labels, 1), nil
 }
 
@@ -66,8 +73,20 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 			vectors = append(vectors, o.vectorPool.GetStepVector(ts))
 		}
 
+		result := promql.Sample{
+			Point: promql.Point{
+				T: ts,
+				V: o.val,
+			},
+		}
+
+		if o.call != nil {
+			result = o.call(labels.New(), []promql.Point{result.Point}, time.UnixMilli(ts))
+		}
+
+		vectors[currStep].T = result.T
 		vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, uint64(0))
-		vectors[currStep].Samples = append(vectors[currStep].Samples, o.val)
+		vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
 
 		ts += o.step
 	}

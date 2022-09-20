@@ -66,11 +66,18 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 				operators = append(operators, exchange.NewConcurrent(selector, 2))
 			}
 			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+		case *parser.NumberLiteral:
+			call, err := scan.NewFunctionCall(e.Func, step)
+			if err != nil {
+				return nil, err
+			}
+
+			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, t.Val, call), nil
 		default:
 			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
 		}
 	case *parser.NumberLiteral:
-		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val), nil
+		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val, nil), nil
 	case *parser.StringLiteral:
 		return nil, nil
 	default:

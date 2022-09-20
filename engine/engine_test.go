@@ -161,6 +161,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			load:  "",
 			query: "34",
 		},
+		{
+			name:  "vector",
+			load:  "",
+			query: "vector(24)",
+		},
 	}
 
 	for _, tc := range cases {
@@ -298,6 +303,11 @@ func TestInstantQuery(t *testing.T) {
 			name:  "number literal",
 			load:  "",
 			query: "34",
+		},
+		{
+			name:  "vector",
+			load:  "",
+			query: "vector(24)",
 		},
 	}
 
