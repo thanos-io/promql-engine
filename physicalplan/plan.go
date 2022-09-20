@@ -70,7 +70,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
 		}
 	case *parser.NumberLiteral:
-		return scan.NewLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val), nil
+		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val), nil
 	case *parser.StringLiteral:
 		return nil, nil
 	default:

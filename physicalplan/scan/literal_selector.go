@@ -13,8 +13,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-// literalSelector returns []model.StepVector with same sample value across time range.
-type literalSelector struct {
+// numberLiteralSelector returns []model.StepVector with same sample value across time range.
+type numberLiteralSelector struct {
 	vectorPool *model.VectorPool
 
 	mint        int64
@@ -26,8 +26,8 @@ type literalSelector struct {
 	val float64
 }
 
-func NewLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step time.Duration, stepsBatch int, val float64) model.VectorOperator {
-	return &literalSelector{
+func NewNumberLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step time.Duration, stepsBatch int, val float64) model.VectorOperator {
+	return &numberLiteralSelector{
 		vectorPool:  pool,
 		mint:        mint.UnixMilli(),
 		maxt:        maxt.UnixMilli(),
@@ -38,15 +38,15 @@ func NewLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step time.
 	}
 }
 
-func (o *literalSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *numberLiteralSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 	return make([]labels.Labels, 1), nil
 }
 
-func (o *literalSelector) GetPool() *model.VectorPool {
+func (o *numberLiteralSelector) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *literalSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
