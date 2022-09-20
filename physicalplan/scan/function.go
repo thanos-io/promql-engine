@@ -16,25 +16,6 @@ import (
 
 type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample
 
-func GetFuncArgTypes(f *parser.Function) ([]parser.ValueType, error) {
-	switch f.Name {
-	case "sum_over_time":
-		fallthrough
-	case "max_over_time":
-		fallthrough
-	case "min_over_time":
-		fallthrough
-	case "avg_over_time":
-		fallthrough
-	case "count_over_time":
-		fallthrough
-	case "rate":
-		return []parser.ValueType{parser.ValueTypeMatrix}, nil
-	case "histogram_quantile":
-		return []parser.ValueType{parser.ValueTypeScalar, parser.ValueTypeMatrix}, nil
-	}
-	return nil, fmt.Errorf("unknown function %s", f.Name)
-}
 func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCall, error) {
 	switch f.Name {
 	case "sum_over_time":
