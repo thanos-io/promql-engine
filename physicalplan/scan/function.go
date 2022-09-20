@@ -68,14 +68,6 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
-	case "histogram_quantile":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			point := histogramQuntile(points, labels)
-			return promql.Sample{
-				Point:  point,
-				Metric: labels,
-			}
-		}, nil
 	case "rate":
 		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			point := extrapolatedRate(points, true, true, stepTime, selectRange)
@@ -293,14 +285,6 @@ func sumOverTime(points []promql.Point) float64 {
 		return sum
 	}
 	return sum + c
-}
-
-func histogramQuntile(points []promql.Point, labels labels.Labels) promql.Point {
-
-	return promql.Point{
-		T: 0,
-		V: 0,
-	}
 }
 
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
