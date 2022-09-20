@@ -156,6 +156,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name:  "number literal",
+			load:  "",
+			query: "34",
+		},
 	}
 
 	for _, tc := range cases {
@@ -288,6 +293,11 @@ func TestInstantQuery(t *testing.T) {
 			name:  "string literal",
 			load:  "",
 			query: `"hello"`,
+		},
+		{
+			name:  "number literal",
+			load:  "",
+			query: "34",
 		},
 	}
 
