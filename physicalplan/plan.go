@@ -115,21 +115,17 @@ func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mi
 }
 
 func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
-	vectorExpr := e.LHS
-	scalarExpr := e.RHS
-	scalarSideLeft := e.LHS.Type() == parser.ValueTypeScalar
-	if scalarSideLeft {
-		scalarExpr, vectorExpr = vectorExpr, scalarExpr
-	}
-
-	vector, err := newOperator(vectorExpr, storage, mint, maxt, step)
+	lhs, err := newOperator(e.LHS, storage, mint, maxt, step)
 	if err != nil {
 		return nil, err
 	}
-	scalar, err := newOperator(scalarExpr, storage, mint, maxt, step)
+	rhs, err := newOperator(e.RHS, storage, mint, maxt, step)
 	if err != nil {
 		return nil, err
 	}
-
-	return binary.NewScalar(model.NewVectorPool(stepsBatch), vector, scalar, e.Op, scalarSideLeft)
+	
+	if e.LHS.Type() == parser.ValueTypeScalar {
+		return binary.NewScalar(model.NewVectorPool(stepsBatch), rhs, lhs, e.Op, true)
+	}
+	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, false)
 }

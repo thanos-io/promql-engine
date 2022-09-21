@@ -27,12 +27,10 @@ func NewScalar(pool *model.VectorPool, next model.VectorOperator, numberSelector
 	if err != nil {
 		return nil, err
 	}
-	var getOperands getOperandsFunc
+	getOperands := getOperandsScalarRight
 	if scalarSideLeft {
 		getOperands = getOperandsScalarLeft
-	} else {
-		getOperands = getOperandsScalarRight
-	}
+	} 
 
 	// Cache the result of the number selector since it
 	// will not change during execution.
