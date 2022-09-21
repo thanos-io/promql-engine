@@ -123,7 +123,7 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mi
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if e.LHS.Type() == parser.ValueTypeScalar {
 		return binary.NewScalar(model.NewVectorPool(stepsBatch), rhs, lhs, e.Op, true)
 	}
