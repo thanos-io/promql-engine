@@ -130,6 +130,10 @@ func BenchmarkOldEngineRange(b *testing.B) {
 			name:  "sum by rate",
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
 		},
+		{
+			name:  "binary operation with many to one",
+			query: `http_requests_total / on (pod) group_left http_responses_total`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -207,6 +211,10 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 			name:  "sum by rate",
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
 		},
+		{
+			name:  "binary operation with many to one",
+			query: `http_requests_total / on (pod) group_left http_responses_total`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -275,6 +283,8 @@ load 30s`
 			load += fmt.Sprintf(`
   http_requests_total{pod="p%d", container="c%d"} %d+%dx720`, i, j, i, j)
 		}
+		load += fmt.Sprintf(`
+  http_responses_total{pod="p%d"} %dx720`, i, i)
 	}
 
 	return load
