@@ -103,26 +103,17 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 
 type operation func(lhs float64, rhs float64) float64
 
+var operations = map[string]operation{
+	"+": func(lhs float64, rhs float64) float64 { return lhs + rhs },
+	"-": func(lhs float64, rhs float64) float64 { return lhs - rhs },
+	"*": func(lhs float64, rhs float64) float64 { return lhs * rhs },
+	"/": func(lhs float64, rhs float64) float64 { return lhs / rhs },
+}
+
 func newOperation(expr parser.ItemType) (operation, error) {
 	t := parser.ItemTypeStr[expr]
-	switch t {
-	case "+":
-		return func(lhs float64, rhs float64) float64 {
-			return lhs + rhs
-		}, nil
-	case "-":
-		return func(lhs float64, rhs float64) float64 {
-			return lhs - rhs
-		}, nil
-	case "*":
-		return func(lhs float64, rhs float64) float64 {
-			return lhs * rhs
-		}, nil
-	case "/":
-		return func(lhs float64, rhs float64) float64 {
-			return lhs / rhs
-		}, nil
-	default:
-		return nil, fmt.Errorf("operation not supported")
+	if o, ok := operations[t]; ok {
+		return o, nil
 	}
+	return nil, fmt.Errorf("operation not supported")
 }
