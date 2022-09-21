@@ -108,6 +108,13 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "vector":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point:  points[0],
+				Metric: labels,
+			}
+		}, nil
 	default:
 		return nil, fmt.Errorf("unknown function %s", f.Name)
 	}

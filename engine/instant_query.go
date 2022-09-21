@@ -87,7 +87,7 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 			}
 		}
 		result = vector
-	case parser.ValueTypeString:
+	case parser.ValueTypeScalar:
 		result = promql.Scalar{V: series[0].Points[0].V, T: q.ts.UnixMilli()}
 	default:
 		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.expr.Type()))
