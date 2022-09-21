@@ -90,7 +90,8 @@ func BenchmarkSingleQuery(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		executeRangeQuery(b, query, test, start, end, step)
+		result := executeRangeQuery(b, query, test, start, end, step)
+		testutil.Ok(b, result.Err)
 	}
 }
 
@@ -134,6 +135,10 @@ func BenchmarkOldEngineRange(b *testing.B) {
 			name:  "binary operation with many to one",
 			query: `http_requests_total / on (pod) group_left http_responses_total`,
 		},
+		{
+			name:  "binary operation with vector and scalar",
+			query: `http_requests_total * 10`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -153,8 +158,8 @@ func BenchmarkOldEngineRange(b *testing.B) {
 					qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
-					res := qry.Exec(test.Context())
-					testutil.Ok(b, res.Err)
+					oldResult := qry.Exec(test.Context())
+					testutil.Ok(b, oldResult.Err)
 				}
 			})
 			b.Run("new_engine", func(b *testing.B) {
@@ -162,7 +167,8 @@ func BenchmarkOldEngineRange(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					executeRangeQuery(b, tc.query, test, start, end, step)
+					newResult := executeRangeQuery(b, tc.query, test, start, end, step)
+					testutil.Ok(b, newResult.Err)
 				}
 			})
 		})
@@ -250,12 +256,12 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 	}
 }
 
-func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) {
+func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) *promql.Result {
 	ng := engine.New(engine.Opts{})
 	qry, err := ng.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
 	testutil.Ok(b, err)
 
-	qry.Exec(context.Background())
+	return qry.Exec(context.Background())
 }
 
 func executeInstantQuery(b *testing.B, q string, test *promql.Test, start time.Time) {

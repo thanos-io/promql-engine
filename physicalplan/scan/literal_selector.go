@@ -101,9 +101,9 @@ func (o *numberLiteralSelector) loadSeries() {
 	// If number literal is included within function, []labels.labels must be initialized.
 	o.once.Do(func() {
 		o.series = make([]labels.Labels, 1)
-
 		if o.call != nil {
 			o.series = []labels.Labels{labels.New()}
 		}
+		o.vectorPool.SetStepSize(len(o.series))
 	})
 }

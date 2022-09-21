@@ -83,24 +83,49 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
+			return newScalarBinaryOperator(e, storage, mint, maxt, step)
 		}
-		if len(e.VectorMatching.Include) > 0 {
-			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
-		}
-		leftOperator, err := newOperator(e.LHS, storage, mint, maxt, step)
-		if err != nil {
-			return nil, err
-		}
-		rightOperator, err := newOperator(e.RHS, storage, mint, maxt, step)
-		if err != nil {
-			return nil, err
-		}
-		return binary.NewOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
+
+		return newVectorBinaryOperator(e, storage, mint, maxt, step)
+
+	case *parser.ParenExpr:
+		return newOperator(e.Expr, storage, mint, maxt, step)
 
 	case *parser.StringLiteral:
 		return nil, nil
 	default:
 		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
 	}
+}
+
+func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
+	if len(e.VectorMatching.Include) > 0 {
+		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
+	}
+
+	leftOperator, err := newOperator(e.LHS, storage, mint, maxt, step)
+	if err != nil {
+		return nil, err
+	}
+	rightOperator, err := newOperator(e.RHS, storage, mint, maxt, step)
+	if err != nil {
+		return nil, err
+	}
+	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
+}
+
+func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
+	lhs, err := newOperator(e.LHS, storage, mint, maxt, step)
+	if err != nil {
+		return nil, err
+	}
+	rhs, err := newOperator(e.RHS, storage, mint, maxt, step)
+	if err != nil {
+		return nil, err
+	}
+
+	if e.LHS.Type() == parser.ValueTypeScalar {
+		return binary.NewScalar(model.NewVectorPool(stepsBatch), rhs, lhs, e.Op, true)
+	}
+	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, false)
 }
