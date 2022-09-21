@@ -43,7 +43,7 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	if len(vs) == 0 {
-		return &promql.Result{}
+		return &promql.Result{Value: promql.Vector{}}
 	}
 
 	resultSeries, err := q.plan.Series(ctx)

@@ -36,6 +36,8 @@ type Worker struct {
 	input    model.StepVector
 	output   model.StepVector
 
+	// next and done help in starting/stopping Workers
+	// and tracking completion.
 	next *sync.Mutex
 	done *sync.Mutex
 
@@ -46,6 +48,7 @@ type Worker struct {
 type Task func(workerID int, in model.StepVector) model.StepVector
 
 func New(workerID int, task Task) *Worker {
+	// next and done are both locked when a new Worker is spawned.
 	next := &sync.Mutex{}
 	next.Lock()
 	done := &sync.Mutex{}
@@ -61,18 +64,30 @@ func New(workerID int, task Task) *Worker {
 
 func (w *Worker) Start() {
 	for {
+		// Wait for next to be unlocked by Send
+		// before starting work by acquiring lock.
 		w.next.Lock()
-		w.output = w.doWork(w.workerID, w.input)
-		w.done.Unlock()
+		// Shutdown can also unlock next, so in this case
+		// do not run doWork.
+		if !w.exit {
+			w.output = w.doWork(w.workerID, w.input)
+			w.done.Unlock()
+		}
 	}
 }
 
 func (w *Worker) Send(input model.StepVector) {
+	// input is received for Worker, so run Start
+	// by unlocking next.
 	w.input = input
 	w.next.Unlock()
 }
 
 func (w *Worker) Done() {
+	// We can only acquire done lock once Start
+	// has finished executing doWork, i.e the Worker
+	// has finished its task.
+	// If this function returns, it indicates completion.
 	w.done.Lock()
 }
 

@@ -261,6 +261,23 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="get", code="404"} 1+2.2x20`,
 			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
 		},
+		{
+			name:  "empty series",
+			load:  "",
+			query: "http_requests_total",
+		},
+		{
+			name:  "empty series with func",
+			load:  "",
+			query: "sum(http_requests_total)",
+		},
+		{
+			name: "empty result",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `http_requests_total{pod="nginx-3"}`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -424,6 +441,23 @@ func TestInstantQuery(t *testing.T) {
 				foo{method="get", code="500"} 1+1.1x30
 				foo{method="get", code="404"} 1+2.2x20`,
 			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
+		},
+		{
+			name:  "empty series",
+			load:  "",
+			query: "http_requests_total",
+		},
+		{
+			name:  "empty series with func",
+			load:  "",
+			query: "sum(http_requests_total)",
+		},
+		{
+			name: "empty result",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `http_requests_total{pod="nginx-3"}`,
 		},
 	}
 
