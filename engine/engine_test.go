@@ -240,6 +240,27 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name: "binary operation with vector and scalar on the right",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20`,
+			query: `sum(foo) * 2`,
+		},
+		{
+			name: "binary operation with vector and scalar on the left",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20`,
+			query: `2 * sum(foo)`,
+		},
+		{
+			name: "complex binary operation",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20`,
+			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -382,6 +403,27 @@ func TestInstantQuery(t *testing.T) {
 			name:  "vector",
 			load:  "",
 			query: "vector(24)",
+		},
+		{
+			name: "binary operation with vector and scalar on the right",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20`,
+			query: `foo * 2`,
+		},
+		{
+			name: "binary operation with vector and scalar on the left",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20`,
+			query: `2 * foo`,
+		},
+		{
+			name: "complex binary operation",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20`,
+			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
 		},
 	}
 

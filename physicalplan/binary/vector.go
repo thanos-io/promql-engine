@@ -9,7 +9,8 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
-type operator struct {
+// vectorOperator evaluates an expression between two step vectors.
+type vectorOperator struct {
 	pool *model.VectorPool
 	once sync.Once
 
@@ -38,14 +39,14 @@ type operator struct {
 	table *table
 }
 
-func NewOperator(
+func NewVectorOperator(
 	pool *model.VectorPool,
 	lhs model.VectorOperator,
 	rhs model.VectorOperator,
 	matching *parser.VectorMatching,
 	operation parser.ItemType,
 ) (model.VectorOperator, error) {
-	return &operator{
+	return &vectorOperator{
 		pool:      pool,
 		lhs:       lhs,
 		rhs:       rhs,
@@ -54,7 +55,7 @@ func NewOperator(
 	}, nil
 }
 
-func (o *operator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
 	o.once.Do(func() { err = o.initOutputs(ctx) })
 	if err != nil {
@@ -64,7 +65,7 @@ func (o *operator) Series(ctx context.Context) ([]labels.Labels, error) {
 	return o.series, nil
 }
 
-func (o *operator) initOutputs(ctx context.Context) error {
+func (o *vectorOperator) initOutputs(ctx context.Context) error {
 	// TODO(fpetkovski): execute in parallel
 	highCardSide, err := o.lhs.Series(ctx)
 	if err != nil {
@@ -102,7 +103,7 @@ func (o *operator) initOutputs(ctx context.Context) error {
 	return nil
 }
 
-func (o *operator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	lhs, err := o.lhs.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -139,7 +140,7 @@ func (o *operator) Next(ctx context.Context) ([]model.StepVector, error) {
 	return batch, nil
 }
 
-func (o *operator) GetPool() *model.VectorPool {
+func (o *vectorOperator) GetPool() *model.VectorPool {
 	return o.pool
 }
 
@@ -149,7 +150,7 @@ func (o *operator) GetPool() *model.VectorPool {
 // a map from input series ID to output series ID.
 // The latter can be used to build an array backed index from input model.Series to output model.Series,
 // avoiding expensive hashmap lookups.
-func (o *operator) hashSeries(series []labels.Labels, keepLabels bool, buf []byte) (map[uint64][]model.Series, map[uint64][]uint64) {
+func (o *vectorOperator) hashSeries(series []labels.Labels, keepLabels bool, buf []byte) (map[uint64][]model.Series, map[uint64][]uint64) {
 	hashes := make(map[uint64][]model.Series)
 	inputIndex := make(map[uint64][]uint64)
 	for i, s := range series {
@@ -175,7 +176,7 @@ func (o *operator) hashSeries(series []labels.Labels, keepLabels bool, buf []byt
 // The high cardinality operator can fail to join, which is why its index contains nullable values.
 // The low cardinality operator can join to multiple high cardinality series, which is why its index
 // points to an array of output series.
-func (o *operator) join(
+func (o *vectorOperator) join(
 	highCardHashes map[uint64][]model.Series,
 	highCardInputIndex map[uint64][]uint64,
 	lowCardHashes map[uint64][]model.Series,
