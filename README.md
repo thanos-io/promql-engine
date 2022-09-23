@@ -10,15 +10,14 @@ The engine intends to have full compatibility with the original engine used in P
 
 The following table shows operations which are currenly supported by the engine
 
-| Type                   | Supported                                                 | Priority |
-|------------------------|-----------------------------------------------------------|----------|
-| Rate                   | Full support                                              |          |
-| Aggregations           | Partial support (sum, max, min, avg and count)            | Medium   |
-| Aggregations over time | Partial support (sum, max, min, avg and count) _over_time | Medium   |
-| Functions              | No support                                                | Medium   |
-| Quantiles              | No support                                                | High     |
-| Binary expressions     | No support                                                | High     |
-| Instant queries        | No support                                                | High     |
+| Type                   | Supported                                                           | Priority |
+|------------------------|---------------------------------------------------------------------|----------|
+| Rate                   | Full support                                                        |          |
+| Aggregations           | Partial support (sum, max, min, avg and count)                      | Medium   |
+| Aggregations over time | Partial support (sum, max, min, avg and count) _over_time           | Medium   |
+| Binary expressions     | Partial support (lack of included labels in group_left/group_right) | Medium   |
+| Functions              | No support                                                          | Medium   |
+| Quantiles              | No support                                                          | High     |
 
 In addition to implementing multi-threading, we would ultimately like to end up with a distributed execution model.
 
