@@ -21,9 +21,17 @@ type table struct {
 	operation operation
 	card      parser.VectorMatchCardinality
 
-	outputValues        []sample
-	highCardOutputCache []*uint64
-	lowCardOutputCache  [][]uint64
+	outputValues []sample
+	// highCardOutputIndex is a mapping from series ID of the high cardinality
+	// operator to an output series ID.
+	// During joins, each high cardinality series that has a matching
+	// low cardinality series will map to exactly one output series.
+	highCardOutputIndex outputIndex
+	// lowCardOutputIndex is a mapping from series ID of the low cardinality
+	// operator to an output series ID.
+	// Each series from the low cardinality operator can join with many
+	// series of the high cardinality operator.
+	lowCardOutputIndex outputIndex
 }
 
 func newTable(
@@ -31,8 +39,8 @@ func newTable(
 	card parser.VectorMatchCardinality,
 	expr parser.ItemType,
 	outputValues []sample,
-	highCardOutputCache []*uint64,
-	lowCardOutputCache [][]uint64,
+	highCardOutputCache outputIndex,
+	lowCardOutputCache outputIndex,
 ) (*table, error) {
 	op, err := newOperation(expr)
 	if err != nil {
@@ -44,8 +52,8 @@ func newTable(
 
 		operation:           op,
 		outputValues:        outputValues,
-		highCardOutputCache: highCardOutputCache,
-		lowCardOutputCache:  lowCardOutputCache,
+		highCardOutputIndex: highCardOutputCache,
+		lowCardOutputIndex:  lowCardOutputCache,
 	}, nil
 }
 
@@ -53,50 +61,31 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 	ts := lhs.T
 	step := t.pool.GetStepVector(ts)
 
+	lhsIndex, rhsIndex := t.highCardOutputIndex, t.lowCardOutputIndex
+	if t.card == parser.CardOneToMany {
+		lhsIndex, rhsIndex = rhsIndex, lhsIndex
+	}
+
 	for i, sampleID := range lhs.SampleIDs {
 		lhsVal := lhs.Samples[i]
-		if t.card == parser.CardOneToMany {
-			outputSampleIDs := t.lowCardOutputCache[sampleID]
-			for _, outputSampleID := range outputSampleIDs {
-				t.outputValues[outputSampleID].t = lhs.T
-				t.outputValues[outputSampleID].v = lhsVal
-			}
-		} else {
-			outputSampleID := t.highCardOutputCache[sampleID]
-			if outputSampleID == nil {
-				continue
-			}
-			t.outputValues[*outputSampleID].t = lhs.T
-			t.outputValues[*outputSampleID].v = lhsVal
+		outputSampleIDs := lhsIndex.outputSamples(sampleID)
+		for _, outputSampleID := range outputSampleIDs {
+			t.outputValues[outputSampleID].t = lhs.T
+			t.outputValues[outputSampleID].v = lhsVal
 		}
 	}
 
 	for i, sampleID := range rhs.SampleIDs {
 		rhVal := rhs.Samples[i]
-		if t.card == parser.CardManyToOne {
-			outputSampleIDs := t.lowCardOutputCache[sampleID]
-			for _, outputSampleID := range outputSampleIDs {
-				lhSample := t.outputValues[outputSampleID]
-				if rhs.T != lhSample.t {
-					continue
-				}
-
-				outputVal := t.operation(lhSample.v, rhVal)
-				step.SampleIDs = append(step.SampleIDs, outputSampleID)
-				step.Samples = append(step.Samples, outputVal)
-			}
-		} else {
-			outputSampleID := t.highCardOutputCache[sampleID]
-			if outputSampleID == nil {
-				continue
-			}
-			lhSample := t.outputValues[*outputSampleID]
+		outputSampleIDs := rhsIndex.outputSamples(sampleID)
+		for _, outputSampleID := range outputSampleIDs {
+			lhSample := t.outputValues[outputSampleID]
 			if rhs.T != lhSample.t {
 				continue
 			}
 
-			outputVal := t.operation(t.outputValues[*outputSampleID].v, rhVal)
-			step.SampleIDs = append(step.SampleIDs, *outputSampleID)
+			outputVal := t.operation(lhSample.v, rhVal)
+			step.SampleIDs = append(step.SampleIDs, outputSampleID)
 			step.Samples = append(step.Samples, outputVal)
 		}
 	}

@@ -132,6 +132,10 @@ func BenchmarkOldEngineRange(b *testing.B) {
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
 		},
 		{
+			name:  "binary operation with one to one",
+			query: `http_requests_total{container="1"} / ignoring(container) http_responses_total`,
+		},
+		{
 			name:  "binary operation with many to one",
 			query: `http_requests_total / on (pod) group_left http_responses_total`,
 		},

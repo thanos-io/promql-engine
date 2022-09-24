@@ -99,10 +99,6 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 }
 
 func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
-	if len(e.VectorMatching.Include) > 0 {
-		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
-	}
-
 	leftOperator, err := newOperator(e.LHS, storage, mint, maxt, step)
 	if err != nil {
 		return nil, err

@@ -207,15 +207,32 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			name:  "vector",
 			load:  "",
 			query: "vector(24)",
-		}, {
+		},
+		{
+			name: "binary operation with one-to-one matching",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x1
+				foo{method="get", code="404"} 2+1x2
+				foo{method="put", code="501"} 3+1x3
+				foo{method="put", code="500"} 1+1x4
+				foo{method="post", code="500"} 4+1x4
+				foo{method="post", code="404"} 5+1x5
+				bar{method="get"} 1+1x1
+				bar{method="del"} 2+1x2  
+				bar{method="post"} 3+1x3`,
+			query: `foo{code="500"} + ignoring(code) bar`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(600, 0),
+		},
+		{
 			// Example from https://prometheus.io/docs/prometheus/latest/querying/operators/#many-to-one-and-one-to-many-vector-matches
 			name: "binary operation with group_left",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1.1x30
-				foo{method="get", code="404"} 1+2.2x20
-				foo{method="put", code="501"} 4+3.4x60
-				foo{method="post", code="500"} 1+5.1x40
-				foo{method="post", code="404"} 2+3.7x40
+				foo{method="get", code="500", path="/"} 1+1.1x30
+				foo{method="get", code="404", path="/"} 1+2.2x20
+				foo{method="put", code="501", path="/"} 4+3.4x60
+				foo{method="post", code="500", path="/"} 1+5.1x40
+				foo{method="post", code="404", path="/"} 2+3.7x40
 				bar{method="get", path="/a"} 3+7.4x10
 				bar{method="del", path="/b"} 8+6.1x30  
 				bar{method="post", path="/c"} 1+2.1x40`,
@@ -239,6 +256,36 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			start: time.Unix(0, 0),
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
+		},
+		{
+			name: "binary operation with group_left and included labels",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20
+				foo{method="put", code="501"} 4+3.4x60
+				foo{method="post", code="500"} 1+5.1x40
+				foo{method="post", code="404"} 2+3.7x40
+				bar{method="get", path="/a"} 3+7.4x10
+				bar{method="del", path="/b"} 8+6.1x30
+				bar{method="post", path="/c"} 1+2.1x40`,
+			query: `foo * ignoring(code, path) group_left(path) bar`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(600, 0),
+		},
+		{
+			name: "binary operation with group_right and included labels",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1.1x30
+				foo{method="get", code="404"} 1+2.2x20
+				foo{method="put", code="501"} 4+3.4x60
+				foo{method="post", code="500"} 1+5.1x40
+				foo{method="post", code="404"} 2+3.7x40
+				bar{method="get", path="/a"} 3+7.4x10
+				bar{method="del", path="/b"} 8+6.1x30
+				bar{method="post", path="/c"} 1+2.1x40`,
+			query: `bar * ignoring(code, path) group_right(path) foo`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(600, 0),
 		},
 		{
 			name: "binary operation with vector and scalar on the right",

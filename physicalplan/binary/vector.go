@@ -27,16 +27,6 @@ type vectorOperator struct {
 	// The outputCache is an internal cache used to calculate
 	// the binary operation of the lhs and rhs operator.
 	outputCache []sample
-	// highCardOutputIndex is a mapping from series ID of the high cardinality
-	// operator to an output series ID.
-	// The value is nullable since during joins, certain lhs series can fail to
-	// find a matching rhs series.
-	highCardOutputIndex []*uint64
-	// lowCardOutputIndex is a mapping from series ID of the low cardinality
-	// operator to an output series ID.
-	// Each series from the low cardinality operator can join with many
-	// series of the high cardinality operator.
-	lowCardOutputIndex [][]uint64
 	// table is used to calculate the binary operation of two step vectors between
 	// the lhs and rhs operator.
 	table *table
@@ -82,22 +72,33 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 		highCardSide, lowCardSide = lowCardSide, highCardSide
 	}
 
-	buf := make([]byte, 128)
-	highCardHashes, highCardInputMap := o.hashSeries(highCardSide, true, buf)
-	lowCardHashes, lowCardInputMap := o.hashSeries(lowCardSide, false, buf)
-	output, highCardOutputIndex, lowCardOutputIndex := o.join(highCardHashes, highCardInputMap, lowCardHashes, lowCardInputMap)
+	buf := make([]byte, 1024)
+	var includeLabels []string
+	if len(o.matching.Include) > 0 {
+		includeLabels = o.matching.Include
+	}
+	keepLabels := o.matching.Card != parser.CardOneToOne
+	highCardHashes, highCardInputMap := o.hashSeries(highCardSide, keepLabels, buf)
+	lowCardHashes, lowCardInputMap := o.hashSeries(lowCardSide, keepLabels, buf)
+	output, highCardOutputIndex, lowCardOutputIndex := o.join(highCardHashes, highCardInputMap, lowCardHashes, lowCardInputMap, includeLabels)
 
 	series := make([]labels.Labels, len(output))
 	for _, s := range output {
 		series[s.ID] = s.Metric
 	}
 	o.series = series
-	o.highCardOutputIndex = highCardOutputIndex
-	o.lowCardOutputIndex = lowCardOutputIndex
+
 	o.outputCache = make([]sample, len(series))
 	o.pool.SetStepSize(len(highCardSide))
 
-	t, err := newTable(o.pool, o.matching.Card, o.operation, o.outputCache, highCardOutputIndex, lowCardOutputIndex)
+	t, err := newTable(
+		o.pool,
+		o.matching.Card,
+		o.operation,
+		o.outputCache,
+		newHighCardIndex(highCardOutputIndex),
+		lowCardinalityIndex(lowCardOutputIndex),
+	)
 	if err != nil {
 		return err
 	}
@@ -184,6 +185,7 @@ func (o *vectorOperator) join(
 	highCardInputIndex map[uint64][]uint64,
 	lowCardHashes map[uint64][]model.Series,
 	lowCardInputIndex map[uint64][]uint64,
+	includeLabels []string,
 ) ([]model.Series, []*uint64, [][]uint64) {
 	// Output index points from output series ID
 	// to the actual series.
@@ -201,14 +203,15 @@ func (o *vectorOperator) join(
 	}
 
 	highCardOutputIndex := make([]*uint64, outputSize)
-	lowCardOutputIndex := make([][]uint64, outputSize)
-	for hash, outputSeries := range highCardHashes {
+	lowCardOutputIndex := make([][]uint64, len(lowCardInputIndex))
+	for hash, highCardSeries := range highCardHashes {
 		lowCardSeriesID := lowCardInputIndex[hash][0]
+		lowCardSeries := lowCardHashes[hash][0]
 		// Each low cardinality series can map to multiple output series.
-		lowCardOutputIndex[lowCardSeriesID] = make([]uint64, 0, len(outputSeries))
+		lowCardOutputIndex[lowCardSeriesID] = make([]uint64, 0, len(highCardSeries))
 
-		for i, output := range outputSeries {
-			outputSeries := model.Series{ID: uint64(len(outputIndex)), Metric: output.Metric}
+		for i, output := range highCardSeries {
+			outputSeries := buildOutputSeries(uint64(len(outputIndex)), output, lowCardSeries, includeLabels)
 			outputIndex = append(outputIndex, outputSeries)
 
 			highCardSeriesID := highCardInputIndex[hash][i]
@@ -241,4 +244,15 @@ func signature(metric labels.Labels, without bool, grouping []string, keepLabels
 
 	key, _ := metric.HashForLabels(buf, grouping...)
 	return key, lb.Labels()
+}
+
+func buildOutputSeries(seriesID uint64, highCardSeries, lowCardSeries model.Series, includeLabels []string) model.Series {
+	metric := highCardSeries.Metric
+	if len(includeLabels) > 0 {
+		lowCardLabels := labels.NewBuilder(lowCardSeries.Metric).
+			Keep(includeLabels...).
+			Labels()
+		metric = append(metric, lowCardLabels...)
+	}
+	return model.Series{ID: seriesID, Metric: metric}
 }
