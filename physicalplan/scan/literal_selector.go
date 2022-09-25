@@ -63,6 +63,8 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 	totalSteps := int64(1)
 	if o.step != 0 {
 		totalSteps = (o.maxt-o.mint)/o.step + 1
+	} else {
+		o.step = 1
 	}
 
 	vectors := o.vectorPool.GetVectorBatch()

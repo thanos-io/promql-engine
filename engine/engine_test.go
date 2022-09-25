@@ -303,6 +303,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
 					q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
 					testutil.Ok(t, err)
+
 					newResult := q1.Exec(context.Background())
 					testutil.Ok(t, newResult.Err)
 

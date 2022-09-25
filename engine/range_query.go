@@ -27,6 +27,9 @@ func newRangeQuery(plan model.VectorOperator) promql.Query {
 }
 
 func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	resultSeries, err := q.plan.Series(ctx)
 	if err != nil {
 		return newErrResult(err)

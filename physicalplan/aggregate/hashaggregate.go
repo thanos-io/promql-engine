@@ -52,7 +52,6 @@ func NewHashAggregate(
 		stepsBatch:  stepsBatch,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
-	a.workers.Start()
 
 	return a, nil
 }
@@ -74,18 +73,15 @@ func (a *aggregate) GetPool() *model.VectorPool {
 func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	in, err := a.next.Next(ctx)
 	if err != nil {
-		a.workers.Shutdown()
 		return nil, err
 	}
 	if in == nil {
-		a.workers.Shutdown()
 		return nil, nil
 	}
 	defer a.next.GetPool().PutVectors(in)
 
 	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
-		a.workers.Shutdown()
 		return nil, err
 	}
 
@@ -95,7 +91,6 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	for i, vector := range in {
-		a.workers[i].Done()
 		result = append(result, a.workers[i].GetOutput())
 		a.next.GetPool().PutStepVector(vector)
 	}
@@ -108,6 +103,8 @@ func (a *aggregate) initializeTables(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	a.workers.Start(ctx)
 
 	if a.by && len(a.labels) == 0 {
 		tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)

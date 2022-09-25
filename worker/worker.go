@@ -4,8 +4,7 @@
 package worker
 
 import (
-	"sync"
-
+	"context"
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
@@ -19,83 +18,50 @@ func NewGroup(numWorkers int, task Task) Group {
 	return group
 }
 
-func (g Group) Start() {
+func (g Group) Start(ctx context.Context) {
 	for _, w := range g {
-		go w.Start()
-	}
-}
-
-func (g Group) Shutdown() {
-	for _, w := range g {
-		w.Shutdown()
+		go w.Start(ctx)
 	}
 }
 
 type Worker struct {
 	workerID int
-	input    model.StepVector
-	output   model.StepVector
-
-	// next and done help in starting/stopping Workers
-	// and tracking completion.
-	next *sync.Mutex
-	done *sync.Mutex
-
-	exit   bool
-	doWork Task
+	input    chan model.StepVector
+	output   chan model.StepVector
+	doWork   Task
 }
 
 type Task func(workerID int, in model.StepVector) model.StepVector
 
 func New(workerID int, task Task) *Worker {
-	// next and done are both locked when a new Worker is spawned.
-	next := &sync.Mutex{}
-	next.Lock()
-	done := &sync.Mutex{}
-	done.Lock()
+	input := make(chan model.StepVector, 1)
+	output := make(chan model.StepVector, 1)
 
 	return &Worker{
 		workerID: workerID,
-		next:     next,
-		done:     done,
+		input:    input,
+		output:   output,
 		doWork:   task,
 	}
 }
 
-func (w *Worker) Start() {
+func (w *Worker) Start(ctx context.Context) {
 	for {
-		// Wait for next to be unlocked by Send
-		// before starting work by acquiring lock.
-		w.next.Lock()
-		// Shutdown can also unlock next, so in this case
-		// do not run doWork.
-		if !w.exit {
-			w.output = w.doWork(w.workerID, w.input)
-			w.done.Unlock()
+		select {
+		case <-ctx.Done():
+			close(w.input)
+			close(w.output)
+			return
+		case task := <-w.input:
+			w.output <- w.doWork(w.workerID, task)
 		}
 	}
 }
 
 func (w *Worker) Send(input model.StepVector) {
-	// input is received for Worker, so run Start
-	// by unlocking next.
-	w.input = input
-	w.next.Unlock()
-}
-
-func (w *Worker) Done() {
-	// We can only acquire done lock once Start
-	// has finished executing doWork, i.e the Worker
-	// has finished its task.
-	// If this function returns, it indicates completion.
-	w.done.Lock()
+	w.input <- input
 }
 
 func (w *Worker) GetOutput() model.StepVector {
-	return w.output
-}
-
-func (w *Worker) Shutdown() {
-	w.exit = true
-	w.next.Unlock()
+	return <-w.output
 }

@@ -82,8 +82,9 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	totalSteps := int64(1)
 	if o.step != 0 {
 		totalSteps = (o.maxt-o.mint)/o.step + 1
+	} else {
+		o.step = 1
 	}
-
 	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
 
 	vectors := o.vectorPool.GetVectorBatch()
