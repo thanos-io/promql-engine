@@ -64,6 +64,8 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 	if o.step != 0 {
 		totalSteps = (o.maxt-o.mint)/o.step + 1
 	} else {
+		// For instant queries, set the step to a positive value
+		// so that the operator can terminate.
 		o.step = 1
 	}
 
