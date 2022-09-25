@@ -37,6 +37,9 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
 
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
 	vs, err := q.plan.Next(ctx)
 	if err != nil {
 		return newErrResult(err)
