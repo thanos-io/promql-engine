@@ -11,6 +11,7 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/promql"
+
 	"github.com/thanos-community/promql-engine/engine"
 )
 

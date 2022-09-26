@@ -6,7 +6,12 @@ package binary
 import (
 	"fmt"
 
+	"github.com/efficientgo/core/errors"
+
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
+
 	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
@@ -107,5 +112,6 @@ func newOperation(expr parser.ItemType) (operation, error) {
 	if o, ok := operations[t]; ok {
 		return o, nil
 	}
-	return nil, fmt.Errorf("operation not supported")
+	msg := fmt.Sprintf("operation not supported: %s", t)
+	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 }
