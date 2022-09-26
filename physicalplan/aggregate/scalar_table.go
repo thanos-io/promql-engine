@@ -112,7 +112,7 @@ type accumulator struct {
 	Reset     func()
 }
 
-func newAccumulator(expr parser.ItemType) (newAccumulatorFunc, error) {
+func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":

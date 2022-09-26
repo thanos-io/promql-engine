@@ -26,9 +26,10 @@ type aggregate struct {
 	labels      []string
 	aggregation parser.ItemType
 
-	once   sync.Once
-	tables []aggregateTable
-	series []labels.Labels
+	once           sync.Once
+	tables         []aggregateTable
+	series         []labels.Labels
+	newAccumulator newAccumulatorFunc
 
 	stepsBatch int
 	workers    worker.Group
@@ -42,6 +43,10 @@ func NewHashAggregate(
 	labels []string,
 	stepsBatch int,
 ) (model.VectorOperator, error) {
+	newAccumulator, err := makeAccumulatorFunc(aggregation)
+	if err != nil {
+		return nil, err
+	}
 	a := &aggregate{
 		next:       next,
 		vectorPool: points,
@@ -50,6 +55,8 @@ func NewHashAggregate(
 		aggregation: aggregation,
 		labels:      labels,
 		stepsBatch:  stepsBatch,
+
+		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
 
@@ -136,11 +143,6 @@ func (a *aggregate) initializeVectorizedTables() ([]aggregateTable, []labels.Lab
 }
 
 func (a *aggregate) initializeScalarTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
-	accumulatorCreator, err := newAccumulator(a.aggregation)
-	if err != nil {
-		return nil, nil, err
-	}
-
 	series, err := a.next.Series(ctx)
 	if err != nil {
 		return nil, nil, err
@@ -165,7 +167,7 @@ func (a *aggregate) initializeScalarTables(ctx context.Context) ([]aggregateTabl
 		inputCache[i] = output.ID
 	}
 	a.vectorPool.SetStepSize(len(outputCache))
-	tables := newScalarTables(a.stepsBatch, inputCache, outputCache, accumulatorCreator)
+	tables := newScalarTables(a.stepsBatch, inputCache, outputCache, a.newAccumulator)
 
 	series = make([]labels.Labels, len(outputCache))
 	for i := 0; i < len(outputCache); i++ {
