@@ -49,6 +49,10 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 
 	case *parser.Call:
+		if len(e.Args) != 1 {
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		}
+
 		switch t := e.Args[0].(type) {
 		case *parser.MatrixSelector:
 			vs := t.VectorSelector.(*parser.VectorSelector)
