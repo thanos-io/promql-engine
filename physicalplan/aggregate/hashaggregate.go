@@ -99,31 +99,59 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 }
 
 func (a *aggregate) initializeTables(ctx context.Context) error {
-	series, err := a.next.Series(ctx)
+	var (
+		tables []aggregateTable
+		series []labels.Labels
+		err    error
+	)
+
+	if a.by && len(a.labels) == 0 {
+		tables, series, err = a.initializeVectorizedTables()
+	} else {
+		tables, series, err = a.initializeScalarTables(ctx)
+	}
 	if err != nil {
 		return err
 	}
-
+	a.tables = tables
+	a.series = series
 	a.workers.Start(ctx)
 
-	if a.by && len(a.labels) == 0 {
-		tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
-		if err != nil {
-			return err
-		}
-		a.tables = tables
-		a.series = []labels.Labels{{}}
-		a.vectorPool.SetStepSize(1)
-		return nil
+	return nil
+}
+
+func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.StepVector {
+	table := a.tables[workerID]
+	table.aggregate(vector)
+	return table.toVector(a.vectorPool)
+}
+
+func (a *aggregate) initializeVectorizedTables() ([]aggregateTable, []labels.Labels, error) {
+	tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return tables, []labels.Labels{{}}, nil
+}
+
+func (a *aggregate) initializeScalarTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
+	accumulatorCreator, err := newAccumulator(a.aggregation)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	series, err := a.next.Series(ctx)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	inputCache := make([]uint64, len(series))
 	outputMap := make(map[uint64]*model.Series)
 	outputCache := make([]*model.Series, 0)
-	buf := make([]byte, 128)
+	buf := make([]byte, 1024)
 	for i := 0; i < len(series); i++ {
 		hash, _, lbls := hashMetric(series[i], !a.by, a.labels, buf)
-
 		output, ok := outputMap[hash]
 		if !ok {
 			output = &model.Series{
@@ -136,20 +164,13 @@ func (a *aggregate) initializeTables(ctx context.Context) error {
 
 		inputCache[i] = output.ID
 	}
+	a.vectorPool.SetStepSize(len(outputCache))
+	tables := newScalarTables(a.stepsBatch, inputCache, outputCache, accumulatorCreator)
 
-	a.series = make([]labels.Labels, len(outputCache))
+	series = make([]labels.Labels, len(outputCache))
 	for i := 0; i < len(outputCache); i++ {
-		a.series[i] = outputCache[i].Metric
+		series[i] = outputCache[i].Metric
 	}
 
-	a.tables = newScalarTables(a.stepsBatch, inputCache, outputCache, a.aggregation)
-	a.vectorPool.SetStepSize(len(outputCache))
-
-	return nil
-}
-
-func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.StepVector {
-	table := a.tables[workerID]
-	table.aggregate(vector)
-	return table.toVector(a.vectorPool)
+	return tables, series, nil
 }
