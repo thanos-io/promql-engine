@@ -6,7 +6,10 @@ package aggregate
 import (
 	"fmt"
 
+	"github.com/efficientgo/core/errors"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"gonum.org/v1/gonum/floats"
@@ -84,5 +87,6 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 			return floats.Sum(in) / float64(len(in))
 		}, nil
 	}
-	return nil, fmt.Errorf("unknown aggregation function %s", t)
+	msg := fmt.Sprintf("unknown aggregation function %s", t)
+	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 }
