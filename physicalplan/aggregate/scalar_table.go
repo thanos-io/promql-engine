@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
 type aggregateTable interface {
@@ -193,5 +195,6 @@ func newAccumulator(expr parser.ItemType) (*accumulator, error) {
 			},
 		}, nil
 	}
-	return nil, fmt.Errorf("unknown aggregation function %s", t)
+	msg := fmt.Sprintf("unknown aggregation function %s", t)
+	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 }
