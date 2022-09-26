@@ -8,10 +8,12 @@ import (
 	"math"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/prometheus/prometheus/promql"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
 type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample
@@ -116,7 +118,8 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 			}
 		}, nil
 	default:
-		return nil, fmt.Errorf("unknown function %s", f.Name)
+		msg := fmt.Sprintf("unknown function: %s", f.Name)
+		return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 	}
 }
 

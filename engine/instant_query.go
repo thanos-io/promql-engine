@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/promql"

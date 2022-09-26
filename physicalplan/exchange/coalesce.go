@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 

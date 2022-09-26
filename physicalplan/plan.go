@@ -7,12 +7,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/thanos-community/promql-engine/physicalplan/binary"
-
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-
 	"github.com/thanos-community/promql-engine/physicalplan/aggregate"
+	"github.com/thanos-community/promql-engine/physicalplan/binary"
 	"github.com/thanos-community/promql-engine/physicalplan/exchange"
+	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 	"github.com/thanos-community/promql-engine/physicalplan/scan"
 
 	"github.com/efficientgo/core/errors"
@@ -21,8 +20,6 @@ import (
 )
 
 const stepsBatch = 10
-
-var ErrNotSupportedExpr = errors.New("unsupported expression")
 
 // New creates new physical query execution plan for a given query expression.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
@@ -76,7 +73,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 
 			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, t.Val, call), nil
 		default:
-			return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", t)
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", t)
 		}
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val, nil), nil
@@ -94,7 +91,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 	case *parser.StringLiteral:
 		return nil, nil
 	default:
-		return nil, errors.Wrapf(ErrNotSupportedExpr, "got: %s", e)
+		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
 	"github.com/thanos-community/promql-engine/engine"
 )
 

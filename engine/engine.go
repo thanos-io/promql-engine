@@ -9,7 +9,9 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+
 	"github.com/thanos-community/promql-engine/physicalplan"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -88,7 +90,7 @@ func (e *engine) SetQueryLogger(l promql.QueryLogger) {
 }
 
 func triggerFallback(err error) bool {
-	return errors.Is(err, physicalplan.ErrNotSupportedExpr) || errors.Is(err, errNotImplemented)
+	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, errNotImplemented)
 }
 
 var errNotImplemented = errors.New("not implemented")

@@ -5,6 +5,7 @@ package worker
 
 import (
 	"context"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
