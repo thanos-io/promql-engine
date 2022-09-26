@@ -12,16 +12,21 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
+type maybeStepVector struct {
+	err        error
+	stepVector []model.StepVector
+}
+
 type concurrencyOperator struct {
-	next   model.VectorOperator
-	buffer chan []model.StepVector
 	once   sync.Once
+	next   model.VectorOperator
+	buffer chan maybeStepVector
 }
 
 func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperator {
 	return &concurrencyOperator{
 		next:   next,
-		buffer: make(chan []model.StepVector, bufferSize),
+		buffer: make(chan maybeStepVector, bufferSize),
 	}
 }
 
@@ -34,24 +39,48 @@ func (c *concurrencyOperator) GetPool() *model.VectorPool {
 }
 
 func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, error) {
-	c.once.Do(func() { c.pull(ctx) })
+	c.once.Do(func() {
+		go c.pull(ctx)
+		go c.drainBufferOnCancel(ctx)
+	})
 
 	r, ok := <-c.buffer
 	if !ok {
 		return nil, nil
 	}
-	return r, nil
+	if r.err != nil {
+		return nil, r.err
+	}
+
+	return r.stepVector, nil
 }
 
 func (c *concurrencyOperator) pull(ctx context.Context) {
-	go func() {
-		defer close(c.buffer)
-		for {
+	defer close(c.buffer)
+
+	for {
+		select {
+		case <-ctx.Done():
+			c.buffer <- maybeStepVector{err: ctx.Err()}
+			return
+		default:
 			r, err := c.next.Next(ctx)
-			if err != nil || r == nil {
-				break
+			if err != nil {
+				c.buffer <- maybeStepVector{err: err}
+				return
 			}
-			c.buffer <- r
+			if r == nil {
+				return
+			}
+			c.buffer <- maybeStepVector{stepVector: r}
 		}
-	}()
+	}
+}
+
+func (c *concurrencyOperator) drainBufferOnCancel(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		for range c.buffer {
+		}
+	}
 }

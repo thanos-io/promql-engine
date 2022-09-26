@@ -94,11 +94,17 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		a.workers[i].Send(vector)
+		if err := a.workers[i].Send(vector); err != nil {
+			return nil, err
+		}
 	}
 
 	for i, vector := range in {
-		result = append(result, a.workers[i].GetOutput())
+		output, err := a.workers[i].GetOutput()
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, output)
 		a.next.GetPool().PutStepVector(vector)
 	}
 

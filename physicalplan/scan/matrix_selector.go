@@ -147,7 +147,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	o.currentStep += o.step * int64(numSteps)
 
 	return vectors, nil
-
 }
 
 func (o *matrixSelector) loadSeries(ctx context.Context) error {

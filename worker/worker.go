@@ -5,9 +5,12 @@ package worker
 
 import (
 	"context"
+	"sync"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
+
+type doneFunc func()
 
 type Group []*Worker
 
@@ -20,12 +23,17 @@ func NewGroup(numWorkers int, task Task) Group {
 }
 
 func (g Group) Start(ctx context.Context) {
+	var wg sync.WaitGroup
 	for _, w := range g {
-		go w.Start(ctx)
+		wg.Add(1)
+		go w.start(wg.Done, ctx)
 	}
+	wg.Wait()
 }
 
 type Worker struct {
+	ctx context.Context
+
 	workerID int
 	input    chan model.StepVector
 	output   chan model.StepVector
@@ -46,11 +54,12 @@ func New(workerID int, task Task) *Worker {
 	}
 }
 
-func (w *Worker) Start(ctx context.Context) {
+func (w *Worker) start(done doneFunc, ctx context.Context) {
+	w.ctx = ctx
+	done()
 	for {
 		select {
-		case <-ctx.Done():
-			close(w.input)
+		case <-w.ctx.Done():
 			close(w.output)
 			return
 		case task := <-w.input:
@@ -59,10 +68,22 @@ func (w *Worker) Start(ctx context.Context) {
 	}
 }
 
-func (w *Worker) Send(input model.StepVector) {
-	w.input <- input
+func (w *Worker) Send(input model.StepVector) error {
+	select {
+	case <-w.ctx.Done():
+		close(w.input)
+		return w.ctx.Err()
+	default:
+		w.input <- input
+		return nil
+	}
 }
 
-func (w *Worker) GetOutput() model.StepVector {
-	return <-w.output
+func (w *Worker) GetOutput() (model.StepVector, error) {
+	select {
+	case <-w.ctx.Done():
+		return model.StepVector{}, w.ctx.Err()
+	default:
+		return <-w.output, nil
+	}
 }
