@@ -28,24 +28,18 @@ type scalarTable struct {
 	accumulators []*accumulator
 }
 
-func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, a parser.ItemType) []aggregateTable {
+func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, newAccumulator newAccumulatorFunc) []aggregateTable {
 	tables := make([]aggregateTable, stepsBatch)
 	for i := 0; i < len(tables); i++ {
-		tables[i] = newScalarTable(inputCache, outputCache, func() *accumulator {
-			f, err := newAccumulator(a)
-			if err != nil {
-				panic(err)
-			}
-			return f
-		})
+		tables[i] = newScalarTable(inputCache, outputCache, newAccumulator)
 	}
 	return tables
 }
 
-func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, makeAccumulator newAccumulatorFunc) *scalarTable {
+func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, newAccumulator newAccumulatorFunc) *scalarTable {
 	accumulators := make([]*accumulator, len(outputs))
-	for i := 0; i < len(outputs); i++ {
-		accumulators[i] = makeAccumulator()
+	for i := 0; i < len(accumulators); i++ {
+		accumulators[i] = newAccumulator()
 	}
 	return &scalarTable{
 		inputs:       inputSampleIDs,
@@ -118,81 +112,100 @@ type accumulator struct {
 	Reset     func()
 }
 
-func newAccumulator(expr parser.ItemType) (*accumulator, error) {
-	hasValue := false
+func newAccumulator(expr parser.ItemType) (newAccumulatorFunc, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value += v
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
+		return func() *accumulator {
+			var value float64
+			var hasValue bool
+
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					value += v
+				},
+				ValueFunc: func() float64 { return value },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					value = 0
+				},
+			}
 		}, nil
 	case "max":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value = math.Max(value, v)
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
+		return func() *accumulator {
+			var value float64
+			var hasValue bool
+
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					value = math.Max(value, v)
+				},
+				ValueFunc: func() float64 { return value },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					value = 0
+				},
+			}
 		}, nil
 	case "min":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value = math.Min(value, v)
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
+		return func() *accumulator {
+			var value float64
+			var hasValue bool
+
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					value = math.Min(value, v)
+				},
+				ValueFunc: func() float64 { return value },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					value = 0
+				},
+			}
 		}, nil
 	case "count":
-		var value float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				value += 1
-			},
-			ValueFunc: func() float64 { return value },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				value = 0
-			},
+		return func() *accumulator {
+			var value float64
+			var hasValue bool
+
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					value += 1
+				},
+				ValueFunc: func() float64 { return value },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					value = 0
+				},
+			}
 		}, nil
 	case "avg":
-		var count, sum float64
-		return &accumulator{
-			AddFunc: func(v float64) {
-				hasValue = true
-				count += 1
-				sum += v
-			},
-			ValueFunc: func() float64 { return sum / count },
-			HasValue:  func() bool { return hasValue },
-			Reset: func() {
-				hasValue = false
-				sum = 0
-				count = 0
-			},
+		return func() *accumulator {
+			var count, sum float64
+			var hasValue bool
+
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					count += 1
+					sum += v
+				},
+				ValueFunc: func() float64 { return sum / count },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					sum = 0
+					count = 0
+				},
+			}
 		}, nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
