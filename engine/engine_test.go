@@ -76,11 +76,39 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "avg_over_time(http_requests_total[30s])",
 		},
 		{
+			name: "max",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "max(http_requests_total)",
+		},
+		{
+			name: "max with only 1 sample",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -1
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "max(http_requests_total) by (pod)",
+		},
+		{
 			name: "max_over_time",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "max_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "min",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "min(http_requests_total)",
+		},
+		{
+			name: "min with only 1 sample",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -1
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "min(http_requests_total) by (pod)",
 		},
 		{
 			name: "min_over_time",
@@ -409,6 +437,34 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg(http_requests_total)",
+		},
+		{
+			name: "max",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "max(http_requests_total)",
+		},
+		{
+			name: "max with only 1 sample",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -1
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "max(http_requests_total) by (pod)",
+		},
+		{
+			name: "min",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "min(http_requests_total)",
+		},
+		{
+			name: "min with only 1 sample",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -1
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "min(http_requests_total) by (pod)",
 		},
 		{
 			name: "rate",
