@@ -215,6 +215,20 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 			}
 		}, nil
+	case "group":
+		return func() *accumulator {
+			var hasValue bool
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+				},
+				ValueFunc: func() float64 { return 1 },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+				},
+			}
+		}, nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)

@@ -8,16 +8,16 @@ The project is currently under active development.
 
 The engine intends to have full compatibility with the original engine used in Prometheus. Since implementing the full specification will take time, we aim to add support for most commonly used expressions while falling back to the original engine for operations that are not yet supported. This will allow us to have smaller and faster releases, and gather feedback on regular basis. Instructions on using the engine will be added after we have enough confidence on its correctness.
 
-The following table shows operations which are currenly supported by the engine
+The following table shows operations which are currently supported by the engine
 
-| Type                   | Supported                                                       | Priority |
-|------------------------|-----------------------------------------------------------------|----------|
-| Rate                   | Full support                                                    |          |
-| Binary expressions     | Full support                                                    |          |
-| Aggregations           | Partial support (sum, max, min, avg and count)                  | Medium   |
-| Aggregations over time | Partial support (sum, max, min, avg, count and last) _over_time | Medium   |
-| Functions              | No support                                                      | Medium   |
-| Quantiles              | No support                                                      | High     |
+| Type                   | Supported                                                                | Priority |
+|------------------------|--------------------------------------------------------------------------|----------|
+| Rate                   | Full support                                                             |          |
+| Binary expressions     | Full support                                                             |          |
+| Aggregations           | Partial support (sum, max, min, avg, count and group)                    | Medium   |
+| Aggregations over time | Partial support (sum, max, min, avg, count, last and present) _over_time | Medium   |
+| Functions              | No support                                                               | Medium   |
+| Quantiles              | No support                                                               | High     |
 
 In addition to implementing multi-threading, we would ultimately like to end up with a distributed execution model.
 
