@@ -16,8 +16,9 @@ import (
 )
 
 type rangeQuery struct {
-	once sync.Once
-	plan model.VectorOperator
+	cancel context.CancelFunc
+	once   sync.Once
+	plan   model.VectorOperator
 }
 
 func newRangeQuery(plan model.VectorOperator) promql.Query {
@@ -28,7 +29,9 @@ func newRangeQuery(plan model.VectorOperator) promql.Query {
 
 func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	q.cancel = cancel
+
+	defer q.Close()
 
 	resultSeries, err := q.plan.Series(ctx)
 	if err != nil {
@@ -40,25 +43,9 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 		series[i].Metric = resultSeries[i]
 		series[i].Points = make([]promql.Point, 0, 121)
 	}
-	for {
-		r, err := q.plan.Next(ctx)
-		if err != nil {
-			return newErrResult(err)
-		}
-		if r == nil {
-			break
-		}
 
-		for _, vector := range r {
-			for i, s := range vector.SampleIDs {
-				series[s].Points = append(series[s].Points, promql.Point{
-					T: vector.T,
-					V: vector.Samples[i],
-				})
-			}
-			q.plan.GetPool().PutStepVector(vector)
-		}
-		q.plan.GetPool().PutVectors(r)
+	if err := getAllSeries(ctx, q.plan, series); err != nil {
+		return newErrResult(err)
 	}
 
 	result := make(promql.Matrix, 0, len(series))
@@ -74,20 +61,47 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 	}
 }
 
-// TODO(fpetkovski): Check if any resources can be released.
-func (q *rangeQuery) Close() {}
+func getAllSeries(ctx context.Context, plan model.VectorOperator, series []promql.Series) error {
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			r, err := plan.Next(ctx)
+			if err != nil {
+				return err
+			}
+			if r == nil {
+				return nil
+			}
 
-func (q *rangeQuery) Statement() parser.Statement {
-	return nil
+			for _, vector := range r {
+				for i, s := range vector.SampleIDs {
+					series[s].Points = append(series[s].Points, promql.Point{
+						T: vector.T,
+						V: vector.Samples[i],
+					})
+				}
+				plan.GetPool().PutStepVector(vector)
+			}
+			plan.GetPool().PutVectors(r)
+		}
+	}
 }
 
-func (q *rangeQuery) Stats() *stats.Statistics {
-	return &stats.Statistics{}
-}
+func (q *rangeQuery) Statement() parser.Statement { return nil }
 
-func (q *rangeQuery) Cancel() {}
+func (q *rangeQuery) Stats() *stats.Statistics { return &stats.Statistics{} }
+
+func (q *rangeQuery) Close() { q.Cancel() }
 
 func (q *rangeQuery) String() string { return "" }
+
+func (q *rangeQuery) Cancel() {
+	if q.cancel != nil {
+		q.cancel()
+	}
+}
 
 func newErrResult(err error) *promql.Result {
 	return &promql.Result{Err: err}

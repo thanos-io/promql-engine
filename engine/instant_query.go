@@ -17,6 +17,8 @@ import (
 )
 
 type instantQuery struct {
+	cancel context.CancelFunc
+
 	plan model.VectorOperator
 	expr parser.Expr
 	ts   time.Time
@@ -39,16 +41,9 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
+	q.cancel = cancel
 
-	vs, err := q.plan.Next(ctx)
-	if err != nil {
-		return newErrResult(err)
-	}
-
-	if len(vs) == 0 {
-		return &promql.Result{Value: promql.Vector{}}
-	}
+	defer q.Close()
 
 	resultSeries, err := q.plan.Series(ctx)
 	if err != nil {
@@ -59,6 +54,15 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	for i := 0; i < len(resultSeries); i++ {
 		series[i].Metric = resultSeries[i]
 		series[i].Points = make([]promql.Point, 0, 1)
+	}
+
+	vs, err := q.plan.Next(ctx)
+	if err != nil {
+		return newErrResult(err)
+	}
+
+	if len(vs) == 0 {
+		return &promql.Result{Value: promql.Vector{}}
 	}
 
 	for _, vector := range vs {
@@ -102,17 +106,16 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 	}
 }
 
-// TODO(fpetkovski): Check if any resources can be released.
-func (q *instantQuery) Close() {}
+func (q *instantQuery) Statement() parser.Statement { return nil }
 
-func (q *instantQuery) Statement() parser.Statement {
-	return nil
-}
+func (q *instantQuery) Stats() *stats.Statistics { return &stats.Statistics{} }
 
-func (q *instantQuery) Stats() *stats.Statistics {
-	return &stats.Statistics{}
-}
-
-func (q *instantQuery) Cancel() {}
+func (q *instantQuery) Close() { q.Cancel() }
 
 func (q *instantQuery) String() string { return "" }
+
+func (q *instantQuery) Cancel() {
+	if q.cancel != nil {
+		q.cancel()
+	}
+}

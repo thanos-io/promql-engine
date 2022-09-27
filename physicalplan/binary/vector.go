@@ -90,6 +90,9 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 	o.series = series
 
 	o.outputCache = make([]sample, len(series))
+	for i := range o.outputCache {
+		o.outputCache[i].t = -1
+	}
 	o.pool.SetStepSize(len(highCardSide))
 
 	t, err := newTable(
@@ -224,19 +227,19 @@ func (o *vectorOperator) join(
 	return outputIndex, highCardOutputIndex, lowCardOutputIndex
 }
 
-func signature(metric labels.Labels, without bool, grouping []string, keepLabels bool, buf []byte) (uint64, labels.Labels) {
+func signature(metric labels.Labels, without bool, grouping []string, keepOriginalLabels bool, buf []byte) (uint64, labels.Labels) {
 	buf = buf[:0]
 	lb := labels.NewBuilder(metric).Del(labels.MetricName)
 	if without {
 		dropLabels := append(grouping, labels.MetricName)
 		key, _ := metric.HashWithoutLabels(buf, dropLabels...)
-		if !keepLabels {
+		if !keepOriginalLabels {
 			lb.Del(dropLabels...)
 		}
 		return key, lb.Labels()
 	}
 
-	if keepLabels {
+	if !keepOriginalLabels {
 		lb.Keep(grouping...)
 	}
 	if len(grouping) == 0 {

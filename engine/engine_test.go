@@ -10,7 +10,10 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/thanos-community/promql-engine/engine"
 )
@@ -375,6 +378,25 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `present_over_time(http_requests_total[30s])`,
 		},
+		{
+			name: "complex binary with aggregation",
+			load: `load 30s
+					grpc_server_handled_total{pod="nginx-1", grpc_method="Series", grpc_code="105"} 1+1x15
+					grpc_server_handled_total{pod="nginx-2", grpc_method="Series", grpc_code="105"} 1+1x15
+					grpc_server_handled_total{pod="nginx-3", grpc_method="Series", grpc_code="105"} 1+1x15
+					prometheus_tsdb_head_samples_appended_total{pod="nginx-1", tenant="tenant-1"} 1+2x18
+					prometheus_tsdb_head_samples_appended_total{pod="nginx-2", tenant="tenant-2"} 1+2x18
+					prometheus_tsdb_head_samples_appended_total{pod="nginx-3", tenant="tenant-3"} 1+2x18`,
+			query: `
+	sum by (grpc_method, grpc_code) (
+		sum by (pod, grpc_method, grpc_code) (
+			rate(grpc_server_handled_total{grpc_method="Series", pod=~".+"}[1m])
+		)
+		+ on (pod) group_left() max by (pod) (
+			prometheus_tsdb_head_samples_appended_total{pod=~".+"}
+		)
+	)`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -637,3 +659,76 @@ func TestInstantQuery(t *testing.T) {
 		})
 	}
 }
+
+func TestQueryCancellation(t *testing.T) {
+	twelveHours := int64(12 * time.Hour.Seconds())
+
+	start := time.Unix(0, 0)
+	end := time.Unix(twelveHours, 0)
+	step := time.Second * 30
+	query := `sum(rate(http_requests_total{pod="nginx-1"}[10s]))`
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x1
+				http_requests_total{pod="nginx-2"} 1+2x40`
+
+	test, err := promql.NewTest(t, load)
+	testutil.Ok(t, err)
+	defer test.Close()
+
+	testutil.Ok(t, test.Run())
+
+	querier := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return &testSeriesSet{
+					series: &slowSeries{},
+				}
+			},
+		},
+	}
+
+	newEngine := engine.New(engine.Opts{})
+	q1, err := newEngine.NewRangeQuery(querier, nil, query, start, end, step)
+	testutil.Ok(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-time.After(1000 * time.Millisecond)
+		cancel()
+	}()
+
+	newResult := q1.Exec(ctx)
+	testutil.Equals(t, context.Canceled, newResult.Err)
+}
+
+type testSeriesSet struct {
+	i      int
+	series storage.Series
+}
+
+func (s *testSeriesSet) Next() bool                 { s.i++; return s.i < 2 }
+func (s *testSeriesSet) At() storage.Series         { return s.series }
+func (s *testSeriesSet) Err() error                 { return nil }
+func (s *testSeriesSet) Warnings() storage.Warnings { return nil }
+
+type slowSeries struct{}
+
+func (d slowSeries) Labels() labels.Labels       { return labels.FromStrings("foo", "bar") }
+func (d slowSeries) Iterator() chunkenc.Iterator { return &slowIterator{} }
+
+type slowIterator struct {
+	ts int64
+}
+
+func (d *slowIterator) At() (int64, float64) { return d.ts, 1 }
+func (d *slowIterator) Next() bool {
+	<-time.After(10 * time.Millisecond)
+	d.ts += 30 * 1000
+	return true
+}
+func (d *slowIterator) Seek(t int64) bool {
+	<-time.After(10 * time.Millisecond)
+	d.ts = t
+	return true
+}
+func (d *slowIterator) Err() error { return nil }
