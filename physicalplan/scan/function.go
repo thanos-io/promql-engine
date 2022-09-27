@@ -60,6 +60,26 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "stddev_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: stddevOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "stdvar_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: stdvarOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
 	case "count_over_time":
 		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			return promql.Sample{
@@ -315,6 +335,32 @@ func sumOverTime(points []promql.Point) float64 {
 		return sum
 	}
 	return sum + c
+}
+
+func stddevOverTime(points []promql.Point) float64 {
+	var count float64
+	var mean, cMean float64
+	var aux, cAux float64
+	for _, v := range points {
+		count++
+		delta := v.V - (mean + cMean)
+		mean, cMean = kahanSumInc(delta/count, mean, cMean)
+		aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+	}
+	return math.Sqrt((aux + cAux) / count)
+}
+
+func stdvarOverTime(points []promql.Point) float64 {
+	var count float64
+	var mean, cMean float64
+	var aux, cAux float64
+	for _, v := range points {
+		count++
+		delta := v.V - (mean + cMean)
+		mean, cMean = kahanSumInc(delta/count, mean, cMean)
+		aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+	}
+	return (aux + cAux) / count
 }
 
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
