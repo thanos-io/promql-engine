@@ -80,6 +80,16 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "present_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: 1,
+				},
+				Metric: labels,
+			}
+		}, nil
 	case "rate":
 		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			point := extrapolatedRate(points, true, true, stepTime, selectRange)

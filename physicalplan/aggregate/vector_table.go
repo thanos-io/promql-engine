@@ -86,6 +86,10 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 		return func(in []float64) float64 {
 			return floats.Sum(in) / float64(len(in))
 		}, nil
+	case "group":
+		return func(in []float64) float64 {
+			return 1
+		}, nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
