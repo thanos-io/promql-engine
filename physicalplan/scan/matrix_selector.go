@@ -5,19 +5,18 @@ package scan
 
 import (
 	"context"
-	"github.com/prometheus/prometheus/promql/parser"
 	"math"
 	"sort"
 	"sync"
 	"time"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
 type matrixScanner struct {
