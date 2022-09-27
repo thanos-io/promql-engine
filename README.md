@@ -8,7 +8,7 @@ The project is currently under active development.
 
 The engine intends to have full compatibility with the original engine used in Prometheus. Since implementing the full specification will take time, we aim to add support for most commonly used expressions while falling back to the original engine for operations that are not yet supported. This will allow us to have smaller and faster releases, and gather feedback on regular basis. Instructions on using the engine will be added after we have enough confidence on its correctness.
 
-The following table shows operations which are currenly supported by the engine
+The following table shows operations which are currently supported by the engine
 
 | Type                   | Supported                                                                | Priority |
 |------------------------|--------------------------------------------------------------------------|----------|
