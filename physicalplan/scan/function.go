@@ -344,7 +344,7 @@ func avgOverTime(points []promql.Point) float64 {
 				continue
 			}
 		}
-		mean, c = kahanSumInc(v.V/count-mean/count, mean, c)
+		mean, c = KahanSumInc(v.V/count-mean/count, mean, c)
 	}
 
 	if math.IsInf(mean, 0) {
@@ -356,7 +356,7 @@ func avgOverTime(points []promql.Point) float64 {
 func sumOverTime(points []promql.Point) float64 {
 	var sum, c float64
 	for _, v := range points {
-		sum, c = kahanSumInc(v.V, sum, c)
+		sum, c = KahanSumInc(v.V, sum, c)
 	}
 	if math.IsInf(sum, 0) {
 		return sum
@@ -371,8 +371,8 @@ func stddevOverTime(points []promql.Point) float64 {
 	for _, v := range points {
 		count++
 		delta := v.V - (mean + cMean)
-		mean, cMean = kahanSumInc(delta/count, mean, cMean)
-		aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+		mean, cMean = KahanSumInc(delta/count, mean, cMean)
+		aux, cAux = KahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 	}
 	return math.Sqrt((aux + cAux) / count)
 }
@@ -384,8 +384,8 @@ func stdvarOverTime(points []promql.Point) float64 {
 	for _, v := range points {
 		count++
 		delta := v.V - (mean + cMean)
-		mean, cMean = kahanSumInc(delta/count, mean, cMean)
-		aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+		mean, cMean = KahanSumInc(delta/count, mean, cMean)
+		aux, cAux = KahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
 	}
 	return (aux + cAux) / count
 }
@@ -431,10 +431,10 @@ func linearRegression(samples []promql.Point, interceptTime int64) (slope, inter
 		}
 		n += 1.0
 		x := float64(sample.T-interceptTime) / 1e3
-		sumX, cX = kahanSumInc(x, sumX, cX)
-		sumY, cY = kahanSumInc(sample.V, sumY, cY)
-		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
-		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
+		sumX, cX = KahanSumInc(x, sumX, cX)
+		sumY, cY = KahanSumInc(sample.V, sumY, cY)
+		sumXY, cXY = KahanSumInc(x*sample.V, sumXY, cXY)
+		sumX2, cX2 = KahanSumInc(x*x, sumX2, cX2)
 	}
 	if constY {
 		if math.IsInf(initY, 0) {
@@ -455,7 +455,7 @@ func linearRegression(samples []promql.Point, interceptTime int64) (slope, inter
 	return slope, intercept
 }
 
-func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
 	// Using Neumaier improvement, swap if next term larger than sum.
 	if math.Abs(sum) >= math.Abs(inc) {

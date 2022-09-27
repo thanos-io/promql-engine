@@ -13,6 +13,7 @@ import (
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
+	"github.com/thanos-community/promql-engine/physicalplan/scan"
 )
 
 type aggregateTable interface {
@@ -226,6 +227,58 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				HasValue:  func() bool { return hasValue },
 				Reset: func() {
 					hasValue = false
+				},
+			}
+		}, nil
+	case "stddev":
+		return func() *accumulator {
+			var count float64
+			var mean, cMean float64
+			var aux, cAux float64
+			var hasValue bool
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					count++
+					delta := v - (mean + cMean)
+					mean, cMean = scan.KahanSumInc(delta/count, mean, cMean)
+					aux, cAux = scan.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
+				},
+				ValueFunc: func() float64 { return math.Sqrt((aux + cAux) / count) },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					count = 0
+					mean = 0
+					cMean = 0
+					aux = 0
+					cAux = 0
+				},
+			}
+		}, nil
+	case "stdvar":
+		return func() *accumulator {
+			var count float64
+			var mean, cMean float64
+			var aux, cAux float64
+			var hasValue bool
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					count++
+					delta := v - (mean + cMean)
+					mean, cMean = scan.KahanSumInc(delta/count, mean, cMean)
+					aux, cAux = scan.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
+				},
+				ValueFunc: func() float64 { return (aux + cAux) / count },
+				HasValue:  func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					count = 0
+					mean = 0
+					cMean = 0
+					aux = 0
+					cAux = 0
 				},
 			}
 		}, nil
