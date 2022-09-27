@@ -37,6 +37,40 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		expected []promql.Vector
 	}{
 		{
+			name: "stddev_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "stddev_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "stdvar_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "stdvar_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "changes",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "changes(http_requests_total[30s])",
+		},
+		{
+			name: "deriv",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "deriv(http_requests_total[30s])",
+		},
+		{
 			name: "sum",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15

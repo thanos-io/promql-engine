@@ -16,6 +16,8 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
+var IgnorePoint = promql.Point{T: -1, V: 0}
+
 type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample
 
 func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCall, error) {
@@ -60,6 +62,26 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "stddev_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: stddevOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "stdvar_over_time":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: stdvarOverTime(points),
+				},
+				Metric: labels,
+			}
+		}, nil
 	case "count_over_time":
 		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
 			return promql.Sample{
@@ -86,6 +108,31 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Point: promql.Point{
 					T: stepTime.UnixMilli(),
 					V: 1,
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "changes":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: changes(points),
+				},
+				Metric: labels,
+			}
+		}, nil
+	case "deriv":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			if len(points) < 2 {
+				return promql.Sample{
+					Point: IgnorePoint,
+				}
+			}
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: deriv(points),
 				},
 				Metric: labels,
 			}
@@ -315,6 +362,97 @@ func sumOverTime(points []promql.Point) float64 {
 		return sum
 	}
 	return sum + c
+}
+
+func stddevOverTime(points []promql.Point) float64 {
+	var count float64
+	var mean, cMean float64
+	var aux, cAux float64
+	for _, v := range points {
+		count++
+		delta := v.V - (mean + cMean)
+		mean, cMean = kahanSumInc(delta/count, mean, cMean)
+		aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+	}
+	return math.Sqrt((aux + cAux) / count)
+}
+
+func stdvarOverTime(points []promql.Point) float64 {
+	var count float64
+	var mean, cMean float64
+	var aux, cAux float64
+	for _, v := range points {
+		count++
+		delta := v.V - (mean + cMean)
+		mean, cMean = kahanSumInc(delta/count, mean, cMean)
+		aux, cAux = kahanSumInc(delta*(v.V-(mean+cMean)), aux, cAux)
+	}
+	return (aux + cAux) / count
+}
+
+func changes(points []promql.Point) float64 {
+	var count float64
+	prev := points[0].V
+	count = 0
+	for _, sample := range points[1:] {
+		current := sample.V
+		if current != prev && !(math.IsNaN(current) && math.IsNaN(prev)) {
+			count++
+		}
+		prev = current
+	}
+	return count
+}
+
+func deriv(points []promql.Point) float64 {
+	// We pass in an arbitrary timestamp that is near the values in use
+	// to avoid floating point accuracy issues, see
+	// https://github.com/prometheus/prometheus/issues/2674
+	slope, _ := linearRegression(points, points[0].T)
+	return slope
+}
+
+func linearRegression(samples []promql.Point, interceptTime int64) (slope, intercept float64) {
+	var (
+		n          float64
+		sumX, cX   float64
+		sumY, cY   float64
+		sumXY, cXY float64
+		sumX2, cX2 float64
+		initY      float64
+		constY     bool
+	)
+	initY = samples[0].V
+	constY = true
+	for i, sample := range samples {
+		// Set constY to false if any new y values are encountered.
+		if constY && i > 0 && sample.V != initY {
+			constY = false
+		}
+		n += 1.0
+		x := float64(sample.T-interceptTime) / 1e3
+		sumX, cX = kahanSumInc(x, sumX, cX)
+		sumY, cY = kahanSumInc(sample.V, sumY, cY)
+		sumXY, cXY = kahanSumInc(x*sample.V, sumXY, cXY)
+		sumX2, cX2 = kahanSumInc(x*x, sumX2, cX2)
+	}
+	if constY {
+		if math.IsInf(initY, 0) {
+			return math.NaN(), math.NaN()
+		}
+		return 0, initY
+	}
+	sumX = sumX + cX
+	sumY = sumY + cY
+	sumXY = sumXY + cXY
+	sumX2 = sumX2 + cX2
+
+	covXY := sumXY - sumX*sumY/n
+	varX := sumX2 - sumX*sumX/n
+
+	slope = covXY / varX
+	intercept = sumY/n - slope*sumX/n
+	return slope, intercept
 }
 
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {

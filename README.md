@@ -10,14 +10,14 @@ The engine intends to have full compatibility with the original engine used in P
 
 The following table shows operations which are currently supported by the engine
 
-| Type                   | Supported                                                                | Priority |
-|------------------------|--------------------------------------------------------------------------|----------|
-| Rate                   | Full support                                                             |          |
-| Binary expressions     | Full support                                                             |          |
-| Aggregations           | Partial support (sum, max, min, avg, count and group)                    | Medium   |
-| Aggregations over time | Partial support (sum, max, min, avg, count, last and present) _over_time | Medium   |
-| Functions              | No support                                                               | Medium   |
-| Quantiles              | No support                                                               | High     |
+| Type                   | Supported                                                                                | Priority |
+|------------------------|------------------------------------------------------------------------------------------|----------|
+| Rate                   | Full support                                                                             |          |
+| Binary expressions     | Full support                                                                             |          |
+| Aggregations           | Partial support (sum, max, min, avg, count and group)                                    | Medium   |
+| Aggregations over time | Partial support (sum, max, min, avg, count, stddev, stdvar, last and present) _over_time | Medium   |
+| Functions              | No support                                                                               | Medium   |
+| Quantiles              | No support                                                                               | High     |
 
 In addition to implementing multi-threading, we would ultimately like to end up with a distributed execution model.
 
