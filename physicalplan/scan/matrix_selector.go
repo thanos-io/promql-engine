@@ -5,6 +5,7 @@ package scan
 
 import (
 	"context"
+	"github.com/prometheus/prometheus/promql/parser"
 	"math"
 	"sort"
 	"sync"
@@ -27,6 +28,7 @@ type matrixScanner struct {
 }
 
 type matrixSelector struct {
+	funcExpr *parser.Call
 	call     FunctionCall
 	selector *seriesSelector
 	scanners []matrixScanner
@@ -51,6 +53,7 @@ type matrixSelector struct {
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector *seriesSelector,
+	funcExpr *parser.Call,
 	call FunctionCall,
 	mint, maxt time.Time,
 	stepsBatch int,
@@ -61,6 +64,7 @@ func NewMatrixSelector(
 	return &matrixSelector{
 		selector:   selector,
 		call:       call,
+		funcExpr:   funcExpr,
 		vectorPool: pool,
 
 		mint:       mint.UnixMilli(),
@@ -159,7 +163,10 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
 		for i, s := range series {
-			lbls := dropMetricName(s.Labels())
+			lbls := s.Labels()
+			if o.funcExpr.Func.Name != "last_over_time" {
+				lbls = dropMetricName(lbls)
+			}
 			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{

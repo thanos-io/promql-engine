@@ -65,7 +65,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Ti
 			numShards := runtime.NumCPU() / 2
 			operators := make([]model.VectorOperator, 0, numShards)
 			for i := 0; i < numShards; i++ {
-				selector := scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, mint, maxt, stepsBatch, step, t.Range, i, numShards)
+				selector := scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, e, call, mint, maxt, stepsBatch, step, t.Range, i, numShards)
 				operators = append(operators, exchange.NewConcurrent(selector, 2))
 			}
 			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil

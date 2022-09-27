@@ -326,6 +326,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `http_requests_total{pod="nginx-3"}`,
 		},
+		{
+			name: "last_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `last_over_time(http_requests_total[30s])`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -507,6 +514,13 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `http_requests_total{pod="nginx-3"}`,
+		},
+		{
+			name: "last_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `last_over_time(http_requests_total[30s])`,
 		},
 	}
 
