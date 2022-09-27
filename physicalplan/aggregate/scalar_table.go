@@ -140,8 +140,12 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 
 			return &accumulator{
 				AddFunc: func(v float64) {
+					if !hasValue {
+						value = v
+					} else {
+						value = math.Max(value, v)
+					}
 					hasValue = true
-					value = math.Max(value, v)
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
@@ -158,8 +162,12 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 
 			return &accumulator{
 				AddFunc: func(v float64) {
+					if !hasValue {
+						value = v
+					} else {
+						value = math.Min(value, v)
+					}
 					hasValue = true
-					value = math.Min(value, v)
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
