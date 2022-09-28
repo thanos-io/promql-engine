@@ -488,6 +488,38 @@ func TestInstantQuery(t *testing.T) {
 		expected []promql.Vector
 	}{
 		{
+			name: "stdvar",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
+			query: "stdvar(http_requests_total)",
+		},
+		{
+			name: "stdvar by pod",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1
+					http_requests_total{pod="nginx-2"} 2
+					http_requests_total{pod="nginx-3"} 8
+					http_requests_total{pod="nginx-4"} 6`,
+			query: "stdvar by (pod) (http_requests_total)",
+		},
+		{
+			name: "stddev",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4`,
+			query: "stddev(http_requests_total)",
+		},
+		{
+			name: "stddev by pod",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1
+					http_requests_total{pod="nginx-2"} 2
+					http_requests_total{pod="nginx-3"} 8
+					http_requests_total{pod="nginx-4"} 6`,
+			query: "stddev by (pod) (http_requests_total)",
+		},
+		{
 			name: "sum by pod",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x4
