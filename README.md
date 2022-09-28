@@ -79,3 +79,66 @@ The current implementation uses goroutines very liberally which means the query 
 ### Plan optimization
 
 The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
+
+
+## Latest benchmarks
+
+Single core benchmarks
+```markdown
+vector_selector/current_engine         	      44	  27756507 ns/op	16146356 B/op	   69121 allocs/op
+vector_selector/new_engine             	      32	  36515120 ns/op	25709769 B/op	   76738 allocs/op
+
+sum/current_engine                     	      22	  47253905 ns/op	 4925751 B/op	   73843 allocs/op
+sum/new_engine                         	      42	  28137694 ns/op	 6933936 B/op	   71399 allocs/op
+
+sum_by_pod/current_engine              	       8	 135361672 ns/op	87259230 B/op	  568616 allocs/op
+sum_by_pod/new_engine                  	      30	  36838789 ns/op	16031030 B/op	  156454 allocs/op
+
+rate/current_engine                    	      24	  49954635 ns/op	17207644 B/op	   78176 allocs/op
+rate/new_engine                        	      20	  57753527 ns/op	28160190 B/op	  103748 allocs/op
+
+sum_rate/current_engine                	      16	  71503294 ns/op	 5989572 B/op	   82893 allocs/op
+sum_rate/new_engine                    	      20	  53587354 ns/op	 9384271 B/op	   98408 allocs/op
+
+sum_by_rate/current_engine             	       7	 155840905 ns/op	80323640 B/op	  575629 allocs/op
+sum_by_rate/new_engine                 	      18	  62460815 ns/op	18385868 B/op	  183466 allocs/op
+
+binary_operation_with_one_to_one/current_engine         	     100	  10376035 ns/op	 1639915 B/op	   25678 allocs/op
+binary_operation_with_one_to_one/new_engine             	     476	   2454095 ns/op	 2833832 B/op	   20692 allocs/op
+
+binary_operation_with_many_to_one/current_engine        	       3	 391503278 ns/op	63302224 B/op	  594487 allocs/op
+binary_operation_with_many_to_one/new_engine            	      24	  51140486 ns/op	31404253 B/op	  125964 allocs/op
+
+binary_operation_with_vector_and_scalar/current_engine  	       5	 239454433 ns/op	30752913 B/op	   84383 allocs/op
+binary_operation_with_vector_and_scalar/new_engine      	      30	  39809500 ns/op	28554381 B/op	   86641 allocs/op
+```
+
+Multi-core (8 core) benchmarks
+```markdown
+vector_selector/current_engine-8         	      43	  26777890 ns/op	16147463 B/op	   69122 allocs/op
+vector_selector/new_engine-8             	      86	  13340921 ns/op	25779738 B/op	   79186 allocs/op
+
+sum/current_engine-8                     	      24	  45773552 ns/op	 4931419 B/op	   73844 allocs/op
+sum/new_engine-8                         	     136	   8681789 ns/op	 7575154 B/op	   73723 allocs/op
+
+sum_by_pod/current_engine-8              	       8	 129116443 ns/op	87266666 B/op	  568646 allocs/op
+sum_by_pod/new_engine-8                  	      85	  13791413 ns/op	16820641 B/op	  159268 allocs/op
+
+rate/current_engine-8                    	      22	  50682578 ns/op	17210261 B/op	   78177 allocs/op
+rate/new_engine-8                        	      60	  20286784 ns/op	28070821 B/op	  106114 allocs/op
+
+sum_rate/current_engine-8                	      15	  70733758 ns/op	 5985082 B/op	   82892 allocs/op
+sum_rate/new_engine-8                    	      76	  15031830 ns/op	 9937969 B/op	  100705 allocs/op
+
+sum_by_rate/current_engine-8             	       7	 150337315 ns/op	80341581 B/op	  575612 allocs/op
+sum_by_rate/new_engine-8                 	      57	  20519692 ns/op	18097842 B/op	  185775 allocs/op
+
+binary_operation_with_one_to_one/current_engine-8         	     100	  10404304 ns/op	 1640137 B/op	   25678 allocs/op
+binary_operation_with_one_to_one/new_engine-8             	     657	   1809351 ns/op	 2599169 B/op	   21124 allocs/op
+
+binary_operation_with_many_to_one/current_engine-8        	       3	 377181458 ns/op	63306312 B/op	  594488 allocs/op
+binary_operation_with_many_to_one/new_engine-8            	      48	  24788675 ns/op	32035457 B/op	  131273 allocs/op
+
+binary_operation_with_vector_and_scalar/current_engine-8  	       5	 233024283 ns/op	30755686 B/op	   84387 allocs/op
+binary_operation_with_vector_and_scalar/new_engine-8      	      76	  15943312 ns/op	29745027 B/op	   89452 allocs/op
+```
