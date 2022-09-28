@@ -42,7 +42,10 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 
 	case *parser.VectorSelector:
 		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, e.LabelMatchers)
-		numShards := runtime.NumCPU() / 2
+		numShards := runtime.GOMAXPROCS(0) / 2
+		if numShards < 1 {
+			numShards = 1
+		}
 		operators := make([]model.VectorOperator, 0, numShards)
 		for i := 0; i < numShards; i++ {
 			operator := exchange.NewConcurrent(
@@ -68,7 +71,10 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			}
 
 			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, vs.LabelMatchers)
-			numShards := runtime.NumCPU() / 2
+			numShards := runtime.GOMAXPROCS(0) / 2
+			if numShards < 1 {
+				numShards = 1
+			}
 			operators := make([]model.VectorOperator, 0, numShards)
 			for i := 0; i < numShards; i++ {
 				operator := exchange.NewConcurrent(
