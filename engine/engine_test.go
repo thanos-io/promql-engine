@@ -520,20 +520,22 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "quantile by pod",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1
-					http_requests_total{pod="nginx-2"} 2
-					http_requests_total{pod="nginx-3"} 8
-					http_requests_total{pod="nginx-4"} 6`,
-			query: "quantile by (pod) (0.9, http_requests_total)",
+			       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+			       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+			       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+			       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "quantile by (pod) (0.9, rate(http_requests_total[1m]))",
 		},
 		{
 			name: "quantile",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1
-					http_requests_total{pod="nginx-2"} 2
-					http_requests_total{pod="nginx-3"} 8
-					http_requests_total{pod="nginx-4"} 6`,
-			query: "quantile(0.9, http_requests_total)",
+			       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+			       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+			       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+			       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50	`,
+			query: "quantile(0.9, rate(http_requests_total[1m]))",
 		},
 		{
 			name: "stdvar",
