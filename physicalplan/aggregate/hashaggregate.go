@@ -55,9 +55,8 @@ func NewHashAggregate(
 		return nil, err
 	}
 	a := &aggregate{
-		next:       next,
-		vectorPool: points,
-
+		next:           next,
+		vectorPool:     points,
 		by:             by,
 		aggregation:    aggregation,
 		labels:         labels,
