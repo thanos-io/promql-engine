@@ -518,6 +518,24 @@ func TestInstantQuery(t *testing.T) {
 		expected []promql.Vector
 	}{
 		{
+			name: "quantile by pod",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1
+					http_requests_total{pod="nginx-2"} 2
+					http_requests_total{pod="nginx-3"} 8
+					http_requests_total{pod="nginx-4"} 6`,
+			query: "quantile by (pod) (0.9, http_requests_total)",
+		},
+		{
+			name: "quantile",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1
+					http_requests_total{pod="nginx-2"} 2
+					http_requests_total{pod="nginx-3"} 8
+					http_requests_total{pod="nginx-4"} 6`,
+			query: "quantile(0.9, http_requests_total)",
+		},
+		{
 			name: "stdvar",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x4

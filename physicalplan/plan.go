@@ -105,8 +105,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 		if err != nil {
 			return nil, err
 		}
-
-		a, err := aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, e.Op, !e.Without, e.Grouping, stepsBatch)
+		a, err := aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, e.Op, e.Param, !e.Without, e.Grouping, stepsBatch)
 		if err != nil {
 			return nil, err
 		}
