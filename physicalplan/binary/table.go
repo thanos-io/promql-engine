@@ -42,24 +42,20 @@ type table struct {
 func newTable(
 	pool *model.VectorPool,
 	card parser.VectorMatchCardinality,
-	expr parser.ItemType,
+	operation operation,
 	outputValues []sample,
 	highCardOutputCache outputIndex,
 	lowCardOutputCache outputIndex,
-) (*table, error) {
-	op, err := newOperation(expr)
-	if err != nil {
-		return nil, err
-	}
+) *table {
 	return &table{
 		pool: pool,
 		card: card,
 
-		operation:           op,
+		operation:           operation,
 		outputValues:        outputValues,
 		highCardOutputIndex: highCardOutputCache,
 		lowCardOutputIndex:  lowCardOutputCache,
-	}, nil
+	}
 }
 
 func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) model.StepVector {
