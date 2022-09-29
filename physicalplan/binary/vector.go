@@ -21,7 +21,7 @@ type vectorOperator struct {
 	lhs       model.VectorOperator
 	rhs       model.VectorOperator
 	matching  *parser.VectorMatching
-	operation parser.ItemType
+	operation operation
 
 	// series contains the output series of the operator
 	series []labels.Labels
@@ -40,12 +40,16 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	operation parser.ItemType,
 ) (model.VectorOperator, error) {
+	op, err := newOperation(operation)
+	if err != nil {
+		return nil, err
+	}
 	return &vectorOperator{
 		pool:      pool,
 		lhs:       lhs,
 		rhs:       rhs,
 		matching:  matching,
-		operation: operation,
+		operation: op,
 	}, nil
 }
 
@@ -95,7 +99,7 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 	}
 	o.pool.SetStepSize(len(highCardSide))
 
-	t, err := newTable(
+	o.table = newTable(
 		o.pool,
 		o.matching.Card,
 		o.operation,
@@ -103,10 +107,6 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 		newHighCardIndex(highCardOutputIndex),
 		lowCardinalityIndex(lowCardOutputIndex),
 	)
-	if err != nil {
-		return err
-	}
-	o.table = t
 
 	return nil
 }
