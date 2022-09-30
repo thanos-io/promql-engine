@@ -61,3 +61,12 @@ white-noise-cleanup: ## Cleans up white noise in docs.
 white-noise-cleanup:
 	@echo ">> cleaning up white noise"
 	@find . -type f \( -name "*.md" \) | SED_BIN="$(SED)" xargs scripts/cleanup-white-noise.sh
+
+.PHONY: benchmark
+benchmark:
+	@mkdir -p benchmarks
+	@echo "Benchmarking old engine"
+	@go test ./... -bench 'BenchmarkRangeQuery/.*/old_engine'  -run none -count 10 | sed -u 's/\/old_engine//' > benchmarks/old.out
+	@echo "Benchmarking new engine"
+	@go test ./... -bench 'BenchmarkRangeQuery/.*/new_engine'  -run none -count 10 | sed -u 's/\/new_engine//' > benchmarks/new.out
+	@benchstat benchmarks/old.out benchmarks/new.out

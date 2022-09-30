@@ -79,3 +79,81 @@ The current implementation uses goroutines very liberally which means the query 
 ### Plan optimization
 
 The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
+
+## Latest benchmarks
+
+These are the latest benchmarks captured on an Apple M1 Pro processor.
+
+Note that memory usage is higher when executing a query with parallelism greater than 1. This is due to the fact that the engine is able to execute multiple operations at once (e.g. decode chunks from multiple series at the same time), which requires using independent buffers for each parallel operation. 
+
+Single core benchmarks
+```markdown
+name                                                old time/op    new time/op    delta
+RangeQuery/vector_selector                            28.1ms ± 2%    34.2ms ± 4%  +21.80%  (p=0.000 n=9+10)
+RangeQuery/sum                                        46.4ms ± 4%    27.5ms ± 0%  -40.59%  (p=0.000 n=10+10)
+RangeQuery/sum_by_pod                                  134ms ± 2%      37ms ± 0%  -72.72%  (p=0.000 n=10+8)
+RangeQuery/rate                                       52.3ms ± 3%    59.2ms ± 3%  +13.27%  (p=0.000 n=10+10)
+RangeQuery/sum_rate                                   69.8ms ± 3%    53.9ms ± 4%  -22.80%  (p=0.000 n=10+9)
+RangeQuery/sum_by_rate                                 157ms ± 4%      62ms ± 4%  -60.23%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_one_to_one           10.9ms ± 3%     2.4ms ± 4%  -77.58%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_many_to_one           389ms ± 4%      51ms ± 5%  -86.80%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_vector_and_scalar     241ms ± 3%      37ms ± 2%  -84.55%  (p=0.000 n=9+10)
+
+name                                                old alloc/op   new alloc/op   delta
+RangeQuery/vector_selector                            16.1MB ± 0%    25.7MB ± 0%  +59.23%  (p=0.000 n=10+10)
+RangeQuery/sum                                        4.93MB ± 0%    6.93MB ± 0%  +40.64%  (p=0.000 n=8+8)
+RangeQuery/sum_by_pod                                 87.3MB ± 0%    16.0MB ± 0%  -81.63%  (p=0.000 n=10+10)
+RangeQuery/rate                                       17.2MB ± 0%    28.2MB ± 0%  +63.65%  (p=0.000 n=10+10)
+RangeQuery/sum_rate                                   5.98MB ± 0%    9.38MB ± 0%  +56.89%  (p=0.000 n=10+9)
+RangeQuery/sum_by_rate                                80.3MB ± 0%    18.4MB ± 0%  -77.11%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_one_to_one           1.64MB ± 0%    2.83MB ± 0%  +72.80%  (p=0.000 n=9+10)
+RangeQuery/binary_operation_with_many_to_one          63.3MB ± 0%    31.4MB ± 0%  -50.39%  (p=0.000 n=10+9)
+RangeQuery/binary_operation_with_vector_and_scalar    30.8MB ± 0%    28.6MB ± 0%   -7.15%  (p=0.000 n=10+10)
+
+name                                                old allocs/op  new allocs/op  delta
+RangeQuery/vector_selector                             69.1k ± 0%     76.7k ± 0%  +11.02%  (p=0.000 n=10+10)
+RangeQuery/sum                                         73.8k ± 0%     71.4k ± 0%   -3.31%  (p=0.000 n=10+9)
+RangeQuery/sum_by_pod                                   569k ± 0%      156k ± 0%  -72.49%  (p=0.000 n=10+8)
+RangeQuery/rate                                        78.2k ± 0%    103.7k ± 0%  +32.71%  (p=0.000 n=9+10)
+RangeQuery/sum_rate                                    82.9k ± 0%     98.4k ± 0%  +18.72%  (p=0.000 n=8+8)
+RangeQuery/sum_by_rate                                  576k ± 0%      183k ± 0%  -68.13%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_one_to_one            25.7k ± 0%     20.7k ± 0%  -19.42%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_many_to_one            594k ± 0%      126k ± 0%  -78.81%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_vector_and_scalar     84.4k ± 0%     86.6k ± 0%   +2.68%  (p=0.000 n=10+10)
+```
+
+Multi-core (8 core) benchmarks
+```markdown
+name                                                  old time/op    new time/op    delta
+RangeQuery/vector_selector-8                            27.3ms ± 3%    13.7ms ± 3%  -49.94%  (p=0.000 n=10+10)
+RangeQuery/sum-8                                        47.8ms ± 4%     8.9ms ± 7%  -81.44%  (p=0.000 n=10+9)
+RangeQuery/sum_by_pod-8                                  131ms ± 3%      14ms ± 1%  -89.44%  (p=0.000 n=10+10)
+RangeQuery/rate-8                                       49.6ms ± 0%    19.7ms ± 1%  -60.25%  (p=0.000 n=10+9)
+RangeQuery/sum_rate-8                                   70.3ms ± 3%    15.1ms ± 1%  -78.52%  (p=0.000 n=9+10)
+RangeQuery/sum_by_rate-8                                 150ms ± 2%      20ms ± 0%  -86.53%  (p=0.000 n=10+9)
+RangeQuery/binary_operation_with_one_to_one-8           10.4ms ± 4%     1.9ms ± 2%  -82.13%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_many_to_one-8           383ms ± 2%      25ms ± 2%  -93.50%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_vector_and_scalar-8     236ms ± 2%      16ms ± 4%  -93.20%  (p=0.000 n=10+10)
+
+name                                                  old alloc/op   new alloc/op   delta
+RangeQuery/vector_selector-8                            16.1MB ± 0%    25.8MB ± 0%  +59.52%  (p=0.000 n=10+10)
+RangeQuery/sum-8                                        4.93MB ± 0%    7.66MB ± 4%  +55.44%  (p=0.000 n=10+10)
+RangeQuery/sum_by_pod-8                                 87.3MB ± 0%    16.8MB ± 0%  -80.73%  (p=0.000 n=10+10)
+RangeQuery/rate-8                                       17.2MB ± 0%    28.1MB ± 0%  +63.21%  (p=0.000 n=10+10)
+RangeQuery/sum_rate-8                                   5.98MB ± 0%    9.95MB ± 0%  +66.24%  (p=0.000 n=10+10)
+RangeQuery/sum_by_rate-8                                80.3MB ± 0%    18.0MB ± 0%  -77.54%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_one_to_one-8           1.64MB ± 0%    2.61MB ± 1%  +58.84%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_many_to_one-8          63.3MB ± 0%    32.1MB ± 0%  -49.27%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_vector_and_scalar-8    30.8MB ± 0%    29.8MB ± 0%   -3.23%  (p=0.000 n=10+10)
+
+name                                                  old allocs/op  new allocs/op  delta
+RangeQuery/vector_selector-8                             69.1k ± 0%     79.2k ± 0%  +14.54%  (p=0.000 n=10+10)
+RangeQuery/sum-8                                         73.8k ± 0%     73.8k ± 0%   -0.11%  (p=0.014 n=10+10)
+RangeQuery/sum_by_pod-8                                   569k ± 0%      159k ± 0%  -71.99%  (p=0.000 n=10+10)
+RangeQuery/rate-8                                        78.2k ± 0%    106.1k ± 0%  +35.73%  (p=0.000 n=10+10)
+RangeQuery/sum_rate-8                                    82.9k ± 0%    100.7k ± 0%  +21.49%  (p=0.000 n=7+10)
+RangeQuery/sum_by_rate-8                                  576k ± 0%      186k ± 0%  -67.73%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_one_to_one-8            25.7k ± 0%     21.1k ± 0%  -17.71%  (p=0.000 n=10+10)
+RangeQuery/binary_operation_with_many_to_one-8            594k ± 0%      131k ± 0%  -77.91%  (p=0.000 n=9+10)
+RangeQuery/binary_operation_with_vector_and_scalar-8     84.4k ± 0%     89.5k ± 0%   +6.02%  (p=0.000 n=9+10)
+```
