@@ -101,7 +101,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	plan, err := physicalplan.New(expr, q, ts, ts, 0)
+	plan, err := physicalplan.New(expr, q, ts, ts, 0, e.lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
-	plan, err := physicalplan.New(expr, q, start, end, interval)
+	plan, err := physicalplan.New(expr, q, start, end, interval, e.lookbackDelta)
 	if err != nil {
 		return nil, err
 	}

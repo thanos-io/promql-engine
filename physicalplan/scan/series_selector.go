@@ -29,11 +29,11 @@ type seriesSelector struct {
 	series []signedSeries
 }
 
-func NewSeriesFilter(storage storage.Queryable, mint time.Time, maxt time.Time, selectRange time.Duration, matchers []*labels.Matcher) *seriesSelector {
+func NewSeriesFilter(storage storage.Queryable, mint, maxt time.Time, selectRange, lookbackDelta time.Duration, matchers []*labels.Matcher) *seriesSelector {
 	return &seriesSelector{
 		storage: storage,
 
-		mint:        mint.UnixMilli() - 5*time.Minute.Milliseconds(),
+		mint:        mint.UnixMilli() - lookbackDelta.Milliseconds(),
 		maxt:        maxt.UnixMilli(),
 		selectRange: selectRange.Milliseconds(),
 		matchers:    matchers,
