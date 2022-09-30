@@ -406,6 +406,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `group(http_requests_total)`,
 		},
 		{
+			name: "resets",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 100-1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `resets(http_requests_total[5m])`,
+		},
+		{
 			name: "present_over_time",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -686,6 +693,13 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `group(http_requests_total)`,
+		},
+		{
+			name: "reset",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 100-1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `resets(http_requests_total[5m])`,
 		},
 		{
 			name: "present_over_time",

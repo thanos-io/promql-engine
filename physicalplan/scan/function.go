@@ -184,6 +184,25 @@ func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCal
 				Metric: labels,
 			}
 		}, nil
+	case "resets":
+		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
+			resets := 0
+			prev := points[0].V
+			for _, sample := range points[1:] {
+				current := sample.V
+				if current < prev {
+					resets++
+				}
+				prev = current
+			}
+			return promql.Sample{
+				Point: promql.Point{
+					T: stepTime.UnixMilli(),
+					V: float64(resets),
+				},
+				Metric: labels,
+			}
+		}, nil
 	default:
 		msg := fmt.Sprintf("unknown function: %s", f.Name)
 		return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
