@@ -96,7 +96,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 	}
 }
 
-func BenchmarkOldEngineRange(b *testing.B) {
+func BenchmarkRangeQuery(b *testing.B) {
 	test := setupStorage(b, 1000, 3)
 	defer test.Close()
 
@@ -148,7 +148,7 @@ func BenchmarkOldEngineRange(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			b.Run("current_engine", func(b *testing.B) {
+			b.Run("old_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:     nil,
 					Reg:        nil,
