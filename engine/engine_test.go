@@ -597,6 +597,14 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 		{
+			name: "sum rate with single sample series",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x4
+					http_requests_total{pod="nginx-2"} 1+2x4
+					http_requests_total{pod="nginx-3"} 0`,
+			query: "sum by (pod) (rate(http_requests_total[1m]))",
+		},
+		{
 			name: "sum rate with stale series",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x4
