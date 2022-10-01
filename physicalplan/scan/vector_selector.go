@@ -31,27 +31,29 @@ type vectorSelector struct {
 	once       sync.Once
 	vectorPool *model.VectorPool
 
-	mint        int64
-	maxt        int64
-	step        int64
-	currentStep int64
-	stepsBatch  int
+	mint          int64
+	maxt          int64
+	step          int64
+	currentStep   int64
+	stepsBatch    int
+	lookbackDelta int64
 
 	shard     int
 	numShards int
 }
 
-func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step time.Duration, stepsBatch, shard, numShards int) model.VectorOperator {
+func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step, lookbackDelta time.Duration, stepsBatch, shard, numShards int) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage:    storage,
 		vectorPool: pool,
 
-		mint:        mint.UnixMilli(),
-		maxt:        maxt.UnixMilli(),
-		step:        step.Milliseconds(),
-		currentStep: mint.UnixMilli(),
-		stepsBatch:  stepsBatch,
+		mint:          mint.UnixMilli(),
+		maxt:          maxt.UnixMilli(),
+		step:          step.Milliseconds(),
+		currentStep:   mint.UnixMilli(),
+		stepsBatch:    stepsBatch,
+		lookbackDelta: lookbackDelta.Milliseconds(),
 
 		shard:     shard,
 		numShards: numShards,
@@ -101,7 +103,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, ok := selectPoint(series.samples, seriesTs)
+			_, v, ok := selectPoint(series.samples, seriesTs, o.lookbackDelta)
 			if ok {
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				vectors[currStep].Samples = append(vectors[currStep].Samples, v)
@@ -129,7 +131,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
 				signature: s.signature,
-				samples:   storage.NewMemoizedIterator(s.Iterator(), 5*time.Minute.Milliseconds()),
+				samples:   storage.NewMemoizedIterator(s.Iterator(), o.lookbackDelta),
 			}
 			o.series[i] = s.Labels()
 		}
@@ -139,8 +141,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 }
 
 // TODO(fpetkovski): Add error handling and max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts int64) (int64, float64, bool) {
-	lookbackDelta := 5 * time.Minute.Milliseconds()
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta int64) (int64, float64, bool) {
 	refTime := ts
 	var t int64
 	var v float64

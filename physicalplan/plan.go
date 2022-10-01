@@ -22,12 +22,12 @@ import (
 const stepsBatch = 10
 
 // New creates new physical query execution plan for a given query expression.
-func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
-	return newCancellableOperator(expr, storage, mint, maxt, step)
+func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
+	return newCancellableOperator(expr, storage, mint, maxt, step, lookbackDelta)
 }
 
-func newCancellableOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step time.Duration) (*exchange.CancellableOperator, error) {
-	operator, err := newOperator(expr, storage, mint, maxt, step)
+func newCancellableOperator(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (*exchange.CancellableOperator, error) {
+	operator, err := newOperator(expr, storage, mint, maxt, step, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -35,13 +35,13 @@ func newCancellableOperator(expr parser.Expr, storage storage.Queryable, mint, m
 	return exchange.NewCancellable(operator), nil
 }
 
-func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val, nil), nil
 
 	case *parser.VectorSelector:
-		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, e.LabelMatchers)
+		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, lookbackDelta, e.LabelMatchers)
 		numShards := runtime.GOMAXPROCS(0) / 2
 		if numShards < 1 {
 			numShards = 1
@@ -51,7 +51,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			operator := exchange.NewConcurrent(
 				exchange.NewCancellable(
 					scan.NewVectorSelector(
-						model.NewVectorPool(stepsBatch), filter, mint, maxt, step, stepsBatch, i, numShards)), 2)
+						model.NewVectorPool(stepsBatch), filter, mint, maxt, step, lookbackDelta, stepsBatch, i, numShards)), 2)
 			operators = append(operators, operator)
 		}
 
@@ -70,7 +70,8 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 				return nil, err
 			}
 
-			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, vs.LabelMatchers)
+			lookbackDelta = maxDuration(lookbackDelta, t.Range)
+			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, lookbackDelta, vs.LabelMatchers)
 			numShards := runtime.GOMAXPROCS(0) / 2
 			if numShards < 1 {
 				numShards = 1
@@ -99,7 +100,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 		}
 
 	case *parser.AggregateExpr:
-		next, err := newCancellableOperator(e.Expr, storage, mint, maxt, step)
+		next, err := newCancellableOperator(e.Expr, storage, mint, maxt, step, lookbackDelta)
 		if err != nil {
 			return nil, err
 		}
@@ -113,13 +114,13 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			return newScalarBinaryOperator(e, storage, mint, maxt, step)
+			return newScalarBinaryOperator(e, storage, mint, maxt, step, lookbackDelta)
 		}
 
-		return newVectorBinaryOperator(e, storage, mint, maxt, step)
+		return newVectorBinaryOperator(e, storage, mint, maxt, step, lookbackDelta)
 
 	case *parser.ParenExpr:
-		return newCancellableOperator(e.Expr, storage, mint, maxt, step)
+		return newCancellableOperator(e.Expr, storage, mint, maxt, step, lookbackDelta)
 
 	case *parser.StringLiteral:
 		return nil, nil
@@ -128,24 +129,24 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 	}
 }
 
-func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
-	leftOperator, err := newCancellableOperator(e.LHS, storage, mint, maxt, step)
+func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
+	leftOperator, err := newCancellableOperator(e.LHS, storage, mint, maxt, step, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newCancellableOperator(e.RHS, storage, mint, maxt, step)
+	rightOperator, err := newCancellableOperator(e.RHS, storage, mint, maxt, step, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
 	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step time.Duration) (model.VectorOperator, error) {
-	lhs, err := newCancellableOperator(e.LHS, storage, mint, maxt, step)
+func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mint time.Time, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
+	lhs, err := newCancellableOperator(e.LHS, storage, mint, maxt, step, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
-	rhs, err := newCancellableOperator(e.RHS, storage, mint, maxt, step)
+	rhs, err := newCancellableOperator(e.RHS, storage, mint, maxt, step, lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -154,4 +155,11 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mi
 		return binary.NewScalar(model.NewVectorPool(stepsBatch), rhs, lhs, e.Op, true)
 	}
 	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, false)
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a.Milliseconds() >= b.Milliseconds() {
+		return a
+	}
+	return b
 }
