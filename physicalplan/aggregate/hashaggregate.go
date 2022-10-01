@@ -7,6 +7,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/efficientgo/core/errors"
+
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 	"github.com/thanos-community/promql-engine/worker"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
@@ -119,7 +122,7 @@ func (a *aggregate) initializeTables(ctx context.Context) error {
 	)
 
 	if a.by && len(a.labels) == 0 {
-		tables, series, err = a.initializeVectorizedTables()
+		tables, series, err = a.initializeVectorizedTables(ctx)
 	} else {
 		tables, series, err = a.initializeScalarTables(ctx)
 	}
@@ -139,8 +142,12 @@ func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.Step
 	return table.toVector(a.vectorPool)
 }
 
-func (a *aggregate) initializeVectorizedTables() ([]aggregateTable, []labels.Labels, error) {
+func (a *aggregate) initializeVectorizedTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
 	tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
+	if errors.Is(err, parse.ErrNotSupportedExpr) {
+		return a.initializeScalarTables(ctx)
+	}
+
 	if err != nil {
 		return nil, nil, err
 	}

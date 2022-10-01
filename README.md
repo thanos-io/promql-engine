@@ -84,9 +84,10 @@ The current implementation creates a physical plan directly from the PromQL abst
 
 These are the latest benchmarks captured on an Apple M1 Pro processor.
 
-Note that memory usage is higher when executing a query with parallelism greater than 1. This is due to the fact that the engine is able to execute multiple operations at once (e.g. decode chunks from multiple series at the same time), which requires using independent buffers for each parallel operation. 
+Note that memory usage is higher when executing a query with parallelism greater than 1. This is due to the fact that the engine is able to execute multiple operations at once (e.g. decode chunks from multiple series at the same time), which requires using independent buffers for each parallel operation.
 
 Single core benchmarks
+
 ```markdown
 name                                                old time/op    new time/op    delta
 RangeQuery/vector_selector                            28.1ms ± 2%    34.2ms ± 4%  +21.80%  (p=0.000 n=9+10)
@@ -123,6 +124,7 @@ RangeQuery/binary_operation_with_vector_and_scalar     84.4k ± 0%     86.6k ± 
 ```
 
 Multi-core (8 core) benchmarks
+
 ```markdown
 name                                                  old time/op    new time/op    delta
 RangeQuery/vector_selector-8                            27.3ms ± 3%    13.7ms ± 3%  -49.94%  (p=0.000 n=10+10)
