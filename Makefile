@@ -62,11 +62,19 @@ white-noise-cleanup:
 	@echo ">> cleaning up white noise"
 	@find . -type f \( -name "*.md" \) | SED_BIN="$(SED)" xargs scripts/cleanup-white-noise.sh
 
-.PHONY: benchmark
-benchmark:
+benchmarks:
 	@mkdir -p benchmarks
+
+.PHONY: bench-old
+bench-old: benchmarks
 	@echo "Benchmarking old engine"
 	@go test ./... -bench 'BenchmarkRangeQuery/.*/old_engine'  -run none -count 10 | sed -u 's/\/old_engine//' > benchmarks/old.out
+
+.PHONY: bench-new
+bench-new: benchmarks
 	@echo "Benchmarking new engine"
 	@go test ./... -bench 'BenchmarkRangeQuery/.*/new_engine'  -run none -count 10 | sed -u 's/\/new_engine//' > benchmarks/new.out
+
+.PHONY: benchmark
+benchmark: bench-old bench-new
 	@benchstat benchmarks/old.out benchmarks/new.out
