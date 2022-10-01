@@ -70,6 +70,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 				return nil, err
 			}
 
+			lookbackDelta = maxDuration(lookbackDelta, t.Range)
 			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, lookbackDelta, vs.LabelMatchers)
 			numShards := runtime.GOMAXPROCS(0) / 2
 			if numShards < 1 {
@@ -154,4 +155,11 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mi
 		return binary.NewScalar(model.NewVectorPool(stepsBatch), rhs, lhs, e.Op, true)
 	}
 	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, false)
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a.Milliseconds() >= b.Milliseconds() {
+		return a
+	}
+	return b
 }

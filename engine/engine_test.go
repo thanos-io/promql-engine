@@ -440,7 +440,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		},
 	}
 
-	lookbackDeltas := []time.Duration{time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
 		for _, tc := range cases {
@@ -714,7 +714,7 @@ func TestInstantQuery(t *testing.T) {
 		},
 	}
 
-	lookbackDeltas := []time.Duration{time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
 		for _, tc := range cases {
