@@ -82,17 +82,20 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 		result = promql.Matrix(series)
 	case parser.ValueTypeVector:
 		// Convert matrix with one value per series into vector.
-		vector := make(promql.Vector, len(resultSeries))
+		vector := make(promql.Vector, 0, len(resultSeries))
 		for i := range series {
+			if len(series[i].Points) == 0 {
+				continue
+			}
 			// Point might have a different timestamp, force it to the evaluation
 			// timestamp as that is when we ran the evaluation.
-			vector[i] = promql.Sample{
+			vector = append(vector, promql.Sample{
 				Metric: series[i].Metric,
 				Point: promql.Point{
 					V: series[i].Points[0].V,
 					T: q.ts.UnixMilli(),
 				},
-			}
+			})
 		}
 		result = vector
 	case parser.ValueTypeScalar:
