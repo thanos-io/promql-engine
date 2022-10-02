@@ -438,6 +438,25 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		)
 	)`,
 		},
+		{
+			name:  "unary sub operation for scalar",
+			load:  ``,
+			query: `-(1 + 5)`,
+		},
+		{
+			name: "unary sub operation for vector",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `-http_requests_total`,
+		},
+		{
+			name: "unary add operation for vector",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `+http_requests_total`,
+		},
 	}
 
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
@@ -719,6 +738,25 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `present_over_time(http_requests_total[30s])`,
+		},
+		{
+			name:  "unary sub operation for scalar",
+			load:  ``,
+			query: `-(1 + 5)`,
+		},
+		{
+			name: "unary sub operation for vector",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `-http_requests_total`,
+		},
+		{
+			name: "unary add operation for vector",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `+http_requests_total`,
 		},
 	}
 
