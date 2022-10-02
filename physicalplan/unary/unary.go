@@ -70,25 +70,21 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	if in == nil {
 		return nil, nil
 	}
-	defer u.next.GetPool().PutVectors(in)
-
 	for i, vector := range in {
 		if err := u.workers[i].Send(vector); err != nil {
 			return nil, err
 		}
 	}
 
-	result := u.next.GetPool().GetVectorBatch()
-	for i, vector := range in {
-		output, err := u.workers[i].GetOutput()
-		if err != nil {
+	for i := range in {
+		// Make sure worker finishes the job.
+		// Since it is in-place so no need another buffer.
+		if _, err := u.workers[i].GetOutput(); err != nil {
 			return nil, err
 		}
-		result = append(result, output)
-		u.next.GetPool().PutStepVector(vector)
 	}
 
-	return result, nil
+	return in, nil
 }
 
 func (u *unaryNegation) workerTask(_ int, vector model.StepVector) model.StepVector {
