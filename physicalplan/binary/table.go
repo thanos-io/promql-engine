@@ -5,14 +5,13 @@ package binary
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/efficientgo/core/errors"
-
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
-
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
 type sample struct {
@@ -85,7 +84,10 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 				continue
 			}
 
-			outputVal := t.operation(lhSample.v, rhVal)
+			outputVal, keep := t.operation(lhSample.v, rhVal)
+			if !keep {
+				continue
+			}
 			step.SampleIDs = append(step.SampleIDs, outputSampleID)
 			step.Samples = append(step.Samples, outputVal)
 		}
@@ -94,20 +96,58 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 	return step
 }
 
-type operation func(lhs float64, rhs float64) float64
+type operation func(lhs float64, rhs float64) (float64, bool)
 
 var operations = map[string]operation{
-	"+": func(lhs float64, rhs float64) float64 { return lhs + rhs },
-	"-": func(lhs float64, rhs float64) float64 { return lhs - rhs },
-	"*": func(lhs float64, rhs float64) float64 { return lhs * rhs },
-	"/": func(lhs float64, rhs float64) float64 { return lhs / rhs },
+	"+":     func(lhs float64, rhs float64) (float64, bool) { return lhs + rhs, true },
+	"-":     func(lhs float64, rhs float64) (float64, bool) { return lhs - rhs, true },
+	"*":     func(lhs float64, rhs float64) (float64, bool) { return lhs * rhs, true },
+	"/":     func(lhs float64, rhs float64) (float64, bool) { return lhs / rhs, true },
+	"^":     func(lhs float64, rhs float64) (float64, bool) { return math.Pow(lhs, rhs), true },
+	"%":     func(lhs float64, rhs float64) (float64, bool) { return math.Mod(lhs, rhs), true },
+	"==":    func(lhs float64, rhs float64) (float64, bool) { return btos(lhs == rhs), true },
+	"!=":    func(lhs float64, rhs float64) (float64, bool) { return btos(lhs != rhs), true },
+	">":     func(lhs float64, rhs float64) (float64, bool) { return btos(lhs > rhs), true },
+	"<":     func(lhs float64, rhs float64) (float64, bool) { return btos(lhs < rhs), true },
+	">=":    func(lhs float64, rhs float64) (float64, bool) { return btos(lhs >= rhs), true },
+	"<=":    func(lhs float64, rhs float64) (float64, bool) { return btos(lhs <= rhs), true },
+	"atan2": func(lhs float64, rhs float64) (float64, bool) { return math.Atan2(lhs, rhs), true },
 }
 
-func newOperation(expr parser.ItemType) (operation, error) {
+// For vector, those operations are handled differently to check whether to keep
+// the value or not. https://github.com/prometheus/prometheus/blob/main/promql/engine.go#L2229
+var vectorBinaryOperations = map[string]operation{
+	"==": func(lhs float64, rhs float64) (float64, bool) { return lhs, lhs == rhs },
+	"!=": func(lhs float64, rhs float64) (float64, bool) { return lhs, lhs != rhs },
+	">":  func(lhs float64, rhs float64) (float64, bool) { return lhs, lhs > rhs },
+	"<":  func(lhs float64, rhs float64) (float64, bool) { return lhs, lhs < rhs },
+	">=": func(lhs float64, rhs float64) (float64, bool) { return lhs, lhs >= rhs },
+	"<=": func(lhs float64, rhs float64) (float64, bool) { return lhs, lhs <= rhs },
+}
+
+func newOperation(expr parser.ItemType, vectorBinOp bool) (operation, error) {
 	t := parser.ItemTypeStr[expr]
+	if expr.IsComparisonOperator() && vectorBinOp {
+		if o, ok := vectorBinaryOperations[t]; ok {
+			return o, nil
+		}
+		return nil, parse.NotSupportedOperationErr(expr)
+	}
 	if o, ok := operations[t]; ok {
 		return o, nil
 	}
+	return nil, parse.NotSupportedOperationErr(expr)
+}
+
+func unsupportedOperationErr(t string) error {
 	msg := fmt.Sprintf("operation not supported: %s", t)
-	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
+	return errors.Wrap(parse.ErrNotSupportedExpr, msg)
+}
+
+// btos returns 1 if b is true, 0 otherwise.
+func btos(b bool) float64 {
+	if b {
+		return 1
+	}
+	return 0
 }

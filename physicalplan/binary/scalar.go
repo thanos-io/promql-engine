@@ -27,7 +27,7 @@ type scalarOperator struct {
 }
 
 func NewScalar(pool *model.VectorPool, next model.VectorOperator, numberSelector model.VectorOperator, op parser.ItemType, scalarSideLeft bool) (*scalarOperator, error) {
-	binaryOperation, err := newOperation(op)
+	binaryOperation, err := newOperation(op, false)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +81,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		step := o.pool.GetStepVector(vector.T)
 		for i := range vector.Samples {
 			lhs, rhs := o.getOperands(vector, i, o.scalar)
-			val := o.operation(lhs, rhs)
+			val, _ := o.operation(lhs, rhs)
 			step.Samples = append(step.Samples, val)
 			step.SampleIDs = append(step.SampleIDs, vector.SampleIDs[i])
 		}
