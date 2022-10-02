@@ -28,7 +28,7 @@ At the beginning of a PromQL query execution, the query engine computes a physic
 Operators are assembled in a tree-like structure with every operator calling `Next()` on its dependants until there is no more data to be returned. The result of the `Next()` function is a *column vector* (also called a *step vector*) with elements in the vector representing samples with the same timestamp from different time series.
 
 <p align="center">
-  <img src="./assets/design.png" />
+  <img src="./assets/design.png"/>
 </p>
 
 This model allows for samples from individual time series to flow one execution step at a time from the left-most operators to the one at the very right. Since most PromQL expressions are aggregations, samples are reduced in number as they are pulled by the operators on the right. Because of this, samples from original timeseries can be decoded and kept in memory in batches instead of being fully expanded.
@@ -40,7 +40,7 @@ In addition to operators that have a one-to-one mapping with PromQL constructs, 
 Since operators are independent and rely on a common interface for pulling data, they can be run in parallel to each other. As soon as one operator has processed data from an evaluation step, it can pass the result onward so that its upstream can immediately start working on it.
 
 <p align="center">
-  <img src="./assets/promql-pipeline.png" />
+  <img src="./assets/promql-pipeline.png"/>
 </p>
 
 ### Intra-operator parallelism
@@ -48,7 +48,7 @@ Since operators are independent and rely on a common interface for pulling data,
 Parallelism can also be added within individual operators using a parallel coalesce exchange operator. Such exchange operators are indistinguishable from regular operators to their upstreams since they respect the same `Next()` interface.
 
 <p align="center">
-  <img src="./assets/parallel-coalesce.png" />
+  <img src="./assets/parallel-coalesce.png"/>
 </p>
 
 ### Memory management
