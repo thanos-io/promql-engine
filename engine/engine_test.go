@@ -396,6 +396,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `sum(foo) by (method) > sum(bar) by (method)`,
 		},
 		{
+			name: "vector binary op > scalar",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) > 10`,
+		},
+		{
+			name: "scalar < vector binary op",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `10 < sum(foo) by (method)`,
+		},
+		{
 			name: "vector binary op <",
 			load: `load 30s
 				foo{method="get", code="500"} 1+1x40
@@ -875,6 +889,20 @@ func TestInstantQuery(t *testing.T) {
 				foo{method="get", code="500"} 1+2x40
 				bar{method="get", code="404"} 1+1x30`,
 			query: `sum(foo) by (method) % sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op > scalar",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) > 10`,
+		},
+		{
+			name: "scalar < vector binary op",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `10 < sum(foo) by (method)`,
 		},
 		{
 			name:  "scalar binary op == true",

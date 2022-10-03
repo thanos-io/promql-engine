@@ -12,7 +12,7 @@ import (
 
 var ErrNotSupportedExpr = errors.New("unsupported expression")
 
-func NotSupportedOperationErr(op parser.ItemType) error {
+func UnsupportedOperationErr(op parser.ItemType) error {
 	t := parser.ItemTypeStr[op]
 	msg := fmt.Sprintf("operation not supported: %s", t)
 	return errors.Wrap(ErrNotSupportedExpr, msg)
