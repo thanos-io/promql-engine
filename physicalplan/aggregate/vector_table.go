@@ -24,10 +24,10 @@ type vectorTable struct {
 	accumulator vectorAccumulator
 }
 
-func newVectorizedTables(stepsBatch int, a parser.ItemType, param interface{}) ([]aggregateTable, error) {
+func newVectorizedTables(stepsBatch int, a parser.ItemType) ([]aggregateTable, error) {
 	tables := make([]aggregateTable, stepsBatch)
 	for i := 0; i < len(tables); i++ {
-		accumulator, err := newVectorAccumulator(a, param)
+		accumulator, err := newVectorAccumulator(a)
 		if err != nil {
 			return nil, err
 		}
@@ -69,7 +69,7 @@ func (t *vectorTable) size() int {
 	return 1
 }
 
-func newVectorAccumulator(expr parser.ItemType, arg interface{}) (vectorAccumulator, error) {
+func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
@@ -89,11 +89,6 @@ func newVectorAccumulator(expr parser.ItemType, arg interface{}) (vectorAccumula
 	case "group":
 		return func(in []float64) float64 {
 			return 1
-		}, nil
-	case "quantile":
-		return func(in []float64) float64 {
-			q := arg.(*parser.NumberLiteral).Val
-			return quantile(q, in)
 		}, nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)

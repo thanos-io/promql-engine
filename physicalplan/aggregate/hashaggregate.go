@@ -33,7 +33,6 @@ type aggregate struct {
 	tables         []aggregateTable
 	series         []labels.Labels
 	newAccumulator newAccumulatorFunc
-	param          parser.Expr
 	stepsBatch     int
 	workers        worker.Group
 }
@@ -61,7 +60,6 @@ func NewHashAggregate(
 		aggregation:    aggregation,
 		labels:         labels,
 		stepsBatch:     stepsBatch,
-		param:          param,
 		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
@@ -178,7 +176,7 @@ func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.Step
 }
 
 func (a *aggregate) initializeVectorizedTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
-	tables, err := newVectorizedTables(a.stepsBatch, a.aggregation, a.param)
+	tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
 	if errors.Is(err, parse.ErrNotSupportedExpr) {
 		return a.initializeScalarTables(ctx)
 	}
