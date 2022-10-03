@@ -5,16 +5,14 @@ package aggregate
 
 import (
 	"fmt"
-	"math"
 
 	"github.com/efficientgo/core/errors"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
-	"github.com/thanos-community/promql-engine/physicalplan/scan"
-
 	"github.com/prometheus/prometheus/promql/parser"
 	"gonum.org/v1/gonum/floats"
+
+	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
 type vectorAccumulator func([]float64) float64
@@ -87,32 +85,6 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 	case "avg":
 		return func(in []float64) float64 {
 			return floats.Sum(in) / float64(len(in))
-		}, nil
-	case "stddev":
-		return func(in []float64) float64 {
-			var count float64
-			var mean, cMean float64
-			var aux, cAux float64
-			for _, v := range in {
-				count++
-				delta := v - (mean + cMean)
-				mean, cMean = scan.KahanSumInc(delta/count, mean, cMean)
-				aux, cAux = scan.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
-			}
-			return math.Sqrt((aux + cAux) / count)
-		}, nil
-	case "stdvar":
-		return func(in []float64) float64 {
-			var count float64
-			var mean, cMean float64
-			var aux, cAux float64
-			for _, v := range in {
-				count++
-				delta := v - (mean + cMean)
-				mean, cMean = scan.KahanSumInc(delta/count, mean, cMean)
-				aux, cAux = scan.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
-			}
-			return (aux + cAux) / count
 		}, nil
 	case "group":
 		return func(in []float64) float64 {
