@@ -37,6 +37,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		expected []promql.Vector
 	}{
 		{
+			name: "value inconsistency",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0.2+39x4
+					http_requests_total{pod="nginx-2"} 1+67x4`,
+			query: "stddev(http_requests_total)",
+		},
+		{
 			name: "stddev_over_time",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -284,7 +291,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="post", code="500"} 4+1x4
 				foo{method="post", code="404"} 5+1x5
 				bar{method="get"} 1+1x1
-				bar{method="del"} 2+1x2  
+				bar{method="del"} 2+1x2
 				bar{method="post"} 3+1x3`,
 			query: `foo{code="500"} + ignoring(code) bar`,
 			start: time.Unix(0, 0),
@@ -300,7 +307,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="post", code="500", path="/"} 1+5.1x40
 				foo{method="post", code="404", path="/"} 2+3.7x40
 				bar{method="get", path="/a"} 3+7.4x10
-				bar{method="del", path="/b"} 8+6.1x30  
+				bar{method="del", path="/b"} 8+6.1x30
 				bar{method="post", path="/c"} 1+2.1x40`,
 			query: `foo * ignoring(code, path) group_left bar`,
 			start: time.Unix(0, 0),
@@ -316,7 +323,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="post", code="500"} 1+5.1x40
 				foo{method="post", code="404"} 2+3.7x40
 				bar{method="get", path="/a"} 3+7.4x10
-				bar{method="del", path="/b"} 8+6.1x30  
+				bar{method="del", path="/b"} 8+6.1x30
 				bar{method="post", path="/c"} 1+2.1x40`,
 			query: `bar * ignoring(code, path) group_right foo`,
 			start: time.Unix(0, 0),
