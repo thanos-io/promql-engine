@@ -144,6 +144,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 			name:  "binary operation with vector and scalar",
 			query: `http_requests_total * 10`,
 		},
+		{
+			name:  "unary negation",
+			query: `-http_requests_total`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -225,6 +229,10 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 		{
 			name:  "binary operation with many to one",
 			query: `http_requests_total / on (pod) group_left http_responses_total`,
+		},
+		{
+			name:  "unary negation",
+			query: `-http_requests_total`,
 		},
 	}
 

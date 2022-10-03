@@ -13,6 +13,7 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 	"github.com/thanos-community/promql-engine/physicalplan/scan"
+	"github.com/thanos-community/promql-engine/physicalplan/unary"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -124,6 +125,23 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 
 	case *parser.StringLiteral:
 		return nil, nil
+
+	case *parser.UnaryExpr:
+		next, err := newOperator(e.Expr, storage, mint, maxt, step, lookbackDelta)
+		if err != nil {
+			return nil, err
+		}
+		switch e.Op {
+		case parser.ADD:
+			return next, nil
+		case parser.SUB:
+			return unary.NewUnaryNegation(next, stepsBatch)
+		default:
+			// This shouldn't happen as Op was validated when parsing already
+			// https://github.com/prometheus/prometheus/blob/v2.38.0/promql/parser/parse.go#L573.
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		}
+
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}
