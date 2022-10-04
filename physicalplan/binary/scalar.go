@@ -5,6 +5,7 @@ package binary
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -33,9 +34,16 @@ type scalarOperator struct {
 	getOperands    getOperandsFunc
 	operandValIdx  int
 	operation      operation
+	opName         string
 }
 
-func NewScalar(pool *model.VectorPool, next model.VectorOperator, numberSelector model.VectorOperator, op parser.ItemType, scalarSide ScalarSide) (*scalarOperator, error) {
+func NewScalar(
+	pool *model.VectorPool,
+	next model.VectorOperator,
+	numberSelector model.VectorOperator,
+	op parser.ItemType,
+	scalarSide ScalarSide,
+) (*scalarOperator, error) {
 	binaryOperation, err := newOperation(op, scalarSide != ScalarSideBoth)
 	if err != nil {
 		return nil, err
@@ -63,9 +71,14 @@ func NewScalar(pool *model.VectorPool, next model.VectorOperator, numberSelector
 		scalar:         scalar,
 		numberSelector: numberSelector,
 		operation:      binaryOperation,
+		opName:         parser.ItemTypeStr[op],
 		getOperands:    getOperands,
 		operandValIdx:  operandValIdx,
 	}, nil
+}
+
+func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*scalarOperator] %v %s", o.scalar, o.opName), []model.VectorOperator{o.next}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
