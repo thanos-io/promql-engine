@@ -6,6 +6,7 @@ package aggregate
 import (
 	"fmt"
 	"math"
+	"sort"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -113,7 +114,7 @@ type accumulator struct {
 	Reset     func()
 }
 
-func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
+func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorFunc, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
@@ -282,7 +283,70 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 			}
 		}, nil
+	case "quantile":
+		if err := aggregateValidation(arg, parser.ValueTypeScalar); err != nil {
+			return nil, err
+		}
+		return func() *accumulator {
+			var hasValue bool
+			points := make([]float64, 0)
+			q := arg.(*parser.NumberLiteral).Val
+			return &accumulator{
+				AddFunc: func(v float64) {
+					hasValue = true
+					points = append(points, v)
+				},
+				ValueFunc: func() float64 {
+					return quantile(q, points)
+				},
+				HasValue: func() bool { return hasValue },
+				Reset: func() {
+					hasValue = false
+					points = points[:0]
+				},
+			}
+		}, nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
+}
+
+func aggregateValidation(node parser.Expr, want parser.ValueType) error {
+	var t parser.ValueType
+	switch n := node.(type) {
+	case *parser.NumberLiteral:
+		t = parser.ValueTypeScalar
+	case *parser.StringLiteral:
+		t = parser.ValueTypeString
+	default:
+		return fmt.Errorf("aggregateValidation() expected type %s in aggregation, got %T", parser.DocumentedType(want), n)
+	}
+	if t != want {
+		return fmt.Errorf("aggregateValidation() expected type %s in aggregation, got %s", parser.DocumentedType(want), parser.DocumentedType(t))
+	}
+	return nil
+}
+
+func quantile(q float64, points []float64) float64 {
+	if len(points) == 0 || math.IsNaN(q) {
+		return math.NaN()
+	}
+	if q < 0 {
+		return math.Inf(-1)
+	}
+	if q > 1 {
+		return math.Inf(+1)
+	}
+	sort.Float64s(points)
+
+	n := float64(len(points))
+	// When the quantile lies between two samples,
+	// we use a weighted average of the two samples.
+	rank := q * (n - 1)
+
+	lowerIndex := math.Max(0, math.Floor(rank))
+	upperIndex := math.Min(n-1, lowerIndex+1)
+
+	weight := rank - math.Floor(rank)
+	return points[int(lowerIndex)]*(1-weight) + points[int(upperIndex)]*weight
 }

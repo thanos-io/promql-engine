@@ -32,32 +32,30 @@ type aggregate struct {
 	tables         []aggregateTable
 	series         []labels.Labels
 	newAccumulator newAccumulatorFunc
-
-	stepsBatch int
-	workers    worker.Group
+	stepsBatch     int
+	workers        worker.Group
 }
 
 func NewHashAggregate(
 	points *model.VectorPool,
 	next model.VectorOperator,
 	aggregation parser.ItemType,
+	param parser.Expr,
 	by bool,
 	labels []string,
 	stepsBatch int,
 ) (model.VectorOperator, error) {
-	newAccumulator, err := makeAccumulatorFunc(aggregation)
+	newAccumulator, err := makeAccumulatorFunc(aggregation, param)
 	if err != nil {
 		return nil, err
 	}
 	a := &aggregate{
-		next:       next,
-		vectorPool: points,
-
-		by:          by,
-		aggregation: aggregation,
-		labels:      labels,
-		stepsBatch:  stepsBatch,
-
+		next:           next,
+		vectorPool:     points,
+		by:             by,
+		aggregation:    aggregation,
+		labels:         labels,
+		stepsBatch:     stepsBatch,
 		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
