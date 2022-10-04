@@ -78,9 +78,7 @@ func (c *concurrencyOperator) pull(ctx context.Context) {
 }
 
 func (c *concurrencyOperator) drainBufferOnCancel(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-		for range c.buffer {
-		}
+	<-ctx.Done()
+	for range c.buffer {
 	}
 }

@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"sort"
-	"sync"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
@@ -17,7 +16,6 @@ import (
 
 type rangeQuery struct {
 	cancel context.CancelFunc
-	once   sync.Once
 	plan   model.VectorOperator
 }
 

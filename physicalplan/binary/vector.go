@@ -236,18 +236,18 @@ func signature(metric labels.Labels, without bool, grouping []string, keepOrigin
 		if !keepOriginalLabels {
 			lb.Del(dropLabels...)
 		}
-		return key, lb.Labels()
+		return key, lb.Labels(nil)
 	}
 
 	if !keepOriginalLabels {
 		lb.Keep(grouping...)
 	}
 	if len(grouping) == 0 {
-		return 0, lb.Labels()
+		return 0, lb.Labels(nil)
 	}
 
 	key, _ := metric.HashForLabels(buf, grouping...)
-	return key, lb.Labels()
+	return key, lb.Labels(nil)
 }
 
 func buildOutputSeries(seriesID uint64, highCardSeries, lowCardSeries model.Series, includeLabels []string) model.Series {
@@ -255,7 +255,7 @@ func buildOutputSeries(seriesID uint64, highCardSeries, lowCardSeries model.Seri
 	if len(includeLabels) > 0 {
 		lowCardLabels := labels.NewBuilder(lowCardSeries.Metric).
 			Keep(includeLabels...).
-			Labels()
+			Labels(nil)
 		metric = append(metric, lowCardLabels...)
 	}
 	return model.Series{ID: seriesID, Metric: metric}

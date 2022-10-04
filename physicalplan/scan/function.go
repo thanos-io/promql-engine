@@ -485,5 +485,5 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	return t, c
 }
 func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels()
+	return labels.NewBuilder(l).Del(labels.MetricName).Labels(nil)
 }

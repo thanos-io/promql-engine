@@ -91,7 +91,7 @@ func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byt
 		lb := labels.NewBuilder(metric)
 		lb.Del(grouping...)
 		key, bytes := metric.HashWithoutLabels(buf, grouping...)
-		return key, string(bytes), lb.Labels()
+		return key, string(bytes), lb.Labels(nil)
 	}
 
 	if len(grouping) == 0 {
@@ -101,7 +101,7 @@ func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byt
 	lb := labels.NewBuilder(metric)
 	lb.Keep(grouping...)
 	key, bytes := metric.HashForLabels(buf, grouping...)
-	return key, string(bytes), lb.Labels()
+	return key, string(bytes), lb.Labels(nil)
 }
 
 type newAccumulatorFunc func() *accumulator

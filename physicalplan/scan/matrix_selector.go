@@ -34,8 +34,6 @@ type matrixSelector struct {
 	series   []labels.Labels
 	once     sync.Once
 
-	matchers   []*labels.Matcher
-	hints      *storage.SelectHints
 	vectorPool *model.VectorPool
 
 	mint        int64
