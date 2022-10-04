@@ -284,9 +284,6 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 			}
 		}, nil
 	case "quantile":
-		if err := aggregateValidation(arg, parser.ValueTypeScalar); err != nil {
-			return nil, err
-		}
 		return func() *accumulator {
 			var hasValue bool
 			points := make([]float64, 0)
@@ -309,22 +306,6 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
-}
-
-func aggregateValidation(node parser.Expr, want parser.ValueType) error {
-	var t parser.ValueType
-	switch n := node.(type) {
-	case *parser.NumberLiteral:
-		t = parser.ValueTypeScalar
-	case *parser.StringLiteral:
-		t = parser.ValueTypeString
-	default:
-		return fmt.Errorf("aggregateValidation() expected type %s in aggregation, got %T", parser.DocumentedType(want), n)
-	}
-	if t != want {
-		return fmt.Errorf("aggregateValidation() expected type %s in aggregation, got %s", parser.DocumentedType(want), parser.DocumentedType(t))
-	}
-	return nil
 }
 
 func quantile(q float64, points []float64) float64 {
