@@ -5,7 +5,6 @@ package aggregate
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
@@ -46,9 +45,6 @@ func NewHashAggregate(
 	labels []string,
 	stepsBatch int,
 ) (model.VectorOperator, error) {
-	if err := validateFunc(aggregation, param); err != nil {
-		return nil, err
-	}
 	newAccumulator, err := makeAccumulatorFunc(aggregation, param)
 	if err != nil {
 		return nil, err
@@ -65,38 +61,6 @@ func NewHashAggregate(
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
 
 	return a, nil
-}
-
-func validateFunc(op parser.ItemType, param parser.Expr) error {
-	if op == parser.TOPK || op == parser.BOTTOMK || op == parser.QUANTILE {
-		if err := aggregateValidation(param, parser.ValueTypeScalar); err != nil {
-			return err
-		}
-	}
-
-	if op == parser.COUNT_VALUES {
-		if err := aggregateValidation(param, parser.ValueTypeString); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func aggregateValidation(node parser.Expr, want parser.ValueType) error {
-	var t parser.ValueType
-	switch n := node.(type) {
-	case *parser.NumberLiteral:
-		t = parser.ValueTypeScalar
-	case *parser.StringLiteral:
-		t = parser.ValueTypeString
-	default:
-		return fmt.Errorf("aggregateValidation() expected type %s in aggregation, got %T", parser.DocumentedType(want), n)
-	}
-	if t != want {
-		return fmt.Errorf("aggregateValidation() expected type %s in aggregation, got %s", parser.DocumentedType(want), parser.DocumentedType(t))
-	}
-	return nil
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
