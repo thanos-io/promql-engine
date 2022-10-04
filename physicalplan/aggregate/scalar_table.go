@@ -284,10 +284,10 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 			}
 		}, nil
 	case "quantile":
+		q := arg.(*parser.NumberLiteral).Val
 		return func() *accumulator {
 			var hasValue bool
 			points := make([]float64, 0)
-			q := arg.(*parser.NumberLiteral).Val
 			return &accumulator{
 				AddFunc: func(v float64) {
 					hasValue = true
