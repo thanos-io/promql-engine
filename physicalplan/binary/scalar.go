@@ -103,7 +103,7 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 	}
 	series := make([]labels.Labels, len(vectorSeries))
 	for i := range vectorSeries {
-		lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels()
+		lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels(nil)
 		series[i] = lbls
 	}
 
