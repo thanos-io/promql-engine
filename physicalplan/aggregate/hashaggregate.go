@@ -22,7 +22,6 @@ import (
 type aggregate struct {
 	next model.VectorOperator
 
-	hashBuf    []byte
 	vectorPool *model.VectorPool
 
 	by          bool

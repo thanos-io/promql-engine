@@ -19,17 +19,20 @@ func NewVectorPool(stepsBatch int) *VectorPool {
 	pool := &VectorPool{}
 	pool.vectors = sync.Pool{
 		New: func() any {
-			return make([]StepVector, 0, stepsBatch)
+			sv := make([]StepVector, 0, stepsBatch)
+			return &sv
 		},
 	}
 	pool.samples = sync.Pool{
 		New: func() any {
-			return make([]float64, 0, pool.stepSize)
+			samples := make([]float64, 0, pool.stepSize)
+			return &samples
 		},
 	}
 	pool.sampleIDs = sync.Pool{
 		New: func() any {
-			return make([]uint64, 0, pool.stepSize)
+			sampleIDs := make([]uint64, 0, pool.stepSize)
+			return &sampleIDs
 		},
 	}
 
@@ -37,24 +40,27 @@ func NewVectorPool(stepsBatch int) *VectorPool {
 }
 
 func (p *VectorPool) GetVectorBatch() []StepVector {
-	return p.vectors.Get().([]StepVector)
+	return *p.vectors.Get().(*[]StepVector)
 }
 
 func (p *VectorPool) PutVectors(vector []StepVector) {
-	p.vectors.Put(vector[:0])
+	vector = vector[:0]
+	p.vectors.Put(&vector)
 }
 
 func (p *VectorPool) GetStepVector(t int64) StepVector {
 	return StepVector{
 		T:         t,
-		SampleIDs: p.sampleIDs.Get().([]uint64),
-		Samples:   p.samples.Get().([]float64),
+		SampleIDs: *p.sampleIDs.Get().(*[]uint64),
+		Samples:   *p.samples.Get().(*[]float64),
 	}
 }
 
 func (p *VectorPool) PutStepVector(v StepVector) {
-	p.sampleIDs.Put(v.SampleIDs[:0])
-	p.samples.Put(v.Samples[:0])
+	v.SampleIDs = v.SampleIDs[:0]
+	v.Samples = v.Samples[:0]
+	p.sampleIDs.Put(&v.SampleIDs)
+	p.samples.Put(&v.Samples)
 }
 
 func (p *VectorPool) SetStepSize(n int) {
