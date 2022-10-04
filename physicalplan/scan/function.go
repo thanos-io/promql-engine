@@ -18,6 +18,7 @@ import (
 
 var IgnorePoint = promql.Point{T: -1, V: 0}
 
+// FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
 type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample
 
 func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCall, error) {

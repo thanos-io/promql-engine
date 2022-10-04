@@ -39,6 +39,10 @@ func NewCoalesce(pool *model.VectorPool, operators ...model.VectorOperator) mode
 	}
 }
 
+func (c *coalesceOperator) Explain() (me string, next []model.VectorOperator) {
+	return "[*coalesceOperator]", c.operators
+}
+
 func (c *coalesceOperator) GetPool() *model.VectorPool {
 	return c.pool
 }

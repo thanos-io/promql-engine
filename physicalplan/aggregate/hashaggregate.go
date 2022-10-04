@@ -5,6 +5,7 @@ package aggregate
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/thanos-community/promql-engine/worker"
@@ -61,6 +62,13 @@ func NewHashAggregate(
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
 
 	return a, nil
+}
+
+func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
+	if a.by {
+		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
+	}
+	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
