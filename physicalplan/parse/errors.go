@@ -3,6 +3,17 @@
 
 package parse
 
-import "github.com/efficientgo/core/errors"
+import (
+	"fmt"
+
+	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/promql/parser"
+)
 
 var ErrNotSupportedExpr = errors.New("unsupported expression")
+
+func UnsupportedOperationErr(op parser.ItemType) error {
+	t := parser.ItemTypeStr[op]
+	msg := fmt.Sprintf("operation not supported: %s", t)
+	return errors.Wrap(ErrNotSupportedExpr, msg)
+}

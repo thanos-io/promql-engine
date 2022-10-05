@@ -168,10 +168,15 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, mi
 		return nil, err
 	}
 
-	if e.LHS.Type() == parser.ValueTypeScalar {
-		return binary.NewScalar(model.NewVectorPool(stepsBatch), rhs, lhs, e.Op, true)
+	scalarSide := binary.ScalarSideRight
+	if e.LHS.Type() == parser.ValueTypeScalar && e.RHS.Type() == parser.ValueTypeScalar {
+		scalarSide = binary.ScalarSideBoth
+	} else if e.LHS.Type() == parser.ValueTypeScalar {
+		rhs, lhs = lhs, rhs
+		scalarSide = binary.ScalarSideLeft
 	}
-	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, false)
+
+	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, scalarSide)
 }
 
 func maxDuration(a, b time.Duration) time.Duration {

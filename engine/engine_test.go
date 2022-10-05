@@ -375,6 +375,126 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
 		},
 		{
+			name: "vector binary op ==",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) == sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op !=",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) != sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op >",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) > sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op > scalar",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) > 10`,
+		},
+		{
+			name: "scalar < vector binary op",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `10 < sum(foo) by (method)`,
+		},
+		{
+			name: "vector binary op <",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) < sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op >=",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) >= sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op <=",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) <= sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op ^",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) ^ sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op %",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) % sum(bar) by (method)`,
+		},
+		{
+			name:  "scalar binary op == true",
+			load:  ``,
+			query: `1 == bool 1`,
+		},
+		{
+			name:  "scalar binary op == false",
+			load:  ``,
+			query: `1 != bool 2`,
+		},
+		{
+			name:  "scalar binary op !=",
+			load:  ``,
+			query: `1 != bool 1`,
+		},
+		{
+			name:  "scalar binary op >",
+			load:  ``,
+			query: `1 > bool 0`,
+		},
+		{
+			name:  "scalar binary op <",
+			load:  ``,
+			query: `1 > bool 2`,
+		},
+		{
+			name:  "scalar binary op >=",
+			load:  ``,
+			query: `1 >= bool 0`,
+		},
+		{
+			name:  "scalar binary op <=",
+			load:  ``,
+			query: `1 <= bool 2`,
+		},
+		{
+			name:  "scalar binary op % 0",
+			load:  ``,
+			query: `2 % 2`,
+		},
+		{
+			name:  "scalar binary op % 1",
+			load:  ``,
+			query: `1 % 2`,
+		},
+		{
+			name:  "scalar binary op ^",
+			load:  ``,
+			query: `2 ^ 2`,
+		},
+		{
 			name:  "empty series",
 			load:  "",
 			query: "http_requests_total",
@@ -713,6 +833,126 @@ func TestInstantQuery(t *testing.T) {
 				foo{method="get", code="500"} 1+1.1x30
 				foo{method="get", code="404"} 1+2.2x20`,
 			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
+		},
+		{
+			name: "vector binary op ==",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) == sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op !=",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) != sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op >",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) > sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op <",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) < sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op >=",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) >= sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op <=",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) <= sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op ^",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="404"} 1+1.1x30`,
+			query: `sum(foo) by (method) ^ sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op %",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) % sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op > scalar",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) > 10`,
+		},
+		{
+			name: "scalar < vector binary op",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `10 < sum(foo) by (method)`,
+		},
+		{
+			name:  "scalar binary op == true",
+			load:  ``,
+			query: `1 == bool 1`,
+		},
+		{
+			name:  "scalar binary op == false",
+			load:  ``,
+			query: `1 != bool 2`,
+		},
+		{
+			name:  "scalar binary op !=",
+			load:  ``,
+			query: `1 != bool 1`,
+		},
+		{
+			name:  "scalar binary op >",
+			load:  ``,
+			query: `1 > bool 0`,
+		},
+		{
+			name:  "scalar binary op <",
+			load:  ``,
+			query: `1 > bool 2`,
+		},
+		{
+			name:  "scalar binary op >=",
+			load:  ``,
+			query: `1 >= bool 0`,
+		},
+		{
+			name:  "scalar binary op <=",
+			load:  ``,
+			query: `1 <= bool 2`,
+		},
+		{
+			name:  "scalar binary op % 0",
+			load:  ``,
+			query: `2 % 2`,
+		},
+		{
+			name:  "scalar binary op % 1",
+			load:  ``,
+			query: `1 % 2`,
+		},
+		{
+			name:  "scalar binary op ^",
+			load:  ``,
+			query: `2 ^ 2`,
 		},
 		{
 			name:  "empty series",

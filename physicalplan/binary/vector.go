@@ -40,7 +40,7 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	operation parser.ItemType,
 ) (model.VectorOperator, error) {
-	op, err := newOperation(operation)
+	op, err := newOperation(operation, true)
 	if err != nil {
 		return nil, err
 	}
