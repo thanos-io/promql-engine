@@ -7,6 +7,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/go-kit/log"
+
 	"github.com/efficientgo/core/errors"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
@@ -19,26 +21,33 @@ import (
 type instantQuery struct {
 	cancel context.CancelFunc
 
-	plan model.VectorOperator
-	expr parser.Expr
-	ts   time.Time
+	plan   model.VectorOperator
+	expr   parser.Expr
+	ts     time.Time
+	logger log.Logger
 }
 
-func newInstantQuery(plan model.VectorOperator, expr parser.Expr, ts time.Time) promql.Query {
+func newInstantQuery(logger log.Logger, plan model.VectorOperator, expr parser.Expr, ts time.Time) promql.Query {
 	return &instantQuery{
-		plan: plan,
-		expr: expr,
-		ts:   ts,
+		plan:   plan,
+		expr:   expr,
+		ts:     ts,
+		logger: logger,
 	}
 }
 
-func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
+func (q *instantQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	// Handle case with strings early on as this does not need us to process samples.
 	// TODO(saswatamcode): Modify models.StepVector to support all types and check during plan creation.
 	switch e := q.expr.(type) {
 	case *parser.StringLiteral:
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
+
+	ret = &promql.Result{
+		Value: promql.Vector{},
+	}
+	defer recoverEngine(q.logger, q.expr, &ret.Err)
 
 	ctx, cancel := context.WithCancel(ctx)
 	q.cancel = cancel
@@ -47,7 +56,7 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 
 	resultSeries, err := q.plan.Series(ctx)
 	if err != nil {
-		return newErrResult(err)
+		return newErrResult(ret, err)
 	}
 
 	series := make([]promql.Series, len(resultSeries))
@@ -58,11 +67,11 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 
 	vs, err := q.plan.Next(ctx)
 	if err != nil {
-		return newErrResult(err)
+		return newErrResult(ret, err)
 	}
 
 	if len(vs) == 0 {
-		return &promql.Result{Value: promql.Vector{}}
+		return ret
 	}
 
 	for _, vector := range vs {
@@ -104,9 +113,8 @@ func (q *instantQuery) Exec(ctx context.Context) *promql.Result {
 		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.expr.Type()))
 	}
 
-	return &promql.Result{
-		Value: result,
-	}
+	ret.Value = result
+	return ret
 }
 
 func (q *instantQuery) Statement() parser.Statement { return nil }
