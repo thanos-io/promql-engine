@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"testing"
 	"time"
 
@@ -294,7 +295,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="post", code="500"} 4+1x4
 				foo{method="post", code="404"} 5+1x5
 				bar{method="get"} 1+1x1
-				bar{method="del"} 2+1x2  
+				bar{method="del"} 2+1x2
 				bar{method="post"} 3+1x3`,
 			query: `foo{code="500"} + ignoring(code) bar`,
 			start: time.Unix(0, 0),
@@ -310,7 +311,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="post", code="500", path="/"} 1+5.1x40
 				foo{method="post", code="404", path="/"} 2+3.7x40
 				bar{method="get", path="/a"} 3+7.4x10
-				bar{method="del", path="/b"} 8+6.1x30  
+				bar{method="del", path="/b"} 8+6.1x30
 				bar{method="post", path="/c"} 1+2.1x40`,
 			query: `foo * ignoring(code, path) group_left bar`,
 			start: time.Unix(0, 0),
@@ -326,7 +327,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				foo{method="post", code="500"} 1+5.1x40
 				foo{method="post", code="404"} 2+3.7x40
 				bar{method="get", path="/a"} 3+7.4x10
-				bar{method="del", path="/b"} 8+6.1x30  
+				bar{method="del", path="/b"} 8+6.1x30
 				bar{method="post", path="/c"} 1+2.1x40`,
 			query: `bar * ignoring(code, path) group_right foo`,
 			start: time.Unix(0, 0),
@@ -1136,3 +1137,46 @@ func (d *slowIterator) Seek(t int64) bool {
 	return true
 }
 func (d *slowIterator) Err() error { return nil }
+
+type mockRuntimeErr struct{}
+
+func (m *mockRuntimeErr) Error() string {
+	return "panic!"
+}
+
+func (m *mockRuntimeErr) RuntimeError() {
+}
+
+func TestEngineRecoversFromPanic(t *testing.T) {
+	t.Parallel()
+
+	querier := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				panic(runtime.Error(&mockRuntimeErr{}))
+			},
+		},
+	}
+	t.Run("instant", func(t *testing.T) {
+		newEngine := engine.New(engine.Opts{
+			DisableFallback: true,
+		})
+		q, err := newEngine.NewInstantQuery(querier, nil, "somequery", time.Time{})
+		testutil.Ok(t, err)
+
+		r := q.Exec(context.Background())
+		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
+	})
+
+	t.Run("range", func(t *testing.T) {
+		newEngine := engine.New(engine.Opts{
+			DisableFallback: true,
+		})
+		q, err := newEngine.NewRangeQuery(querier, nil, "somequery", time.Time{}, time.Time{}, 42)
+		testutil.Ok(t, err)
+
+		r := q.Exec(context.Background())
+		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
+	})
+
+}
