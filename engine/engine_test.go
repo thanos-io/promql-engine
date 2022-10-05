@@ -180,6 +180,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 		},
 		{
+			name: "count_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1
+					http_requests_total{pod="nginx-1"} 1+1x30
+					http_requests_total{pod="nginx-2"} 1+2x600`,
+			query: `count_over_time(http_requests_total[10m])`,
+			start: time.Unix(600, 0),
+			end:   time.Unix(6000, 0),
+		},
+		{
 			name: "rate",
 			load: `load 30s
 				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40

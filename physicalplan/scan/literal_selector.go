@@ -86,7 +86,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		}
 
 		if o.call != nil {
-			result = o.call(o.series[0], []promql.Point{result.Point}, time.UnixMilli(ts))
+			result = o.call(o.series[0], []promql.Point{result.Point}, time.UnixMilli(ts), 0)
 		}
 
 		vectors[currStep].T = result.T

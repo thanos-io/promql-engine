@@ -66,7 +66,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 		switch t := e.Args[0].(type) {
 		case *parser.MatrixSelector:
 			vs := t.VectorSelector.(*parser.VectorSelector)
-			call, err := scan.NewFunctionCall(e.Func, t.Range)
+			call, err := scan.NewFunctionCall(e.Func)
 			if err != nil {
 				return nil, err
 			}
@@ -88,7 +88,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 
 			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 		case *parser.NumberLiteral:
-			call, err := scan.NewFunctionCall(e.Func, step)
+			call, err := scan.NewFunctionCall(e.Func)
 			if err != nil {
 				return nil, err
 			}

@@ -16,212 +16,98 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
-var IgnorePoint = promql.Point{T: -1, V: 0}
+var InvalidSample = promql.Sample{Point: promql.Point{T: -1, V: 0}}
 
-type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample
+type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample
 
-func NewFunctionCall(f *parser.Function, selectRange time.Duration) (FunctionCall, error) {
-	switch f.Name {
-	case "sum_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: sumOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "max_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: maxOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "min_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: minOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "avg_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: avgOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "stddev_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: stddevOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "stdvar_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: stdvarOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "count_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: countOverTime(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "last_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: points[len(points)-1].V,
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "present_over_time":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: 1,
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "changes":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: changes(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "deriv":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			if len(points) < 2 {
-				return promql.Sample{
-					Point: IgnorePoint,
-				}
-			}
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: deriv(points),
-				},
-				Metric: labels,
-			}
-		}, nil
-	case "rate":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			point := extrapolatedRate(points, true, true, stepTime, selectRange)
-			return promql.Sample{
-				Point:  point,
-				Metric: labels,
-			}
-		}, nil
-	case "delta":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			point := extrapolatedRate(points, false, false, stepTime, selectRange)
-			return promql.Sample{
-				Point:  point,
-				Metric: labels,
-			}
-		}, nil
-	case "increase":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			point := extrapolatedRate(points, true, false, stepTime, selectRange)
-			return promql.Sample{
-				Point:  point,
-				Metric: labels,
-			}
-		}, nil
-	case "irate":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			point := instantValue(points, true, stepTime, selectRange)
-			return promql.Sample{
-				Point:  point,
-				Metric: labels,
-			}
-		}, nil
-	case "idelta":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			point := instantValue(points, false, stepTime, selectRange)
-			return promql.Sample{
-				Point:  point,
-				Metric: labels,
-			}
-		}, nil
-	case "vector":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			return promql.Sample{
-				Point:  points[0],
-				Metric: labels,
-			}
-		}, nil
-	case "resets":
-		return func(labels labels.Labels, points []promql.Point, stepTime time.Time) promql.Sample {
-			resets := 0
-			prev := points[0].V
-			for _, sample := range points[1:] {
-				current := sample.V
-				if current < prev {
-					resets++
-				}
-				prev = current
-			}
-			return promql.Sample{
-				Point: promql.Point{
-					T: stepTime.UnixMilli(),
-					V: float64(resets),
-				},
-				Metric: labels,
-			}
-		}, nil
-	default:
-		msg := fmt.Sprintf("unknown function: %s", f.Name)
-		return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
+var Funcs = map[string]FunctionCall{
+	"sum_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, sumOverTime))
+	},
+	"max_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, maxOverTime))
+	},
+	"min_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, minOverTime))
+	},
+	"avg_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, avgOverTime))
+	},
+	"stddev_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, stddevOverTime))
+	},
+	"stdvar_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, stdvarOverTime))
+	},
+	"count_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, countOverTime))
+	},
+	"last_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, func(points []promql.Point) float64 {
+			return points[len(points)-1].V
+		}))
+	},
+	"present_over_time": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, nil, func([]promql.Point) float64 { return 1 }))
+	},
+	"changes": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, changes))
+	},
+	"deriv": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreSingleValue(points, sample(labels, stepTime, points, deriv))
+	},
+	"irate": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreSingleValue(points, maybeSample(labels, stepTime, points, func(points []promql.Point) (float64, bool) {
+			return instantValue(points, true)
+		}))
+	},
+	"idelta": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreSingleValue(points, maybeSample(labels, stepTime, points, func(points []promql.Point) (float64, bool) {
+			return instantValue(points, false)
+		}))
+	},
+	"vector": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, func(points []promql.Point) float64 {
+			return points[0].V
+		}))
+	},
+	"rate": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreSingleValue(points, sample(labels, stepTime, points, func(points []promql.Point) float64 {
+			return extrapolatedRate(points, true, true, stepTime, selectRange)
+		}))
+	},
+	"delta": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreSingleValue(points, sample(labels, stepTime, points, func(points []promql.Point) float64 {
+			return extrapolatedRate(points, false, false, stepTime, selectRange)
+		}))
+	},
+	"increase": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreSingleValue(points, sample(labels, stepTime, points, func(points []promql.Point) float64 {
+			return extrapolatedRate(points, true, false, stepTime, selectRange)
+		}))
+	},
+	"resets": func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample {
+		return ignoreEmpty(points, sample(labels, stepTime, points, resets))
+	},
+}
+
+func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
+	if call, ok := Funcs[f.Name]; ok {
+		return call, nil
 	}
+	msg := fmt.Sprintf("unknown function: %s", f.Name)
+	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 }
 
 // extrapolatedRate is a utility function for rate/increase/delta.
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime time.Time, selectRange time.Duration) promql.Point {
+func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime time.Time, selectRange time.Duration) float64 {
 	var (
 		rangeStart = stepTime.UnixMilli() - selectRange.Milliseconds()
 		rangeEnd   = stepTime.UnixMilli()
 	)
-
-	if len(samples) < 2 {
-		return promql.Point{T: -1}
-	}
 
 	resultValue := samples[len(samples)-1].V - samples[0].V
 	if isCounter {
@@ -277,19 +163,10 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime t
 		resultValue = resultValue / selectRange.Seconds()
 	}
 
-	return promql.Point{
-		T: stepTime.UnixMilli(),
-		V: resultValue,
-	}
+	return resultValue
 }
 
-func instantValue(samples []promql.Point, isRate bool, stepTime time.Time, selectRange time.Duration) promql.Point {
-	// No sense in trying to compute a rate without at least two points. Drop
-	// this Vector element.
-	if len(samples) < 2 {
-		return promql.Point{T: -1}
-	}
-
+func instantValue(samples []promql.Point, isRate bool) (float64, bool) {
 	lastSample := samples[len(samples)-1]
 	previousSample := samples[len(samples)-2]
 
@@ -304,7 +181,7 @@ func instantValue(samples []promql.Point, isRate bool, stepTime time.Time, selec
 	sampledInterval := lastSample.T - previousSample.T
 	if sampledInterval == 0 {
 		// Avoid dividing by 0.
-		return promql.Point{T: -1}
+		return 0, false
 	}
 
 	if isRate {
@@ -312,10 +189,7 @@ func instantValue(samples []promql.Point, isRate bool, stepTime time.Time, selec
 		resultValue /= float64(sampledInterval) / 1000
 	}
 
-	return promql.Point{
-		T: stepTime.UnixMilli(),
-		V: resultValue,
-	}
+	return resultValue, true
 }
 
 func maxOverTime(points []promql.Point) float64 {
@@ -431,6 +305,20 @@ func deriv(points []promql.Point) float64 {
 	return slope
 }
 
+func resets(points []promql.Point) float64 {
+	count := 0
+	prev := points[0].V
+	for _, sample := range points[1:] {
+		current := sample.V
+		if current < prev {
+			count++
+		}
+		prev = current
+	}
+
+	return float64(count)
+}
+
 func linearRegression(samples []promql.Point, interceptTime int64) (slope, intercept float64) {
 	var (
 		n          float64
@@ -484,6 +372,53 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	}
 	return t, c
 }
+
 func dropMetricName(l labels.Labels) labels.Labels {
 	return labels.NewBuilder(l).Del(labels.MetricName).Labels(nil)
+}
+
+type valFunc func([]promql.Point) float64
+
+func sample(lbls labels.Labels, stepTime time.Time, points []promql.Point, valFunc valFunc) func() promql.Sample {
+	return func() promql.Sample {
+		return promql.Sample{
+			Metric: lbls,
+			Point: promql.Point{
+				T: stepTime.UnixMilli(),
+				V: valFunc(points),
+			},
+		}
+	}
+}
+
+type maybeValFunc func([]promql.Point) (float64, bool)
+
+func maybeSample(lbls labels.Labels, stepTime time.Time, points []promql.Point, valFunc maybeValFunc) func() promql.Sample {
+	return func() promql.Sample {
+		val, ok := valFunc(points)
+		if !ok {
+			return InvalidSample
+		}
+		return promql.Sample{
+			Metric: lbls,
+			Point: promql.Point{
+				T: stepTime.UnixMilli(),
+				V: val,
+			},
+		}
+	}
+}
+
+func ignoreEmpty(points []promql.Point, f func() promql.Sample) promql.Sample {
+	if len(points) == 0 {
+		return InvalidSample
+	}
+	return f()
+}
+
+func ignoreSingleValue(points []promql.Point, f func() promql.Sample) promql.Sample {
+	if len(points) < 2 {
+		return InvalidSample
+	}
+	return f()
 }
