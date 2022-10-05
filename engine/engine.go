@@ -4,6 +4,8 @@
 package engine
 
 import (
+	"fmt"
+	"runtime"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -20,7 +22,7 @@ import (
 )
 
 type engine struct {
-	logger promql.QueryLogger
+	logger log.Logger
 
 	lookbackDelta time.Duration
 }
@@ -46,6 +48,7 @@ func New(opts Opts) v1.QueryEngine {
 
 	core := &engine{
 		lookbackDelta: opts.LookbackDelta,
+		logger:        opts.Logger,
 	}
 	if opts.DisableFallback {
 		return core
@@ -106,7 +109,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs
 		return nil, err
 	}
 
-	return newInstantQuery(plan, expr, ts), nil
+	return newInstantQuery(e.logger, plan, expr, ts), nil
 }
 
 func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
@@ -125,5 +128,22 @@ func (e *engine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs s
 		return nil, err
 	}
 
-	return newRangeQuery(plan), nil
+	return newRangeQuery(expr, e.logger, plan), nil
+}
+
+func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
+	e := recover()
+	if e == nil {
+		return
+	}
+
+	switch err := e.(type) {
+	case runtime.Error:
+		// Print the stack trace but do not inhibit the running application.
+		buf := make([]byte, 64<<10)
+		buf = buf[:runtime.Stack(buf, false)]
+
+		level.Error(logger).Log("msg", "runtime panic in engine", "expr", expr.String(), "err", e, "stacktrace", string(buf))
+		*errp = fmt.Errorf("unexpected error: %w", err)
+	}
 }
