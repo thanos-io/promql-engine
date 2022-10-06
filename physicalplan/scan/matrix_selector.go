@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	engstore "github.com/thanos-community/promql-engine/physicalplan/storage"
 	"github.com/thanos-community/promql-engine/query"
 )
 
@@ -30,7 +31,7 @@ type matrixScanner struct {
 type matrixSelector struct {
 	funcExpr *parser.Call
 	call     FunctionCall
-	storage  *seriesSelector
+	storage  engstore.SeriesSelector
 	scanners []matrixScanner
 	series   []labels.Labels
 	once     sync.Once
@@ -52,7 +53,7 @@ type matrixSelector struct {
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	pool *model.VectorPool,
-	selector *seriesSelector,
+	selector engstore.SeriesSelector,
 	funcExpr *parser.Call,
 	call FunctionCall,
 	opts *query.Options,
@@ -83,9 +84,9 @@ func NewMatrixSelector(
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 	r := time.Duration(o.selectRange) * time.Millisecond
 	if o.call != nil {
-		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.matchers, r, o.shard, o.numShards), nil
+		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.Matchers(), r, o.shard, o.numShards), nil
 	}
-	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.matchers, r, o.shard, o.numShards), nil
+	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
 }
 
 func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -155,7 +156,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
-		series, loadErr := o.storage.getSeries(ctx, o.shard, o.numShards)
+		series, loadErr := o.storage.GetSeries(ctx, o.shard, o.numShards)
 		if loadErr != nil {
 			err = loadErr
 			return
@@ -172,7 +173,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 			o.scanners[i] = matrixScanner{
 				labels:    lbls,
-				signature: s.signature,
+				signature: s.Signature,
 				samples:   storage.NewBufferIterator(s.Iterator(), o.selectRange),
 			}
 			o.series[i] = lbls

@@ -3,6 +3,7 @@ module github.com/thanos-community/promql-engine
 go 1.18
 
 require (
+	github.com/cespare/xxhash/v2 v2.1.2
 	github.com/efficientgo/core v1.0.0-rc.0
 	github.com/go-kit/log v0.2.1
 	github.com/prometheus/client_golang v1.13.0
@@ -15,7 +16,6 @@ require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/aws/aws-sdk-go v1.44.109 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/dennwc/varint v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.1.0 // indirect

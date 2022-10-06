@@ -251,8 +251,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x30
 					http_requests_total{pod="nginx-2"} 1+2x600`,
 			query: `count_over_time(http_requests_total[10m])`,
-			start: time.Unix(600, 0),
-			end:   time.Unix(6000, 0),
+			start: time.Unix(60, 0),
+			end:   time.Unix(600, 0),
 		},
 		{
 			name: "rate",
@@ -765,6 +765,25 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
+		{
+			name: "selector merge",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", ns="nginx"} 1+1x15
+					http_requests_total{pod="nginx-2", ns="nginx"} 1+2x18
+					http_requests_total{pod="nginx-3", ns="nginx"} 1+2x21`,
+			query: `http_requests_total{pod=~"nginx-1", ns="nginx"} / on() group_left() sum(http_requests_total{ns="nginx"})`,
+		},
+		{
+			name: "selector merge with different ranges",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", ns="nginx"} 2+2x16
+					http_requests_total{pod="nginx-2", ns="nginx"} 2+4x18
+					http_requests_total{pod="nginx-3", ns="nginx"} 2+6x20`,
+			query: `
+	rate(http_requests_total{pod=~"nginx-1", ns="nginx"}[2m])
+	+ on() group_left()
+	sum(http_requests_total{ns="nginx"})`,
+		},
 	}
 
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
@@ -989,11 +1008,6 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x4
 					http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(irate(http_requests_total[1m]))",
-		},
-		{
-			name:  "string literal",
-			load:  "",
-			query: `"hello"`,
 		},
 		{
 			name:  "number literal",

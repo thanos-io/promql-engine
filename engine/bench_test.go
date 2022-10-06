@@ -134,7 +134,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			name:  "binary operation with one to one",
-			query: `http_requests_total{container="1"} / ignoring(container) http_responses_total`,
+			query: `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
 		},
 		{
 			name:  "binary operation with many to one",

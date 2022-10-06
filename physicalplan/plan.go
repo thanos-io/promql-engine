@@ -21,10 +21,13 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/promql"
+
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/prometheus/prometheus/model/labels"
+
+	"github.com/thanos-community/promql-engine/logicalplan"
 	"github.com/thanos-community/promql-engine/physicalplan/aggregate"
 	"github.com/thanos-community/promql-engine/physicalplan/binary"
 	"github.com/thanos-community/promql-engine/physicalplan/exchange"
@@ -32,6 +35,7 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 	"github.com/thanos-community/promql-engine/physicalplan/scan"
 	"github.com/thanos-community/promql-engine/physicalplan/step_invariant"
+	engstore "github.com/thanos-community/promql-engine/physicalplan/storage"
 	"github.com/thanos-community/promql-engine/physicalplan/unary"
 	"github.com/thanos-community/promql-engine/query"
 )
@@ -40,10 +44,6 @@ const stepsBatch = 10
 
 // New creates new physical query execution plan for a given query expression.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
-	// Pre-process the expression to check whether the
-	// expression is step invariant.
-	expr = promql.PreprocessExpr(expr, mint, maxt)
-	setOffsetForAtModifier(mint.UnixMilli(), expr)
 	opts := &query.Options{
 		Start:         mint,
 		End:           maxt,
@@ -51,12 +51,12 @@ func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step
 		LookbackDelta: lookbackDelta,
 		StepsBatch:    stepsBatch,
 	}
-	return newCancellableOperator(expr, storage, opts)
-
+	selectorPool := engstore.NewSelectorPool(storage)
+	return newCancellableOperator(expr, selectorPool, opts)
 }
 
-func newCancellableOperator(expr parser.Expr, storage storage.Queryable, opts *query.Options) (*exchange.CancellableOperator, error) {
-	operator, err := newOperator(expr, storage, opts)
+func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options) (*exchange.CancellableOperator, error) {
+	operator, err := newOperator(expr, selectorPool, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -64,27 +64,20 @@ func newCancellableOperator(expr parser.Expr, storage storage.Queryable, opts *q
 	return exchange.NewCancellable(operator), nil
 }
 
-func newOperator(expr parser.Expr, storage storage.Queryable, opts *query.Options) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
 
 	case *parser.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e, opts.Start, opts.End, opts.LookbackDelta, 0)
-		filter := scan.NewSeriesFilter(storage, start, end, e.LabelMatchers)
-		numShards := runtime.GOMAXPROCS(0) / 2
-		if numShards < 1 {
-			numShards = 1
-		}
-		operators := make([]model.VectorOperator, 0, numShards)
-		for i := 0; i < numShards; i++ {
-			operator := exchange.NewConcurrent(
-				exchange.NewCancellable(
-					scan.NewVectorSelector(model.NewVectorPool(stepsBatch), filter, opts, e.Offset, i, numShards)), 2)
-			operators = append(operators, operator)
-		}
+		start, end := getTimeRangesForVectorSelector(e, opts, 0)
+		filter := storage.GetSelector(start, end, e.LabelMatchers)
+		return newShardedVectorSelector(filter, opts, e.Offset)
 
-		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+	case *logicalplan.FilteredSelector:
+		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
+		selector := storage.GetFilteredSelector(start, end, e.LabelMatchers, e.Filters)
+		return newShardedVectorSelector(selector, opts, e.Offset)
 
 	case *parser.Call:
 		if len(e.Args) != 1 {
@@ -93,18 +86,23 @@ func newOperator(expr parser.Expr, storage storage.Queryable, opts *query.Option
 
 		switch t := e.Args[0].(type) {
 		case *parser.MatrixSelector:
-			vs := t.VectorSelector.(*parser.VectorSelector)
+			vs, filters, err := unpackVectorSelector(t)
+			if err != nil {
+				return nil, err
+			}
 			call, err := scan.NewFunctionCall(e.Func)
 			if err != nil {
 				return nil, err
 			}
 
-			start, end := getTimeRangesForVectorSelector(vs, opts.Start, opts.End, opts.LookbackDelta, t.Range)
-			filter := scan.NewSeriesFilter(storage, start, end, vs.LabelMatchers)
+			start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
+			filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
+
 			numShards := runtime.GOMAXPROCS(0) / 2
 			if numShards < 1 {
 				numShards = 1
 			}
+
 			operators := make([]model.VectorOperator, 0, numShards)
 			for i := 0; i < numShards; i++ {
 				operator := exchange.NewConcurrent(
@@ -148,9 +146,6 @@ func newOperator(expr parser.Expr, storage storage.Queryable, opts *query.Option
 	case *parser.ParenExpr:
 		return newCancellableOperator(e.Expr, storage, opts)
 
-	case *parser.StringLiteral:
-		return nil, nil
-
 	case *parser.UnaryExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)
 		if err != nil {
@@ -179,24 +174,52 @@ func newOperator(expr parser.Expr, storage storage.Queryable, opts *query.Option
 	}
 }
 
-func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, opts *query.Options) (model.VectorOperator, error) {
-	leftOperator, err := newCancellableOperator(e.LHS, storage, opts)
+func unpackVectorSelector(t *parser.MatrixSelector) (*parser.VectorSelector, []*labels.Matcher, error) {
+	switch t := t.VectorSelector.(type) {
+	case *parser.VectorSelector:
+		return t, nil, nil
+	case *logicalplan.FilteredSelector:
+		return t.VectorSelector, t.Filters, nil
+	default:
+		return nil, nil, parse.ErrNotSupportedExpr
+	}
+}
+
+func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Options, offset time.Duration) (model.VectorOperator, error) {
+	numShards := runtime.GOMAXPROCS(0) / 2
+	if numShards < 1 {
+		numShards = 1
+	}
+	operators := make([]model.VectorOperator, 0, numShards)
+	for i := 0; i < numShards; i++ {
+		operator := exchange.NewConcurrent(
+			exchange.NewCancellable(
+				scan.NewVectorSelector(
+					model.NewVectorPool(stepsBatch), selector, opts, offset, i, numShards)), 2)
+		operators = append(operators, operator)
+	}
+
+	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+}
+
+func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
+	leftOperator, err := newCancellableOperator(e.LHS, selectorPool, opts)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newCancellableOperator(e.RHS, storage, opts)
+	rightOperator, err := newCancellableOperator(e.RHS, selectorPool, opts)
 	if err != nil {
 		return nil, err
 	}
 	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, opts *query.Options) (model.VectorOperator, error) {
-	lhs, err := newCancellableOperator(e.LHS, storage, opts)
+func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
+	lhs, err := newCancellableOperator(e.LHS, selectorPool, opts)
 	if err != nil {
 		return nil, err
 	}
-	rhs, err := newCancellableOperator(e.RHS, storage, opts)
+	rhs, err := newCancellableOperator(e.RHS, selectorPool, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -213,47 +236,18 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, op
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
-func getTimeRangesForVectorSelector(n *parser.VectorSelector, mint, maxt time.Time, lookbackDelta, evalRange time.Duration) (int64, int64) {
-	start := mint.UnixMilli()
-	end := maxt.UnixMilli()
+func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Options, evalRange time.Duration) (int64, int64) {
+	start := opts.Start.UnixMilli()
+	end := opts.End.UnixMilli()
 	if n.Timestamp != nil {
 		start = *n.Timestamp
 		end = *n.Timestamp
 	}
 	if evalRange == 0 {
-		start -= lookbackDelta.Milliseconds()
+		start -= opts.LookbackDelta.Milliseconds()
 	} else {
 		start -= evalRange.Milliseconds()
 	}
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset
-}
-
-// Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L2658.
-func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
-	getOffset := func(ts *int64, originalOffset time.Duration, path []parser.Node) time.Duration {
-		if ts == nil {
-			return originalOffset
-		}
-		// TODO: support subquery.
-
-		offsetForTs := time.Duration(evalTime-*ts) * time.Millisecond
-		offsetDiff := offsetForTs
-		return originalOffset + offsetDiff
-	}
-
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.VectorSelector:
-			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
-
-		case *parser.MatrixSelector:
-			vs := n.VectorSelector.(*parser.VectorSelector)
-			vs.Offset = getOffset(vs.Timestamp, vs.OriginalOffset, path)
-
-		case *parser.SubqueryExpr:
-			n.Offset = getOffset(n.Timestamp, n.OriginalOffset, path)
-		}
-		return nil
-	})
 }

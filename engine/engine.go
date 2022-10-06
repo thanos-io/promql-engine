@@ -14,11 +14,13 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
+	"github.com/thanos-community/promql-engine/logicalplan"
 	"github.com/thanos-community/promql-engine/physicalplan"
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
@@ -122,7 +124,9 @@ func (e *engine) NewInstantQuery(q storage.Queryable, _ *promql.QueryOpts, qs st
 		return nil, err
 	}
 
-	plan, err := physicalplan.New(expr, q, ts, ts, 0, e.lookbackDelta)
+	logicalPlan := logicalplan.New(expr, ts, ts)
+	optimizedPlan := logicalPlan.RunOptimizers(logicalplan.DefaultOptimizers)
+	plan, err := physicalplan.New(optimizedPlan, q, ts, ts, 0, e.lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +149,9 @@ func (e *engine) NewRangeQuery(q storage.Queryable, _ *promql.QueryOpts, qs stri
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
-	plan, err := physicalplan.New(expr, q, start, end, interval, e.lookbackDelta)
+	logicalPlan := logicalplan.New(expr, start, end)
+	optimizedPlan := logicalPlan.RunOptimizers(logicalplan.DefaultOptimizers)
+	plan, err := physicalplan.New(optimizedPlan, q, start, end, interval, e.lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
