@@ -11,12 +11,19 @@ import (
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
 
+// TODO(bwplotka): Consider removing this and ensuring all operators check for context. It creates
+// unnecessary cognitive and computation load, only to avoid one "if ctx.Err() != nil" in each operator.
+// It is also inconsistently added (sometimes missing).
 type CancellableOperator struct {
 	next model.VectorOperator
 }
 
 func NewCancellable(next model.VectorOperator) *CancellableOperator {
 	return &CancellableOperator{next: next}
+}
+
+func (c *CancellableOperator) Explain() (string, []model.VectorOperator) {
+	return "[*CancellableOperator]", []model.VectorOperator{c.next}
 }
 
 func (c *CancellableOperator) Next(ctx context.Context) ([]model.StepVector, error) {

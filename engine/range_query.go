@@ -40,6 +40,7 @@ func (q *rangeQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	ctx, cancel := context.WithCancel(ctx)
 	q.cancel = cancel
 
+	// TODO(bwplotka): This feels weird. Why we have public Close method in the first place if we don't let user to use it.
 	defer q.Close()
 
 	resultSeries, err := q.plan.Series(ctx)

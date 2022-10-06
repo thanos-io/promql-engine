@@ -5,6 +5,7 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sort"
 	"sync"
@@ -29,7 +30,7 @@ type matrixScanner struct {
 type matrixSelector struct {
 	funcExpr *parser.Call
 	call     FunctionCall
-	selector *seriesSelector
+	storage  *seriesSelector
 	scanners []matrixScanner
 	series   []labels.Labels
 	once     sync.Once
@@ -47,6 +48,7 @@ type matrixSelector struct {
 	numShards int
 }
 
+// NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector *seriesSelector,
@@ -59,7 +61,7 @@ func NewMatrixSelector(
 ) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
-		selector:   selector,
+		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
 		vectorPool: pool,
@@ -75,6 +77,14 @@ func NewMatrixSelector(
 		shard:     shard,
 		numShards: numShard,
 	}
+}
+
+func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
+	r := time.Duration(o.selectRange) * time.Millisecond
+	if o.call != nil {
+		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.matchers, r, o.shard, o.numShards), nil
+	}
+	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.matchers, r, o.shard, o.numShards), nil
 }
 
 func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -150,7 +160,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
-		series, loadErr := o.selector.getSeries(ctx, o.shard, o.numShards)
+		series, loadErr := o.storage.getSeries(ctx, o.shard, o.numShards)
 		if loadErr != nil {
 			err = loadErr
 			return

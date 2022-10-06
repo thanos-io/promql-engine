@@ -5,6 +5,7 @@ package binary
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -22,6 +23,7 @@ type vectorOperator struct {
 	rhs       model.VectorOperator
 	matching  *parser.VectorMatching
 	operation operation
+	opName    string
 
 	// series contains the output series of the operator
 	series []labels.Labels
@@ -50,7 +52,15 @@ func NewVectorOperator(
 		rhs:       rhs,
 		matching:  matching,
 		operation: op,
+		opName:    parser.ItemTypeStr[operation],
 	}, nil
+}
+
+func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
+	if o.matching.On {
+		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", o.opName, o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+	}
+	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", o.opName, o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -64,7 +74,7 @@ func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 }
 
 func (o *vectorOperator) initOutputs(ctx context.Context) error {
-	// TODO(fpetkovski): execute in parallel
+	// TODO(fpetkovski): Execute in parallel.
 	highCardSide, err := o.lhs.Series(ctx)
 	if err != nil {
 		return err

@@ -18,6 +18,7 @@ import (
 
 var InvalidSample = promql.Sample{Point: promql.Point{T: -1, V: 0}}
 
+// FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
 type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime time.Time, selectRange time.Duration) promql.Sample
 
 var Funcs = map[string]FunctionCall{

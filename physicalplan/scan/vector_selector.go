@@ -5,6 +5,7 @@ package scan
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -95,10 +96,19 @@ type vectorSelector struct {
 	numShards int
 }
 
-func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step, lookbackDelta time.Duration, stepsBatch, shard, numShards int) model.VectorOperator {
+// NewVectorSelector creates operator which selects vector of series.
+func NewVectorSelector(
+	pool *model.VectorPool,
+	selector *seriesSelector,
+	mint, maxt time.Time,
+	step, lookbackDelta time.Duration,
+	stepsBatch,
+	shard,
+	numShards int,
+) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
-		storage:    storage,
+		storage:    selector,
 		vectorPool: pool,
 
 		mint:          mint.UnixMilli(),
@@ -111,6 +121,10 @@ func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, ma
 		shard:     shard,
 		numShards: numShards,
 	}
+}
+
+func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.matchers, o.shard, o.numShards), nil
 }
 
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {

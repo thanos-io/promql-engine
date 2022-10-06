@@ -5,6 +5,7 @@ package exchange
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
@@ -18,16 +19,22 @@ type maybeStepVector struct {
 }
 
 type concurrencyOperator struct {
-	once   sync.Once
-	next   model.VectorOperator
-	buffer chan maybeStepVector
+	once       sync.Once
+	next       model.VectorOperator
+	buffer     chan maybeStepVector
+	bufferSize int
 }
 
 func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperator {
 	return &concurrencyOperator{
-		next:   next,
-		buffer: make(chan maybeStepVector, bufferSize),
+		next:       next,
+		buffer:     make(chan maybeStepVector, bufferSize),
+		bufferSize: bufferSize,
 	}
+}
+
+func (c *concurrencyOperator) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*concurrencyOperator(buff=%v)]", c.bufferSize), []model.VectorOperator{c.next}
 }
 
 func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, error) {

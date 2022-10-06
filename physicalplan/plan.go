@@ -39,7 +39,7 @@ func newCancellableOperator(expr parser.Expr, storage storage.Queryable, mint, m
 func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val, nil), nil
+		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val), nil
 
 	case *parser.VectorSelector:
 		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, lookbackDelta, e.LabelMatchers)
@@ -81,21 +81,19 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			for i := 0; i < numShards; i++ {
 				operator := exchange.NewConcurrent(
 					exchange.NewCancellable(
-						scan.NewMatrixSelector(
-							model.NewVectorPool(stepsBatch), filter, e, call, mint, maxt, stepsBatch, step, t.Range, i, numShards)), 2)
+						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, e, call, mint, maxt, stepsBatch, step, t.Range, i, numShards),
+					), 2)
 				operators = append(operators, operator)
 			}
 
 			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+
 		case *parser.NumberLiteral:
-			call, err := scan.NewFunctionCall(e.Func)
+			l, err := scan.NewNumberLiteralSelectorWithFunc(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, t.Val, e.Func)
 			if err != nil {
 				return nil, err
 			}
-
-			return exchange.NewCancellable(
-				scan.NewNumberLiteralSelector(
-					model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, t.Val, call)), nil
+			return exchange.NewCancellable(l), nil
 		default:
 			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", t)
 		}
