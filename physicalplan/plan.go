@@ -42,7 +42,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val), nil
 
 	case *parser.VectorSelector:
-		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, lookbackDelta, e.OriginalOffset, e.LabelMatchers)
+		filter := scan.NewSeriesFilter(storage, mint.Add(-e.OriginalOffset), maxt.Add(-e.OriginalOffset), 0, lookbackDelta, e.LabelMatchers)
 		numShards := runtime.GOMAXPROCS(0) / 2
 		if numShards < 1 {
 			numShards = 1
@@ -72,7 +72,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			}
 
 			lookbackDelta = maxDuration(lookbackDelta, t.Range)
-			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, lookbackDelta, vs.OriginalOffset, vs.LabelMatchers)
+			filter := scan.NewSeriesFilter(storage, mint.Add(-vs.OriginalOffset), maxt.Add(-vs.OriginalOffset), t.Range, lookbackDelta, vs.LabelMatchers)
 			numShards := runtime.GOMAXPROCS(0) / 2
 			if numShards < 1 {
 				numShards = 1
