@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -108,7 +109,7 @@ func (o *numberLiteralSelector) Next(context.Context) ([]model.StepVector, error
 
 		result := promql.Sample{Point: promql.Point{T: ts, V: o.val}}
 		if o.call != nil {
-			result = o.call(o.series[0], []promql.Point{result.Point}, time.UnixMilli(ts), 0)
+			result = o.call(o.series[0], []promql.Point{result.Point}, ts, 0)
 		}
 
 		vectors[currStep].T = result.T

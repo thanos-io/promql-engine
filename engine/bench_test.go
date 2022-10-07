@@ -87,7 +87,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 	end := start.Add(6 * time.Hour)
 	step := time.Second * 30
 
-	query := "sum(http_requests_total)"
+	query := "sum(rate(http_requests_total[2m]))"
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
