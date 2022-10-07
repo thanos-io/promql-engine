@@ -176,6 +176,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{
+			name: "multi label grouping by",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", ns="a"} 1+1x15
+					http_requests_total{pod="nginx-2", ns="a"} 1+1x15`,
+			query: `avg by (pod, ns) (avg_over_time(http_requests_total[2m]))`,
+		},
+		{
+			name: "multi label grouping without",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", ns="a"} 1+1x15
+					http_requests_total{pod="nginx-2", ns="a"} 1+1x15`,
+			query: `avg without (pod, ns) (avg_over_time(http_requests_total[2m]))`,
+		},
+		{
 			name: "query in the future",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -317,7 +331,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				bar{method="get", path="/a"} 3+7.4x10
 				bar{method="del", path="/b"} 8+6.1x30
 				bar{method="post", path="/c"} 1+2.1x40`,
-			query: `foo * ignoring(code, path) group_left bar`,
+			query: `foo * ignoring(path, code) group_left bar`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(600, 0),
 		},
