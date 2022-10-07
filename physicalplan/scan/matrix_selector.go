@@ -41,6 +41,7 @@ type matrixSelector struct {
 	maxt        int64
 	step        int64
 	selectRange int64
+	offset      int64
 	currentStep int64
 	stepsBatch  int
 
@@ -56,7 +57,7 @@ func NewMatrixSelector(
 	call FunctionCall,
 	mint, maxt time.Time,
 	stepsBatch int,
-	step, selectRange time.Duration,
+	step, selectRange, offset time.Duration,
 	shard, numShard int,
 ) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
@@ -72,6 +73,7 @@ func NewMatrixSelector(
 		stepsBatch: stepsBatch,
 
 		selectRange: selectRange.Milliseconds(),
+		offset:      offset.Milliseconds(),
 		currentStep: mint.UnixMilli(),
 
 		shard:     shard,
@@ -130,7 +132,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			maxt := seriesTs
+			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)

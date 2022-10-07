@@ -55,8 +55,8 @@ func (it *vectorScanner) Seek(ts int64) bool {
 }
 
 // TODO(fpetkovski): Add error handling and max samples limit.
-func (it *vectorScanner) selectPoint(ts, lookbackDelta int64) (int64, float64, bool) {
-	refTime := ts
+func (it *vectorScanner) selectPoint(ts, lookbackDelta, offset int64) (int64, float64, bool) {
+	refTime := ts - offset
 	var t int64
 	var v float64
 
@@ -91,6 +91,7 @@ type vectorSelector struct {
 	currentStep   int64
 	stepsBatch    int
 	lookbackDelta int64
+	offset        int64
 
 	shard     int
 	numShards int
@@ -101,12 +102,11 @@ func NewVectorSelector(
 	pool *model.VectorPool,
 	selector *seriesSelector,
 	mint, maxt time.Time,
-	step, lookbackDelta time.Duration,
+	step, lookbackDelta, offset time.Duration,
 	stepsBatch,
 	shard,
 	numShards int,
 ) model.VectorOperator {
-	// TODO(fpetkovski): Add offset parameter.
 	return &vectorSelector{
 		storage:    selector,
 		vectorPool: pool,
@@ -117,6 +117,7 @@ func NewVectorSelector(
 		currentStep:   mint.UnixMilli(),
 		stepsBatch:    stepsBatch,
 		lookbackDelta: lookbackDelta.Milliseconds(),
+		offset:        offset.Milliseconds(),
 
 		shard:     shard,
 		numShards: numShards,
@@ -170,7 +171,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, ok := series.selectPoint(seriesTs, o.lookbackDelta)
+			_, v, ok := series.selectPoint(seriesTs, o.lookbackDelta, o.offset)
 			if ok {
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				vectors[currStep].Samples = append(vectors[currStep].Samples, v)

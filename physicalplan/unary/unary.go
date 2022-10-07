@@ -41,6 +41,10 @@ func NewUnaryNegation(
 	return u, nil
 }
 
+func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
+	return "", nil
+}
+
 func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
 	u.once.Do(func() { err = u.loadSeries(ctx) })

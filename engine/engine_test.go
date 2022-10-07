@@ -24,8 +24,10 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	end := time.Unix(240, 0)
 	step := time.Second * 30
 	opts := promql.EngineOpts{
-		Timeout:    1 * time.Hour,
-		MaxSamples: 1e10,
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
 	}
 
 	cases := []struct {
@@ -588,6 +590,42 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `+http_requests_total`,
 		},
+		{
+			name: "vector positive offset",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `http_requests_total offset 30s`,
+			start: time.Unix(600, 0),
+			end:   time.Unix(1200, 0),
+		},
+		{
+			name: "vector negative offset",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `http_requests_total offset -30s`,
+			start: time.Unix(600, 0),
+			end:   time.Unix(1200, 0),
+		},
+		{
+			name: "matrix negative offset with sum_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x25
+					http_requests_total{pod="nginx-2"} 1+2x28`,
+			query: `sum_over_time(http_requests_total[5m] offset 5m)`,
+			start: time.Unix(600, 0),
+			end:   time.Unix(6000, 0),
+		},
+		{
+			name: "matrix negative offset with count_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `count_over_time(http_requests_total[5m] offset -2m)`,
+			start: time.Unix(600, 0),
+			end:   time.Unix(6000, 0),
+		},
 	}
 
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
@@ -638,8 +676,10 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 func TestInstantQuery(t *testing.T) {
 	queryTime := time.Unix(50, 0)
 	opts := promql.EngineOpts{
-		Timeout:    1 * time.Hour,
-		MaxSamples: 1e10,
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
 	}
 
 	cases := []struct {
@@ -1028,6 +1068,34 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `+http_requests_total`,
+		},
+		{
+			name: "vector positive offset",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `http_requests_total offset 30s`,
+		},
+		{
+			name: "vector negative offset",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `http_requests_total offset -30s`,
+		},
+		{
+			name: "matrix negative offset with sum_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x25
+					http_requests_total{pod="nginx-2"} 1+2x28`,
+			query: `sum_over_time(http_requests_total[5m] offset 5m)`,
+		},
+		{
+			name: "matrix negative offset with count_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `count_over_time(http_requests_total[5m] offset -2m)`,
 		},
 	}
 

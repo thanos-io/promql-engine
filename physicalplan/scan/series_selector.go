@@ -22,6 +22,7 @@ type seriesSelector struct {
 	mint        int64
 	maxt        int64
 	selectRange int64
+	offset      int64
 	matchers    []*labels.Matcher
 
 	once sync.Once
@@ -29,12 +30,12 @@ type seriesSelector struct {
 	series []signedSeries
 }
 
-func NewSeriesFilter(storage storage.Queryable, mint, maxt time.Time, selectRange, lookbackDelta time.Duration, matchers []*labels.Matcher) *seriesSelector {
+func NewSeriesFilter(storage storage.Queryable, mint, maxt time.Time, selectRange, lookbackDelta, offset time.Duration, matchers []*labels.Matcher) *seriesSelector {
+	offsetDuration := offset.Milliseconds()
 	return &seriesSelector{
-		storage: storage,
-
-		mint:        mint.UnixMilli() - lookbackDelta.Milliseconds(),
-		maxt:        maxt.UnixMilli(),
+		storage:     storage,
+		mint:        mint.UnixMilli() - lookbackDelta.Milliseconds() - offsetDuration,
+		maxt:        maxt.UnixMilli() - offsetDuration,
 		selectRange: selectRange.Milliseconds(),
 		matchers:    matchers,
 	}

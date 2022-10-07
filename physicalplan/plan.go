@@ -42,7 +42,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), mint, maxt, step, stepsBatch, e.Val), nil
 
 	case *parser.VectorSelector:
-		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, lookbackDelta, e.LabelMatchers)
+		filter := scan.NewSeriesFilter(storage, mint, maxt, 0, lookbackDelta, e.OriginalOffset, e.LabelMatchers)
 		numShards := runtime.GOMAXPROCS(0) / 2
 		if numShards < 1 {
 			numShards = 1
@@ -52,7 +52,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			operator := exchange.NewConcurrent(
 				exchange.NewCancellable(
 					scan.NewVectorSelector(
-						model.NewVectorPool(stepsBatch), filter, mint, maxt, step, lookbackDelta, stepsBatch, i, numShards)), 2)
+						model.NewVectorPool(stepsBatch), filter, mint, maxt, step, lookbackDelta, e.OriginalOffset, stepsBatch, i, numShards)), 2)
 			operators = append(operators, operator)
 		}
 
@@ -72,7 +72,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			}
 
 			lookbackDelta = maxDuration(lookbackDelta, t.Range)
-			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, lookbackDelta, vs.LabelMatchers)
+			filter := scan.NewSeriesFilter(storage, mint, maxt, t.Range, lookbackDelta, vs.OriginalOffset, vs.LabelMatchers)
 			numShards := runtime.GOMAXPROCS(0) / 2
 			if numShards < 1 {
 				numShards = 1
@@ -81,7 +81,7 @@ func newOperator(expr parser.Expr, storage storage.Queryable, mint time.Time, ma
 			for i := 0; i < numShards; i++ {
 				operator := exchange.NewConcurrent(
 					exchange.NewCancellable(
-						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, e, call, mint, maxt, stepsBatch, step, t.Range, i, numShards),
+						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, e, call, mint, maxt, stepsBatch, step, t.Range, vs.OriginalOffset, i, numShards),
 					), 2)
 				operators = append(operators, operator)
 			}
