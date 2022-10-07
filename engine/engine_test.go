@@ -23,6 +23,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	start := time.Unix(0, 0)
 	end := time.Unix(240, 0)
 	step := time.Second * 30
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0 so we also enable them.
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
@@ -675,6 +677,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 
 func TestInstantQuery(t *testing.T) {
 	queryTime := time.Unix(50, 0)
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0 so we also enable them.
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
