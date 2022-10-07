@@ -24,6 +24,10 @@ type unaryNegation struct {
 	workers    worker.Group
 }
 
+func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
+	return "[*unaryNegation]", []model.VectorOperator{u.next}
+}
+
 func NewUnaryNegation(
 	next model.VectorOperator,
 	stepsBatch int,
