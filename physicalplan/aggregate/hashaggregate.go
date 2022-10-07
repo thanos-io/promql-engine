@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/efficientgo/core/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 	"github.com/thanos-community/promql-engine/worker"
@@ -50,6 +51,10 @@ func NewHashAggregate(
 	if err != nil {
 		return nil, err
 	}
+
+	// Grouping labels need to be sorted in order for metric hashing to work.
+	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
+	slices.Sort(labels)
 	a := &aggregate{
 		next:           next,
 		vectorPool:     points,

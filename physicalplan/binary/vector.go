@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"golang.org/x/exp/slices"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
@@ -19,11 +20,12 @@ type vectorOperator struct {
 	pool *model.VectorPool
 	once sync.Once
 
-	lhs       model.VectorOperator
-	rhs       model.VectorOperator
-	matching  *parser.VectorMatching
-	operation operation
-	opName    string
+	lhs            model.VectorOperator
+	rhs            model.VectorOperator
+	matching       *parser.VectorMatching
+	groupingLabels []string
+	operation      operation
+	opName         string
 
 	// series contains the output series of the operator
 	series []labels.Labels
@@ -46,13 +48,21 @@ func NewVectorOperator(
 	if err != nil {
 		return nil, err
 	}
+
+	// Make a copy of MatchingLabels to avoid potential side-effects
+	// in some downstream operation.
+	groupings := make([]string, len(matching.MatchingLabels))
+	copy(groupings, matching.MatchingLabels)
+	slices.Sort(groupings)
+
 	return &vectorOperator{
-		pool:      pool,
-		lhs:       lhs,
-		rhs:       rhs,
-		matching:  matching,
-		operation: op,
-		opName:    parser.ItemTypeStr[operation],
+		pool:           pool,
+		lhs:            lhs,
+		rhs:            rhs,
+		matching:       matching,
+		groupingLabels: groupings,
+		operation:      op,
+		opName:         parser.ItemTypeStr[operation],
 	}, nil
 }
 
@@ -172,7 +182,7 @@ func (o *vectorOperator) hashSeries(series []labels.Labels, keepLabels bool, buf
 	hashes := make(map[uint64][]model.Series)
 	inputIndex := make(map[uint64][]uint64)
 	for i, s := range series {
-		sig, lbls := signature(s, !o.matching.On, o.matching.MatchingLabels, keepLabels, buf)
+		sig, lbls := signature(s, !o.matching.On, o.groupingLabels, keepLabels, buf)
 		if _, ok := hashes[sig]; !ok {
 			hashes[sig] = make([]model.Series, 0, 1)
 			inputIndex[sig] = make([]uint64, 0, 1)
