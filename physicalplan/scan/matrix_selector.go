@@ -136,7 +136,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			mint := maxt - o.selectRange
 
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
-			result := o.call(series.labels, rangePoints, time.UnixMilli(seriesTs), time.Duration(o.selectRange)*time.Millisecond)
+			result := o.call(series.labels, rangePoints, seriesTs, o.selectRange)
 			if result.Point != InvalidSample.Point {
 				vectors[currStep].T = result.T
 				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
