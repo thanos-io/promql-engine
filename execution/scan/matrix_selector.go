@@ -13,10 +13,11 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
+	"github.com/thanos-community/promql-engine/execution/parse"
 	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
 )
@@ -29,9 +30,8 @@ type matrixScanner struct {
 }
 
 type matrixSelector struct {
-	funcExpr *parser.Call
-	call     FunctionCall
 	storage  engstore.SeriesSelector
+	call     function.FunctionCall
 	scanners []matrixScanner
 	series   []labels.Labels
 	once     sync.Once
@@ -54,8 +54,7 @@ type matrixSelector struct {
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
-	funcExpr *parser.Call,
-	call FunctionCall,
+	call function.FunctionCall,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	shard, numShard int,
@@ -64,7 +63,6 @@ func NewMatrixSelector(
 	return &matrixSelector{
 		storage:    selector,
 		call:       call,
-		funcExpr:   funcExpr,
 		vectorPool: pool,
 
 		numSteps: opts.NumSteps(),
@@ -83,9 +81,6 @@ func NewMatrixSelector(
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 	r := time.Duration(o.selectRange) * time.Millisecond
-	if o.call != nil {
-		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.Matchers(), r, o.shard, o.numShards), nil
-	}
 	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
 }
 
@@ -123,14 +118,31 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
-
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
-			result := o.call(series.labels, rangePoints, seriesTs, o.selectRange)
-			if result.Point != InvalidSample.Point {
-				vectors[currStep].T = result.T
-				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
-				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
+
+			if o.call != nil {
+				if len(vectors) <= currStep {
+					vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
+				}
+
+				// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors via injectable.
+				result := o.call(function.FunctionArgs{
+					Labels:      series.labels,
+					Points:      rangePoints,
+					StepTime:    seriesTs,
+					SelectRange: o.selectRange,
+				})
+
+				if result.Point != function.InvalidSample.Point {
+					vectors[currStep].T = result.T
+					vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
+					vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
+				}
+			} else {
+				// TODO(saswatamcode): Range vector result might need new operator.
+				return nil, parse.ErrNotImplemented
 			}
+
 			o.scanners[i].previousPoints = rangePoints
 
 			// Only buffer stepRange milliseconds from the second step on.
@@ -166,9 +178,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		o.series = make([]labels.Labels, len(series))
 		for i, s := range series {
 			lbls := s.Labels()
-			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls = dropMetricName(lbls)
-			}
 			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{

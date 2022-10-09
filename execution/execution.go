@@ -30,6 +30,7 @@ import (
 	"github.com/thanos-community/promql-engine/execution/aggregate"
 	"github.com/thanos-community/promql-engine/execution/binary"
 	"github.com/thanos-community/promql-engine/execution/exchange"
+	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
 	"github.com/thanos-community/promql-engine/execution/scan"
@@ -57,7 +58,7 @@ func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step
 }
 
 func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options) (*exchange.CancellableOperator, error) {
-	operator, err := newOperator(expr, selectorPool, opts)
+	operator, err := newOperator(expr, selectorPool, opts, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -65,7 +66,7 @@ func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPoo
 	return exchange.NewCancellable(operator), nil
 }
 
-func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, call function.FunctionCall) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
@@ -80,51 +81,102 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		selector := storage.GetFilteredSelector(start, end, e.LabelMatchers, e.Filters)
 		return newShardedVectorSelector(selector, opts, e.Offset)
 
+	case *parser.MatrixSelector:
+		vs, filters, err := unpackVectorSelector(e)
+		if err != nil {
+			return nil, err
+		}
+
+		start, end := getTimeRangesForVectorSelector(vs, opts, e.Range)
+		filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
+
+		numShards := runtime.GOMAXPROCS(0) / 2
+		if numShards < 1 {
+			numShards = 1
+		}
+
+		operators := make([]model.VectorOperator, 0, numShards)
+		for i := 0; i < numShards; i++ {
+			operator := exchange.NewConcurrent(
+				exchange.NewCancellable(
+					scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, opts, e.Range, vs.Offset, i, numShards),
+				), 2)
+			operators = append(operators, operator)
+		}
+
+		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+
 	case *parser.Call:
-		if len(e.Args) != 1 {
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		// We can classify PromQL functions into the following categories,
+		// - Single vector input functions (majority).
+		// - Single matrix input functions (majority).
+		// - Vector with scalar input functions.
+		// - Matrix with scalar input functions. TODO(saswatamcode)
+		// - String based operations on vectors (only label_replace()). TODO(saswatamcode)
+		// - No inputs (only pi() and time()). TODO(saswatamcode)
+		// - Only scalar input (only vector()).
+		// - Variadics (all time based functions like month() + round() and label_join()). TODO(saswatamcode)
+
+		// Based on the category we can create an apt query plan.
+		var call function.FunctionCall
+		var err error
+		if e.Func.Variadic == 0 {
+			// Default nextIndex is zero if no arg is ValueTypeVector or ValueTypeMatrix.
+			nextIndex := 0
+			for i := range e.Args {
+				if e.Args[i].Type() == parser.ValueTypeMatrix || e.Args[i].Type() == parser.ValueTypeVector {
+					nextIndex = i
+				}
+			}
+
+			// For vector or scalar functions we create operators for each and pass it to NewFunctionSelector.
+			// But for matrix we simply inject the function call to AST sub-tree.
+			switch e.Args[nextIndex].Type() {
+			case parser.ValueTypeVector, parser.ValueTypeScalar:
+				call, err = function.NewFunctionCall(e.Func)
+				if err != nil {
+					return nil, err
+				}
+
+				next, err := newCancellableOperator(e.Args[nextIndex], storage, opts)
+				if err != nil {
+					return nil, err
+				}
+
+				if len(e.Args) > 1 {
+					var scalarArgs []model.VectorOperator
+					var arg model.VectorOperator
+					for i := range e.Args {
+						if i != nextIndex {
+							arg, err = newCancellableOperator(e.Args[i], storage, opts)
+							if err != nil {
+								return nil, err
+							}
+							scalarArgs = append(scalarArgs, arg)
+						}
+					}
+					return function.NewFunctionSelector(e, call, nextIndex, next, scalarArgs...), nil
+				}
+
+				return function.NewFunctionSelector(e, call, nextIndex, next), nil
+			case parser.ValueTypeMatrix:
+				call, err = function.NewFunctionCall(e.Func)
+				if err != nil {
+					return nil, err
+				}
+
+				next, err := newOperator(e.Args[nextIndex], storage, opts, call)
+				if err != nil {
+					return nil, err
+				}
+
+				return function.NewFunctionSelector(e, call, nextIndex, exchange.NewCancellable(next)), nil
+			default:
+				return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e.Args)
+			}
 		}
 
-		switch t := e.Args[0].(type) {
-		case *parser.MatrixSelector:
-			vs, filters, err := unpackVectorSelector(t)
-			if err != nil {
-				return nil, err
-			}
-			call, err := scan.NewFunctionCall(e.Func)
-			if err != nil {
-				return nil, err
-			}
-
-			start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
-			filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
-
-			numShards := runtime.GOMAXPROCS(0) / 2
-			if numShards < 1 {
-				numShards = 1
-			}
-
-			operators := make([]model.VectorOperator, 0, numShards)
-			for i := 0; i < numShards; i++ {
-				operator := exchange.NewConcurrent(
-					exchange.NewCancellable(
-						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, e, call, opts, t.Range, vs.Offset, i, numShards),
-					), 2)
-				operators = append(operators, operator)
-			}
-
-			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
-
-		case *parser.NumberLiteral:
-			l, err := scan.NewNumberLiteralSelectorWithFunc(model.NewVectorPool(stepsBatch), opts, t.Val, e.Func)
-			if err != nil {
-				return nil, err
-			}
-			return exchange.NewCancellable(l), nil
-		default:
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", t)
-		}
-
+		return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
 	case *parser.AggregateExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)
 		if err != nil {
@@ -146,6 +198,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case *parser.ParenExpr:
 		return newCancellableOperator(e.Expr, storage, opts)
+
+	case *parser.StringLiteral:
+		// TODO(saswatamcode): This requires separate model with strings.
+		return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e)
 
 	case *parser.UnaryExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)

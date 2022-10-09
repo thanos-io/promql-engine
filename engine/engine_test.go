@@ -786,6 +786,34 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	+ on() group_left()
 	sum(http_requests_total{ns="nginx"})`,
 		},
+		{
+			name: "clamp",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(http_requests_total, 5, 10)`,
+		},
+		{
+			name: "clamp_min",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp_min(http_requests_total, 10)`,
+		},
+		{
+			name: "complex query",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(1 - http_requests_total, 10 - 5, 10)`,
+		},
+		{
+			name: "func within func query",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1335,6 +1363,34 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
+		},
+		{
+			name: "clamp",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(http_requests_total, 5, 10)`,
+		},
+		{
+			name: "clamp_min",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp_min(http_requests_total, 10)`,
+		},
+		{
+			name: "complex query",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(1 - http_requests_total, 10 - 5, 10)`,
+		},
+		{
+			name: "func within func query",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
 		},
 	}
 
