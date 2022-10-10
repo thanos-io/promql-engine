@@ -36,8 +36,10 @@ func FuzzEngineQueryRangeMatrixFunctions(f *testing.F) {
 			http_requests_total{pod="nginx-2"} %2.f+%.2fx21`, initialVal1, inc1, initialVal2, inc2)
 
 			opts := promql.EngineOpts{
-				Timeout:    1 * time.Hour,
-				MaxSamples: 1e10,
+				Timeout:              1 * time.Hour,
+				MaxSamples:           1e10,
+				EnableNegativeOffset: true,
+				EnableAtModifier:     true,
 			}
 
 			test, err := promql.NewTest(t, load)

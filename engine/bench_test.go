@@ -152,16 +152,30 @@ func BenchmarkRangeQuery(b *testing.B) {
 			name:  "vector and scalar comparison",
 			query: `http_requests_total > 10`,
 		},
+		{
+			name:  "positive offset vector",
+			query: "http_requests_total offset 5m",
+		},
+		{
+			name:  "at modifier ",
+			query: "http_requests_total @ 600",
+		},
+		{
+			name:  "at modifier with positive offset vector",
+			query: "http_requests_total @ 600 offset 5m",
+		},
 	}
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			b.Run("old_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
-					Logger:     nil,
-					Reg:        nil,
-					MaxSamples: 50000000,
-					Timeout:    100 * time.Second,
+					Logger:               nil,
+					Reg:                  nil,
+					MaxSamples:           50000000,
+					Timeout:              100 * time.Second,
+					EnableAtModifier:     true,
+					EnableNegativeOffset: true,
 				}
 				engine := promql.NewEngine(opts)
 
@@ -248,10 +262,12 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.Run("current_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
-					Logger:     nil,
-					Reg:        nil,
-					MaxSamples: 50000000,
-					Timeout:    100 * time.Second,
+					Logger:               nil,
+					Reg:                  nil,
+					MaxSamples:           50000000,
+					Timeout:              100 * time.Second,
+					EnableAtModifier:     true,
+					EnableNegativeOffset: true,
 				}
 				engine := promql.NewEngine(opts)
 
