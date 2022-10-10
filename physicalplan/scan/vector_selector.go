@@ -10,71 +10,18 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+
+	"github.com/prometheus/prometheus/storage"
 )
 
 type vectorScanner struct {
 	labels    labels.Labels
 	signature uint64
-	samples   chunkenc.Iterator
-
-	// Fields used to track the previous seen sample.
-	// Used for supporting lookback delta.
-	pastFirstIteration bool
-	hasPrev            bool
-	prevTime           int64
-	prevValue          float64
-}
-
-func (it *vectorScanner) At() (int64, float64) { return it.samples.At() }
-
-func (it *vectorScanner) Seek(ts int64) bool {
-	for {
-		if it.pastFirstIteration {
-			t, v := it.samples.At()
-			it.prevTime = t
-			it.prevValue = v
-			it.hasPrev = true
-		}
-
-		if it.samples.Next() {
-			it.pastFirstIteration = true
-			t, _ := it.samples.At()
-			if t >= ts {
-				return true
-			}
-		} else {
-			return false
-		}
-	}
-}
-
-// TODO(fpetkovski): Add error handling and max samples limit.
-func (it *vectorScanner) selectPoint(ts, lookbackDelta, offset int64) (int64, float64, bool) {
-	refTime := ts - offset
-	var t int64
-	var v float64
-
-	ok := it.Seek(refTime)
-	if ok {
-		t, v = it.At()
-	}
-
-	if !ok || t > refTime {
-		t, v, ok = it.prevTime, it.prevValue, it.hasPrev
-		if !ok || t < refTime-lookbackDelta {
-			return 0, 0, false
-		}
-	}
-	if value.IsStaleNaN(v) {
-		return 0, 0, false
-	}
-	return t, v, true
+	samples   *storage.MemoizedSeriesIterator
 }
 
 type vectorSelector struct {
@@ -163,7 +110,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	ts := o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
 		var (
-			series   = &o.scanners[i]
+			series   = o.scanners[i]
 			seriesTs = ts
 		)
 
@@ -171,7 +118,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, ok := series.selectPoint(seriesTs, o.lookbackDelta, o.offset)
+			_, v, ok := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if ok {
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				vectors[currStep].Samples = append(vectors[currStep].Samples, v)
@@ -199,11 +146,34 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
 				signature: s.signature,
-				samples:   s.Iterator(),
+				samples:   storage.NewMemoizedIterator(s.Iterator(), o.lookbackDelta),
 			}
 			o.series[i] = s.Labels()
 		}
 		o.vectorPool.SetStepSize(len(series))
 	})
 	return err
+}
+
+// TODO(fpetkovski): Add error handling and max samples limit.
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, bool) {
+	refTime := ts - offset
+	var t int64
+	var v float64
+
+	ok := it.Seek(refTime)
+	if ok {
+		t, v = it.At()
+	}
+
+	if !ok || t > refTime {
+		t, v, ok = it.PeekPrev()
+		if !ok || t < refTime-lookbackDelta {
+			return 0, 0, false
+		}
+	}
+	if value.IsStaleNaN(v) {
+		return 0, 0, false
+	}
+	return t, v, true
 }

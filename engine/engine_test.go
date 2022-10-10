@@ -19,6 +19,52 @@ import (
 	"github.com/thanos-community/promql-engine/engine"
 )
 
+func TestVectorSelectorWithGaps(t *testing.T) {
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	series := storage.MockSeries(
+		[]int64{240, 270, 300, 600, 630, 660},
+		[]float64{1, 2, 3, 4, 5, 6},
+		[]string{labels.MetricName, "foo"},
+	)
+
+	query := "foo"
+	start := time.Unix(0, 0)
+	end := time.Unix(1000, 0)
+
+	newEngine := engine.New(engine.Opts{EngineOpts: opts})
+	q1, err := newEngine.NewRangeQuery(storageWithSeries(series), nil, query, start, end, 30*time.Second)
+	testutil.Ok(t, err)
+	newResult := q1.Exec(context.Background())
+	testutil.Ok(t, newResult.Err)
+
+	oldEngine := promql.NewEngine(opts)
+	q2, err := oldEngine.NewRangeQuery(storageWithSeries(series), nil, query, start, end, 30*time.Second)
+	testutil.Ok(t, err)
+
+	oldResult := q2.Exec(context.Background())
+	testutil.Ok(t, oldResult.Err)
+
+	testutil.Equals(t, oldResult, newResult)
+
+}
+
+func storageWithSeries(series storage.Series) *storage.MockQueryable {
+	seriesSet := &testSeriesSet{series: series}
+	return &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return seriesSet
+			},
+		},
+	}
+}
+
 func TestQueriesAgainstOldEngine(t *testing.T) {
 	start := time.Unix(0, 0)
 	end := time.Unix(240, 0)
