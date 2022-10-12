@@ -155,12 +155,12 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	batch := o.pool.GetVectorBatch()
 	for i, vector := range lhs {
-		step := o.table.execBinaryOperation(lhs[i], rhs[i])
-		batch = append(batch, step)
-		o.lhs.GetPool().PutStepVector(vector)
 		if i < len(rhs) {
+			step := o.table.execBinaryOperation(lhs[i], rhs[i])
+			batch = append(batch, step)
 			o.rhs.GetPool().PutStepVector(rhs[i])
 		}
+		o.lhs.GetPool().PutStepVector(vector)
 	}
 	o.lhs.GetPool().PutVectors(lhs)
 	o.rhs.GetPool().PutVectors(rhs)
