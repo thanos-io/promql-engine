@@ -688,6 +688,83 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			start: time.Unix(600, 0),
 			end:   time.Unix(6000, 0),
 		},
+		{
+			name: "@ vector time 10s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 10",
+		},
+		{
+			name: "@ vector time 120s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 120",
+		},
+		{
+			name: "@ vector time 360s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 360",
+		},
+		{
+			name: "@ vector start",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ start()",
+		},
+		{
+			name: "@ vector end",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ end()",
+		},
+		{
+			name: "count_over_time @ start",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "count_over_time(http_requests_total[5m] @ start())",
+		},
+		{
+			name: "sum_over_time @ end",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "sum_over_time(http_requests_total[5m] @ start())",
+		},
+		{
+			name: "avg_over_time @ 180s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "avg_over_time(http_requests_total[4m] @ 180)",
+		},
+		{
+			name: "@ vector 240s offset 2m",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 240 offset 2m",
+		},
+		{
+			name: "avg_over_time @ 120s offset -2m",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 120 offset -2m",
+		},
+		{
+			name: "sum_over_time @ 180s offset 2m",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
+		},
 	}
 
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
@@ -1160,6 +1237,83 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `count_over_time(http_requests_total[5m] offset -2m)`,
+		},
+		{
+			name: "@ vector time 10s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 10",
+		},
+		{
+			name: "@ vector time 120s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 120",
+		},
+		{
+			name: "@ vector time 360s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 360",
+		},
+		{
+			name: "@ vector start",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ start()",
+		},
+		{
+			name: "@ vector end",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ end()",
+		},
+		{
+			name: "count_over_time @ start",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "count_over_time(http_requests_total[5m] @ start())",
+		},
+		{
+			name: "sum_over_time @ end",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "sum_over_time(http_requests_total[5m] @ start())",
+		},
+		{
+			name: "avg_over_time @ 180s",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "avg_over_time(http_requests_total[4m] @ 180)",
+		},
+		{
+			name: "@ vector 240s offset 2m",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 240 offset 2m",
+		},
+		{
+			name: "avg_over_time @ 120s offset -2m",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "http_requests_total @ 120 offset -2m",
+		},
+		{
+			name: "sum_over_time @ 180s offset 2m",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 	}
 
