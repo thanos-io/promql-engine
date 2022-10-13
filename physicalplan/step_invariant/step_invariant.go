@@ -6,13 +6,13 @@ package step_invariant
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/query"
 )
 
 type stepInvariantOperator struct {
@@ -36,10 +36,9 @@ func NewStepInvariantOperator(
 	pool *model.VectorPool,
 	next model.VectorOperator,
 	expr parser.Expr,
-	mint, maxt time.Time,
-	step time.Duration,
+	opts *query.Options,
 ) (model.VectorOperator, error) {
-	interval := step.Milliseconds()
+	interval := opts.Step.Milliseconds()
 	// We set interval to be at least 1.
 	if interval == 0 {
 		interval = 1
@@ -47,8 +46,8 @@ func NewStepInvariantOperator(
 	u := &stepInvariantOperator{
 		vectorPool:       pool,
 		next:             next,
-		mint:             mint.UnixMilli(),
-		maxt:             maxt.UnixMilli(),
+		mint:             opts.Start.UnixMilli(),
+		maxt:             opts.End.UnixMilli(),
 		step:             interval,
 		duplicateResults: true,
 	}
