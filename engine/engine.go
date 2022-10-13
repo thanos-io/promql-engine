@@ -12,14 +12,16 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/thanos-community/promql-engine/physicalplan"
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
-
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+
+	"github.com/thanos-community/promql-engine/physicalplan"
+	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
 type engine struct {
@@ -62,12 +64,18 @@ func New(opts Opts) v1.QueryEngine {
 	return &compatibilityEngine{
 		core: core,
 		prom: promql.NewEngine(opts.EngineOpts),
+		fallbacks: promauto.With(opts.Reg).NewCounter(
+			prometheus.CounterOpts{
+				Name: "thanos_engine_fallbacks_total",
+				Help: "Number of fallbacks to the Prometheus query engine.",
+			}),
 	}
 }
 
 type compatibilityEngine struct {
-	core *engine
-	prom *promql.Engine
+	core      *engine
+	prom      *promql.Engine
+	fallbacks prometheus.Counter
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -78,6 +86,7 @@ func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
 func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	ret, err := e.core.NewInstantQuery(q, opts, qs, ts)
 	if triggerFallback(err) {
+		e.fallbacks.Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
 	}
 
@@ -87,6 +96,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	ret, err := e.core.NewRangeQuery(q, opts, qs, start, end, interval)
 	if triggerFallback(err) {
+		e.fallbacks.Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, interval)
 	}
 
