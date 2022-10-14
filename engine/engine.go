@@ -64,18 +64,19 @@ func New(opts Opts) v1.QueryEngine {
 	return &compatibilityEngine{
 		core: core,
 		prom: promql.NewEngine(opts.EngineOpts),
-		fallbacks: promauto.With(opts.Reg).NewCounter(
+		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "thanos_engine_fallbacks_total",
+				Name: "thanos_engine_queries_total",
 				Help: "Number of fallbacks to the Prometheus query engine.",
-			}),
+			}, []string{"fallback"},
+		),
 	}
 }
 
 type compatibilityEngine struct {
-	core      *engine
-	prom      *promql.Engine
-	fallbacks prometheus.Counter
+	core    *engine
+	prom    *promql.Engine
+	queries *prometheus.CounterVec
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -86,9 +87,10 @@ func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
 func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	ret, err := e.core.NewInstantQuery(q, opts, qs, ts)
 	if triggerFallback(err) {
-		e.fallbacks.Inc()
+		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
 	}
+	e.queries.WithLabelValues("false").Inc()
 
 	return ret, err
 }
@@ -96,9 +98,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	ret, err := e.core.NewRangeQuery(q, opts, qs, start, end, interval)
 	if triggerFallback(err) {
-		e.fallbacks.Inc()
+		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, interval)
 	}
+	e.queries.WithLabelValues("false").Inc()
 
 	return ret, err
 }
