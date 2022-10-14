@@ -67,7 +67,7 @@ func New(opts Opts) v1.QueryEngine {
 		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "thanos_engine_queries_total",
-				Help: "Number of fallbacks to the Prometheus query engine.",
+				Help: "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
 	}
