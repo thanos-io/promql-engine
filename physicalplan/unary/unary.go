@@ -20,8 +20,7 @@ type unaryNegation struct {
 
 	series []labels.Labels
 
-	stepsBatch int
-	workers    worker.Group
+	workers worker.Group
 }
 
 func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
@@ -33,8 +32,7 @@ func NewUnaryNegation(
 	stepsBatch int,
 ) (model.VectorOperator, error) {
 	u := &unaryNegation{
-		next:       next,
-		stepsBatch: stepsBatch,
+		next: next,
 	}
 
 	u.workers = worker.NewGroup(stepsBatch, u.workerTask)

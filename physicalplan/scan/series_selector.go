@@ -6,6 +6,7 @@ package scan
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
@@ -22,8 +23,7 @@ type seriesSelector struct {
 	maxt     int64
 	matchers []*labels.Matcher
 
-	once sync.Once
-
+	once   sync.Once
 	series []signedSeries
 }
 
@@ -71,4 +71,11 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a.Milliseconds() >= b.Milliseconds() {
+		return a
+	}
+	return b
 }
