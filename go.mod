@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/efficientgo/core v1.0.0-rc.0
 	github.com/go-kit/log v0.2.1
+	github.com/prometheus/client_golang v1.13.0
 	github.com/prometheus/prometheus v0.38.1-0.20221003141934-f7a7b18cdcca
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 	gonum.org/v1/gonum v0.12.0
@@ -37,7 +38,6 @@ require (
 	github.com/oklog/ulid v1.3.1 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
-	github.com/prometheus/client_golang v1.13.0 // indirect
 	github.com/prometheus/client_model v0.2.0 // indirect
 	github.com/prometheus/common v0.37.0 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
