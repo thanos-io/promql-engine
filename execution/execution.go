@@ -118,65 +118,26 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// - Variadics (all time based functions like month() + round() and label_join()). TODO(saswatamcode)
 
 		// Based on the category we can create an apt query plan.
-		var call function.FunctionCall
-		var err error
-		if e.Func.Variadic == 0 {
-			// Default nextIndex is zero if no arg is ValueTypeVector or ValueTypeMatrix.
-			nextIndex := 0
-			for i := range e.Args {
-				if e.Args[i].Type() == parser.ValueTypeMatrix || e.Args[i].Type() == parser.ValueTypeVector {
-					nextIndex = i
-				}
-			}
-
-			// For vector or scalar functions we create operators for each and pass it to NewFunctionSelector.
-			// But for matrix we simply inject the function call to AST sub-tree.
-			switch e.Args[nextIndex].Type() {
-			case parser.ValueTypeVector, parser.ValueTypeScalar:
-				call, err = function.NewFunctionCall(e.Func)
-				if err != nil {
-					return nil, err
-				}
-
-				next, err := newCancellableOperator(e.Args[nextIndex], storage, opts)
-				if err != nil {
-					return nil, err
-				}
-
-				if len(e.Args) > 1 {
-					var scalarArgs []model.VectorOperator
-					var arg model.VectorOperator
-					for i := range e.Args {
-						if i != nextIndex {
-							arg, err = newCancellableOperator(e.Args[i], storage, opts)
-							if err != nil {
-								return nil, err
-							}
-							scalarArgs = append(scalarArgs, arg)
-						}
-					}
-					return function.NewFunctionSelector(e, call, nextIndex, next, scalarArgs...), nil
-				}
-
-				return function.NewFunctionSelector(e, call, nextIndex, next), nil
-			case parser.ValueTypeMatrix:
-				call, err = function.NewFunctionCall(e.Func)
-				if err != nil {
-					return nil, err
-				}
-
-				next, err := newOperator(e.Args[nextIndex], storage, opts, call)
-				if err != nil {
-					return nil, err
-				}
-
-				return function.NewFunctionSelector(e, call, nextIndex, exchange.NewCancellable(next)), nil
-			default:
-				return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e.Args)
-			}
+		call, err := function.NewFunctionCall(e.Func)
+		if err != nil {
+			return nil, err
 		}
 
-		return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
+		if e.Func.Variadic != 0 {
+			return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
+		}
+
+		nextOperators := make([]model.VectorOperator, len(e.Args))
+		for i := range e.Args {
+			next, err := newOperator(e.Args[i], storage, opts, call)
+			if err != nil {
+				return nil, err
+			}
+			nextOperators[i] = exchange.NewCancellable(next)
+		}
+
+		return function.NewFunctionSelector(e, call, nextOperators), nil
+
 	case *parser.AggregateExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)
 		if err != nil {

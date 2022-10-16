@@ -166,6 +166,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 			name:  "at modifier with positive offset vector",
 			query: "http_requests_total @ 600 offset 5m",
 		},
+		{
+			name:  "func within func query",
+			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
 	}
 
 	for _, tc := range cases {

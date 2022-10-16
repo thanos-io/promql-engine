@@ -21,26 +21,32 @@ import (
 
 // functionSelector returns []model.StepVector after processing input with desired function.
 type functionSelector struct {
-	funcExpr   *parser.Call
-	series     []labels.Labels
-	once       sync.Once
-	next       model.VectorOperator
-	nextFunc   func(ctx context.Context) ([]model.StepVector, error)
-	scalarArgs []model.VectorOperator
+	funcExpr  *parser.Call
+	series    []labels.Labels
+	once      sync.Once
+	nextIndex int
+	nextFunc  func(ctx context.Context) ([]model.StepVector, error)
+	nextOps   []model.VectorOperator
 
 	call FunctionCall
 }
 
-func NewFunctionSelector(funcExpr *parser.Call, call FunctionCall, nextIndex int, next model.VectorOperator, scalarArgs ...model.VectorOperator) model.VectorOperator {
+func NewFunctionSelector(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator) model.VectorOperator {
 	f := &functionSelector{
-		next:       next,
-		scalarArgs: scalarArgs,
-		call:       call,
-		funcExpr:   funcExpr,
+		nextOps:   nextOps,
+		call:      call,
+		funcExpr:  funcExpr,
+		nextIndex: 0,
+	}
+
+	for i := range funcExpr.Args {
+		if funcExpr.Args[i].Type() == parser.ValueTypeMatrix || funcExpr.Args[i].Type() == parser.ValueTypeVector {
+			f.nextIndex = i
+		}
 	}
 
 	// Decide based on next type.
-	switch funcExpr.Args[nextIndex].Type() {
+	switch funcExpr.Args[f.nextIndex].Type() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
 		f.nextFunc = f.instantVectorOrScalarNext
 	case parser.ValueTypeMatrix:
@@ -53,9 +59,7 @@ func NewFunctionSelector(funcExpr *parser.Call, call FunctionCall, nextIndex int
 }
 
 func (o *functionSelector) Explain() (me string, next []model.VectorOperator) {
-	ops := []model.VectorOperator{o.next}
-	ops = append(ops, o.scalarArgs...)
-	return fmt.Sprintf("[*functionSelector] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), ops
+	return fmt.Sprintf("[*functionSelector] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
 }
 
 func (o *functionSelector) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -67,7 +71,7 @@ func (o *functionSelector) Series(ctx context.Context) ([]labels.Labels, error) 
 }
 
 func (o *functionSelector) GetPool() *model.VectorPool {
-	return o.next.GetPool()
+	return o.nextOps[o.nextIndex].GetPool()
 }
 
 func (o *functionSelector) Next(ctx context.Context) ([]model.StepVector, error) {
@@ -85,7 +89,7 @@ func (o *functionSelector) Next(ctx context.Context) ([]model.StepVector, error)
 
 // Process single/multi-arg instant vector and scalar input functions.
 func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]model.StepVector, error) {
-	input, err := o.next.Next(ctx)
+	input, err := o.nextOps[o.nextIndex].Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -94,50 +98,58 @@ func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]mod
 		return nil, nil
 	}
 
-	scalarInput := make([][]model.StepVector, len(o.scalarArgs))
-	if len(o.scalarArgs) != 0 {
-		for i := range o.scalarArgs {
-			scalarInput[i], err = o.scalarArgs[i].Next(ctx)
+	// Call next on all scalar inputs.
+	scalarInput := make([][]model.StepVector, len(o.nextOps)-1)
+	if len(scalarInput) != 0 {
+		s := 0
+		for i := range o.nextOps {
+			if i == o.nextIndex {
+				continue
+			}
+
+			si, err := o.nextOps[i].Next(ctx)
 			if err != nil {
 				return nil, err
 			}
+
+			scalarInput[s] = si
+			defer o.nextOps[i].GetPool().PutVectors(scalarInput[s])
+			s++
 		}
 	}
 
-	var scalarPoints []float64
-	if len(o.funcExpr.Func.ArgTypes) > 1 && len(scalarInput) > 0 {
-		for j := range scalarInput {
-			scalarPoints = append(scalarPoints, scalarInput[j][0].Samples[0])
-		}
-	}
-
-	out := o.next.GetPool().GetVectorBatch()
-	for _, vector := range input {
-		step := o.next.GetPool().GetStepVector(vector.T)
+	scalarPoints := make([]float64, len(scalarInput))
+	out := o.nextOps[o.nextIndex].GetPool().GetVectorBatch()
+	for v, vector := range input {
 		for i := range vector.Samples {
-			// Call function by separately passing major input and scalar constants.
+			// Scalar expressions can select from storage as well.
+			if len(o.funcExpr.Func.ArgTypes) > 1 && len(scalarInput) > 0 {
+				for l := range scalarInput {
+					scalarPoints[l] = scalarInput[l][v].Samples[0]
+				}
+			}
+
+			// Call function by separately passing major input and scalars.
 			result := o.call(FunctionArgs{
 				Labels:       o.series[0],
 				Points:       []promql.Point{{V: vector.Samples[i]}},
-				StepTime:     step.T,
+				StepTime:     vector.T,
 				ScalarPoints: scalarPoints,
 			})
 
-			step.Samples = append(step.Samples, result.V)
-			step.SampleIDs = append(step.SampleIDs, vector.SampleIDs[i])
+			vector.Samples[i] = result.V
 		}
-
-		out = append(out, step)
-		o.next.GetPool().PutStepVector(vector)
+		out = append(out, vector)
+		o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
 	}
-	o.next.GetPool().PutVectors(input)
+	o.nextOps[o.nextIndex].GetPool().PutVectors(input)
 
 	return out, nil
 }
 
 // Process single arg range vector input functions.
 func (o *functionSelector) rangeVectorNext(ctx context.Context) ([]model.StepVector, error) {
-	input, err := o.next.Next(ctx)
+	input, err := o.nextOps[o.nextIndex].Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -160,11 +172,11 @@ func (o *functionSelector) loadSeries(ctx context.Context) error {
 	o.once.Do(func() {
 		if o.funcExpr.Func.Name == "vector" {
 			o.series = []labels.Labels{labels.New()}
-			o.next.GetPool().SetStepSize(len(o.series))
+			o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
 			return
 		}
 
-		series, loadErr := o.next.Series(ctx)
+		series, loadErr := o.nextOps[o.nextIndex].Series(ctx)
 		if loadErr != nil {
 			err = loadErr
 		}
@@ -180,7 +192,7 @@ func (o *functionSelector) loadSeries(ctx context.Context) error {
 			o.series[i] = lbls
 		}
 
-		o.next.GetPool().SetStepSize(len(o.series))
+		o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
 	})
 
 	return err
@@ -767,5 +779,24 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 }
 
 func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels(nil)
+	if len(l) == 0 {
+		return l
+	}
+
+	if len(l) == 1 {
+		if l[0].Name == labels.MetricName {
+			return labels.EmptyLabels()
+		}
+		return l
+	}
+
+	c := 0
+	for i := range l {
+		if l[i].Name == labels.MetricName {
+			c = i
+			break
+		}
+	}
+
+	return append(l[:c], l[c+1:]...)
 }
