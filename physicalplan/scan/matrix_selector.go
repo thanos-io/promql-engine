@@ -44,7 +44,6 @@ type matrixSelector struct {
 	selectRange int64
 	offset      int64
 	currentStep int64
-	stepsBatch  int
 
 	shard     int
 	numShards int
