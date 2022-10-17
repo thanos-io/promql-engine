@@ -212,13 +212,6 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Queryable, op
 	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, scalarSide)
 }
 
-func maxDuration(a, b time.Duration) time.Duration {
-	if a.Milliseconds() >= b.Milliseconds() {
-		return a
-	}
-	return b
-}
-
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
 func getTimeRangesForVectorSelector(n *parser.VectorSelector, mint, maxt time.Time, lookbackDelta, evalRange time.Duration) (int64, int64) {
 	start := mint.UnixMilli()

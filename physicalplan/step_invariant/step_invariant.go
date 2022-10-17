@@ -81,7 +81,7 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 	if err != nil {
 		return nil, err
 	}
-	if in == nil || len(in) == 0 || len(in[0].Samples) == 0 {
+	if len(in) == 0 || len(in[0].Samples) == 0 {
 		return nil, nil
 	}
 	if !u.duplicateResults {
