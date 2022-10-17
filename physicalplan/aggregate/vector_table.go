@@ -79,8 +79,8 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 	case "min":
 		return floats.Min, nil
 	case "count":
-		return func(float64s []float64) float64 {
-			return float64(len(float64s))
+		return func(in []float64) float64 {
+			return float64(len(in))
 		}, nil
 	case "avg":
 		return func(in []float64) float64 {

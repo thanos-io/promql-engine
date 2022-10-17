@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package unary
 
 import (
@@ -17,8 +20,11 @@ type unaryNegation struct {
 
 	series []labels.Labels
 
-	stepsBatch int
-	workers    worker.Group
+	workers worker.Group
+}
+
+func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
+	return "[*unaryNegation]", []model.VectorOperator{u.next}
 }
 
 func NewUnaryNegation(
@@ -26,8 +32,7 @@ func NewUnaryNegation(
 	stepsBatch int,
 ) (model.VectorOperator, error) {
 	u := &unaryNegation{
-		next:       next,
-		stepsBatch: stepsBatch,
+		next: next,
 	}
 
 	u.workers = worker.NewGroup(stepsBatch, u.workerTask)
@@ -50,7 +55,7 @@ func (u *unaryNegation) loadSeries(ctx context.Context) error {
 	}
 	u.series = make([]labels.Labels, len(vectorSeries))
 	for i := range vectorSeries {
-		lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels()
+		lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels(nil)
 		u.series[i] = lbls
 	}
 

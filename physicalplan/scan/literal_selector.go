@@ -5,11 +5,13 @@ package scan
 
 import (
 	"context"
-	"math"
+	"fmt"
 	"sync"
-	"time"
+
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -19,32 +21,51 @@ import (
 type numberLiteralSelector struct {
 	vectorPool *model.VectorPool
 
+	numSteps    int
 	mint        int64
 	maxt        int64
 	step        int64
 	currentStep int64
-	stepsBatch  int
 	series      []labels.Labels
 	once        sync.Once
 
-	val  float64
-	call FunctionCall
+	val      float64
+	call     FunctionCall
+	callName string
 }
 
-func NewNumberLiteralSelector(pool *model.VectorPool, mint, maxt time.Time, step time.Duration, stepsBatch int, val float64, call FunctionCall) model.VectorOperator {
+func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
 	return &numberLiteralSelector{
 		vectorPool:  pool,
-		mint:        mint.UnixMilli(),
-		maxt:        maxt.UnixMilli(),
-		step:        step.Milliseconds(),
-		currentStep: mint.UnixMilli(),
-		stepsBatch:  stepsBatch,
+		numSteps:    opts.NumSteps(),
+		mint:        opts.Start.UnixMilli(),
+		maxt:        opts.End.UnixMilli(),
+		step:        opts.Step.Milliseconds(),
+		currentStep: opts.Start.UnixMilli(),
 		val:         val,
-		call:        call,
 	}
 }
 
-func (o *numberLiteralSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func NewNumberLiteralSelectorWithFunc(pool *model.VectorPool, opts *query.Options, val float64, f *parser.Function) (model.VectorOperator, error) {
+	call, err := NewFunctionCall(f)
+	if err != nil {
+		return nil, err
+	}
+
+	selector := NewNumberLiteralSelector(pool, opts, val)
+	selector.call = call
+	selector.callName = f.Name
+	return selector, nil
+}
+
+func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
+	if o.call != nil {
+		return fmt.Sprintf("[*numberLiteralSelector] %v(%v)", o.callName, o.val), nil
+	}
+	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
+}
+
+func (o *numberLiteralSelector) Series(context.Context) ([]labels.Labels, error) {
 	o.loadSeries()
 	return o.series, nil
 }
@@ -53,40 +74,23 @@ func (o *numberLiteralSelector) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *numberLiteralSelector) Next(context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
 
 	o.loadSeries()
 
-	totalSteps := int64(1)
-	if o.step != 0 {
-		totalSteps = (o.maxt-o.mint)/o.step + 1
-	} else {
-		// For instant queries, set the step to a positive value
-		// so that the operator can terminate.
-		o.step = 1
-	}
-
 	vectors := o.vectorPool.GetVectorBatch()
-	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
 	ts := o.currentStep
-
-	for currStep := 0; currStep < numSteps && ts <= o.maxt; currStep++ {
+	for currStep := 0; currStep < o.numSteps && ts <= o.maxt; currStep++ {
 		if len(vectors) <= currStep {
 			vectors = append(vectors, o.vectorPool.GetStepVector(ts))
 		}
 
-		result := promql.Sample{
-			Point: promql.Point{
-				T: ts,
-				V: o.val,
-			},
-		}
-
+		result := promql.Sample{Point: promql.Point{T: ts, V: o.val}}
 		if o.call != nil {
-			result = o.call(o.series[0], []promql.Point{result.Point}, time.UnixMilli(ts))
+			result = o.call(o.series[0], []promql.Point{result.Point}, ts, 0)
 		}
 
 		vectors[currStep].T = result.T
@@ -96,7 +100,12 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		ts += o.step
 	}
 
-	o.currentStep += o.step * int64(numSteps)
+	// For instant queries, set the step to a positive value
+	// so that the operator can terminate.
+	if o.step == 0 {
+		o.step = 1
+	}
+	o.currentStep += o.step * int64(o.numSteps)
 
 	return vectors, nil
 }

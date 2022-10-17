@@ -5,10 +5,12 @@ package binary
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"golang.org/x/exp/slices"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 )
@@ -18,10 +20,12 @@ type vectorOperator struct {
 	pool *model.VectorPool
 	once sync.Once
 
-	lhs       model.VectorOperator
-	rhs       model.VectorOperator
-	matching  *parser.VectorMatching
-	operation operation
+	lhs            model.VectorOperator
+	rhs            model.VectorOperator
+	matching       *parser.VectorMatching
+	groupingLabels []string
+	operation      operation
+	opName         string
 
 	// series contains the output series of the operator
 	series []labels.Labels
@@ -40,17 +44,33 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	operation parser.ItemType,
 ) (model.VectorOperator, error) {
-	op, err := newOperation(operation)
+	op, err := newOperation(operation, true)
 	if err != nil {
 		return nil, err
 	}
+
+	// Make a copy of MatchingLabels to avoid potential side-effects
+	// in some downstream operation.
+	groupings := make([]string, len(matching.MatchingLabels))
+	copy(groupings, matching.MatchingLabels)
+	slices.Sort(groupings)
+
 	return &vectorOperator{
-		pool:      pool,
-		lhs:       lhs,
-		rhs:       rhs,
-		matching:  matching,
-		operation: op,
+		pool:           pool,
+		lhs:            lhs,
+		rhs:            rhs,
+		matching:       matching,
+		groupingLabels: groupings,
+		operation:      op,
+		opName:         parser.ItemTypeStr[operation],
 	}, nil
+}
+
+func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
+	if o.matching.On {
+		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", o.opName, o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+	}
+	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", o.opName, o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -64,7 +84,7 @@ func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 }
 
 func (o *vectorOperator) initOutputs(ctx context.Context) error {
-	// TODO(fpetkovski): execute in parallel
+	// TODO(fpetkovski): Execute in parallel.
 	highCardSide, err := o.lhs.Series(ctx)
 	if err != nil {
 		return err
@@ -135,12 +155,12 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	batch := o.pool.GetVectorBatch()
 	for i, vector := range lhs {
-		step := o.table.execBinaryOperation(lhs[i], rhs[i])
-		batch = append(batch, step)
-		o.lhs.GetPool().PutStepVector(vector)
 		if i < len(rhs) {
+			step := o.table.execBinaryOperation(lhs[i], rhs[i])
+			batch = append(batch, step)
 			o.rhs.GetPool().PutStepVector(rhs[i])
 		}
+		o.lhs.GetPool().PutStepVector(vector)
 	}
 	o.lhs.GetPool().PutVectors(lhs)
 	o.rhs.GetPool().PutVectors(rhs)
@@ -162,7 +182,7 @@ func (o *vectorOperator) hashSeries(series []labels.Labels, keepLabels bool, buf
 	hashes := make(map[uint64][]model.Series)
 	inputIndex := make(map[uint64][]uint64)
 	for i, s := range series {
-		sig, lbls := signature(s, !o.matching.On, o.matching.MatchingLabels, keepLabels, buf)
+		sig, lbls := signature(s, !o.matching.On, o.groupingLabels, keepLabels, buf)
 		if _, ok := hashes[sig]; !ok {
 			hashes[sig] = make([]model.Series, 0, 1)
 			inputIndex[sig] = make([]uint64, 0, 1)
@@ -236,18 +256,18 @@ func signature(metric labels.Labels, without bool, grouping []string, keepOrigin
 		if !keepOriginalLabels {
 			lb.Del(dropLabels...)
 		}
-		return key, lb.Labels()
+		return key, lb.Labels(nil)
 	}
 
 	if !keepOriginalLabels {
 		lb.Keep(grouping...)
 	}
 	if len(grouping) == 0 {
-		return 0, lb.Labels()
+		return 0, lb.Labels(nil)
 	}
 
 	key, _ := metric.HashForLabels(buf, grouping...)
-	return key, lb.Labels()
+	return key, lb.Labels(nil)
 }
 
 func buildOutputSeries(seriesID uint64, highCardSeries, lowCardSeries model.Series, includeLabels []string) model.Series {
@@ -255,7 +275,7 @@ func buildOutputSeries(seriesID uint64, highCardSeries, lowCardSeries model.Seri
 	if len(includeLabels) > 0 {
 		lowCardLabels := labels.NewBuilder(lowCardSeries.Metric).
 			Keep(includeLabels...).
-			Labels()
+			Labels(nil)
 		metric = append(metric, lowCardLabels...)
 	}
 	return model.Series{ID: seriesID, Metric: metric}

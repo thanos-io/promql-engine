@@ -5,7 +5,7 @@ package scan
 
 import (
 	"context"
-	"math"
+	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/query"
 )
 
 type matrixScanner struct {
@@ -29,19 +30,19 @@ type matrixScanner struct {
 type matrixSelector struct {
 	funcExpr *parser.Call
 	call     FunctionCall
-	selector *seriesSelector
+	storage  *seriesSelector
 	scanners []matrixScanner
 	series   []labels.Labels
 	once     sync.Once
 
-	matchers   []*labels.Matcher
-	hints      *storage.SelectHints
 	vectorPool *model.VectorPool
 
+	numSteps    int
 	mint        int64
 	maxt        int64
 	step        int64
 	selectRange int64
+	offset      int64
 	currentStep int64
 	stepsBatch  int
 
@@ -49,34 +50,43 @@ type matrixSelector struct {
 	numShards int
 }
 
+// NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector *seriesSelector,
 	funcExpr *parser.Call,
 	call FunctionCall,
-	mint, maxt time.Time,
-	stepsBatch int,
-	step, selectRange time.Duration,
+	opts *query.Options,
+	selectRange, offset time.Duration,
 	shard, numShard int,
 ) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
-		selector:   selector,
+		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
 		vectorPool: pool,
 
-		mint:       mint.UnixMilli(),
-		maxt:       maxt.UnixMilli(),
-		step:       step.Milliseconds(),
-		stepsBatch: stepsBatch,
+		numSteps: opts.NumSteps(),
+		mint:     opts.Start.UnixMilli(),
+		maxt:     opts.End.UnixMilli(),
+		step:     opts.Step.Milliseconds(),
 
 		selectRange: selectRange.Milliseconds(),
-		currentStep: mint.UnixMilli(),
+		offset:      offset.Milliseconds(),
+		currentStep: opts.Start.UnixMilli(),
 
 		shard:     shard,
 		numShards: numShard,
 	}
+}
+
+func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
+	r := time.Duration(o.selectRange) * time.Millisecond
+	if o.call != nil {
+		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.matchers, r, o.shard, o.numShards), nil
+	}
+	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.matchers, r, o.shard, o.numShards), nil
 }
 
 func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -99,17 +109,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	// Instant evaluation is executed as a range evaluation with one step.
-	totalSteps := int64(1)
-	if o.step != 0 {
-		totalSteps = (o.maxt-o.mint)/o.step + 1
-	} else {
-		// For instant queries, set the step to a positive value
-		// so that the operator can terminate.
-		o.step = 1
-	}
-	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
-
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
@@ -118,16 +117,16 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			seriesTs = ts
 		)
 
-		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
+		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			maxt := seriesTs
+			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
-			result := o.call(series.labels, rangePoints, time.UnixMilli(seriesTs))
-			if result.T >= 0 {
+			result := o.call(series.labels, rangePoints, seriesTs, o.selectRange)
+			if result.Point != InvalidSample.Point {
 				vectors[currStep].T = result.T
 				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
@@ -144,7 +143,12 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			seriesTs += o.step
 		}
 	}
-	o.currentStep += o.step * int64(numSteps)
+	// For instant queries, set the step to a positive value
+	// so that the operator can terminate.
+	if o.step == 0 {
+		o.step = 1
+	}
+	o.currentStep += o.step * int64(o.numSteps)
 
 	return vectors, nil
 }
@@ -152,7 +156,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
-		series, loadErr := o.selector.getSeries(ctx, o.shard, o.numShards)
+		series, loadErr := o.storage.getSeries(ctx, o.shard, o.numShards)
 		if loadErr != nil {
 			err = loadErr
 			return

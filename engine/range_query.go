@@ -6,7 +6,8 @@ package engine
 import (
 	"context"
 	"sort"
-	"sync"
+
+	"github.com/go-kit/log"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 
@@ -17,25 +18,34 @@ import (
 
 type rangeQuery struct {
 	cancel context.CancelFunc
-	once   sync.Once
 	plan   model.VectorOperator
+	logger log.Logger
+	expr   parser.Expr
 }
 
-func newRangeQuery(plan model.VectorOperator) promql.Query {
+func newRangeQuery(expr parser.Expr, logger log.Logger, plan model.VectorOperator) promql.Query {
 	return &rangeQuery{
-		plan: plan,
+		logger: logger,
+		plan:   plan,
+		expr:   expr,
 	}
 }
 
-func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
+func (q *rangeQuery) Exec(ctx context.Context) (ret *promql.Result) {
+	ret = &promql.Result{
+		Value: promql.Vector{},
+	}
+	defer recoverEngine(q.logger, q.expr, &ret.Err)
+
 	ctx, cancel := context.WithCancel(ctx)
 	q.cancel = cancel
 
+	// TODO(bwplotka): This feels weird. Why we have public Close method in the first place if we don't let user to use it.
 	defer q.Close()
 
 	resultSeries, err := q.plan.Series(ctx)
 	if err != nil {
-		return newErrResult(err)
+		return newErrResult(ret, err)
 	}
 
 	series := make([]promql.Series, len(resultSeries))
@@ -45,20 +55,20 @@ func (q *rangeQuery) Exec(ctx context.Context) *promql.Result {
 	}
 
 	if err := getAllSeries(ctx, q.plan, series); err != nil {
-		return newErrResult(err)
+		return newErrResult(ret, err)
 	}
 
 	result := make(promql.Matrix, 0, len(series))
 	for _, s := range series {
-		if len(s.Points) > 0 {
-			result = append(result, s)
+		if len(s.Points) == 0 {
+			continue
 		}
+		result = append(result, s)
 	}
 
 	sort.Sort(result)
-	return &promql.Result{
-		Value: result,
-	}
+	ret.Value = result
+	return ret
 }
 
 func getAllSeries(ctx context.Context, plan model.VectorOperator, series []promql.Series) error {
@@ -103,6 +113,12 @@ func (q *rangeQuery) Cancel() {
 	}
 }
 
-func newErrResult(err error) *promql.Result {
-	return &promql.Result{Err: err}
+func newErrResult(r *promql.Result, err error) *promql.Result {
+	if r == nil {
+		r = &promql.Result{}
+	}
+	if r.Err == nil && err != nil {
+		r.Err = err
+	}
+	return r
 }

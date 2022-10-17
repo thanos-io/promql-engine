@@ -5,11 +5,12 @@ package scan
 
 import (
 	"context"
-	"math"
+	"fmt"
 	"sync"
 	"time"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
@@ -31,33 +32,45 @@ type vectorSelector struct {
 	once       sync.Once
 	vectorPool *model.VectorPool
 
+	numSteps      int
 	mint          int64
 	maxt          int64
+	lookbackDelta int64
 	step          int64
 	currentStep   int64
-	stepsBatch    int
-	lookbackDelta int64
+	offset        int64
 
 	shard     int
 	numShards int
 }
 
-func NewVectorSelector(pool *model.VectorPool, storage *seriesSelector, mint, maxt time.Time, step, lookbackDelta time.Duration, stepsBatch, shard, numShards int) model.VectorOperator {
-	// TODO(fpetkovski): Add offset parameter.
+// NewVectorSelector creates operator which selects vector of series.
+func NewVectorSelector(
+	pool *model.VectorPool,
+	selector *seriesSelector,
+	queryOpts *query.Options,
+	offset time.Duration,
+	shard, numShards int,
+) model.VectorOperator {
 	return &vectorSelector{
-		storage:    storage,
+		storage:    selector,
 		vectorPool: pool,
 
-		mint:          mint.UnixMilli(),
-		maxt:          maxt.UnixMilli(),
-		step:          step.Milliseconds(),
-		currentStep:   mint.UnixMilli(),
-		stepsBatch:    stepsBatch,
-		lookbackDelta: lookbackDelta.Milliseconds(),
+		mint:          queryOpts.Start.UnixMilli(),
+		maxt:          queryOpts.End.UnixMilli(),
+		step:          queryOpts.Step.Milliseconds(),
+		currentStep:   queryOpts.Start.UnixMilli(),
+		lookbackDelta: queryOpts.LookbackDelta.Milliseconds(),
+		offset:        offset.Milliseconds(),
+		numSteps:      queryOpts.NumSteps(),
 
 		shard:     shard,
 		numShards: numShards,
 	}
+}
+
+func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.matchers, o.shard, o.numShards), nil
 }
 
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -80,17 +93,6 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	// Instant evaluation is executed as a range evaluation with one step.
-	totalSteps := int64(1)
-	if o.step != 0 {
-		totalSteps = (o.maxt-o.mint)/o.step + 1
-	} else {
-		// For instant queries, set the step to a positive value
-		// so that the operator can terminate.
-		o.step = 1
-	}
-	numSteps := int(math.Min(float64(o.stepsBatch), float64(totalSteps)))
-
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
@@ -99,11 +101,11 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			seriesTs = ts
 		)
 
-		for currStep := 0; currStep < numSteps && seriesTs <= o.maxt; currStep++ {
+		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, ok := selectPoint(series.samples, seriesTs, o.lookbackDelta)
+			_, v, ok := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if ok {
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				vectors[currStep].Samples = append(vectors[currStep].Samples, v)
@@ -111,7 +113,12 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			seriesTs += o.step
 		}
 	}
-	o.currentStep += o.step * int64(numSteps)
+	// For instant queries, set the step to a positive value
+	// so that the operator can terminate.
+	if o.step == 0 {
+		o.step = 1
+	}
+	o.currentStep += o.step * int64(o.numSteps)
 
 	return vectors, nil
 }
@@ -141,8 +148,8 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 }
 
 // TODO(fpetkovski): Add error handling and max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta int64) (int64, float64, bool) {
-	refTime := ts
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, bool) {
+	refTime := ts - offset
 	var t int64
 	var v float64
 

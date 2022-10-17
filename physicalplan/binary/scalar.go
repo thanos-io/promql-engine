@@ -5,12 +5,21 @@ package binary
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+)
+
+type ScalarSide int
+
+const (
+	ScalarSideBoth ScalarSide = iota
+	ScalarSideLeft
+	ScalarSideRight
 )
 
 // scalarOperator evaluates expressions where one operand is a scalarOperator.
@@ -23,17 +32,29 @@ type scalarOperator struct {
 	numberSelector model.VectorOperator
 	next           model.VectorOperator
 	getOperands    getOperandsFunc
+	operandValIdx  int
 	operation      operation
+	opName         string
 }
 
-func NewScalar(pool *model.VectorPool, next model.VectorOperator, numberSelector model.VectorOperator, op parser.ItemType, scalarSideLeft bool) (*scalarOperator, error) {
-	binaryOperation, err := newOperation(op)
+func NewScalar(
+	pool *model.VectorPool,
+	next model.VectorOperator,
+	numberSelector model.VectorOperator,
+	op parser.ItemType,
+	scalarSide ScalarSide,
+) (*scalarOperator, error) {
+	binaryOperation, err := newOperation(op, scalarSide != ScalarSideBoth)
 	if err != nil {
 		return nil, err
 	}
+	// operandValIdx 0 means to get lhs as the return value
+	// while 1 means to get rhs as the return value.
+	operandValIdx := 0
 	getOperands := getOperandsScalarRight
-	if scalarSideLeft {
+	if scalarSide == ScalarSideLeft {
 		getOperands = getOperandsScalarLeft
+		operandValIdx = 1
 	}
 
 	// Cache the result of the number selector since it
@@ -50,8 +71,14 @@ func NewScalar(pool *model.VectorPool, next model.VectorOperator, numberSelector
 		scalar:         scalar,
 		numberSelector: numberSelector,
 		operation:      binaryOperation,
+		opName:         parser.ItemTypeStr[op],
 		getOperands:    getOperands,
+		operandValIdx:  operandValIdx,
 	}, nil
+}
+
+func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*scalarOperator] %v %s", o.scalar, o.opName), []model.VectorOperator{o.next}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -80,10 +107,16 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	for _, vector := range in {
 		step := o.pool.GetStepVector(vector.T)
 		for i := range vector.Samples {
-			lhs, rhs := o.getOperands(vector, i, o.scalar)
-			val := o.operation(lhs, rhs)
+			operands := o.getOperands(vector, i, o.scalar)
+			val, keep := o.operation(operands, o.operandValIdx)
+			if !keep {
+				continue
+			}
 			step.Samples = append(step.Samples, val)
 			step.SampleIDs = append(step.SampleIDs, vector.SampleIDs[i])
+		}
+		if len(step.Samples) == 0 {
+			continue
 		}
 		out = append(out, step)
 		o.next.GetPool().PutStepVector(vector)
@@ -103,20 +136,22 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 	}
 	series := make([]labels.Labels, len(vectorSeries))
 	for i := range vectorSeries {
-		lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels()
-		series[i] = lbls
+		if vectorSeries[i] != nil {
+			lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels(nil)
+			series[i] = lbls
+		}
 	}
 
 	o.series = series
 	return nil
 }
 
-type getOperandsFunc func(v model.StepVector, i int, scalar float64) (float64, float64)
+type getOperandsFunc func(v model.StepVector, i int, scalar float64) [2]float64
 
-func getOperandsScalarLeft(v model.StepVector, i int, scalar float64) (float64, float64) {
-	return scalar, v.Samples[i]
+func getOperandsScalarLeft(v model.StepVector, i int, scalar float64) [2]float64 {
+	return [2]float64{scalar, v.Samples[i]}
 }
 
-func getOperandsScalarRight(v model.StepVector, i int, scalar float64) (float64, float64) {
-	return v.Samples[i], scalar
+func getOperandsScalarRight(v model.StepVector, i int, scalar float64) [2]float64 {
+	return [2]float64{v.Samples[i], scalar}
 }

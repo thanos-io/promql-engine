@@ -18,25 +18,21 @@ type signedSeries struct {
 }
 
 type seriesSelector struct {
-	storage     storage.Queryable
-	mint        int64
-	maxt        int64
-	selectRange int64
-	matchers    []*labels.Matcher
+	storage  storage.Queryable
+	mint     int64
+	maxt     int64
+	matchers []*labels.Matcher
 
-	once sync.Once
-
+	once   sync.Once
 	series []signedSeries
 }
 
-func NewSeriesFilter(storage storage.Queryable, mint, maxt time.Time, selectRange, lookbackDelta time.Duration, matchers []*labels.Matcher) *seriesSelector {
+func NewSeriesFilter(storage storage.Queryable, mint, maxt int64, matchers []*labels.Matcher) *seriesSelector {
 	return &seriesSelector{
-		storage: storage,
-
-		mint:        mint.UnixMilli() - lookbackDelta.Milliseconds(),
-		maxt:        maxt.UnixMilli(),
-		selectRange: selectRange.Milliseconds(),
-		matchers:    matchers,
+		storage:  storage,
+		mint:     mint,
+		maxt:     maxt,
+		matchers: matchers,
 	}
 }
 
@@ -75,4 +71,11 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a.Milliseconds() >= b.Milliseconds() {
+		return a
+	}
+	return b
 }

@@ -5,9 +5,11 @@ package aggregate
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
+	"golang.org/x/exp/slices"
 
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 	"github.com/thanos-community/promql-engine/worker"
@@ -22,7 +24,6 @@ import (
 type aggregate struct {
 	next model.VectorOperator
 
-	hashBuf    []byte
 	vectorPool *model.VectorPool
 
 	by          bool
@@ -33,37 +34,46 @@ type aggregate struct {
 	tables         []aggregateTable
 	series         []labels.Labels
 	newAccumulator newAccumulatorFunc
-
-	stepsBatch int
-	workers    worker.Group
+	stepsBatch     int
+	workers        worker.Group
 }
 
 func NewHashAggregate(
 	points *model.VectorPool,
 	next model.VectorOperator,
 	aggregation parser.ItemType,
+	param parser.Expr,
 	by bool,
 	labels []string,
 	stepsBatch int,
 ) (model.VectorOperator, error) {
-	newAccumulator, err := makeAccumulatorFunc(aggregation)
+	newAccumulator, err := makeAccumulatorFunc(aggregation, param)
 	if err != nil {
 		return nil, err
 	}
+
+	// Grouping labels need to be sorted in order for metric hashing to work.
+	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
+	slices.Sort(labels)
 	a := &aggregate{
-		next:       next,
-		vectorPool: points,
-
-		by:          by,
-		aggregation: aggregation,
-		labels:      labels,
-		stepsBatch:  stepsBatch,
-
+		next:           next,
+		vectorPool:     points,
+		by:             by,
+		aggregation:    aggregation,
+		labels:         labels,
+		stepsBatch:     stepsBatch,
 		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
 
 	return a, nil
+}
+
+func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
+	if a.by {
+		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
+	}
+	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
