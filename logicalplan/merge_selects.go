@@ -50,20 +50,22 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 		}
 
 		for _, l := range e.LabelMatchers {
-			if l.Name == labels.MetricName {
-				replacement, found := selectors.findReplacement(l.Value, e.LabelMatchers)
-				if found {
-					// All replacements are done on metrics only,
-					// so we can drop the explicit metric name selector.
-					filters := dropMetricName(e.LabelMatchers)
-					e.LabelMatchers = replacement
-					*node = &FilteredSelector{
-						Filters:        filters,
-						VectorSelector: e,
-					}
-					return
-				}
+			if l.Name != labels.MetricName {
+			  continue
 			}
+			replacement, found := selectors.findReplacement(l.Value, e.LabelMatchers)
+			if !found {
+			   continue
+   			}
+			// All replacements are done on metrics name only,
+			// so we can drop the explicit metric name selector.
+			filters := dropMetricName(e.LabelMatchers)
+			e.LabelMatchers = replacement
+			*node = &FilteredSelector{
+				Filters:        filters,
+				VectorSelector: e,
+			}
+			return
 		}
 	})
 }
