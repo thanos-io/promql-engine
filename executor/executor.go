@@ -43,8 +43,6 @@ import (
 const stepsBatch = 10
 
 // New creates new physical query execution plan for a given query expression.
-// TODO(bwplotka): Rename it? E.g. NewExecutor? It's not a theoretical plan that can be adjusted,
-// it's a direct code that will execute this plan encoded in passed Expr.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Start:         mint,

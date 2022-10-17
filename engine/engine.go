@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+
 	"github.com/thanos-community/promql-engine/executor"
 	"github.com/thanos-community/promql-engine/executor/model"
 	"github.com/thanos-community/promql-engine/executor/parse"
