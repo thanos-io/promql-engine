@@ -59,7 +59,16 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 			}
 			// All replacements are done on metrics name only,
 			// so we can drop the explicit metric name selector.
-			filters := dropMetricName(e.LabelMatchers)
+			filters := dropMatcher(labels.MetricName, e.LabelMatchers)
+
+			// Drop filters which are already present as matchers in the replacement selector.
+			for _, s := range replacement {
+				for _, f := range filters {
+					if s.Name == f.Name && s.Value == f.Value && s.Type == f.Type {
+						filters = dropMatcher(f.Name, filters)
+					}
+				}
+			}
 			e.LabelMatchers = replacement
 			*node = &FilteredSelector{
 				Filters:        filters,
@@ -70,9 +79,9 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 	})
 }
 
-func dropMetricName(originalMatchers []*labels.Matcher) []*labels.Matcher {
+func dropMatcher(matcherName string, originalMatchers []*labels.Matcher) []*labels.Matcher {
 	for i, l := range originalMatchers {
-		if l.Name == labels.MetricName {
+		if l.Name == matcherName {
 			originalMatchers = append(originalMatchers[:i], originalMatchers[i+1:]...)
 		}
 	}

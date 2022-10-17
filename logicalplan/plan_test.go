@@ -22,7 +22,7 @@ func TestDefaultOptimizers(t *testing.T) {
 		{
 			name:     "common selectors",
 			expr:     `sum(metric{a="b", c="d"}) / sum(metric{a="b"})`,
-			expected: `sum(filter([a="b" c="d"], metric{a="b"})) / sum(metric{a="b"})`,
+			expected: `sum(filter([c="d"], metric{a="b"})) / sum(metric{a="b"})`,
 		},
 		{
 			name:     "common selectors with regex",
@@ -36,8 +36,8 @@ func TestDefaultOptimizers(t *testing.T) {
 	sum(metric_2{a="b", c="d"}) / sum(metric_2{a="b"})
 `,
 			expected: `
-	sum(filter([a="b" c="d"], metric_1{a="b"})) / sum(metric_1{a="b"}) + 
-	sum(filter([a="b" c="d"], metric_2{a="b"})) / sum(metric_2{a="b"})`,
+	sum(filter([c="d"], metric_1{a="b"})) / sum(metric_1{a="b"}) +
+	sum(filter([c="d"], metric_2{a="b"})) / sum(metric_2{a="b"})`,
 		},
 		{
 			name:     "different selectors",
