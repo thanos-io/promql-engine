@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"gonum.org/v1/gonum/floats"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/executor/model"
 	"github.com/thanos-community/promql-engine/worker"
 )
 

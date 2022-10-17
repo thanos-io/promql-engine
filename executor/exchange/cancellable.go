@@ -8,7 +8,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/executor/model"
 )
 
 // TODO(bwplotka): Consider removing this and ensuring all operators check for context. It creates

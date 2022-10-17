@@ -40,12 +40,15 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	newEngine := engine.New(engine.Opts{EngineOpts: opts})
 	q1, err := newEngine.NewRangeQuery(storageWithSeries(series), nil, query, start, end, 30*time.Second)
 	testutil.Ok(t, err)
+	defer q1.Close()
+
 	newResult := q1.Exec(context.Background())
 	testutil.Ok(t, newResult.Err)
 
 	oldEngine := promql.NewEngine(opts)
 	q2, err := oldEngine.NewRangeQuery(storageWithSeries(series), nil, query, start, end, 30*time.Second)
 	testutil.Ok(t, err)
+	defer q2.Close()
 
 	oldResult := q2.Exec(context.Background())
 	testutil.Ok(t, oldResult.Err)
@@ -79,13 +82,12 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 
 	cases := []struct {
-		load     string
-		name     string
-		query    string
-		start    time.Time
-		end      time.Time
-		step     time.Duration
-		expected []promql.Vector
+		load  string
+		name  string
+		query string
+		start time.Time
+		end   time.Time
+		step  time.Duration
 	}{
 		{
 			name: "stddev_over_time",
@@ -808,25 +810,29 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					tc.step = step
 				}
 				for _, disableOptimizers := range disableOptimizerOpts {
-					for _, disableFallback := range []bool{false, true} {
-						t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-							newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DisableOptimizers: disableOptimizers})
-							q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-							testutil.Ok(t, err)
+					t.Run(fmt.Sprintf("disableOptimizers=%v", disableOptimizers), func(t *testing.T) {
+						for _, disableFallback := range []bool{false, true} {
+							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DisableOptimizers: disableOptimizers})
+								q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
+								testutil.Ok(t, err)
+								defer q1.Close()
 
-							newResult := q1.Exec(context.Background())
-							testutil.Ok(t, newResult.Err)
+								newResult := q1.Exec(context.Background())
+								testutil.Ok(t, newResult.Err)
 
-							oldEngine := promql.NewEngine(opts)
-							q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-							testutil.Ok(t, err)
+								oldEngine := promql.NewEngine(opts)
+								q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
+								testutil.Ok(t, err)
+								defer q2.Close()
 
-							oldResult := q2.Exec(context.Background())
-							testutil.Ok(t, oldResult.Err)
+								oldResult := q2.Exec(context.Background())
+								testutil.Ok(t, oldResult.Err)
 
-							testutil.Equals(t, oldResult, newResult)
-						})
-					}
+								testutil.Equals(t, oldResult, newResult)
+							})
+						}
+					})
 				}
 			})
 		}
@@ -845,10 +851,9 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load     string
-		name     string
-		query    string
-		expected []promql.Vector
+		load  string
+		name  string
+		query string
 	}{
 		{
 			name: "quantile by pod",
@@ -1352,12 +1357,15 @@ func TestInstantQuery(t *testing.T) {
 								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
 								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 								testutil.Ok(t, err)
+								defer q1.Close()
+
 								newResult := q1.Exec(context.Background())
 								testutil.Ok(t, newResult.Err)
 
 								oldEngine := promql.NewEngine(opts)
 								q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 								testutil.Ok(t, err)
+								defer q2.Close()
 
 								oldResult := q2.Exec(context.Background())
 								testutil.Ok(t, oldResult.Err)

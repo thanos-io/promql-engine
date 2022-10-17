@@ -11,10 +11,10 @@ import (
 	"github.com/efficientgo/core/errors"
 	"golang.org/x/exp/slices"
 
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
+	"github.com/thanos-community/promql-engine/executor/parse"
 	"github.com/thanos-community/promql-engine/worker"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
+	"github.com/thanos-community/promql-engine/executor/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 

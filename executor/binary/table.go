@@ -8,8 +8,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
+	"github.com/thanos-community/promql-engine/executor/model"
+	"github.com/thanos-community/promql-engine/executor/parse"
 )
 
 type sample struct {

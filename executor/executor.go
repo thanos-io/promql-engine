@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package physicalplan
+package executor
 
 import (
 	"runtime"
@@ -27,22 +27,24 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/thanos-community/promql-engine/executor/aggregate"
+	"github.com/thanos-community/promql-engine/executor/binary"
+	"github.com/thanos-community/promql-engine/executor/exchange"
+	"github.com/thanos-community/promql-engine/executor/model"
+	"github.com/thanos-community/promql-engine/executor/parse"
+	"github.com/thanos-community/promql-engine/executor/scan"
+	"github.com/thanos-community/promql-engine/executor/step_invariant"
+	engstore "github.com/thanos-community/promql-engine/executor/storage"
+	"github.com/thanos-community/promql-engine/executor/unary"
 	"github.com/thanos-community/promql-engine/logicalplan"
-	"github.com/thanos-community/promql-engine/physicalplan/aggregate"
-	"github.com/thanos-community/promql-engine/physicalplan/binary"
-	"github.com/thanos-community/promql-engine/physicalplan/exchange"
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
-	"github.com/thanos-community/promql-engine/physicalplan/scan"
-	"github.com/thanos-community/promql-engine/physicalplan/step_invariant"
-	engstore "github.com/thanos-community/promql-engine/physicalplan/storage"
-	"github.com/thanos-community/promql-engine/physicalplan/unary"
 	"github.com/thanos-community/promql-engine/query"
 )
 
 const stepsBatch = 10
 
 // New creates new physical query execution plan for a given query expression.
+// TODO(bwplotka): Rename it? E.g. NewExecutor? It's not a theoretical plan that can be adjusted,
+// it's a direct code that will execute this plan encoded in passed Expr.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Start:         mint,
