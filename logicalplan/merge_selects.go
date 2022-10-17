@@ -111,7 +111,7 @@ func (m matcherHeap) add(metricName string, lessSelective []*labels.Matcher) {
 	}
 
 	if len(lessSelective) < len(moreSelective) {
-		lessSelective, moreSelective = moreSelective, lessSelective
+		moreSelective = lessSelective
 	}
 
 	m[metricName] = moreSelective
