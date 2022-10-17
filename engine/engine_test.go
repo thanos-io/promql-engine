@@ -1331,37 +1331,42 @@ func TestInstantQuery(t *testing.T) {
 		},
 	}
 
+	optimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, lookbackDelta := range lookbackDeltas {
-		opts.LookbackDelta = lookbackDelta
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				test, err := promql.NewTest(t, tc.load)
-				testutil.Ok(t, err)
-				defer test.Close()
-
-				testutil.Ok(t, test.Run())
-
-				for _, disableFallback := range []bool{false, true} {
-					t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-						newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
-						q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+	for _, withOptimizers := range optimizerOpts {
+		t.Run(fmt.Sprintf("runOptimizers=%t", withOptimizers), func(t *testing.T) {
+			for _, lookbackDelta := range lookbackDeltas {
+				opts.LookbackDelta = lookbackDelta
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						test, err := promql.NewTest(t, tc.load)
 						testutil.Ok(t, err)
-						newResult := q1.Exec(context.Background())
-						testutil.Ok(t, newResult.Err)
+						defer test.Close()
 
-						oldEngine := promql.NewEngine(opts)
-						q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-						testutil.Ok(t, err)
+						testutil.Ok(t, test.Run())
 
-						oldResult := q2.Exec(context.Background())
-						testutil.Ok(t, oldResult.Err)
+						for _, disableFallback := range []bool{false, true} {
+							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
+								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+								testutil.Ok(t, err)
+								newResult := q1.Exec(context.Background())
+								testutil.Ok(t, newResult.Err)
 
-						testutil.Equals(t, oldResult, newResult)
+								oldEngine := promql.NewEngine(opts)
+								q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+								testutil.Ok(t, err)
+
+								oldResult := q2.Exec(context.Background())
+								testutil.Ok(t, oldResult.Err)
+
+								testutil.Equals(t, oldResult, newResult)
+							})
+						}
 					})
 				}
-			})
-		}
+			}
+		})
 	}
 }
 

@@ -16,7 +16,8 @@ var DefaultOptimizers = []Optimizer{
 }
 
 type Plan interface {
-	RunOptimizers([]Optimizer) parser.Expr
+	RunOptimizers([]Optimizer) Plan
+	Expr() parser.Expr
 }
 
 type Optimizer interface {
@@ -36,10 +37,15 @@ func New(expr parser.Expr, mint, maxt time.Time) Plan {
 	}
 }
 
-func (p *plan) RunOptimizers(optimizers []Optimizer) parser.Expr {
+func (p *plan) RunOptimizers(optimizers []Optimizer) Plan {
 	for _, o := range optimizers {
 		p.expr = o.Optimize(p.expr)
 	}
+
+	return &plan{p.expr}
+}
+
+func (p *plan) Expr() parser.Expr {
 	return p.expr
 }
 

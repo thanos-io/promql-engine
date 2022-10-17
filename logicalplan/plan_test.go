@@ -4,6 +4,8 @@
 package logicalplan
 
 import (
+	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -23,6 +25,21 @@ func TestDefaultOptimizers(t *testing.T) {
 			expected: `sum(filter([a="b" c="d"], metric{a="b"})) / sum(metric{a="b"})`,
 		},
 		{
+			name:     "common selectors with regex",
+			expr:     `http_requests_total / on () group_left sum(http_requests_total{pod=~"p1.+"})`,
+			expected: `http_requests_total / on () group_left () sum(filter([pod=~"p1.+"], http_requests_total))`,
+		},
+		{
+			name: "common selectors in different metrics",
+			expr: `
+	sum(metric_1{a="b", c="d"}) / sum(metric_1{a="b"}) +
+	sum(metric_2{a="b", c="d"}) / sum(metric_2{a="b"})
+`,
+			expected: `
+	sum(filter([a="b" c="d"], metric_1{a="b"})) / sum(metric_1{a="b"}) + 
+	sum(filter([a="b" c="d"], metric_2{a="b"})) / sum(metric_2{a="b"})`,
+		},
+		{
 			name:     "different selectors",
 			expr:     `sum(metric{a="b"}) / sum(metric{c="d"})`,
 			expected: `sum(metric{a="b"}) / sum(metric{c="d"})`,
@@ -39,6 +56,7 @@ func TestDefaultOptimizers(t *testing.T) {
 		},
 	}
 
+	spaces := regexp.MustCompile(`\s+`)
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
@@ -46,7 +64,8 @@ func TestDefaultOptimizers(t *testing.T) {
 
 			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
 			optimizedPlan := plan.RunOptimizers(DefaultOptimizers)
-			testutil.Equals(t, tcase.expected, optimizedPlan.String())
+			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
+			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
 		})
 	}
 }

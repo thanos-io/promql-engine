@@ -35,7 +35,7 @@ func extractSelectors(selectors matcherHeap, expr parser.Expr) {
 		}
 		for _, l := range e.LabelMatchers {
 			if l.Name == labels.MetricName {
-				selectors.add(l.Name, e.LabelMatchers)
+				selectors.add(l.Value, e.LabelMatchers)
 			}
 		}
 		return nil
@@ -51,7 +51,7 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 
 		for _, l := range e.LabelMatchers {
 			if l.Name == labels.MetricName {
-				replacement, found := selectors.findReplacement(l.Name, e.LabelMatchers)
+				replacement, found := selectors.findReplacement(l.Value, e.LabelMatchers)
 				if found {
 					// All replacements are done on metrics only,
 					// so we can drop the explicit metric name selector.
