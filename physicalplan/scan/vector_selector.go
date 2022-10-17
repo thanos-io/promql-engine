@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/thanos-community/promql-engine/physicalplan/model"
+	engstore "github.com/thanos-community/promql-engine/physicalplan/storage"
 	"github.com/thanos-community/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,7 +26,7 @@ type vectorScanner struct {
 }
 
 type vectorSelector struct {
-	storage  *seriesSelector
+	storage  engstore.SeriesSelector
 	scanners []vectorScanner
 	series   []labels.Labels
 
@@ -47,7 +48,7 @@ type vectorSelector struct {
 // NewVectorSelector creates operator which selects vector of series.
 func NewVectorSelector(
 	pool *model.VectorPool,
-	selector *seriesSelector,
+	selector engstore.SeriesSelector,
 	queryOpts *query.Options,
 	offset time.Duration,
 	shard, numShards int,
@@ -70,7 +71,7 @@ func NewVectorSelector(
 }
 
 func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.matchers, o.shard, o.numShards), nil
+	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards), nil
 }
 
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -126,7 +127,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
-		series, loadErr := o.storage.getSeries(ctx, o.shard, o.numShards)
+		series, loadErr := o.storage.GetSeries(ctx, o.shard, o.numShards)
 		if loadErr != nil {
 			err = loadErr
 			return
@@ -137,7 +138,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 		for i, s := range series {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
-				signature: s.signature,
+				signature: s.Signature,
 				samples:   storage.NewMemoizedIterator(s.Iterator(), o.lookbackDelta),
 			}
 			o.series[i] = s.Labels()

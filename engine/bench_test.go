@@ -6,12 +6,14 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/thanos-community/promql-engine/engine"
@@ -134,7 +136,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			name:  "binary operation with one to one",
-			query: `http_requests_total{container="1"} / ignoring(container) http_responses_total`,
+			query: `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
 		},
 		{
 			name:  "binary operation with many to one",
@@ -293,8 +295,48 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 	}
 }
 
+func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
+	db := createRequestsMetricBlock(b, 10000, 9900)
+
+	start := time.Unix(0, 0)
+	end := start.Add(6 * time.Hour)
+	step := time.Second * 30
+
+	query := `sum(http_requests_total{code="200"}) / sum(http_requests_total)`
+	b.Run("withoutOptimizers", func(b *testing.B) {
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			opts := engine.Opts{DisableOptimizers: true}
+			ng := engine.New(opts)
+			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
+			testutil.Ok(b, err)
+
+			res := qry.Exec(context.Background())
+			testutil.Ok(b, res.Err)
+		}
+	})
+	b.Run("withOptimizers", func(b *testing.B) {
+		b.ResetTimer()
+		b.ReportAllocs()
+		for i := 0; i < b.N; i++ {
+			ng := engine.New(engine.Opts{})
+			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
+			testutil.Ok(b, err)
+
+			res := qry.Exec(context.Background())
+			testutil.Ok(b, res.Err)
+		}
+	})
+
+}
+
 func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) *promql.Result {
-	ng := engine.New(engine.Opts{})
+	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{})
+}
+
+func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
+	ng := engine.New(opts)
 	qry, err := ng.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
 	testutil.Ok(b, err)
 
@@ -316,6 +358,32 @@ func setupStorage(b *testing.B, numLabelsA int, numLabelsB int) *promql.Test {
 	testutil.Ok(b, test.Run())
 
 	return test
+}
+
+func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *tsdb.DB {
+	dir := b.TempDir()
+
+	db, err := tsdb.Open(dir, nil, nil, tsdb.DefaultOptions(), nil)
+	testutil.Ok(b, err)
+	appender := db.Appender(context.Background())
+
+	sixHours := int64(6 * 60 * 2)
+
+	for i := 0; i < numRequests; i++ {
+		for t := int64(0); t < sixHours; t += 30 {
+			code := "200"
+			if numSuccess < i {
+				code = "500"
+			}
+			lbls := labels.FromStrings(labels.MetricName, "http_requests_total", "code", code, "pod", strconv.Itoa(i))
+			_, err = appender.Append(0, lbls, t, 1)
+			testutil.Ok(b, err)
+		}
+	}
+
+	testutil.Ok(b, appender.Commit())
+
+	return db
 }
 
 func synthesizeLoad(numPods, numContainers int) string {

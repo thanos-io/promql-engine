@@ -251,8 +251,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x30
 					http_requests_total{pod="nginx-2"} 1+2x600`,
 			query: `count_over_time(http_requests_total[10m])`,
-			start: time.Unix(600, 0),
-			end:   time.Unix(6000, 0),
+			start: time.Unix(60, 0),
+			end:   time.Unix(600, 0),
 		},
 		{
 			name: "rate",
@@ -765,8 +765,28 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
+		{
+			name: "selector merge",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", ns="nginx"} 1+1x15
+					http_requests_total{pod="nginx-2", ns="nginx"} 1+2x18
+					http_requests_total{pod="nginx-3", ns="nginx"} 1+2x21`,
+			query: `http_requests_total{pod=~"nginx-1", ns="nginx"} / on() group_left() sum(http_requests_total{ns="nginx"})`,
+		},
+		{
+			name: "selector merge with different ranges",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", ns="nginx"} 2+2x16
+					http_requests_total{pod="nginx-2", ns="nginx"} 2+4x18
+					http_requests_total{pod="nginx-3", ns="nginx"} 2+6x20`,
+			query: `
+	rate(http_requests_total{pod=~"nginx-1", ns="nginx"}[2m])
+	+ on() group_left()
+	sum(http_requests_total{ns="nginx"})`,
+		},
 	}
 
+	disableOptimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
@@ -787,25 +807,26 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				if tc.step == 0 {
 					tc.step = step
 				}
+				for _, disableOptimizers := range disableOptimizerOpts {
+					for _, disableFallback := range []bool{false, true} {
+						t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+							newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DisableOptimizers: disableOptimizers})
+							q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
+							testutil.Ok(t, err)
 
-				for _, disableFallback := range []bool{false, true} {
-					t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-						newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
-						q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-						testutil.Ok(t, err)
+							newResult := q1.Exec(context.Background())
+							testutil.Ok(t, newResult.Err)
 
-						newResult := q1.Exec(context.Background())
-						testutil.Ok(t, newResult.Err)
+							oldEngine := promql.NewEngine(opts)
+							q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
+							testutil.Ok(t, err)
 
-						oldEngine := promql.NewEngine(opts)
-						q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-						testutil.Ok(t, err)
+							oldResult := q2.Exec(context.Background())
+							testutil.Ok(t, oldResult.Err)
 
-						oldResult := q2.Exec(context.Background())
-						testutil.Ok(t, oldResult.Err)
-
-						testutil.Equals(t, oldResult, newResult)
-					})
+							testutil.Equals(t, oldResult, newResult)
+						})
+					}
 				}
 			})
 		}
@@ -989,11 +1010,6 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x4
 					http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(irate(http_requests_total[1m]))",
-		},
-		{
-			name:  "string literal",
-			load:  "",
-			query: `"hello"`,
 		},
 		{
 			name:  "number literal",
@@ -1317,37 +1333,42 @@ func TestInstantQuery(t *testing.T) {
 		},
 	}
 
+	disableOptimizers := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, lookbackDelta := range lookbackDeltas {
-		opts.LookbackDelta = lookbackDelta
-		for _, tc := range cases {
-			t.Run(tc.name, func(t *testing.T) {
-				test, err := promql.NewTest(t, tc.load)
-				testutil.Ok(t, err)
-				defer test.Close()
-
-				testutil.Ok(t, test.Run())
-
-				for _, disableFallback := range []bool{false, true} {
-					t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-						newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
-						q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+	for _, withoutOptimizers := range disableOptimizers {
+		t.Run(fmt.Sprintf("disableOptimizers=%t", withoutOptimizers), func(t *testing.T) {
+			for _, lookbackDelta := range lookbackDeltas {
+				opts.LookbackDelta = lookbackDelta
+				for _, tc := range cases {
+					t.Run(tc.name, func(t *testing.T) {
+						test, err := promql.NewTest(t, tc.load)
 						testutil.Ok(t, err)
-						newResult := q1.Exec(context.Background())
-						testutil.Ok(t, newResult.Err)
+						defer test.Close()
 
-						oldEngine := promql.NewEngine(opts)
-						q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-						testutil.Ok(t, err)
+						testutil.Ok(t, test.Run())
 
-						oldResult := q2.Exec(context.Background())
-						testutil.Ok(t, oldResult.Err)
+						for _, disableFallback := range []bool{false, true} {
+							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
+								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+								testutil.Ok(t, err)
+								newResult := q1.Exec(context.Background())
+								testutil.Ok(t, newResult.Err)
 
-						testutil.Equals(t, oldResult, newResult)
+								oldEngine := promql.NewEngine(opts)
+								q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+								testutil.Ok(t, err)
+
+								oldResult := q2.Exec(context.Background())
+								testutil.Ok(t, oldResult.Err)
+
+								testutil.Equals(t, oldResult, newResult)
+							})
+						}
 					})
 				}
-			})
-		}
+			}
+		})
 	}
 }
 

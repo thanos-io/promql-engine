@@ -14,24 +14,30 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
+	"github.com/thanos-community/promql-engine/logicalplan"
 	"github.com/thanos-community/promql-engine/physicalplan"
 	"github.com/thanos-community/promql-engine/physicalplan/model"
 	"github.com/thanos-community/promql-engine/physicalplan/parse"
 )
 
 type engine struct {
-	logger        log.Logger
-	debugWriter   io.Writer
-	lookbackDelta time.Duration
+	logger           log.Logger
+	debugWriter      io.Writer
+	lookbackDelta    time.Duration
+	enableOptimizers bool
 }
 
 type Opts struct {
 	promql.EngineOpts
+
+	// DisableOptimizers disables query optimizations using logicalPlan.DefaultOptimizers.
+	DisableOptimizers bool
 
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
 	// in the new engine, instead of falling back to prometheus engine.
@@ -53,9 +59,10 @@ func New(opts Opts) v1.QueryEngine {
 	}
 
 	core := &engine{
-		debugWriter:   opts.DebugWriter,
-		logger:        opts.Logger,
-		lookbackDelta: opts.LookbackDelta,
+		debugWriter:      opts.DebugWriter,
+		logger:           opts.Logger,
+		lookbackDelta:    opts.LookbackDelta,
+		enableOptimizers: !opts.DisableOptimizers,
 	}
 	if opts.DisableFallback {
 		return core
@@ -122,7 +129,11 @@ func (e *engine) NewInstantQuery(q storage.Queryable, _ *promql.QueryOpts, qs st
 		return nil, err
 	}
 
-	plan, err := physicalplan.New(expr, q, ts, ts, 0, e.lookbackDelta)
+	logicalPlan := logicalplan.New(expr, ts, ts)
+	if e.enableOptimizers {
+		logicalPlan = logicalPlan.Optimize(logicalplan.DefaultOptimizers)
+	}
+	plan, err := physicalplan.New(logicalPlan.Expr(), q, ts, ts, 0, e.lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +156,11 @@ func (e *engine) NewRangeQuery(q storage.Queryable, _ *promql.QueryOpts, qs stri
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
-	plan, err := physicalplan.New(expr, q, start, end, interval, e.lookbackDelta)
+	logicalPlan := logicalplan.New(expr, start, end)
+	if e.enableOptimizers {
+		logicalPlan = logicalPlan.Optimize(logicalplan.DefaultOptimizers)
+	}
+	plan, err := physicalplan.New(logicalPlan.Expr(), q, start, end, interval, e.lookbackDelta)
 	if err != nil {
 		return nil, err
 	}
