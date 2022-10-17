@@ -1335,8 +1335,8 @@ func TestInstantQuery(t *testing.T) {
 
 	disableOptimizers := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, withOptimizers := range disableOptimizers {
-		t.Run(fmt.Sprintf("disableOptimizers=%t", withOptimizers), func(t *testing.T) {
+	for _, withoutOptimizers := range disableOptimizers {
+		t.Run(fmt.Sprintf("disableOptimizers=%t", withoutOptimizers), func(t *testing.T) {
 			for _, lookbackDelta := range lookbackDeltas {
 				opts.LookbackDelta = lookbackDelta
 				for _, tc := range cases {

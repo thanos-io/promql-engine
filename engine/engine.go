@@ -131,7 +131,7 @@ func (e *engine) NewInstantQuery(q storage.Queryable, _ *promql.QueryOpts, qs st
 
 	logicalPlan := logicalplan.New(expr, ts, ts)
 	if e.enableOptimizers {
-		logicalPlan = logicalPlan.RunOptimizers(logicalplan.DefaultOptimizers)
+		logicalPlan = logicalPlan.Optimize(logicalplan.DefaultOptimizers)
 	}
 	plan, err := physicalplan.New(logicalPlan.Expr(), q, ts, ts, 0, e.lookbackDelta)
 	if err != nil {
@@ -158,7 +158,7 @@ func (e *engine) NewRangeQuery(q storage.Queryable, _ *promql.QueryOpts, qs stri
 
 	logicalPlan := logicalplan.New(expr, start, end)
 	if e.enableOptimizers {
-		logicalPlan = logicalPlan.RunOptimizers(logicalplan.DefaultOptimizers)
+		logicalPlan = logicalPlan.Optimize(logicalplan.DefaultOptimizers)
 	}
 	plan, err := physicalplan.New(logicalPlan.Expr(), q, start, end, interval, e.lookbackDelta)
 	if err != nil {

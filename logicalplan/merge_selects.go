@@ -51,12 +51,12 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 
 		for _, l := range e.LabelMatchers {
 			if l.Name != labels.MetricName {
-			  continue
+				continue
 			}
 			replacement, found := selectors.findReplacement(l.Value, e.LabelMatchers)
 			if !found {
-			   continue
-   			}
+				continue
+			}
 			// All replacements are done on metrics name only,
 			// so we can drop the explicit metric name selector.
 			filters := dropMetricName(e.LabelMatchers)
@@ -89,6 +89,9 @@ func matcherToMap(matchers []*labels.Matcher) map[string]*labels.Matcher {
 
 // matcherHeap is a set of the most selective label matchers
 // for each metrics discovered in a PromQL expression.
+// The selectivity of a matcher is defined by how many series are
+// matched by it. Since matchers in PromQL are open, selectors
+// with the least amount of matchers are typically the most selective ones.
 type matcherHeap map[string][]*labels.Matcher
 
 func (m matcherHeap) add(metricName string, lessSelective []*labels.Matcher) {

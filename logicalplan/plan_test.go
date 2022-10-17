@@ -63,7 +63,7 @@ func TestDefaultOptimizers(t *testing.T) {
 			testutil.Ok(t, err)
 
 			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
-			optimizedPlan := plan.RunOptimizers(DefaultOptimizers)
+			optimizedPlan := plan.Optimize(DefaultOptimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
 		})
