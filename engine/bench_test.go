@@ -307,7 +307,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			opts := engine.Opts{EnableOptimizers: false}
+			opts := engine.Opts{DisableOptimizers: true}
 			ng := engine.New(opts)
 			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
 			testutil.Ok(b, err)
@@ -320,8 +320,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			opts := engine.Opts{EnableOptimizers: true}
-			ng := engine.New(opts)
+			ng := engine.New(engine.Opts{})
 			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
 			testutil.Ok(b, err)
 

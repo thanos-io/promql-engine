@@ -36,8 +36,8 @@ type engine struct {
 type Opts struct {
 	promql.EngineOpts
 
-	// EnableOptimizers enables query optimizations using logicalPlan.DefaultOptimizers.
-	EnableOptimizers bool
+	// DisableOptimizers disables query optimizations using logicalPlan.DefaultOptimizers.
+	DisableOptimizers bool
 
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
 	// in the new engine, instead of falling back to prometheus engine.
@@ -62,7 +62,7 @@ func New(opts Opts) v1.QueryEngine {
 		debugWriter:      opts.DebugWriter,
 		logger:           opts.Logger,
 		lookbackDelta:    opts.LookbackDelta,
-		enableOptimizers: opts.EnableOptimizers,
+		enableOptimizers: !opts.DisableOptimizers,
 	}
 	if opts.DisableFallback {
 		return core

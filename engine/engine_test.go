@@ -786,6 +786,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		},
 	}
 
+	disableOptimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
@@ -806,25 +807,26 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				if tc.step == 0 {
 					tc.step = step
 				}
+				for _, disableOptimizers := range disableOptimizerOpts {
+					for _, disableFallback := range []bool{false, true} {
+						t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+							newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DisableOptimizers: disableOptimizers})
+							q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
+							testutil.Ok(t, err)
 
-				for _, disableFallback := range []bool{false, true} {
-					t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-						newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
-						q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-						testutil.Ok(t, err)
+							newResult := q1.Exec(context.Background())
+							testutil.Ok(t, newResult.Err)
 
-						newResult := q1.Exec(context.Background())
-						testutil.Ok(t, newResult.Err)
+							oldEngine := promql.NewEngine(opts)
+							q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
+							testutil.Ok(t, err)
 
-						oldEngine := promql.NewEngine(opts)
-						q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, step)
-						testutil.Ok(t, err)
+							oldResult := q2.Exec(context.Background())
+							testutil.Ok(t, oldResult.Err)
 
-						oldResult := q2.Exec(context.Background())
-						testutil.Ok(t, oldResult.Err)
-
-						testutil.Equals(t, oldResult, newResult)
-					})
+							testutil.Equals(t, oldResult, newResult)
+						})
+					}
 				}
 			})
 		}
@@ -1331,10 +1333,10 @@ func TestInstantQuery(t *testing.T) {
 		},
 	}
 
-	optimizerOpts := []bool{true, false}
+	disableOptimizers := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, withOptimizers := range optimizerOpts {
-		t.Run(fmt.Sprintf("runOptimizers=%t", withOptimizers), func(t *testing.T) {
+	for _, withOptimizers := range disableOptimizers {
+		t.Run(fmt.Sprintf("disableOptimizers=%t", withOptimizers), func(t *testing.T) {
 			for _, lookbackDelta := range lookbackDeltas {
 				opts.LookbackDelta = lookbackDelta
 				for _, tc := range cases {
