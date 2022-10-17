@@ -116,6 +116,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// - No inputs (only pi() and time()). TODO(saswatamcode)
 		// - Only scalar input (only vector()).
 		// - Variadics (all time based functions like month() + round() and label_join()). TODO(saswatamcode)
+		// Tracked in https://github.com/thanos-community/promql-engine/issues/23
 
 		// Based on the category we can create an apt query plan.
 		call, err := function.NewFunctionCall(e.Func)

@@ -801,7 +801,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `clamp_min(http_requests_total, 10)`,
 		},
 		{
-			name: "complex query",
+			name: "complex func query",
 			load: `load 30s
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,
@@ -812,34 +812,15 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			load: `load 30s
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
+		{
+			name: "aggr within func query",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
 		},
-		// {
-		// 	name: "storage based scalar",
-		// 	load: `load 30s
-		// 	http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-		// 	http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
-		// 	http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
-		// 	http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
-		// 	http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
-		// 	query: `clamp(http_requests_total, 5, scalar(max(http_requests_total)))`,
-		// },
-		// {
-		// 	name: "scalar",
-		// 	load: `load 30s
-		// 	http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-		// 	http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
-		// 	http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
-		// {
-		// 	name: "scalar with max",
-		// 	load: `load 30s
-		// 	http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-		// 	http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
-		// 	http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
-		// 	query: `scalar(max(http_requests_total))`,
-		// },
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1405,7 +1386,7 @@ func TestInstantQuery(t *testing.T) {
 			query: `clamp_min(http_requests_total, 10)`,
 		},
 		{
-			name: "complex query",
+			name: "complex func query",
 			load: `load 30s
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,
@@ -1413,6 +1394,13 @@ func TestInstantQuery(t *testing.T) {
 		},
 		{
 			name: "func within func query",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
+		{
+			name: "aggr within func query",
 			load: `load 30s
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,

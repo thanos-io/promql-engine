@@ -140,6 +140,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				}
 			} else {
 				// TODO(saswatamcode): Range vector result might need new operator.
+				// https://github.com/thanos-community/promql-engine/issues/39
 				return nil, parse.ErrNotImplemented
 			}
 

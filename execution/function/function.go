@@ -89,6 +89,7 @@ func (o *functionSelector) Next(ctx context.Context) ([]model.StepVector, error)
 
 // Process single/multi-arg instant vector and scalar input functions.
 func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]model.StepVector, error) {
+	// Call next on instant/range vector input.
 	input, err := o.nextOps[o.nextIndex].Next(ctx)
 	if err != nil {
 		return nil, err
@@ -125,7 +126,9 @@ func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]mod
 			// Scalar expressions can select from storage as well.
 			if len(o.funcExpr.Func.ArgTypes) > 1 && len(scalarInput) > 0 {
 				for l := range scalarInput {
-					scalarPoints[l] = scalarInput[l][v].Samples[0]
+					if len(scalarInput[l]) >= 1 {
+						scalarPoints[l] = scalarInput[l][v].Samples[0]
+					}
 				}
 			}
 

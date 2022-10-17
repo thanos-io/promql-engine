@@ -167,7 +167,23 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query: "http_requests_total @ 600 offset 5m",
 		},
 		{
+			name:  "clamp",
+			query: `clamp(http_requests_total, 5, 10)`,
+		},
+		{
+			name:  "clamp_min",
+			query: `clamp_min(http_requests_total, 10)`,
+		},
+		{
+			name:  "complex func query",
+			query: `clamp(1 - http_requests_total, 10 - 5, 10)`,
+		},
+		{
 			name:  "func within func query",
+			query: `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
+		{
+			name:  "aggr within func query",
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
 		},
 	}
