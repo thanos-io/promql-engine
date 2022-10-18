@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
+	"github.com/thanos-community/promql-engine/execution/parse"
 )
 
 var InvalidSample = promql.Sample{Point: promql.Point{T: -1, V: 0}}

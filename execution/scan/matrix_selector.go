@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-	engstore "github.com/thanos-community/promql-engine/physicalplan/storage"
+	"github.com/thanos-community/promql-engine/execution/model"
+	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
 )
 

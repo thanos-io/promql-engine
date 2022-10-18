@@ -12,9 +12,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/thanos-community/promql-engine/physicalplan/model"
-	"github.com/thanos-community/promql-engine/physicalplan/parse"
-	"github.com/thanos-community/promql-engine/physicalplan/scan"
+	"github.com/thanos-community/promql-engine/execution/model"
+	"github.com/thanos-community/promql-engine/execution/parse"
+	"github.com/thanos-community/promql-engine/execution/scan"
 )
 
 type aggregateTable interface {
