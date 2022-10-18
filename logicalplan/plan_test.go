@@ -25,6 +25,11 @@ func TestDefaultOptimizers(t *testing.T) {
 			expected: `sum(filter([c="d"], metric{a="b"})) / sum(metric{a="b"})`,
 		},
 		{
+			name:     "common selectors with duplicate matchers",
+			expr:     `sum(metric{a="b", c="d", a="b"}) / sum(metric{a="b"})`,
+			expected: `sum(filter([c="d"], metric{a="b"})) / sum(metric{a="b"})`,
+		},
+		{
 			name:     "common selectors with regex",
 			expr:     `http_requests_total / on () group_left sum(http_requests_total{pod=~"p1.+"})`,
 			expected: `http_requests_total / on () group_left () sum(filter([pod=~"p1.+"], http_requests_total))`,
