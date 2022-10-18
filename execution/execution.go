@@ -14,7 +14,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package executor
+package execution
 
 import (
 	"runtime"
@@ -27,22 +27,23 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/executor/aggregate"
-	"github.com/thanos-community/promql-engine/executor/binary"
-	"github.com/thanos-community/promql-engine/executor/exchange"
-	"github.com/thanos-community/promql-engine/executor/model"
-	"github.com/thanos-community/promql-engine/executor/parse"
-	"github.com/thanos-community/promql-engine/executor/scan"
-	"github.com/thanos-community/promql-engine/executor/step_invariant"
-	engstore "github.com/thanos-community/promql-engine/executor/storage"
-	"github.com/thanos-community/promql-engine/executor/unary"
+	"github.com/thanos-community/promql-engine/execution/aggregate"
+	"github.com/thanos-community/promql-engine/execution/binary"
+	"github.com/thanos-community/promql-engine/execution/exchange"
+	"github.com/thanos-community/promql-engine/execution/model"
+	"github.com/thanos-community/promql-engine/execution/parse"
+	"github.com/thanos-community/promql-engine/execution/scan"
+	"github.com/thanos-community/promql-engine/execution/step_invariant"
+	engstore "github.com/thanos-community/promql-engine/execution/storage"
+	"github.com/thanos-community/promql-engine/execution/unary"
 	"github.com/thanos-community/promql-engine/logicalplan"
 	"github.com/thanos-community/promql-engine/query"
 )
 
 const stepsBatch = 10
 
-// New creates new physical query execution plan for a given query expression.
+// New creates new physical query execution for a given query expression which represents logical plan.
+// TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Start:         mint,

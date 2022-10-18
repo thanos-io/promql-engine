@@ -7,7 +7,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/thanos-community/promql-engine/executor/model"
+	"github.com/thanos-community/promql-engine/execution/model"
 )
 
 type doneFunc func()

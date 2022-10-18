@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
 
-	"github.com/thanos-community/promql-engine/executor/model"
+	"github.com/thanos-community/promql-engine/execution/model"
 )
 
 // vectorOperator evaluates an expression between two step vectors.

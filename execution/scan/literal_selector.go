@@ -10,7 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 
-	"github.com/thanos-community/promql-engine/executor/model"
+	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"

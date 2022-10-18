@@ -14,7 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/executor/scan"
+	"github.com/thanos-community/promql-engine/execution/scan"
 )
 
 func FuzzEngineQueryRangeMatrixFunctions(f *testing.F) {

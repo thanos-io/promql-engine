@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"gonum.org/v1/gonum/floats"
 
-	"github.com/thanos-community/promql-engine/executor/model"
-	"github.com/thanos-community/promql-engine/executor/parse"
+	"github.com/thanos-community/promql-engine/execution/model"
+	"github.com/thanos-community/promql-engine/execution/parse"
 )
 
 type vectorAccumulator func([]float64) float64

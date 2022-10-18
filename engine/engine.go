@@ -21,24 +21,16 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
-
-	"github.com/thanos-community/promql-engine/executor"
-	"github.com/thanos-community/promql-engine/executor/model"
-	"github.com/thanos-community/promql-engine/executor/parse"
+	"github.com/thanos-community/promql-engine/execution"
+	"github.com/thanos-community/promql-engine/execution/model"
+	"github.com/thanos-community/promql-engine/execution/parse"
 	"github.com/thanos-community/promql-engine/logicalplan"
 )
-
-type engine struct {
-	logger           log.Logger
-	debugWriter      io.Writer
-	lookbackDelta    time.Duration
-	enableOptimizers bool
-}
 
 type Opts struct {
 	promql.EngineOpts
 
-	// DisableOptimizers disables query optimizations using logicalPlan.DefaultOptimizers.
+	// DisableOptimizers disables Query optimizations using logicalPlan.DefaultOptimizers.
 	DisableOptimizers bool
 
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
@@ -60,34 +52,35 @@ func New(opts Opts) v1.QueryEngine {
 		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
 
-	core := &engine{
-		debugWriter:      opts.DebugWriter,
-		logger:           opts.Logger,
-		lookbackDelta:    opts.LookbackDelta,
-		enableOptimizers: !opts.DisableOptimizers,
-	}
 	return &compatibilityEngine{
-		core:            core,
-		disableFallback: opts.DisableFallback,
-		prom:            promql.NewEngine(opts.EngineOpts),
+		prom: promql.NewEngine(opts.EngineOpts),
 		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "promql_engine_queries_total",
 				Help: "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
+
+		debugWriter:       opts.DebugWriter,
+		disableFallback:   opts.DisableFallback,
+		disableOptimizers: opts.DisableOptimizers,
+		logger:            opts.Logger,
+		lookbackDelta:     opts.LookbackDelta,
 	}
 }
 
 type compatibilityEngine struct {
-	core            *engine
-	prom            *promql.Engine
-	queries         *prometheus.CounterVec
-	disableFallback bool
+	prom    *promql.Engine
+	queries *prometheus.CounterVec
+
+	debugWriter       io.Writer
+	disableFallback   bool
+	disableOptimizers bool
+	logger            log.Logger
+	lookbackDelta     time.Duration
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
-	e.core.SetQueryLogger(l)
 	e.prom.SetQueryLogger(l)
 }
 
@@ -97,47 +90,90 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		return nil, err
 	}
 
-	ret, err := e.core.NewExecutor(q, opts, expr, ts, ts, 0)
+	lplan := logicalplan.New(expr, ts, ts)
+	if !e.disableOptimizers {
+		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
+	}
+
+	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
 	if !e.disableFallback && triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
 	}
 	e.queries.WithLabelValues("false").Inc()
+	if err != nil {
+		return nil, err
+	}
+
+	if e.debugWriter != nil {
+		explain(e.debugWriter, exec, "", "")
+	}
 
 	return &compatibilityQuery{
-		executor: ret,
-		expr:     expr,
-		logger:   e.core.logger,
-		ts:       ts,
-	}, err
+		Query:  &Query{exec: exec},
+		engine: e,
+		expr:   expr,
+		ts:     ts,
+	}, nil
 }
 
-func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
 	expr, err := parser.ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
 
-	ret, err := e.core.NewExecutor(q, opts, expr, start, end, interval)
+	// Use same check as Prometheus for range queries.
+	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
+		return nil, errors.Newf("invalid expression type %q for range Query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
+	}
+
+	lplan := logicalplan.New(expr, start, end)
+	if !e.disableOptimizers {
+		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
+	}
+
+	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
 	if !e.disableFallback && triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
-		return e.prom.NewRangeQuery(q, opts, qs, start, end, interval)
+		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
 	}
 	e.queries.WithLabelValues("false").Inc()
+	if err != nil {
+		return nil, err
+	}
+
+	if e.debugWriter != nil {
+		explain(e.debugWriter, exec, "", "")
+	}
 
 	return &compatibilityQuery{
-		executor: ret,
-		expr:     expr,
-		logger:   e.core.logger,
-	}, err
+		Query:  &Query{exec: exec},
+		engine: e,
+		expr:   expr,
+	}, nil
+}
+
+type Query struct {
+	exec model.VectorOperator
+}
+
+// Explain returns human-readable explanation of the created executor.
+func (q *Query) Explain() string {
+	// TODO(bwplotka): Explain plan and steps.
+	return "not implemented"
+}
+
+func (q *Query) Profile() {
+	// TODO(bwplotka): Return profile.
+	return
 }
 
 type compatibilityQuery struct {
-	executor model.VectorOperator
-	logger   log.Logger
-	expr     parser.Expr
-
-	ts time.Time // Available if it's instant query.
+	*Query
+	engine *compatibilityEngine
+	expr   parser.Expr
+	ts     time.Time // Empty for instant queries.
 
 	cancel context.CancelFunc
 }
@@ -153,12 +189,12 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	ret = &promql.Result{
 		Value: promql.Vector{},
 	}
-	defer recoverEngine(q.logger, q.expr, &ret.Err)
+	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
 
 	ctx, cancel := context.WithCancel(ctx)
 	q.cancel = cancel
 
-	resultSeries, err := q.executor.Series(ctx)
+	resultSeries, err := q.Query.exec.Series(ctx)
 	if err != nil {
 		return newErrResult(ret, err)
 	}
@@ -175,7 +211,7 @@ loop:
 		case <-ctx.Done():
 			return newErrResult(ret, ctx.Err())
 		default:
-			r, err := q.executor.Next(ctx)
+			r, err := q.Query.exec.Next(ctx)
 			if err != nil {
 				return newErrResult(ret, err)
 			}
@@ -190,13 +226,13 @@ loop:
 						V: vector.Samples[i],
 					})
 				}
-				q.executor.GetPool().PutStepVector(vector)
+				q.Query.exec.GetPool().PutStepVector(vector)
 			}
-			q.executor.GetPool().PutVectors(r)
+			q.Query.exec.GetPool().PutVectors(r)
 		}
 	}
 
-	// For range query we expect always a Matrix value type.
+	// For range Query we expect always a Matrix value type.
 	if q.ts.Equal(time.Time{}) {
 		resultMatrix := make(promql.Matrix, 0, len(series))
 		for _, s := range series {
@@ -267,38 +303,11 @@ func (q *compatibilityQuery) Cancel() {
 	}
 }
 
-func (e *engine) SetQueryLogger(l promql.QueryLogger) {
-	e.logger = l
-}
-
 func triggerFallback(err error) bool {
 	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, errNotImplemented)
 }
 
 var errNotImplemented = errors.New("not implemented")
-
-func (e *engine) NewExecutor(q storage.Queryable, _ *promql.QueryOpts, expr parser.Expr, start, end time.Time, step time.Duration) (model.VectorOperator, error) {
-	// if step = 0 it is an instant query.
-	// Use same check as Prometheus for range queries.
-	if step > 0 && expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
-		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
-	}
-
-	// TODO(bwplotka): We plan to have single plan that can be optimized in both physical and logical context. Rename.
-	logicalPlan := logicalplan.New(expr, start, end)
-	if e.enableOptimizers {
-		logicalPlan = logicalPlan.Optimize(logicalplan.DefaultOptimizers)
-	}
-	executor, err := executor.New(logicalPlan.Expr(), q, start, end, step, e.lookbackDelta)
-	if err != nil {
-		return nil, err
-	}
-
-	if e.debugWriter != nil {
-		explain(e.debugWriter, executor, "", "")
-	}
-	return executor, nil
-}
 
 func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 	e := recover()

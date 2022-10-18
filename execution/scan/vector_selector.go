@@ -9,8 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thanos-community/promql-engine/executor/model"
-	engstore "github.com/thanos-community/promql-engine/executor/storage"
+	"github.com/thanos-community/promql-engine/execution/model"
+	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
