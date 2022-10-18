@@ -80,9 +80,13 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 }
 
 func dropMatcher(matcherName string, originalMatchers []*labels.Matcher) []*labels.Matcher {
-	for i, l := range originalMatchers {
+	i := 0
+	for i < len(originalMatchers) {
+		l := originalMatchers[i]
 		if l.Name == matcherName {
 			originalMatchers = append(originalMatchers[:i], originalMatchers[i+1:]...)
+		} else {
+			i++
 		}
 	}
 	return originalMatchers
