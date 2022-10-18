@@ -57,9 +57,15 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 			if !found {
 				continue
 			}
+
+			// Make a copy of the original selectors to avoid modifying them while
+			// trimming filters.
+			filters := make([]*labels.Matcher, len(e.LabelMatchers))
+			copy(filters, e.LabelMatchers)
+
 			// All replacements are done on metrics name only,
 			// so we can drop the explicit metric name selector.
-			filters := dropMatcher(labels.MetricName, e.LabelMatchers)
+			filters = dropMatcher(labels.MetricName, filters)
 
 			// Drop filters which are already present as matchers in the replacement selector.
 			for _, s := range replacement {
@@ -142,7 +148,7 @@ func (m matcherHeap) findReplacement(metricName string, matcher []*labels.Matche
 	}
 
 	// The top matcher and input matcher are equal. No replacement needed.
-	if len(top) == len(matcherSet) {
+	if len(topSet) == len(matcherSet) {
 		return nil, false
 	}
 
