@@ -30,6 +30,11 @@ func TestDefaultOptimizers(t *testing.T) {
 			expected: `sum(filter([c="d"], metric{a="b"})) / sum(metric{a="b"})`,
 		},
 		{
+			name:     "common selectors with different operators",
+			expr:     `sum(metric{a="b"}) / sum(metric{a=~"b"})`,
+			expected: `sum(metric{a="b"}) / sum(metric{a=~"b"})`,
+		},
+		{
 			name:     "common selectors with regex",
 			expr:     `http_requests_total / on () group_left sum(http_requests_total{pod=~"p1.+"})`,
 			expected: `http_requests_total / on () group_left () sum(filter([pod=~"p1.+"], http_requests_total))`,
@@ -58,6 +63,16 @@ func TestDefaultOptimizers(t *testing.T) {
 			name:     "different metrics",
 			expr:     `sum(metric_1{a="b"}) / sum(metric_2{a="b"})`,
 			expected: `sum(metric_1{a="b"}) / sum(metric_2{a="b"})`,
+		},
+		{
+			name:     "duplicate matchers",
+			expr:     `metric_1{a="1", b="2", a="1"} / metric_2{a="1", b="2", a="1"}`,
+			expected: `metric_1{a="1",a="1",b="2"} / metric_2{a="1",a="1",b="2"}`,
+		},
+		{
+			name:     "duplicate matchers",
+			expr:     `metric_1{a="1", b="2", a="1", e="f"} / metric_1{a="1", b="2", a="1"}`,
+			expected: `filter([e="f"], metric_1{a="1",a="1",b="2"}) / metric_1{a="1",a="1",b="2"}`,
 		},
 	}
 
