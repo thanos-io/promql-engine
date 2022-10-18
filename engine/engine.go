@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+
 	"github.com/thanos-community/promql-engine/execution"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
@@ -166,7 +167,6 @@ func (q *Query) Explain() string {
 
 func (q *Query) Profile() {
 	// TODO(bwplotka): Return profile.
-	return
 }
 
 type compatibilityQuery struct {
