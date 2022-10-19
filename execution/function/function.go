@@ -22,41 +22,43 @@ import (
 
 // functionOperator returns []model.StepVector after processing input with desired function.
 type functionOperator struct {
-	funcExpr  *parser.Call
-	series    []labels.Labels
-	once      sync.Once
-	nextIndex int
-	nextFunc  func(ctx context.Context) ([]model.StepVector, error)
-	nextOps   []model.VectorOperator
+	funcExpr    *parser.Call
+	series      []labels.Labels
+	once        sync.Once
+	vectorIndex int
+	nextOps     []model.VectorOperator
 
 	call FunctionCall
+
+	scalarInput  [][]model.StepVector
+	scalarPoints []float64
 }
 
-func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator) model.VectorOperator {
+func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator) (model.VectorOperator, error) {
 	f := &functionOperator{
-		nextOps:   nextOps,
-		call:      call,
-		funcExpr:  funcExpr,
-		nextIndex: 0,
+		nextOps:      nextOps,
+		call:         call,
+		funcExpr:     funcExpr,
+		vectorIndex:  0,
+		scalarInput:  make([][]model.StepVector, len(nextOps)-1),
+		scalarPoints: make([]float64, len(nextOps)-1),
 	}
 
 	for i := range funcExpr.Args {
-		if funcExpr.Args[i].Type() == parser.ValueTypeMatrix || funcExpr.Args[i].Type() == parser.ValueTypeVector {
-			f.nextIndex = i
+		if funcExpr.Args[i].Type() == parser.ValueTypeVector {
+			f.vectorIndex = i
+			break
 		}
 	}
 
-	// Decide based on next type.
-	switch funcExpr.Args[f.nextIndex].Type() {
+	// Check selector type.
+	// TODO(saswatamcode): Add support for string and matrix.
+	switch funcExpr.Args[f.vectorIndex].Type() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
-		f.nextFunc = f.instantVectorOrScalarNext
-	case parser.ValueTypeMatrix:
-		f.nextFunc = f.rangeVectorNext
+		return f, nil
 	default:
-		f.nextFunc = f.defaultNext
+		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
 	}
-
-	return f
 }
 
 func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -72,7 +74,7 @@ func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 }
 
 func (o *functionOperator) GetPool() *model.VectorPool {
-	return o.nextOps[o.nextIndex].GetPool()
+	return o.nextOps[o.vectorIndex].GetPool()
 }
 
 func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
@@ -80,18 +82,9 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		return nil, err
 	}
 
-	// Process only non-variadic functions.
-	if o.funcExpr.Func.Variadic == 0 {
-		return o.nextFunc(ctx)
-	}
-
-	return nil, nil
-}
-
-// Process single/multi-arg instant vector and scalar input functions.
-func (o *functionOperator) instantVectorOrScalarNext(ctx context.Context) ([]model.StepVector, error) {
-	// Call next on instant/range vector input.
-	input, err := o.nextOps[o.nextIndex].Next(ctx)
+	// Process non-variadic single/multi-arg instant vector and scalar input functions.
+	// Call next on vector input.
+	input, err := o.nextOps[o.vectorIndex].Next(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -101,11 +94,10 @@ func (o *functionOperator) instantVectorOrScalarNext(ctx context.Context) ([]mod
 	}
 
 	// Call next on all scalar inputs.
-	scalarInput := make([][]model.StepVector, len(o.nextOps)-1)
-	if len(scalarInput) != 0 {
+	if len(o.scalarInput) != 0 {
 		s := 0
 		for i := range o.nextOps {
-			if i == o.nextIndex {
+			if i == o.vectorIndex {
 				continue
 			}
 
@@ -114,39 +106,32 @@ func (o *functionOperator) instantVectorOrScalarNext(ctx context.Context) ([]mod
 				return nil, err
 			}
 
-			scalarInput[s] = si
-			defer o.nextOps[i].GetPool().PutVectors(scalarInput[s])
+			o.scalarInput[s] = si
+			defer o.nextOps[i].GetPool().PutVectors(o.scalarInput[s])
 			s++
 		}
 	}
 
-	scalarPoints := make([]float64, len(scalarInput))
-	out := o.nextOps[o.nextIndex].GetPool().GetVectorBatch()
-	for v, vector := range input {
+	for v := range input {
 		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
 		// So need to handle this separately here, instead of going via call which is per point.
 		if o.funcExpr.Func.Name == "scalar" {
-			if len(vector.Samples) <= 1 {
-				out = append(out, vector)
-				o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
+			if len(input[v].Samples) <= 1 {
 				continue
 			}
 
-			vector.Samples = vector.Samples[:1]
-			vector.SampleIDs = vector.SampleIDs[:1]
-			vector.Samples[0] = math.Float64frombits(value.NormalNaN)
-
-			out = append(out, vector)
-			o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
+			input[v].Samples = input[v].Samples[:1]
+			input[v].SampleIDs = input[v].SampleIDs[:1]
+			input[v].Samples[0] = math.Float64frombits(value.NormalNaN)
 			continue
 		}
 
-		for i := range vector.Samples {
+		for i := range input[v].Samples {
 			// Scalar expressions can select from storage as well.
-			if len(o.funcExpr.Func.ArgTypes) > 1 && len(scalarInput) > 0 {
-				for l := range scalarInput {
-					if len(scalarInput[l]) >= 1 {
-						scalarPoints[l] = scalarInput[l][v].Samples[0]
+			if len(o.funcExpr.Func.ArgTypes) > 1 && len(o.scalarInput) > 0 {
+				for l := range o.scalarInput {
+					if len(o.scalarInput[l]) >= 1 {
+						o.scalarPoints[l] = o.scalarInput[l][v].Samples[0]
 					}
 				}
 			}
@@ -154,38 +139,17 @@ func (o *functionOperator) instantVectorOrScalarNext(ctx context.Context) ([]mod
 			// Call function by separately passing major input and scalars.
 			result := o.call(FunctionArgs{
 				Labels:       o.series[0],
-				Points:       []promql.Point{{V: vector.Samples[i]}},
-				StepTime:     vector.T,
-				ScalarPoints: scalarPoints,
+				Points:       []promql.Point{{V: input[v].Samples[i]}},
+				StepTime:     input[v].T,
+				ScalarPoints: o.scalarPoints,
 			})
 
-			vector.Samples[i] = result.V
+			input[v].Samples[i] = result.V
 		}
-		out = append(out, vector)
-		o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
-	}
-	o.nextOps[o.nextIndex].GetPool().PutVectors(input)
-	return out, nil
-}
-
-// Process single arg range vector input functions.
-func (o *functionOperator) rangeVectorNext(ctx context.Context) ([]model.StepVector, error) {
-	input, err := o.nextOps[o.nextIndex].Next(ctx)
-	if err != nil {
-		return nil, err
 	}
 
-	if len(input) == 0 {
-		return nil, nil
-	}
-
-	// We inject function call in tree, so only need to relay input from here.
+	defer o.nextOps[o.vectorIndex].GetPool().PutVectors(input)
 	return input, nil
-}
-
-// Handle unimplemented cases.
-func (o *functionOperator) defaultNext(ctx context.Context) ([]model.StepVector, error) {
-	return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", o.funcExpr)
 }
 
 func (o *functionOperator) loadSeries(ctx context.Context) error {
@@ -193,17 +157,15 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 	o.once.Do(func() {
 		if o.funcExpr.Func.Name == "vector" {
 			o.series = []labels.Labels{labels.New()}
-			o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
 			return
 		}
 
 		if o.funcExpr.Func.Name == "scalar" {
 			o.series = []labels.Labels{}
-			o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
 			return
 		}
 
-		series, loadErr := o.nextOps[o.nextIndex].Series(ctx)
+		series, loadErr := o.nextOps[o.vectorIndex].Series(ctx)
 		if loadErr != nil {
 			err = loadErr
 		}
@@ -212,14 +174,12 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 		for i, s := range series {
 			lbls := s
 			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls = dropMetricName(s)
+				lbls = DropMetricName(s)
 			}
 
 			sort.Sort(lbls)
 			o.series[i] = lbls
 		}
-
-		o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
 	})
 
 	return err
@@ -809,7 +769,7 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	return t, c
 }
 
-func dropMetricName(l labels.Labels) labels.Labels {
+func DropMetricName(l labels.Labels) labels.Labels {
 	if len(l) == 0 {
 		return l
 	}

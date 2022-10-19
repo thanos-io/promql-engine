@@ -58,7 +58,7 @@ func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step
 }
 
 func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options) (*exchange.CancellableOperator, error) {
-	operator, err := newOperator(expr, selectorPool, opts, nil)
+	operator, err := newOperator(expr, selectorPool, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPoo
 	return exchange.NewCancellable(operator), nil
 }
 
-func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, call function.FunctionCall) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
@@ -80,37 +80,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
 		selector := storage.GetFilteredSelector(start, end, e.LabelMatchers, e.Filters)
 		return newShardedVectorSelector(selector, opts, e.Offset)
-
-	case *parser.MatrixSelector:
-		if call == nil {
-			// TODO(saswatamcode): Range vector result might need new operator.
-			// https://github.com/thanos-community/promql-engine/issues/39
-			return nil, parse.ErrNotImplemented
-		}
-
-		vs, filters, err := unpackVectorSelector(e)
-		if err != nil {
-			return nil, err
-		}
-
-		start, end := getTimeRangesForVectorSelector(vs, opts, e.Range)
-		filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
-
-		numShards := runtime.GOMAXPROCS(0) / 2
-		if numShards < 1 {
-			numShards = 1
-		}
-
-		operators := make([]model.VectorOperator, 0, numShards)
-		for i := 0; i < numShards; i++ {
-			operator := exchange.NewConcurrent(
-				exchange.NewCancellable(
-					scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, opts, e.Range, vs.Offset, i, numShards),
-				), 2)
-			operators = append(operators, operator)
-		}
-
-		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 
 	case *parser.Call:
 		// We can classify PromQL functions into the following categories,
@@ -134,16 +103,52 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
 		}
 
+		// TODO(saswatamcode): Range vector result might need new operator
+		// before it can be non-nested. https://github.com/thanos-community/promql-engine/issues/39
+		for i := range e.Args {
+			switch t := e.Args[i].(type) {
+			case *parser.MatrixSelector:
+				if call == nil {
+					return nil, parse.ErrNotImplemented
+				}
+
+				vs, filters, err := unpackVectorSelector(t)
+				if err != nil {
+					return nil, err
+				}
+
+				start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
+				filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
+
+				numShards := runtime.GOMAXPROCS(0) / 2
+				if numShards < 1 {
+					numShards = 1
+				}
+
+				operators := make([]model.VectorOperator, 0, numShards)
+				for i := 0; i < numShards; i++ {
+					operator := exchange.NewConcurrent(
+						exchange.NewCancellable(
+							scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, e, opts, t.Range, vs.Offset, i, numShards),
+						), 2)
+					operators = append(operators, operator)
+				}
+
+				return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+			}
+		}
+
+		// Does not have matrix arg so create functionOperator normally.
 		nextOperators := make([]model.VectorOperator, len(e.Args))
 		for i := range e.Args {
-			next, err := newOperator(e.Args[i], storage, opts, call)
+			next, err := newOperator(e.Args[i], storage, opts)
 			if err != nil {
 				return nil, err
 			}
 			nextOperators[i] = exchange.NewCancellable(next)
 		}
 
-		return function.NewfunctionOperator(e, call, nextOperators), nil
+		return function.NewfunctionOperator(e, call, nextOperators)
 
 	case *parser.AggregateExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)

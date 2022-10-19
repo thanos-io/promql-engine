@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-community/promql-engine/execution/function"
@@ -29,6 +30,7 @@ type matrixScanner struct {
 }
 
 type matrixSelector struct {
+	funcExpr *parser.Call
 	storage  engstore.SeriesSelector
 	call     function.FunctionCall
 	scanners []matrixScanner
@@ -54,6 +56,7 @@ func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
 	call function.FunctionCall,
+	funcExpr *parser.Call,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	shard, numShard int,
@@ -62,6 +65,7 @@ func NewMatrixSelector(
 	return &matrixSelector{
 		storage:    selector,
 		call:       call,
+		funcExpr:   funcExpr,
 		vectorPool: pool,
 
 		numSteps: opts.NumSteps(),
@@ -80,6 +84,9 @@ func NewMatrixSelector(
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 	r := time.Duration(o.selectRange) * time.Millisecond
+	if o.call != nil {
+		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.Matchers(), r, o.shard, o.numShards), nil
+	}
 	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
 }
 
@@ -119,7 +126,10 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			mint := maxt - o.selectRange
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
 
-			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors via injectable.
+			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
+			// Also, allow operator to exist independently without being nested
+			// under parser.Call by implementing new data model.
+			// https://github.com/thanos-community/promql-engine/issues/39
 			result := o.call(function.FunctionArgs{
 				Labels:      series.labels,
 				Points:      rangePoints,
@@ -168,6 +178,10 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		o.series = make([]labels.Labels, len(series))
 		for i, s := range series {
 			lbls := s.Labels()
+			if o.funcExpr.Func.Name != "last_over_time" {
+				lbls = function.DropMetricName(lbls)
+			}
+
 			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{

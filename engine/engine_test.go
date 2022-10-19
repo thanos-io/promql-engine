@@ -787,7 +787,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	sum(http_requests_total{ns="nginx"})`,
 		},
 		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately.
+		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
 		// {
 		// 	name: "scalar func with NaN",
 		// 	load: `load 30s
@@ -1409,7 +1409,7 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately.
+		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
 		// {
 		// 	name: "scalar func with NaN",
 		// 	load: `load 30s
