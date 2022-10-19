@@ -12,6 +12,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -19,8 +20,8 @@ import (
 	"github.com/thanos-community/promql-engine/execution/parse"
 )
 
-// functionSelector returns []model.StepVector after processing input with desired function.
-type functionSelector struct {
+// functionOperator returns []model.StepVector after processing input with desired function.
+type functionOperator struct {
 	funcExpr  *parser.Call
 	series    []labels.Labels
 	once      sync.Once
@@ -31,8 +32,8 @@ type functionSelector struct {
 	call FunctionCall
 }
 
-func NewFunctionSelector(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator) model.VectorOperator {
-	f := &functionSelector{
+func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator) model.VectorOperator {
+	f := &functionOperator{
 		nextOps:   nextOps,
 		call:      call,
 		funcExpr:  funcExpr,
@@ -58,11 +59,11 @@ func NewFunctionSelector(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 	return f
 }
 
-func (o *functionSelector) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*functionSelector] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
+func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*functionOperator] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
 }
 
-func (o *functionSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -70,11 +71,11 @@ func (o *functionSelector) Series(ctx context.Context) ([]labels.Labels, error) 
 	return o.series, nil
 }
 
-func (o *functionSelector) GetPool() *model.VectorPool {
+func (o *functionOperator) GetPool() *model.VectorPool {
 	return o.nextOps[o.nextIndex].GetPool()
 }
 
-func (o *functionSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -88,7 +89,7 @@ func (o *functionSelector) Next(ctx context.Context) ([]model.StepVector, error)
 }
 
 // Process single/multi-arg instant vector and scalar input functions.
-func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]model.StepVector, error) {
+func (o *functionOperator) instantVectorOrScalarNext(ctx context.Context) ([]model.StepVector, error) {
 	// Call next on instant/range vector input.
 	input, err := o.nextOps[o.nextIndex].Next(ctx)
 	if err != nil {
@@ -122,6 +123,24 @@ func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]mod
 	scalarPoints := make([]float64, len(scalarInput))
 	out := o.nextOps[o.nextIndex].GetPool().GetVectorBatch()
 	for v, vector := range input {
+		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
+		// So need to handle this separately here, instead of going via call which is per point.
+		if o.funcExpr.Func.Name == "scalar" {
+			if len(vector.Samples) <= 1 {
+				out = append(out, vector)
+				o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
+				continue
+			}
+
+			vector.Samples = vector.Samples[:1]
+			vector.SampleIDs = vector.SampleIDs[:1]
+			vector.Samples[0] = math.Float64frombits(value.NormalNaN)
+
+			out = append(out, vector)
+			o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
+			continue
+		}
+
 		for i := range vector.Samples {
 			// Scalar expressions can select from storage as well.
 			if len(o.funcExpr.Func.ArgTypes) > 1 && len(scalarInput) > 0 {
@@ -146,12 +165,11 @@ func (o *functionSelector) instantVectorOrScalarNext(ctx context.Context) ([]mod
 		o.nextOps[o.nextIndex].GetPool().PutStepVector(vector)
 	}
 	o.nextOps[o.nextIndex].GetPool().PutVectors(input)
-
 	return out, nil
 }
 
 // Process single arg range vector input functions.
-func (o *functionSelector) rangeVectorNext(ctx context.Context) ([]model.StepVector, error) {
+func (o *functionOperator) rangeVectorNext(ctx context.Context) ([]model.StepVector, error) {
 	input, err := o.nextOps[o.nextIndex].Next(ctx)
 	if err != nil {
 		return nil, err
@@ -166,15 +184,21 @@ func (o *functionSelector) rangeVectorNext(ctx context.Context) ([]model.StepVec
 }
 
 // Handle unimplemented cases.
-func (o *functionSelector) defaultNext(ctx context.Context) ([]model.StepVector, error) {
+func (o *functionOperator) defaultNext(ctx context.Context) ([]model.StepVector, error) {
 	return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", o.funcExpr)
 }
 
-func (o *functionSelector) loadSeries(ctx context.Context) error {
+func (o *functionOperator) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
 		if o.funcExpr.Func.Name == "vector" {
 			o.series = []labels.Labels{labels.New()}
+			o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
+			return
+		}
+
+		if o.funcExpr.Func.Name == "scalar" {
+			o.series = []labels.Labels{}
 			o.nextOps[o.nextIndex].GetPool().SetStepSize(len(o.series))
 			return
 		}
@@ -402,6 +426,10 @@ var Funcs = map[string]FunctionCall{
 				V: f.Points[0].V,
 			},
 		}
+	},
+	"scalar": func(f FunctionArgs) promql.Sample {
+		// This is handled specially by operator.
+		return promql.Sample{}
 	},
 	"rate": func(f FunctionArgs) promql.Sample {
 		if len(f.Points) < 2 {

@@ -786,6 +786,29 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	+ on() group_left()
 	sum(http_requests_total{ns="nginx"})`,
 		},
+		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
+		// TODO(saswatamcode): Test NaN cases separately.
+		// {
+		// 	name: "scalar func with NaN",
+		// 	load: `load 30s
+		//  	http_requests_total{pod="nginx-1"} 1+1x15
+		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
+		// 	query: `scalar(http_requests_total)`,
+		// },
+		{
+			name: "scalar func with aggr",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(max(http_requests_total))`,
+		},
+		{
+			name: "scalar func with number",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(max(http_requests_total)) + 10`,
+		},
 		{
 			name: "clamp",
 			load: `load 30s
@@ -820,6 +843,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
+		{
+			name: "func with scalar arg that selects storage",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)))`,
+		},
+		{
+			name: "func with scalar arg that selects storage + number",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)) + 10)`,
 		},
 	}
 
@@ -1371,6 +1408,29 @@ func TestInstantQuery(t *testing.T) {
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
+		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
+		// TODO(saswatamcode): Test NaN cases separately.
+		// {
+		// 	name: "scalar func with NaN",
+		// 	load: `load 30s
+		//  	http_requests_total{pod="nginx-1"} 1+1x15
+		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
+		// 	query: `scalar(http_requests_total)`,
+		// },
+		{
+			name: "scalar func with aggr",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(max(http_requests_total))`,
+		},
+		{
+			name: "scalar func with number",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(max(http_requests_total)) + 10`,
+		},
 		{
 			name: "clamp",
 			load: `load 30s
@@ -1405,6 +1465,20 @@ func TestInstantQuery(t *testing.T) {
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
+		},
+		{
+			name: "func with scalar arg that selects storage",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)))`,
+		},
+		{
+			name: "func with scalar arg that selects storage + number",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)) + 10)`,
 		},
 	}
 

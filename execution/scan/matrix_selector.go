@@ -17,7 +17,6 @@ import (
 
 	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/parse"
 	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
 )
@@ -120,28 +119,18 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			mint := maxt - o.selectRange
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
 
-			if o.call != nil {
-				if len(vectors) <= currStep {
-					vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
-				}
+			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors via injectable.
+			result := o.call(function.FunctionArgs{
+				Labels:      series.labels,
+				Points:      rangePoints,
+				StepTime:    seriesTs,
+				SelectRange: o.selectRange,
+			})
 
-				// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors via injectable.
-				result := o.call(function.FunctionArgs{
-					Labels:      series.labels,
-					Points:      rangePoints,
-					StepTime:    seriesTs,
-					SelectRange: o.selectRange,
-				})
-
-				if result.Point != function.InvalidSample.Point {
-					vectors[currStep].T = result.T
-					vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
-					vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
-				}
-			} else {
-				// TODO(saswatamcode): Range vector result might need new operator.
-				// https://github.com/thanos-community/promql-engine/issues/39
-				return nil, parse.ErrNotImplemented
+			if result.Point != function.InvalidSample.Point {
+				vectors[currStep].T = result.T
+				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
+				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 			}
 
 			o.scanners[i].previousPoints = rangePoints

@@ -181,11 +181,6 @@ type compatibilityQuery struct {
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	// Handle case with strings early on as this does not need us to process samples.
 	// TODO(saswatamcode): Modify models.StepVector to support all types and check during executor creation.
-	switch e := q.expr.(type) {
-	case *parser.StringLiteral:
-		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
-	}
-
 	ret = &promql.Result{
 		Value: promql.Vector{},
 	}
@@ -217,6 +212,29 @@ loop:
 			}
 			if r == nil {
 				break loop
+			}
+
+			// Case where Series call might return nil, but samples are present.
+			// For example scalar(http_request_total) where http_request_total has multiple values.
+			if len(series) == 0 && len(r) != 0 {
+				numSeries := 0
+				for i := range r {
+					numSeries += len(r[i].Samples)
+				}
+
+				series = make([]promql.Series, numSeries)
+
+				for _, vector := range r {
+					for i := range vector.Samples {
+						series[i].Points = append(series[i].Points, promql.Point{
+							T: vector.T,
+							V: vector.Samples[i],
+						})
+					}
+					q.Query.exec.GetPool().PutStepVector(vector)
+				}
+				q.Query.exec.GetPool().PutVectors(r)
+				continue
 			}
 
 			for _, vector := range r {

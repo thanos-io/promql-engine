@@ -82,6 +82,12 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return newShardedVectorSelector(selector, opts, e.Offset)
 
 	case *parser.MatrixSelector:
+		if call == nil {
+			// TODO(saswatamcode): Range vector result might need new operator.
+			// https://github.com/thanos-community/promql-engine/issues/39
+			return nil, parse.ErrNotImplemented
+		}
+
 		vs, filters, err := unpackVectorSelector(e)
 		if err != nil {
 			return nil, err
@@ -137,7 +143,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			nextOperators[i] = exchange.NewCancellable(next)
 		}
 
-		return function.NewFunctionSelector(e, call, nextOperators), nil
+		return function.NewfunctionOperator(e, call, nextOperators), nil
 
 	case *parser.AggregateExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)
