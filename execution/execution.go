@@ -82,17 +82,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return newShardedVectorSelector(selector, opts, e.Offset)
 
 	case *parser.Call:
-		// We can classify PromQL functions into the following categories,
-		// - Single vector input functions (majority).
-		// - Single matrix input functions (majority).
-		// - Vector with scalar input functions.
-		// - Matrix with scalar input functions. TODO(saswatamcode)
-		// - String based operations on vectors (only label_replace()). TODO(saswatamcode)
-		// - No inputs (only pi() and time()). TODO(saswatamcode)
-		// - Only scalar input (only vector()).
-		// - Variadics (all time based functions like month() + round() and label_join()). TODO(saswatamcode)
-		// Tracked in https://github.com/thanos-community/promql-engine/issues/23
-
+		// TODO(saswatamcode): Tracked in https://github.com/thanos-community/promql-engine/issues/23
 		// Based on the category we can create an apt query plan.
 		call, err := function.NewFunctionCall(e.Func)
 		if err != nil {

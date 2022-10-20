@@ -161,6 +161,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 		series, loadErr := o.nextOps[o.vectorIndex].Series(ctx)
 		if loadErr != nil {
 			err = loadErr
+			return
 		}
 
 		o.series = make([]labels.Labels, len(series))
