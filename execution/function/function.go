@@ -1,247 +1,475 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package scan
+package function
 
 import (
+	"context"
 	"fmt"
 	"math"
+	"sync"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
 )
 
+// functionOperator returns []model.StepVector after processing input with desired function.
+type functionOperator struct {
+	funcExpr    *parser.Call
+	series      []labels.Labels
+	once        sync.Once
+	vectorIndex int
+	nextOps     []model.VectorOperator
+
+	call         FunctionCall
+	scalarPoints [][]float64
+}
+
+func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
+	scalarPoints := make([][]float64, stepsBatch)
+	for i := 0; i < stepsBatch; i++ {
+		scalarPoints[i] = make([]float64, len(nextOps)-1)
+	}
+	f := &functionOperator{
+		nextOps:      nextOps,
+		call:         call,
+		funcExpr:     funcExpr,
+		vectorIndex:  0,
+		scalarPoints: scalarPoints,
+	}
+
+	for i := range funcExpr.Args {
+		if funcExpr.Args[i].Type() == parser.ValueTypeVector {
+			f.vectorIndex = i
+			break
+		}
+	}
+
+	// Check selector type.
+	// TODO(saswatamcode): Add support for string and matrix.
+	switch funcExpr.Args[f.vectorIndex].Type() {
+	case parser.ValueTypeVector, parser.ValueTypeScalar:
+		return f, nil
+	default:
+		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
+	}
+}
+
+func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*functionOperator] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
+}
+
+func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+
+	return o.series, nil
+}
+
+func (o *functionOperator) GetPool() *model.VectorPool {
+	return o.nextOps[o.vectorIndex].GetPool()
+}
+
+func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+
+	// Process non-variadic single/multi-arg instant vector and scalar input functions.
+	// Call next on vector input.
+	vectors, err := o.nextOps[o.vectorIndex].Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if len(vectors) == 0 {
+		return nil, nil
+	}
+
+	scalarIndex := 0
+	for i := range o.nextOps {
+		if i == o.vectorIndex {
+			continue
+		}
+
+		scalarVectors, err := o.nextOps[i].Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for batchIndex := range vectors {
+			val := math.NaN()
+			if len(scalarVectors) > 0 && len(scalarVectors[batchIndex].Samples) > 0 {
+				val = scalarVectors[batchIndex].Samples[0]
+				o.nextOps[i].GetPool().PutStepVector(scalarVectors[batchIndex])
+			}
+			o.scalarPoints[batchIndex][scalarIndex] = val
+		}
+		o.nextOps[i].GetPool().PutVectors(scalarVectors)
+		scalarIndex++
+	}
+
+	for batchIndex, vector := range vectors {
+		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
+		// So need to handle this separately here, instead of going via call which is per point.
+		if o.funcExpr.Func.Name == "scalar" {
+			if len(vector.Samples) <= 1 {
+				continue
+			}
+
+			vectors[batchIndex].Samples = vector.Samples[:1]
+			vectors[batchIndex].SampleIDs = vector.SampleIDs[:1]
+			vector.Samples[0] = math.NaN()
+			continue
+		}
+
+		for i := range vector.Samples {
+			// Call function by separately passing major input and scalars.
+			result := o.call(FunctionArgs{
+				Labels:       o.series[0],
+				Points:       []promql.Point{{V: vector.Samples[i]}},
+				StepTime:     vector.T,
+				ScalarPoints: o.scalarPoints[batchIndex],
+			})
+
+			vector.Samples[i] = result.V
+		}
+	}
+
+	return vectors, nil
+}
+
+func (o *functionOperator) loadSeries(ctx context.Context) error {
+	var err error
+	o.once.Do(func() {
+		if o.funcExpr.Func.Name == "vector" {
+			o.series = []labels.Labels{labels.New()}
+			return
+		}
+
+		if o.funcExpr.Func.Name == "scalar" {
+			o.series = []labels.Labels{}
+			return
+		}
+
+		series, loadErr := o.nextOps[o.vectorIndex].Series(ctx)
+		if loadErr != nil {
+			err = loadErr
+			return
+		}
+
+		o.series = make([]labels.Labels, len(series))
+		for i, s := range series {
+			lbls := s
+			if o.funcExpr.Func.Name != "last_over_time" {
+				lbls = DropMetricName(s)
+			}
+
+			o.series[i] = lbls
+		}
+	})
+
+	return err
+}
+
 var InvalidSample = promql.Sample{Point: promql.Point{T: -1, V: 0}}
 
+type FunctionArgs struct {
+	Labels       labels.Labels
+	Points       []promql.Point
+	StepTime     int64
+	SelectRange  int64
+	ScalarPoints []float64
+}
+
 // FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
-type FunctionCall func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample
+type FunctionCall func(f FunctionArgs) promql.Sample
 
 var Funcs = map[string]FunctionCall{
-	"sum_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"sum_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: sumOverTime(points),
+				T: f.StepTime,
+				V: sumOverTime(f.Points),
 			},
 		}
 	},
-	"max_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"max_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: maxOverTime(points),
+				T: f.StepTime,
+				V: maxOverTime(f.Points),
 			},
 		}
 	},
-	"min_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"min_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: minOverTime(points),
+				T: f.StepTime,
+				V: minOverTime(f.Points),
 			},
 		}
 	},
-	"avg_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"avg_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: avgOverTime(points),
+				T: f.StepTime,
+				V: avgOverTime(f.Points),
 			},
 		}
 	},
-	"stddev_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"stddev_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: stddevOverTime(points),
+				T: f.StepTime,
+				V: stddevOverTime(f.Points),
 			},
 		}
 	},
-	"stdvar_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"stdvar_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: stdvarOverTime(points),
+				T: f.StepTime,
+				V: stdvarOverTime(f.Points),
 			},
 		}
 	},
-	"count_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"count_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: countOverTime(points),
+				T: f.StepTime,
+				V: countOverTime(f.Points),
 			},
 		}
 	},
-	"last_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"last_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: points[len(points)-1].V,
+				T: f.StepTime,
+				V: f.Points[len(f.Points)-1].V,
 			},
 		}
 	},
-	"present_over_time": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"present_over_time": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
+				T: f.StepTime,
 				V: 1,
 			},
 		}
 	},
-	"changes": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"changes": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: changes(points),
+				T: f.StepTime,
+				V: changes(f.Points),
 			},
 		}
 	},
-	"resets": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"resets": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: resets(points),
+				T: f.StepTime,
+				V: resets(f.Points),
 			},
 		}
 	},
-	"deriv": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) < 2 {
+	"deriv": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: deriv(points),
+				T: f.StepTime,
+				V: deriv(f.Points),
 			},
 		}
 	},
-	"irate": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) < 2 {
+	"irate": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
 			return InvalidSample
 		}
-		val, ok := instantValue(points, true)
+		val, ok := instantValue(f.Points, true)
 		if !ok {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
+				T: f.StepTime,
 				V: val,
 			},
 		}
 	},
-	"idelta": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) < 2 {
+	"idelta": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
 			return InvalidSample
 		}
-		val, ok := instantValue(points, false)
+		val, ok := instantValue(f.Points, false)
 		if !ok {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
+				T: f.StepTime,
 				V: val,
 			},
 		}
 	},
-	"vector": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) == 0 {
+	"vector": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: points[0].V,
+				T: f.StepTime,
+				V: f.Points[0].V,
 			},
 		}
 	},
-	"rate": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) < 2 {
+	"scalar": func(f FunctionArgs) promql.Sample {
+		// This is handled specially by operator.
+		return promql.Sample{}
+	},
+	"rate": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: extrapolatedRate(points, true, true, stepTime, selectRange),
+				T: f.StepTime,
+				V: extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange),
 			},
 		}
 	},
-	"delta": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) < 2 {
+	"delta": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: extrapolatedRate(points, false, false, stepTime, selectRange),
+				T: f.StepTime,
+				V: extrapolatedRate(f.Points, false, false, f.StepTime, f.SelectRange),
 			},
 		}
 	},
-	"increase": func(labels labels.Labels, points []promql.Point, stepTime int64, selectRange int64) promql.Sample {
-		if len(points) < 2 {
+	"increase": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
 			return InvalidSample
 		}
 		return promql.Sample{
-			Metric: labels,
+			Metric: f.Labels,
 			Point: promql.Point{
-				T: stepTime,
-				V: extrapolatedRate(points, true, false, stepTime, selectRange),
+				T: f.StepTime,
+				V: extrapolatedRate(f.Points, true, false, f.StepTime, f.SelectRange),
+			},
+		}
+	},
+	"clamp": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 || len(f.ScalarPoints) < 2 {
+			return InvalidSample
+		}
+
+		v := f.Points[0].V
+		min := f.ScalarPoints[0]
+		max := f.ScalarPoints[1]
+
+		if max < min {
+			return InvalidSample
+		}
+
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: math.Max(min, math.Min(max, v)),
+			},
+		}
+	},
+	"clamp_min": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 || len(f.ScalarPoints) == 0 {
+			return InvalidSample
+		}
+
+		v := f.Points[0].V
+		min := f.ScalarPoints[0]
+
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: math.Max(min, v),
+			},
+		}
+	},
+	"clamp_max": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 || len(f.ScalarPoints) == 0 {
+			return InvalidSample
+		}
+
+		v := f.Points[0].V
+		max := f.ScalarPoints[0]
+
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: math.Min(max, v),
 			},
 		}
 	},
@@ -251,7 +479,12 @@ func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
 	if call, ok := Funcs[f.Name]; ok {
 		return call, nil
 	}
+
 	msg := fmt.Sprintf("unknown function: %s", f.Name)
+	if _, ok := parser.Functions[f.Name]; ok {
+		return nil, errors.Wrap(parse.ErrNotImplemented, msg)
+	}
+
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 }
 
@@ -529,6 +762,25 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	return t, c
 }
 
-func dropMetricName(l labels.Labels) labels.Labels {
-	return labels.NewBuilder(l).Del(labels.MetricName).Labels(nil)
+func DropMetricName(l labels.Labels) labels.Labels {
+	if len(l) == 0 {
+		return l
+	}
+
+	if len(l) == 1 {
+		if l[0].Name == labels.MetricName {
+			return labels.EmptyLabels()
+		}
+		return l
+	}
+
+	c := 0
+	for i := range l {
+		if l[i].Name == labels.MetricName {
+			c = i
+			break
+		}
+	}
+
+	return append(l[:c], l[c+1:]...)
 }

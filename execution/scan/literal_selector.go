@@ -8,13 +8,10 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
 )
 
 // numberLiteralSelector returns []model.StepVector with same sample value across time range.
@@ -29,9 +26,7 @@ type numberLiteralSelector struct {
 	series      []labels.Labels
 	once        sync.Once
 
-	val      float64
-	call     FunctionCall
-	callName string
+	val float64
 }
 
 func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
@@ -46,22 +41,7 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 	}
 }
 
-func NewNumberLiteralSelectorWithFunc(pool *model.VectorPool, opts *query.Options, val float64, f *parser.Function) (model.VectorOperator, error) {
-	call, err := NewFunctionCall(f)
-	if err != nil {
-		return nil, err
-	}
-
-	selector := NewNumberLiteralSelector(pool, opts, val)
-	selector.call = call
-	selector.callName = f.Name
-	return selector, nil
-}
-
 func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
-	if o.call != nil {
-		return fmt.Sprintf("[*numberLiteralSelector] %v(%v)", o.callName, o.val), nil
-	}
 	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
 }
 
@@ -88,14 +68,8 @@ func (o *numberLiteralSelector) Next(context.Context) ([]model.StepVector, error
 			vectors = append(vectors, o.vectorPool.GetStepVector(ts))
 		}
 
-		result := promql.Sample{Point: promql.Point{T: ts, V: o.val}}
-		if o.call != nil {
-			result = o.call(o.series[0], []promql.Point{result.Point}, ts, 0)
-		}
-
-		vectors[currStep].T = result.T
 		vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, uint64(0))
-		vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
+		vectors[currStep].Samples = append(vectors[currStep].Samples, o.val)
 
 		ts += o.step
 	}
@@ -114,9 +88,6 @@ func (o *numberLiteralSelector) loadSeries() {
 	// If number literal is included within function, []labels.labels must be initialized.
 	o.once.Do(func() {
 		o.series = make([]labels.Labels, 1)
-		if o.call != nil {
-			o.series = []labels.Labels{labels.New()}
-		}
 		o.vectorPool.SetStepSize(len(o.series))
 	})
 }

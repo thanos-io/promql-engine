@@ -12,9 +12,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/execution/scan"
 )
 
 type aggregateTable interface {
@@ -242,8 +242,8 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 					hasValue = true
 					count++
 					delta := v - (mean + cMean)
-					mean, cMean = scan.KahanSumInc(delta/count, mean, cMean)
-					aux, cAux = scan.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
+					mean, cMean = function.KahanSumInc(delta/count, mean, cMean)
+					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
 				},
 				ValueFunc: func() float64 { return math.Sqrt((aux + cAux) / count) },
 				HasValue:  func() bool { return hasValue },
@@ -268,8 +268,8 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 					hasValue = true
 					count++
 					delta := v - (mean + cMean)
-					mean, cMean = scan.KahanSumInc(delta/count, mean, cMean)
-					aux, cAux = scan.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
+					mean, cMean = function.KahanSumInc(delta/count, mean, cMean)
+					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
 				},
 				ValueFunc: func() float64 { return (aux + cAux) / count },
 				HasValue:  func() bool { return hasValue },

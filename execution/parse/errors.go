@@ -17,3 +17,5 @@ func UnsupportedOperationErr(op parser.ItemType) error {
 	msg := fmt.Sprintf("operation not supported: %s", t)
 	return errors.Wrap(ErrNotSupportedExpr, msg)
 }
+
+var ErrNotImplemented = errors.New("expression not implemented")

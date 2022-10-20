@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
+	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
 	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
@@ -30,8 +31,8 @@ type matrixScanner struct {
 
 type matrixSelector struct {
 	funcExpr *parser.Call
-	call     FunctionCall
 	storage  engstore.SeriesSelector
+	call     function.FunctionCall
 	scanners []matrixScanner
 	series   []labels.Labels
 	once     sync.Once
@@ -54,8 +55,8 @@ type matrixSelector struct {
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
+	call function.FunctionCall,
 	funcExpr *parser.Call,
-	call FunctionCall,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	shard, numShard int,
@@ -123,14 +124,25 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
-
 			rangePoints := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
-			result := o.call(series.labels, rangePoints, seriesTs, o.selectRange)
-			if result.Point != InvalidSample.Point {
+
+			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
+			// Also, allow operator to exist independently without being nested
+			// under parser.Call by implementing new data model.
+			// https://github.com/thanos-community/promql-engine/issues/39
+			result := o.call(function.FunctionArgs{
+				Labels:      series.labels,
+				Points:      rangePoints,
+				StepTime:    seriesTs,
+				SelectRange: o.selectRange,
+			})
+
+			if result.Point != function.InvalidSample.Point {
 				vectors[currStep].T = result.T
 				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 			}
+
 			o.scanners[i].previousPoints = rangePoints
 
 			// Only buffer stepRange milliseconds from the second step on.
@@ -167,8 +179,9 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		for i, s := range series {
 			lbls := s.Labels()
 			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls = dropMetricName(lbls)
+				lbls = function.DropMetricName(lbls)
 			}
+
 			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{

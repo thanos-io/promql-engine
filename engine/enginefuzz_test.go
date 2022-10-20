@@ -12,9 +12,10 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/execution/scan"
+	"github.com/thanos-community/promql-engine/execution/function"
 )
 
 func FuzzEngineQueryRangeMatrixFunctions(f *testing.F) {
@@ -30,7 +31,12 @@ func FuzzEngineQueryRangeMatrixFunctions(f *testing.F) {
 		if inc1 < 0 || inc2 < 0 || stepRange <= 0 || intervalSeconds <= 0 || endTS < startTS {
 			return
 		}
-		for funcName := range scan.Funcs {
+		for funcName := range function.Funcs {
+			// Skipping multi-arg functions in fuzz test for now.
+			if len(parser.Functions[funcName].ArgTypes) > 1 || funcName == "scalar" {
+				continue
+			}
+
 			load := fmt.Sprintf(`load 30s
 			http_requests_total{pod="nginx-1"} %.2f+%.2fx15
 			http_requests_total{pod="nginx-2"} %2.f+%.2fx21`, initialVal1, inc1, initialVal2, inc2)

@@ -30,6 +30,7 @@ import (
 	"github.com/thanos-community/promql-engine/execution/aggregate"
 	"github.com/thanos-community/promql-engine/execution/binary"
 	"github.com/thanos-community/promql-engine/execution/exchange"
+	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
 	"github.com/thanos-community/promql-engine/execution/scan"
@@ -81,49 +82,63 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return newShardedVectorSelector(selector, opts, e.Offset)
 
 	case *parser.Call:
-		if len(e.Args) != 1 {
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		// TODO(saswatamcode): Tracked in https://github.com/thanos-community/promql-engine/issues/23
+		// Based on the category we can create an apt query plan.
+		call, err := function.NewFunctionCall(e.Func)
+		if err != nil {
+			return nil, err
 		}
 
-		switch t := e.Args[0].(type) {
-		case *parser.MatrixSelector:
-			vs, filters, err := unpackVectorSelector(t)
-			if err != nil {
-				return nil, err
-			}
-			call, err := scan.NewFunctionCall(e.Func)
-			if err != nil {
-				return nil, err
-			}
-
-			start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
-			filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
-
-			numShards := runtime.GOMAXPROCS(0) / 2
-			if numShards < 1 {
-				numShards = 1
-			}
-
-			operators := make([]model.VectorOperator, 0, numShards)
-			for i := 0; i < numShards; i++ {
-				operator := exchange.NewConcurrent(
-					exchange.NewCancellable(
-						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, e, call, opts, t.Range, vs.Offset, i, numShards),
-					), 2)
-				operators = append(operators, operator)
-			}
-
-			return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
-
-		case *parser.NumberLiteral:
-			l, err := scan.NewNumberLiteralSelectorWithFunc(model.NewVectorPool(stepsBatch), opts, t.Val, e.Func)
-			if err != nil {
-				return nil, err
-			}
-			return exchange.NewCancellable(l), nil
-		default:
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", t)
+		if e.Func.Variadic != 0 {
+			return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
 		}
+
+		// TODO(saswatamcode): Range vector result might need new operator
+		// before it can be non-nested. https://github.com/thanos-community/promql-engine/issues/39
+		for i := range e.Args {
+			switch t := e.Args[i].(type) {
+			case *parser.MatrixSelector:
+				if call == nil {
+					return nil, parse.ErrNotImplemented
+				}
+
+				vs, filters, err := unpackVectorSelector(t)
+				if err != nil {
+					return nil, err
+				}
+
+				start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
+				filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
+
+				numShards := runtime.GOMAXPROCS(0) / 2
+				if numShards < 1 {
+					numShards = 1
+				}
+
+				operators := make([]model.VectorOperator, 0, numShards)
+				for i := 0; i < numShards; i++ {
+					operator := exchange.NewConcurrent(
+						exchange.NewCancellable(
+							scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, e, opts, t.Range, vs.Offset, i, numShards),
+						), 2)
+					operators = append(operators, operator)
+				}
+
+				return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+			}
+		}
+
+		// Does not have matrix arg so create functionOperator normally.
+		nextOperators := make([]model.VectorOperator, len(e.Args))
+		for i := range e.Args {
+			next, err := newOperator(e.Args[i], storage, opts)
+			if err != nil {
+				return nil, err
+			}
+			nextOperators[i] = exchange.NewCancellable(next)
+		}
+
+		return function.NewfunctionOperator(e, call, nextOperators, stepsBatch)
 
 	case *parser.AggregateExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)
@@ -146,6 +161,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case *parser.ParenExpr:
 		return newCancellableOperator(e.Expr, storage, opts)
+
+	case *parser.StringLiteral:
+		// TODO(saswatamcode): This requires separate model with strings.
+		return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e)
 
 	case *parser.UnaryExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)
