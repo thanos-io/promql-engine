@@ -123,8 +123,8 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 				continue
 			}
 
-			vector.Samples = vector.Samples[:1]
-			vector.SampleIDs = vector.SampleIDs[:1]
+			vectors[batchIndex].Samples = vector.Samples[:1]
+			vectors[batchIndex].SampleIDs = vector.SampleIDs[:1]
 			vector.Samples[0] = math.NaN()
 			continue
 		}
