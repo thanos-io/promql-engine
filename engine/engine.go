@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"runtime"
 	"sort"
 	"time"
@@ -287,7 +288,11 @@ loop:
 		}
 		result = vector
 	case parser.ValueTypeScalar:
-		result = promql.Scalar{V: series[0].Points[0].V, T: q.ts.UnixMilli()}
+		v := math.NaN()
+		if len(series) != 0 {
+			v = series[0].Points[0].V
+		}
+		result = promql.Scalar{V: v, T: q.ts.UnixMilli()}
 	default:
 		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.expr.Type()))
 	}

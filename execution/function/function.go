@@ -7,12 +7,10 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -108,6 +106,9 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 			o.scalarInput[s] = si
 			defer o.nextOps[i].GetPool().PutVectors(o.scalarInput[s])
+			for v := range o.scalarInput[s] {
+				defer o.nextOps[i].GetPool().PutStepVector(o.scalarInput[s][v])
+			}
 			s++
 		}
 	}
@@ -122,7 +123,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 			input[v].Samples = input[v].Samples[:1]
 			input[v].SampleIDs = input[v].SampleIDs[:1]
-			input[v].Samples[0] = math.Float64frombits(value.NormalNaN)
+			input[v].Samples[0] = math.NaN()
 			continue
 		}
 
@@ -130,6 +131,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			// Scalar expressions can select from storage as well.
 			if len(o.funcExpr.Func.ArgTypes) > 1 && len(o.scalarInput) > 0 {
 				for l := range o.scalarInput {
+					o.scalarPoints[l] = math.NaN()
 					if len(o.scalarInput[l]) >= 1 {
 						o.scalarPoints[l] = o.scalarInput[l][v].Samples[0]
 					}
@@ -145,6 +147,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			})
 
 			input[v].Samples[i] = result.V
+			defer o.nextOps[o.vectorIndex].GetPool().PutStepVector(input[v])
 		}
 	}
 
@@ -177,7 +180,6 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 				lbls = DropMetricName(s)
 			}
 
-			sort.Sort(lbls)
 			o.series[i] = lbls
 		}
 	})
