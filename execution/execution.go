@@ -148,7 +148,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			nextOperators[i] = exchange.NewCancellable(next)
 		}
 
-		return function.NewfunctionOperator(e, call, nextOperators)
+		return function.NewfunctionOperator(e, call, nextOperators, stepsBatch)
 
 	case *parser.AggregateExpr:
 		next, err := newCancellableOperator(e.Expr, storage, opts)

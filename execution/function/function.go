@@ -26,20 +26,21 @@ type functionOperator struct {
 	vectorIndex int
 	nextOps     []model.VectorOperator
 
-	call FunctionCall
-
-	scalarInput  [][]model.StepVector
-	scalarPoints []float64
+	call         FunctionCall
+	scalarPoints [][]float64
 }
 
-func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator) (model.VectorOperator, error) {
+func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
+	scalarPoints := make([][]float64, stepsBatch)
+	for i := 0; i < stepsBatch; i++ {
+		scalarPoints[i] = make([]float64, len(nextOps)-1)
+	}
 	f := &functionOperator{
 		nextOps:      nextOps,
 		call:         call,
 		funcExpr:     funcExpr,
 		vectorIndex:  0,
-		scalarInput:  make([][]model.StepVector, len(nextOps)-1),
-		scalarPoints: make([]float64, len(nextOps)-1),
+		scalarPoints: scalarPoints,
 	}
 
 	for i := range funcExpr.Args {
@@ -82,77 +83,66 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 	// Process non-variadic single/multi-arg instant vector and scalar input functions.
 	// Call next on vector input.
-	input, err := o.nextOps[o.vectorIndex].Next(ctx)
+	vectors, err := o.nextOps[o.vectorIndex].Next(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(input) == 0 {
+	if len(vectors) == 0 {
 		return nil, nil
 	}
 
-	// Call next on all scalar inputs.
-	if len(o.scalarInput) != 0 {
-		s := 0
-		for i := range o.nextOps {
-			if i == o.vectorIndex {
-				continue
-			}
-
-			si, err := o.nextOps[i].Next(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			o.scalarInput[s] = si
-			defer o.nextOps[i].GetPool().PutVectors(o.scalarInput[s])
-			for v := range o.scalarInput[s] {
-				defer o.nextOps[i].GetPool().PutStepVector(o.scalarInput[s][v])
-			}
-			s++
-		}
-	}
-
-	for v := range input {
-		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
-		// So need to handle this separately here, instead of going via call which is per point.
-		if o.funcExpr.Func.Name == "scalar" {
-			if len(input[v].Samples) <= 1 {
-				continue
-			}
-
-			input[v].Samples = input[v].Samples[:1]
-			input[v].SampleIDs = input[v].SampleIDs[:1]
-			input[v].Samples[0] = math.NaN()
+	scalarIndex := 0
+	for i := range o.nextOps {
+		if i == o.vectorIndex {
 			continue
 		}
 
-		for i := range input[v].Samples {
-			// Scalar expressions can select from storage as well.
-			if len(o.funcExpr.Func.ArgTypes) > 1 && len(o.scalarInput) > 0 {
-				for l := range o.scalarInput {
-					o.scalarPoints[l] = math.NaN()
-					if len(o.scalarInput[l]) >= 1 {
-						o.scalarPoints[l] = o.scalarInput[l][v].Samples[0]
-					}
-				}
+		scalarVectors, err := o.nextOps[i].Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		for batchIndex := range vectors {
+			val := math.NaN()
+			if len(scalarVectors) > 0 && len(scalarVectors[batchIndex].Samples) > 0 {
+				val = scalarVectors[batchIndex].Samples[0]
+				o.nextOps[i].GetPool().PutStepVector(scalarVectors[batchIndex])
+			}
+			o.scalarPoints[batchIndex][scalarIndex] = val
+		}
+		o.nextOps[i].GetPool().PutVectors(scalarVectors)
+		scalarIndex++
+	}
+
+	for batchIndex, vector := range vectors {
+		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
+		// So need to handle this separately here, instead of going via call which is per point.
+		if o.funcExpr.Func.Name == "scalar" {
+			if len(vector.Samples) <= 1 {
+				continue
 			}
 
+			vector.Samples = vector.Samples[:1]
+			vector.SampleIDs = vector.SampleIDs[:1]
+			vector.Samples[0] = math.NaN()
+			continue
+		}
+
+		for i := range vector.Samples {
 			// Call function by separately passing major input and scalars.
 			result := o.call(FunctionArgs{
 				Labels:       o.series[0],
-				Points:       []promql.Point{{V: input[v].Samples[i]}},
-				StepTime:     input[v].T,
-				ScalarPoints: o.scalarPoints,
+				Points:       []promql.Point{{V: vector.Samples[i]}},
+				StepTime:     vector.T,
+				ScalarPoints: o.scalarPoints[batchIndex],
 			})
 
-			input[v].Samples[i] = result.V
-			defer o.nextOps[o.vectorIndex].GetPool().PutStepVector(input[v])
+			vector.Samples[i] = result.V
 		}
 	}
 
-	defer o.nextOps[o.vectorIndex].GetPool().PutVectors(input)
-	return input, nil
+	return vectors, nil
 }
 
 func (o *functionOperator) loadSeries(ctx context.Context) error {
