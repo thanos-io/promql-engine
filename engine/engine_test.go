@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"runtime"
 	"testing"
 	"time"
@@ -1903,6 +1904,42 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			testutil.Ok(t, res.Err)
 
 			testutil.Equals(t, tc.expected, hintsRecorder.hints)
+		})
+	}
+}
+
+func TestFallback(t *testing.T) {
+	start := time.Unix(0, 0)
+	end := time.Unix(120, 0)
+	step := time.Second * 30
+
+	// TODO(fpetkovski): Update this expression once we add support for sort_desc.
+	query := `sort_desc(http_requests_total{pod="nginx-1"})`
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x1
+				http_requests_total{pod="nginx-2"} 1+2x40`
+
+	test, err := promql.NewTest(t, load)
+	testutil.Ok(t, err)
+	defer test.Close()
+
+	testutil.Ok(t, test.Run())
+
+	for _, disableFallback := range []bool{true, false} {
+		t.Run(fmt.Sprintf("disableFallback=%t", disableFallback), func(t *testing.T) {
+			opts := promql.EngineOpts{
+				Timeout:    2 * time.Second,
+				MaxSamples: math.MaxInt64,
+			}
+			newEngine := engine.New(engine.Opts{DisableFallback: disableFallback, EngineOpts: opts})
+			q1, err := newEngine.NewRangeQuery(test.Storage(), nil, query, start, end, step)
+			if disableFallback {
+				testutil.NotOk(t, err)
+			} else {
+				testutil.Ok(t, err)
+				newResult := q1.Exec(context.Background())
+				testutil.Ok(t, newResult.Err)
+			}
 		})
 	}
 }

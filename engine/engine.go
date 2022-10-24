@@ -98,7 +98,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	}
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
-	if !e.disableFallback && triggerFallback(err) {
+	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
 	}
@@ -136,7 +136,7 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
-	if !e.disableFallback && triggerFallback(err) {
+	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
 	}
@@ -326,11 +326,13 @@ func (q *compatibilityQuery) Cancel() {
 	}
 }
 
-func triggerFallback(err error) bool {
-	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, errNotImplemented)
-}
+func (e *compatibilityEngine) triggerFallback(err error) bool {
+	if e.disableFallback {
+		return false
+	}
 
-var errNotImplemented = errors.New("not implemented")
+	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
+}
 
 func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 	e := recover()
