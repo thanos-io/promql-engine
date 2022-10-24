@@ -135,6 +135,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				Points:      rangePoints,
 				StepTime:    seriesTs,
 				SelectRange: o.selectRange,
+				Offset:      o.offset,
 			})
 
 			if result.Point != function.InvalidSample.Point {

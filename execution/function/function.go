@@ -186,6 +186,7 @@ type FunctionArgs struct {
 	StepTime     int64
 	SelectRange  int64
 	ScalarPoints []float64
+	Offset       int64
 }
 
 // FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
@@ -392,7 +393,7 @@ var Funcs = map[string]FunctionCall{
 			Metric: f.Labels,
 			Point: promql.Point{
 				T: f.StepTime,
-				V: extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange),
+				V: extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange, f.Offset),
 			},
 		}
 	},
@@ -404,7 +405,7 @@ var Funcs = map[string]FunctionCall{
 			Metric: f.Labels,
 			Point: promql.Point{
 				T: f.StepTime,
-				V: extrapolatedRate(f.Points, false, false, f.StepTime, f.SelectRange),
+				V: extrapolatedRate(f.Points, false, false, f.StepTime, f.SelectRange, f.Offset),
 			},
 		}
 	},
@@ -416,7 +417,7 @@ var Funcs = map[string]FunctionCall{
 			Metric: f.Labels,
 			Point: promql.Point{
 				T: f.StepTime,
-				V: extrapolatedRate(f.Points, true, false, f.StepTime, f.SelectRange),
+				V: extrapolatedRate(f.Points, true, false, f.StepTime, f.SelectRange, f.Offset),
 			},
 		}
 	},
@@ -492,10 +493,10 @@ func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime int64, selectRange int64) float64 {
+func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) float64 {
 	var (
-		rangeStart = stepTime - selectRange
-		rangeEnd   = stepTime
+		rangeStart = stepTime - (selectRange + offset)
+		rangeEnd   = stepTime - offset
 	)
 
 	resultValue := samples[len(samples)-1].V - samples[0].V
