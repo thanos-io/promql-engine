@@ -45,7 +45,7 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
+func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Start:         mint,
 		End:           maxt,
@@ -53,12 +53,18 @@ func New(expr parser.Expr, storage storage.Queryable, mint, maxt time.Time, step
 		LookbackDelta: lookbackDelta,
 		StepsBatch:    stepsBatch,
 	}
-	selectorPool := engstore.NewSelectorPool(storage)
-	return newCancellableOperator(expr, selectorPool, opts)
+	selectorPool := engstore.NewSelectorPool(queryable)
+	hints := storage.SelectHints{
+		Start: mint.UnixMilli(),
+		End:   maxt.UnixMilli(),
+		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
+		Step: step.Milliseconds(),
+	}
+	return newCancellableOperator(expr, selectorPool, opts, hints)
 }
 
-func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options) (*exchange.CancellableOperator, error) {
-	operator, err := newOperator(expr, selectorPool, opts)
+func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (*exchange.CancellableOperator, error) {
+	operator, err := newOperator(expr, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
@@ -66,19 +72,23 @@ func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPoo
 	return exchange.NewCancellable(operator), nil
 }
 
-func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
 
 	case *parser.VectorSelector:
 		start, end := getTimeRangesForVectorSelector(e, opts, 0)
-		filter := storage.GetSelector(start, end, e.LabelMatchers)
+		hints.Start = start
+		hints.End = end
+		filter := storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
 		return newShardedVectorSelector(filter, opts, e.Offset)
 
 	case *logicalplan.FilteredSelector:
 		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
-		selector := storage.GetFilteredSelector(start, end, e.LabelMatchers, e.Filters)
+		hints.Start = start
+		hints.End = end
+		selector := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
 		return newShardedVectorSelector(selector, opts, e.Offset)
 
 	case *parser.Call:
@@ -92,6 +102,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		if e.Func.Variadic != 0 {
 			return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
 		}
+
+		hints.Func = e.Func.Name
+		hints.Grouping = nil
+		hints.By = false
 
 		// TODO(saswatamcode): Range vector result might need new operator
 		// before it can be non-nested. https://github.com/thanos-community/promql-engine/issues/39
@@ -108,7 +122,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 				}
 
 				start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
-				filter := storage.GetFilteredSelector(start, end, vs.LabelMatchers, filters)
+				hints.Start = start
+				hints.End = end
+				hints.Range = t.Range.Milliseconds()
+				filter := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), vs.LabelMatchers, filters, hints)
 
 				numShards := runtime.GOMAXPROCS(0) / 2
 				if numShards < 1 {
@@ -131,7 +148,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// Does not have matrix arg so create functionOperator normally.
 		nextOperators := make([]model.VectorOperator, len(e.Args))
 		for i := range e.Args {
-			next, err := newOperator(e.Args[i], storage, opts)
+			next, err := newOperator(e.Args[i], storage, opts, hints)
 			if err != nil {
 				return nil, err
 			}
@@ -141,7 +158,11 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return function.NewfunctionOperator(e, call, nextOperators, stepsBatch)
 
 	case *parser.AggregateExpr:
-		next, err := newCancellableOperator(e.Expr, storage, opts)
+		hints.Func = e.Op.String()
+		hints.Grouping = e.Grouping
+		hints.By = !e.Without
+
+		next, err := newCancellableOperator(e.Expr, storage, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -154,20 +175,20 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			return newScalarBinaryOperator(e, storage, opts)
+			return newScalarBinaryOperator(e, storage, opts, hints)
 		}
 
-		return newVectorBinaryOperator(e, storage, opts)
+		return newVectorBinaryOperator(e, storage, opts, hints)
 
 	case *parser.ParenExpr:
-		return newCancellableOperator(e.Expr, storage, opts)
+		return newCancellableOperator(e.Expr, storage, opts, hints)
 
 	case *parser.StringLiteral:
 		// TODO(saswatamcode): This requires separate model with strings.
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e)
 
 	case *parser.UnaryExpr:
-		next, err := newCancellableOperator(e.Expr, storage, opts)
+		next, err := newCancellableOperator(e.Expr, storage, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -183,7 +204,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 	case *parser.StepInvariantExpr:
-		next, err := newCancellableOperator(e.Expr, storage, opts.WithEndTime(opts.Start))
+		next, err := newCancellableOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
 		if err != nil {
 			return nil, err
 		}
@@ -222,24 +243,24 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 }
 
-func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
-	leftOperator, err := newCancellableOperator(e.LHS, selectorPool, opts)
+func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	leftOperator, err := newCancellableOperator(e.LHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newCancellableOperator(e.RHS, selectorPool, opts)
+	rightOperator, err := newCancellableOperator(e.RHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
 	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
-	lhs, err := newCancellableOperator(e.LHS, selectorPool, opts)
+func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	lhs, err := newCancellableOperator(e.LHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rhs, err := newCancellableOperator(e.RHS, selectorPool, opts)
+	rhs, err := newCancellableOperator(e.RHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}

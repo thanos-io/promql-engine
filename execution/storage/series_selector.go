@@ -25,19 +25,22 @@ type seriesSelector struct {
 	storage  storage.Queryable
 	mint     int64
 	maxt     int64
+	step     int64
 	matchers []*labels.Matcher
+	hints    storage.SelectHints
 
-	once sync.Once
-
+	once   sync.Once
 	series []SignedSeries
 }
 
-func newSeriesSelector(storage storage.Queryable, mint, maxt int64, matchers []*labels.Matcher) *seriesSelector {
+func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) *seriesSelector {
 	return &seriesSelector{
 		storage:  storage,
-		mint:     mint,
 		maxt:     maxt,
+		mint:     mint,
+		step:     step,
 		matchers: matchers,
+		hints:    hints,
 	}
 }
 
@@ -62,7 +65,7 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	}
 	defer querier.Close()
 
-	seriesSet := querier.Select(false, nil, o.matchers...)
+	seriesSet := querier.Select(false, &o.hints, o.matchers...)
 	i := 0
 	for seriesSet.Next() {
 		s := seriesSet.At()
