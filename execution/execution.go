@@ -54,7 +54,7 @@ func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, st
 		StepsBatch:    stepsBatch,
 	}
 	selectorPool := engstore.NewSelectorPool(queryable)
-	hints := &storage.SelectHints{
+	hints := storage.SelectHints{
 		Start: mint.UnixMilli(),
 		End:   maxt.UnixMilli(),
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
@@ -63,7 +63,7 @@ func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, st
 	return newCancellableOperator(expr, selectorPool, opts, hints)
 }
 
-func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options, hints *storage.SelectHints) (*exchange.CancellableOperator, error) {
+func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (*exchange.CancellableOperator, error) {
 	operator, err := newOperator(expr, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPoo
 	return exchange.NewCancellable(operator), nil
 }
 
-func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints *storage.SelectHints) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
@@ -243,22 +243,19 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 }
 
-func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints *storage.SelectHints) (model.VectorOperator, error) {
-	lhsHints := *hints
-	rhsHints := *hints
-
-	leftOperator, err := newCancellableOperator(e.LHS, selectorPool, opts, &lhsHints)
+func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	leftOperator, err := newCancellableOperator(e.LHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newCancellableOperator(e.RHS, selectorPool, opts, &rhsHints)
+	rightOperator, err := newCancellableOperator(e.RHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
 	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints *storage.SelectHints) (model.VectorOperator, error) {
+func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	lhs, err := newCancellableOperator(e.LHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
