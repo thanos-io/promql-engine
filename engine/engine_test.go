@@ -913,7 +913,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 }
 
 func TestInstantQuery(t *testing.T) {
-	queryTime := time.Unix(50, 0)
+	defaultQueryTime := time.Unix(50, 0)
 	// Negative offset and at modifier are enabled by default
 	// since Prometheus v2.33.0, so we also enable them.
 	opts := promql.EngineOpts{
@@ -924,169 +924,178 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load  string
-		name  string
-		query string
+		load      string
+		name      string
+		query     string
+		queryTime time.Time
 	}{
+		{
+			name: "increase plus offset",
+			load: `load 1s
+			http_requests_total{pod="nginx-1"} 1+1x180`,
+			queryTime: time.Unix(160, 0),
+			query:     "increase(http_requests_total[1m] offset 1m)",
+		},
 		{
 			name: "quantile by pod",
 			load: `load 30s
-			       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-			       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
-			       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
-			       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
-			       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
 			query: "quantile by (pod) (0.9, rate(http_requests_total[1m]))",
 		},
 		{
 			name: "quantile",
 			load: `load 30s
-			       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-			       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
-			       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
-			       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
-			       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50	`,
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50	`,
 			query: "quantile(0.9, rate(http_requests_total[1m]))",
 		},
 		{
 			name: "stdvar",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "stdvar(http_requests_total)",
 		},
 		{
 			name: "stdvar by pod",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1
-					http_requests_total{pod="nginx-2"} 2
-					http_requests_total{pod="nginx-3"} 8
-					http_requests_total{pod="nginx-4"} 6`,
+						http_requests_total{pod="nginx-1"} 1
+						http_requests_total{pod="nginx-2"} 2
+						http_requests_total{pod="nginx-3"} 8
+						http_requests_total{pod="nginx-4"} 6`,
 			query: "stdvar by (pod) (http_requests_total)",
 		},
 		{
 			name: "stddev",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "stddev(http_requests_total)",
 		},
 		{
 			name: "stddev by pod",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1
-					http_requests_total{pod="nginx-2"} 2
-					http_requests_total{pod="nginx-3"} 8
-					http_requests_total{pod="nginx-4"} 6`,
+						http_requests_total{pod="nginx-1"} 1
+						http_requests_total{pod="nginx-2"} 2
+						http_requests_total{pod="nginx-3"} 8
+						http_requests_total{pod="nginx-4"} 6`,
 			query: "stddev by (pod) (http_requests_total)",
 		},
 		{
 			name: "sum by pod",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{
 			name: "count",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "count(http_requests_total)",
 		},
 		{
 			name: "average",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg(http_requests_total)",
 		},
 		{
 			name: "max",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "max(http_requests_total)",
 		},
 		{
 			name: "max with only 1 sample",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} -1
-					http_requests_total{pod="nginx-2"} 1`,
+						http_requests_total{pod="nginx-1"} -1
+						http_requests_total{pod="nginx-2"} 1`,
 			query: "max(http_requests_total) by (pod)",
 		},
 		{
 			name: "min",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "min(http_requests_total)",
 		},
 		{
 			name: "min with only 1 sample",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} -1
-					http_requests_total{pod="nginx-2"} 1`,
+						http_requests_total{pod="nginx-1"} -1
+						http_requests_total{pod="nginx-2"} 1`,
 			query: "min(http_requests_total) by (pod)",
 		},
 		{
 			name: "rate",
 			load: `load 30s
-				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
-				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
-				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
-				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+					http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+					http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+					http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+					http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+					http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
 			query: "rate(http_requests_total[1m])",
 		},
 		{
 			name: "sum rate",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 		{
 			name: "sum rate with single sample series",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4
-					http_requests_total{pod="nginx-3"} 0`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4
+						http_requests_total{pod="nginx-3"} 0`,
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
 		},
 		{
 			name: "sum rate with stale series",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x20`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(rate(http_requests_total[1m]))",
 		},
 		{
 			name: "delta",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "delta(http_requests_total[1m])",
 		},
 		{
 			name: "increase",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "increase(http_requests_total[1m])",
 		},
+
 		{
 			name: "sum irate",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x4`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x4`,
 			query: "sum(irate(http_requests_total[1m]))",
 		},
 		{
 			name: "sum irate with stale series",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x4
-					http_requests_total{pod="nginx-2"} 1+2x20`,
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} 1+2x20`,
 			query: "sum(irate(http_requests_total[1m]))",
 		},
 		{
@@ -1102,92 +1111,92 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "binary operation with vector and scalar on the right",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1.1x30
-				foo{method="get", code="404"} 1+2.2x20`,
+					foo{method="get", code="500"} 1+1.1x30
+					foo{method="get", code="404"} 1+2.2x20`,
 			query: `foo * 2`,
 		},
 		{
 			name: "binary operation with vector and scalar on the left",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1.1x30
-				foo{method="get", code="404"} 1+2.2x20`,
+					foo{method="get", code="500"} 1+1.1x30
+					foo{method="get", code="404"} 1+2.2x20`,
 			query: `2 * foo`,
 		},
 		{
 			name: "complex binary operation",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1.1x30
-				foo{method="get", code="404"} 1+2.2x20`,
+					foo{method="get", code="500"} 1+1.1x30
+					foo{method="get", code="404"} 1+2.2x20`,
 			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
 		},
 		{
 			name: "vector binary op ==",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) == sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op !=",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) != sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op >",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) > sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op <",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) < sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op >=",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) >= sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op <=",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) <= sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op ^",
 			load: `load 30s
-				foo{method="get", code="500"} 1+1x40
-				bar{method="get", code="404"} 1+1.1x30`,
+					foo{method="get", code="500"} 1+1x40
+					bar{method="get", code="404"} 1+1.1x30`,
 			query: `sum(foo) by (method) ^ sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op %",
 			load: `load 30s
-				foo{method="get", code="500"} 1+2x40
-				bar{method="get", code="404"} 1+1x30`,
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
 			query: `sum(foo) by (method) % sum(bar) by (method)`,
 		},
 		{
 			name: "vector binary op > scalar",
 			load: `load 30s
-				foo{method="get", code="500"} 1+2x40
-				bar{method="get", code="404"} 1+1x30`,
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
 			query: `sum(foo) by (method) > 10`,
 		},
 		{
 			name: "scalar < vector binary op",
 			load: `load 30s
-				foo{method="get", code="500"} 1+2x40
-				bar{method="get", code="404"} 1+1x30`,
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
 			query: `10 < sum(foo) by (method)`,
 		},
 		{
@@ -1253,36 +1262,36 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "empty result",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `http_requests_total{pod="nginx-3"}`,
 		},
 		{
 			name: "last_over_time",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `last_over_time(http_requests_total[30s])`,
 		},
 		{
 			name: "group",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `group(http_requests_total)`,
 		},
 		{
 			name: "reset",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 100-1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 100-1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `resets(http_requests_total[5m])`,
 		},
 		{
 			name: "present_over_time",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `present_over_time(http_requests_total[30s])`,
 		},
 		{
@@ -1293,120 +1302,120 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "unary sub operation for vector",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `-http_requests_total`,
 		},
 		{
 			name: "unary add operation for vector",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `+http_requests_total`,
 		},
 		{
 			name: "vector positive offset",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `http_requests_total offset 30s`,
 		},
 		{
 			name: "vector negative offset",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `http_requests_total offset -30s`,
 		},
 		{
 			name: "matrix negative offset with sum_over_time",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x25
-					http_requests_total{pod="nginx-2"} 1+2x28`,
+						http_requests_total{pod="nginx-1"} 1+1x25
+						http_requests_total{pod="nginx-2"} 1+2x28`,
 			query: `sum_over_time(http_requests_total[5m] offset 5m)`,
 		},
 		{
 			name: "matrix negative offset with count_over_time",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `count_over_time(http_requests_total[5m] offset -2m)`,
 		},
 		{
 			name: "@ vector time 10s",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ 10",
 		},
 		{
 			name: "@ vector time 120s",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ 120",
 		},
 		{
 			name: "@ vector time 360s",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ 360",
 		},
 		{
 			name: "@ vector start",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ start()",
 		},
 		{
 			name: "@ vector end",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ end()",
 		},
 		{
 			name: "count_over_time @ start",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "count_over_time(http_requests_total[5m] @ start())",
 		},
 		{
 			name: "sum_over_time @ end",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ start())",
 		},
 		{
 			name: "avg_over_time @ 180s",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg_over_time(http_requests_total[4m] @ 180)",
 		},
 		{
 			name: "@ vector 240s offset 2m",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ 240 offset 2m",
 		},
 		{
 			name: "avg_over_time @ 120s offset -2m",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "http_requests_total @ 120 offset -2m",
 		},
 		{
 			name: "sum_over_time @ 180s offset 2m",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+						http_requests_total{pod="nginx-1"} 1+1x15
+						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
@@ -1421,64 +1430,64 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `scalar(max(http_requests_total))`,
 		},
 		{
 			name: "scalar func with number",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `scalar(max(http_requests_total)) + 10`,
 		},
 		{
 			name: "clamp",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(http_requests_total, 5, 10)`,
 		},
 		{
 			name: "clamp_min",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp_min(http_requests_total, 10)`,
 		},
 		{
 			name: "complex func query",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(1 - http_requests_total, 10 - 5, 10)`,
 		},
 		{
 			name: "func within func query",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
 		},
 		{
 			name: "aggr within func query",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
 		},
 		{
 			name: "func with scalar arg that selects storage",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)))`,
 		},
 		{
 			name: "func with scalar arg that selects storage + number",
 			load: `load 30s
-			http_requests_total{pod="nginx-1"} 1+1x15
-			http_requests_total{pod="nginx-2"} 1+2x18`,
+				http_requests_total{pod="nginx-1"} 1+1x15
+				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)) + 10)`,
 		},
 	}
@@ -1499,6 +1508,11 @@ func TestInstantQuery(t *testing.T) {
 
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
+								var queryTime time.Time = defaultQueryTime
+								if tc.queryTime != (time.Time{}) {
+									queryTime = tc.queryTime
+								}
+
 								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
 								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 								testutil.Ok(t, err)
