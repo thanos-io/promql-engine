@@ -8,6 +8,7 @@ require (
 	github.com/go-kit/log v0.2.1
 	github.com/prometheus/client_golang v1.13.0
 	github.com/prometheus/prometheus v0.38.1-0.20221003141934-f7a7b18cdcca
+	go.uber.org/goleak v1.2.0
 	golang.org/x/exp v0.0.0-20220722155223-a9213eeb770e
 	gonum.org/v1/gonum v0.12.0
 )
@@ -48,7 +49,6 @@ require (
 	go.opentelemetry.io/otel/metric v0.32.0 // indirect
 	go.opentelemetry.io/otel/trace v1.10.0 // indirect
 	go.uber.org/atomic v1.10.0 // indirect
-	go.uber.org/goleak v1.2.0 // indirect
 	golang.org/x/lint v0.0.0-20210508222113-6edffad5e616 // indirect
 	golang.org/x/net v0.0.0-20220920203100-d0c6ba3f52d9 // indirect
 	golang.org/x/oauth2 v0.0.0-20220909003341-f21342109be1 // indirect
