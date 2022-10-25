@@ -97,6 +97,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "value inconsistency",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0.2+39x4
+					http_requests_total{pod="nginx-2"} 1+67x4`,
+			query: "stddev(http_requests_total)",
+		},
+		{
 			name: "stddev_over_time",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
