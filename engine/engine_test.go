@@ -17,9 +17,14 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"go.uber.org/goleak"
 
 	"github.com/thanos-community/promql-engine/engine"
 )
+
+func TestMain(m *testing.M) {
+	goleak.VerifyTestMain(m)
+}
 
 func TestVectorSelectorWithGaps(t *testing.T) {
 	opts := promql.EngineOpts{

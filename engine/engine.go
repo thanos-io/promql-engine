@@ -188,6 +188,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
 
 	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	q.cancel = cancel
 
 	resultSeries, err := q.Query.exec.Series(ctx)
