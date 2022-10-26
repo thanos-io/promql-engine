@@ -104,7 +104,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		step := o.pool.GetStepVector(vector.T)
 		for i := range vector.Samples {
 			scalarVal := math.NaN()
-			if len(scalarIn) > 0 && len(scalarIn[v].Samples) > 0 {
+			if len(scalarIn) > v && len(scalarIn[v].Samples) > 0 {
 				scalarVal = scalarIn[v].Samples[0]
 			}
 
@@ -121,8 +121,12 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 		out = append(out, step)
 		o.next.GetPool().PutStepVector(vector)
-		o.scalar.GetPool().PutStepVector(scalarIn[v])
 	}
+
+	for i := range scalarIn {
+		o.scalar.GetPool().PutStepVector(scalarIn[i])
+	}
+
 	o.next.GetPool().PutVectors(in)
 	o.scalar.GetPool().PutVectors(scalarIn)
 
