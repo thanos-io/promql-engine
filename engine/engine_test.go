@@ -2100,5 +2100,4 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		r := q.Exec(context.Background())
 		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
 	})
-
 }
