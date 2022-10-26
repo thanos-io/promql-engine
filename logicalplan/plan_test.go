@@ -20,9 +20,19 @@ func TestDefaultOptimizers(t *testing.T) {
 		expected string
 	}{
 		{
+			name:     "common selectors with one matching all",
+			expr:     `sum(metric{c="d"}) / sum(metric{})`,
+			expected: `sum(filter([c="d"], metric)) / sum(metric)`,
+		},
+		{
 			name:     "common selectors",
 			expr:     `sum(metric{a="b", c="d"}) / sum(metric{a="b"})`,
 			expected: `sum(filter([c="d"], metric{a="b"})) / sum(metric{a="b"})`,
+		},
+		{
+			name:     "common selectors with count",
+			expr:     `count(metric{a="b", c="d"}) / count(metric{a="b"})`,
+			expected: `count(filter([c="d"], metric{a="b"})) / count(metric{a="b"})`,
 		},
 		{
 			name:     "common selectors with duplicate matchers",
@@ -83,7 +93,7 @@ func TestDefaultOptimizers(t *testing.T) {
 			testutil.Ok(t, err)
 
 			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
-			optimizedPlan := plan.Optimize(DefaultOptimizers)
+			optimizedPlan := plan.Optimize(DefaultOptimizers, nil)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
 		})

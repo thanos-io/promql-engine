@@ -2021,5 +2021,127 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		r := q.Exec(context.Background())
 		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
 	})
+}
+
+func TestExplain(t *testing.T) {
+	t.Skip("TODO(bwplotka): Fix - memory address is now part of info, so can't assert easily.")
+
+	start := time.Unix(0, 0)
+	end := time.Unix(120, 0)
+	step := time.Second * 30
+
+	for _, tcase := range []struct {
+		query string
+		load  string
+
+		expectedExplain string
+	}{
+		{
+			query: "yolo",
+			expectedExplain: `EXPLAIN:
+Final PromQL physical plan:
+[*CancellableOperator]: [*coalesceOperator]:
+├──[*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*vectorSelector] {[__name__="yolo"]} @0[2m0s] 0 mod 6
+├──[*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*vectorSelector] {[__name__="yolo"]} @0[2m0s] 1 mod 6
+├──[*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*vectorSelector] {[__name__="yolo"]} @0[2m0s] 2 mod 6
+├──[*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*vectorSelector] {[__name__="yolo"]} @0[2m0s] 3 mod 6
+├──[*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*vectorSelector] {[__name__="yolo"]} @0[2m0s] 4 mod 6
+└──[*concurrencyOperator(buff=2)]:
+   └──[*CancellableOperator]: [*vectorSelector] {[__name__="yolo"]} @0[2m0s] 5 mod 6
+`,
+		},
+		{
+			query: "count(cluster_version{from_version=\"4.1.9\"}) / count(cluster_version)",
+			expectedExplain: `EXPLAIN:
+PromQL physical plan before optimization:
+[*CancellableOperator]: [*vectorOperator] / one-to-one ignoring false group []:
+├──[*CancellableOperator]: [*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*aggregate] count by ([]):
+│     └──[*CancellableOperator]: [*coalesceOperator]:
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[from_version="4.1.9" __name__="cluster_version"]} @0[2m0s] 0 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[from_version="4.1.9" __name__="cluster_version"]} @0[2m0s] 1 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[from_version="4.1.9" __name__="cluster_version"]} @0[2m0s] 2 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[from_version="4.1.9" __name__="cluster_version"]} @0[2m0s] 3 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[from_version="4.1.9" __name__="cluster_version"]} @0[2m0s] 4 mod 6
+│        └──[*concurrencyOperator(buff=2)]:
+│           └──[*CancellableOperator]: [*vectorSelector] {[from_version="4.1.9" __name__="cluster_version"]} @0[2m0s] 5 mod 6
+└──[*CancellableOperator]: [*concurrencyOperator(buff=2)]:
+   └──[*CancellableOperator]: [*aggregate] count by ([]):
+      └──[*CancellableOperator]: [*coalesceOperator]:
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 0 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 1 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 2 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 3 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 4 mod 6
+         └──[*concurrencyOperator(buff=2)]:
+            └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 5 mod 6
+--> Logical Optimization: SortMatchers: sorting matchers for cluster_version{from_version="4.1.9"}
+--> Logical Optimization: MergeSelectsOptimizer: Replacing cluster_version with FilteredSelector{}
+Final PromQL physical plan:
+[*CancellableOperator]: [*vectorOperator] / one-to-one ignoring false group []:
+├──[*CancellableOperator]: [*concurrencyOperator(buff=2)]:
+│  └──[*CancellableOperator]: [*aggregate] count by ([]):
+│     └──[*CancellableOperator]: [*coalesceOperator]:
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version" from_version="4.1.9"]} @0[2m0s] 0 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version" from_version="4.1.9"]} @0[2m0s] 1 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version" from_version="4.1.9"]} @0[2m0s] 2 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version" from_version="4.1.9"]} @0[2m0s] 3 mod 6
+│        ├──[*concurrencyOperator(buff=2)]:
+│        │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version" from_version="4.1.9"]} @0[2m0s] 4 mod 6
+│        └──[*concurrencyOperator(buff=2)]:
+│           └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version" from_version="4.1.9"]} @0[2m0s] 5 mod 6
+└──[*CancellableOperator]: [*concurrencyOperator(buff=2)]:
+   └──[*CancellableOperator]: [*aggregate] count by ([]):
+      └──[*CancellableOperator]: [*coalesceOperator]:
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 0 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 1 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 2 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 3 mod 6
+         ├──[*concurrencyOperator(buff=2)]:
+         │  └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 4 mod 6
+         └──[*concurrencyOperator(buff=2)]:
+            └──[*CancellableOperator]: [*vectorSelector] {[__name__="cluster_version"]} @0[2m0s] 5 mod 6
+`,
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			test, err := promql.NewTest(t, tcase.load)
+			testutil.Ok(t, err)
+			defer test.Close()
+
+			testutil.Ok(t, test.Run())
+			opts := promql.EngineOpts{
+				Timeout:    2 * time.Second,
+				MaxSamples: math.MaxInt64,
+			}
+			newEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts})
+			q, err := newEngine.NewRangeQuery(test.Storage(), nil, tcase.query, start, end, step)
+			testutil.Ok(t, err)
+			testutil.Equals(t, tcase.expectedExplain, q.(engine.Debuggable).Explain())
+		})
+	}
 
 }

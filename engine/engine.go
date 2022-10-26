@@ -10,6 +10,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -92,9 +93,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		return nil, err
 	}
 
+	optimizationLog := &logicalplan.Log{}
 	lplan := logicalplan.New(expr, ts, ts)
 	if !e.disableOptimizers {
-		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
+		lplan = lplan.Optimize(logicalplan.DefaultOptimizers, optimizationLog)
 	}
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
@@ -112,7 +114,22 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	}
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exec},
+		Query: &Query{
+			exec:            exec,
+			optimizationLog: optimizationLog,
+			preOptimizations: func() model.VectorOperator {
+				// Yolo for demo.
+				expr, err := parser.ParseExpr(qs)
+				if err != nil {
+					panic(err)
+				}
+				lplan := logicalplan.New(expr, ts, ts)
+				exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
+				if err != nil {
+					panic(err)
+				}
+				return exec
+			}},
 		engine: e,
 		expr:   expr,
 		ts:     ts,
@@ -130,9 +147,10 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 		return nil, errors.Newf("invalid expression type %q for range Query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
+	optimizationLog := &logicalplan.Log{}
 	lplan := logicalplan.New(expr, start, end)
 	if !e.disableOptimizers {
-		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
+		lplan = lplan.Optimize(logicalplan.DefaultOptimizers, optimizationLog)
 	}
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
@@ -150,20 +168,54 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exec},
+		Query: &Query{
+			exec:            exec,
+			optimizationLog: optimizationLog,
+			preOptimizations: func() model.VectorOperator {
+				// Yolo for demo.
+				expr, err := parser.ParseExpr(qs)
+				if err != nil {
+					panic(err)
+				}
+				lplan := logicalplan.New(expr, start, end)
+				exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
+				if err != nil {
+					panic(err)
+				}
+				return exec
+			}},
 		engine: e,
 		expr:   expr,
 	}, nil
 }
 
+type Debuggable interface {
+	Explain() string
+}
+
 type Query struct {
 	exec model.VectorOperator
+
+	optimizationLog  *logicalplan.Log
+	preOptimizations func() model.VectorOperator
 }
 
 // Explain returns human-readable explanation of the created executor.
 func (q *Query) Explain() string {
-	// TODO(bwplotka): Explain plan and steps.
-	return "not implemented"
+	str := strings.Builder{}
+	str.WriteString("EXPLAIN:\n")
+	opts := q.optimizationLog.Elems()
+	if len(opts) > 0 {
+		str.WriteString("PromQL physical plan before optimization:\n")
+		explain(&str, q.preOptimizations(), "", "")
+		for _, o := range opts {
+			str.WriteString(fmt.Sprintf("--> Logical Optimization: %v\n", o))
+		}
+	}
+
+	str.WriteString("Final PromQL physical plan:\n")
+	explain(&str, q.exec, "", "")
+	return str.String()
 }
 
 func (q *Query) Profile() {

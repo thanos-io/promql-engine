@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
@@ -16,12 +17,12 @@ var DefaultOptimizers = []Optimizer{
 }
 
 type Plan interface {
-	Optimize([]Optimizer) Plan
+	Optimize([]Optimizer, *Log) Plan
 	Expr() parser.Expr
 }
 
 type Optimizer interface {
-	Optimize(parser.Expr) parser.Expr
+	Optimize(parser.Expr, *Log) parser.Expr
 }
 
 type plan struct {
@@ -37,9 +38,24 @@ func New(expr parser.Expr, mint, maxt time.Time) Plan {
 	}
 }
 
-func (p *plan) Optimize(optimizers []Optimizer) Plan {
+type Log struct {
+	l []string
+}
+
+func (l *Log) Addf(tmpl string, args ...interface{}) {
+	if l == nil {
+		return
+	}
+	l.l = append(l.l, fmt.Sprintf(tmpl, args...))
+}
+
+func (l *Log) Elems() []string {
+	return l.l
+}
+
+func (p *plan) Optimize(optimizers []Optimizer, l *Log) Plan {
 	for _, o := range optimizers {
-		p.expr = o.Optimize(p.expr)
+		p.expr = o.Optimize(p.expr, l)
 	}
 
 	return &plan{p.expr}

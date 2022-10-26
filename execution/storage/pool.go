@@ -16,14 +16,14 @@ import (
 var sep = []byte{'\xff'}
 
 type SelectorPool struct {
-	selectors map[uint64]*seriesSelector
+	selectors map[uint64]SeriesSelector
 
 	queryable storage.Queryable
 }
 
 func NewSelectorPool(queryable storage.Queryable) *SelectorPool {
 	return &SelectorPool{
-		selectors: make(map[uint64]*seriesSelector),
+		selectors: make(map[uint64]SeriesSelector),
 		queryable: queryable,
 	}
 }
@@ -31,7 +31,7 @@ func NewSelectorPool(queryable storage.Queryable) *SelectorPool {
 func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
 	key := hashMatchers(matchers, mint, maxt, hints)
 	if _, ok := p.selectors[key]; !ok {
-		p.selectors[key] = newSeriesSelector(p.queryable, mint, maxt, step, matchers, hints)
+		p.selectors[key] = newShardedStorageSeriesSelector(p.queryable, mint, maxt, step, matchers, hints)
 	}
 	return p.selectors[key]
 }
@@ -39,7 +39,7 @@ func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Ma
 func (p *SelectorPool) GetFilteredSelector(mint, maxt, step int64, matchers, filters []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
 	key := hashMatchers(matchers, mint, maxt, hints)
 	if _, ok := p.selectors[key]; !ok {
-		p.selectors[key] = newSeriesSelector(p.queryable, mint, maxt, step, matchers, hints)
+		p.selectors[key] = newShardedStorageSeriesSelector(p.queryable, mint, maxt, step, matchers, hints)
 	}
 
 	return NewFilteredSelector(p.selectors[key], NewFilter(filters))
