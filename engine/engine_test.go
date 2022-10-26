@@ -810,11 +810,18 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `scalar(max(http_requests_total))`,
 		},
 		{
-			name: "scalar func with number",
+			name: "scalar func with aggr and number on right",
 			load: `load 30s
 			http_requests_total{pod="nginx-1"} 1+1x15
 			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `scalar(max(http_requests_total)) + 10`,
+		},
+		{
+			name: "scalar func with aggr and number on left",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `10 + scalar(max(http_requests_total))`,
 		},
 		{
 			name: "clamp",
@@ -1436,16 +1443,23 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
-				http_requests_total{pod="nginx-1"} 1+1x15
-				http_requests_total{pod="nginx-2"} 1+2x18`,
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `scalar(max(http_requests_total))`,
 		},
 		{
-			name: "scalar func with number",
+			name: "scalar func with aggr and number on right",
 			load: `load 30s
-				http_requests_total{pod="nginx-1"} 1+1x15
-				http_requests_total{pod="nginx-2"} 1+2x18`,
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `scalar(max(http_requests_total)) + 10`,
+		},
+		{
+			name: "scalar func with aggr and number on left",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+1x15
+			http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `10 + scalar(max(http_requests_total))`,
 		},
 		{
 			name: "clamp",
