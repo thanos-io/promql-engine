@@ -35,6 +35,7 @@ type scalarOperator struct {
 	operandValIdx int
 	operation     operation
 	opName        string
+	isComparison  bool
 }
 
 func NewScalar(
@@ -63,6 +64,7 @@ func NewScalar(
 		scalar:        scalar,
 		operation:     binaryOperation,
 		opName:        parser.ItemTypeStr[op],
+		isComparison:  op.IsComparisonOperator(),
 		getOperands:   getOperands,
 		operandValIdx: operandValIdx,
 	}, nil
@@ -145,8 +147,11 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 	series := make([]labels.Labels, len(vectorSeries))
 	for i := range vectorSeries {
 		if vectorSeries[i] != nil {
-			lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels(nil)
-			series[i] = lbls
+			lbls := labels.NewBuilder(vectorSeries[i])
+			if !o.isComparison {
+				lbls = lbls.Del(labels.MetricName)
+			}
+			series[i] = lbls.Labels(nil)
 		}
 	}
 

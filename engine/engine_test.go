@@ -480,6 +480,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `sum(foo) by (method) > sum(bar) by (method)`,
 		},
 		{
+			name: "vector binary op with name <",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="500"} 1+1.1x30`,
+			query: `foo < bar`,
+		},
+		{
+			name: "vector binary op with name < scalar",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="500"} 1+1.1x30`,
+			query: `foo < 10`,
+		},
+		{
 			name: "vector binary op > scalar",
 			load: `load 30s
 				foo{method="get", code="500"} 1+2x40
