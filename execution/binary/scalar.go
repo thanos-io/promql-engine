@@ -6,6 +6,7 @@ package binary
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -26,21 +27,20 @@ const (
 type scalarOperator struct {
 	seriesOnce sync.Once
 	series     []labels.Labels
-	scalar     float64
 
-	pool           *model.VectorPool
-	numberSelector model.VectorOperator
-	next           model.VectorOperator
-	getOperands    getOperandsFunc
-	operandValIdx  int
-	operation      operation
-	opName         string
+	pool          *model.VectorPool
+	scalar        model.VectorOperator
+	next          model.VectorOperator
+	getOperands   getOperandsFunc
+	operandValIdx int
+	operation     operation
+	opName        string
 }
 
 func NewScalar(
 	pool *model.VectorPool,
 	next model.VectorOperator,
-	numberSelector model.VectorOperator,
+	scalar model.VectorOperator,
 	op parser.ItemType,
 	scalarSide ScalarSide,
 ) (*scalarOperator, error) {
@@ -57,28 +57,19 @@ func NewScalar(
 		operandValIdx = 1
 	}
 
-	// Cache the result of the number selector since it
-	// will not change during execution.
-	v, err := numberSelector.Next(context.Background())
-	if err != nil {
-		return nil, err
-	}
-	scalar := v[0].Samples[0]
-
 	return &scalarOperator{
-		pool:           pool,
-		next:           next,
-		scalar:         scalar,
-		numberSelector: numberSelector,
-		operation:      binaryOperation,
-		opName:         parser.ItemTypeStr[op],
-		getOperands:    getOperands,
-		operandValIdx:  operandValIdx,
+		pool:          pool,
+		next:          next,
+		scalar:        scalar,
+		operation:     binaryOperation,
+		opName:        parser.ItemTypeStr[op],
+		getOperands:   getOperands,
+		operandValIdx: operandValIdx,
 	}, nil
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*scalarOperator] %v %s", o.scalar, o.opName), []model.VectorOperator{o.next}
+	return fmt.Sprintf("[*scalarOperator] %s", o.opName), []model.VectorOperator{o.next, o.scalar}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -103,11 +94,21 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
+	scalarIn, err := o.scalar.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	out := o.pool.GetVectorBatch()
-	for _, vector := range in {
+	for v, vector := range in {
 		step := o.pool.GetStepVector(vector.T)
 		for i := range vector.Samples {
-			operands := o.getOperands(vector, i, o.scalar)
+			scalarVal := math.NaN()
+			if len(scalarIn) > v && len(scalarIn[v].Samples) > 0 {
+				scalarVal = scalarIn[v].Samples[0]
+			}
+
+			operands := o.getOperands(vector, i, scalarVal)
 			val, keep := o.operation(operands, o.operandValIdx)
 			if !keep {
 				continue
@@ -121,7 +122,14 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		out = append(out, step)
 		o.next.GetPool().PutStepVector(vector)
 	}
+
+	for i := range scalarIn {
+		o.scalar.GetPool().PutStepVector(scalarIn[i])
+	}
+
 	o.next.GetPool().PutVectors(in)
+	o.scalar.GetPool().PutVectors(scalarIn)
+
 	return out, nil
 }
 
