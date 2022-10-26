@@ -121,6 +121,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 		out = append(out, step)
 		o.next.GetPool().PutStepVector(vector)
+		o.scalar.GetPool().PutStepVector(scalarIn[v])
 	}
 	o.next.GetPool().PutVectors(in)
 	o.scalar.GetPool().PutVectors(scalarIn)
