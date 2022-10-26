@@ -76,7 +76,7 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 		i++
 	}
 
-	return nil
+	return seriesSet.Err()
 }
 
 func seriesShard(series []SignedSeries, shard int, numShards int) []SignedSeries {
