@@ -20,14 +20,16 @@ import (
 
 // functionOperator returns []model.StepVector after processing input with desired function.
 type functionOperator struct {
-	funcExpr    *parser.Call
-	series      []labels.Labels
-	once        sync.Once
+	funcExpr *parser.Call
+	series   []labels.Labels
+	once     sync.Once
+
 	vectorIndex int
 	nextOps     []model.VectorOperator
 
 	call         FunctionCall
 	scalarPoints [][]float64
+	pointBuf     []promql.Point
 }
 
 func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
@@ -41,6 +43,7 @@ func NewfunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 		funcExpr:     funcExpr,
 		vectorIndex:  0,
 		scalarPoints: scalarPoints,
+		pointBuf:     make([]promql.Point, 1),
 	}
 
 	for i := range funcExpr.Args {
@@ -130,10 +133,11 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		}
 
 		for i := range vector.Samples {
+			o.pointBuf[0].V = vector.Samples[i]
 			// Call function by separately passing major input and scalars.
 			result := o.call(FunctionArgs{
 				Labels:       o.series[0],
-				Points:       []promql.Point{{V: vector.Samples[i]}},
+				Points:       o.pointBuf,
 				StepTime:     vector.T,
 				ScalarPoints: o.scalarPoints[batchIndex],
 			})
