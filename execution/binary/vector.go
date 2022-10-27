@@ -25,8 +25,7 @@ type vectorOperator struct {
 	matching       *parser.VectorMatching
 	groupingLabels []string
 	operation      operation
-	opName         string
-	isComparison   bool
+	opType         parser.ItemType
 
 	// series contains the output series of the operator
 	series []labels.Labels
@@ -63,16 +62,15 @@ func NewVectorOperator(
 		matching:       matching,
 		groupingLabels: groupings,
 		operation:      op,
-		opName:         parser.ItemTypeStr[operation],
-		isComparison:   operation.IsComparisonOperator(),
+		opType:         operation,
 	}, nil
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
 	if o.matching.On {
-		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", o.opName, o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 	}
-	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", o.opName, o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -105,7 +103,7 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 		includeLabels = o.matching.Include
 	}
 	keepLabels := o.matching.Card != parser.CardOneToOne
-	keepName := o.isComparison
+	keepName := o.opType.IsComparisonOperator()
 	highCardHashes, highCardInputMap := o.hashSeries(highCardSide, keepLabels, keepName, buf)
 	lowCardHashes, lowCardInputMap := o.hashSeries(lowCardSide, keepLabels, keepName, buf)
 	output, highCardOutputIndex, lowCardOutputIndex := o.join(highCardHashes, highCardInputMap, lowCardHashes, lowCardInputMap, includeLabels)
