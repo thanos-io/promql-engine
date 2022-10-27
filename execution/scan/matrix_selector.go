@@ -180,7 +180,13 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		for i, s := range series {
 			lbls := s.Labels()
 			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls = function.DropMetricName(lbls)
+				// This modifies the array in place. Because labels.Labels
+				// can be re-used between different Select() calls, it means that
+				// we have to copy it here.
+				// TODO(GiedriusS): could we identify somehow whether labels.Labels
+				// is reused between Select() calls?
+				lbls = function.DropMetricName(lbls.Copy())
+
 			}
 
 			sort.Sort(lbls)
