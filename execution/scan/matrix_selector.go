@@ -185,8 +185,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// we have to copy it here.
 				// TODO(GiedriusS): could we identify somehow whether labels.Labels
 				// is reused between Select() calls?
-				lbls = function.DropMetricName(lbls.Copy())
-
+				lbls, _ = function.DropMetricName(lbls.Copy())
 			}
 
 			sort.Sort(lbls)

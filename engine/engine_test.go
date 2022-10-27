@@ -899,6 +899,44 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)) + 10)`,
 		},
+		{
+			name: "histogram quantile",
+			load: `load 30s
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile with sum",
+			load: `load 30s
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantile(0.9, sum by (pod, le) (http_requests_total))`,
+		},
+		// TODO(fpetkovski): Uncomment once support for testing NaNs is added.
+		//{
+		//	name: "histogram quantile with scalar operator",
+		//	load: `load 30s
+		//	quantile{pod="nginx-1", le="1"} 1+1x2
+		//	http_requests_total{pod="nginx-1", le="1"} 1+3x10
+		//	http_requests_total{pod="nginx-2", le="1"} 2+3x10
+		//	http_requests_total{pod="nginx-1", le="2"} 1+2x10
+		//	http_requests_total{pod="nginx-2", le="2"} 2+2x10
+		//	http_requests_total{pod="nginx-2", le="5"} 3+2x10
+		//	http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+		//	http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+		//	query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
+		//},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
