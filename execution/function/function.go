@@ -168,7 +168,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 		for i, s := range series {
 			lbls := s
 			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls = DropMetricName(s)
+				lbls = DropMetricName(s.Copy())
 			}
 
 			o.series[i] = lbls
