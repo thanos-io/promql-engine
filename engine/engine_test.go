@@ -97,6 +97,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "sum + rate divided by itself",
+			load: `load 30s
+			thanos_cache_redis_hits_total{name="caching-bucket",service="thanos-store"} 1+1x30`,
+			query: `(sum(rate(thanos_cache_redis_hits_total{name="caching-bucket"}[2m])) by (service)) /
+			(sum(rate(thanos_cache_redis_hits_total{name="caching-bucket"}[2m])) by (service))`,
+		},
+		{
 			name: "stddev_over_time",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
