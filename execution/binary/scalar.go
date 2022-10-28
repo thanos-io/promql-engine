@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
 )
 
@@ -34,7 +35,7 @@ type scalarOperator struct {
 	getOperands   getOperandsFunc
 	operandValIdx int
 	operation     operation
-	opName        string
+	opType        parser.ItemType
 }
 
 func NewScalar(
@@ -62,14 +63,14 @@ func NewScalar(
 		next:          next,
 		scalar:        scalar,
 		operation:     binaryOperation,
-		opName:        parser.ItemTypeStr[op],
+		opType:        op,
 		getOperands:   getOperands,
 		operandValIdx: operandValIdx,
 	}, nil
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*scalarOperator] %s", o.opName), []model.VectorOperator{o.next, o.scalar}
+	return fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -145,7 +146,10 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 	series := make([]labels.Labels, len(vectorSeries))
 	for i := range vectorSeries {
 		if vectorSeries[i] != nil {
-			lbls := labels.NewBuilder(vectorSeries[i]).Del(labels.MetricName).Labels(nil)
+			lbls := vectorSeries[i]
+			if !o.opType.IsComparisonOperator() {
+				lbls = function.DropMetricName(lbls)
+			}
 			series[i] = lbls
 		}
 	}

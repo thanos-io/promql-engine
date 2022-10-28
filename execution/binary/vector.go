@@ -25,7 +25,7 @@ type vectorOperator struct {
 	matching       *parser.VectorMatching
 	groupingLabels []string
 	operation      operation
-	opName         string
+	opType         parser.ItemType
 
 	// series contains the output series of the operator
 	series []labels.Labels
@@ -62,15 +62,15 @@ func NewVectorOperator(
 		matching:       matching,
 		groupingLabels: groupings,
 		operation:      op,
-		opName:         parser.ItemTypeStr[operation],
+		opType:         operation,
 	}, nil
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
 	if o.matching.On {
-		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", o.opName, o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 	}
-	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", o.opName, o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -103,8 +103,9 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 		includeLabels = o.matching.Include
 	}
 	keepLabels := o.matching.Card != parser.CardOneToOne
-	highCardHashes, highCardInputMap := o.hashSeries(highCardSide, keepLabels, buf)
-	lowCardHashes, lowCardInputMap := o.hashSeries(lowCardSide, keepLabels, buf)
+	keepName := o.opType.IsComparisonOperator()
+	highCardHashes, highCardInputMap := o.hashSeries(highCardSide, keepLabels, keepName, buf)
+	lowCardHashes, lowCardInputMap := o.hashSeries(lowCardSide, keepLabels, keepName, buf)
 	output, highCardOutputIndex, lowCardOutputIndex := o.join(highCardHashes, highCardInputMap, lowCardHashes, lowCardInputMap, includeLabels)
 
 	series := make([]labels.Labels, len(output))
@@ -178,11 +179,11 @@ func (o *vectorOperator) GetPool() *model.VectorPool {
 // a map from input series ID to output series ID.
 // The latter can be used to build an array backed index from input model.Series to output model.Series,
 // avoiding expensive hashmap lookups.
-func (o *vectorOperator) hashSeries(series []labels.Labels, keepLabels bool, buf []byte) (map[uint64][]model.Series, map[uint64][]uint64) {
+func (o *vectorOperator) hashSeries(series []labels.Labels, keepLabels, keepName bool, buf []byte) (map[uint64][]model.Series, map[uint64][]uint64) {
 	hashes := make(map[uint64][]model.Series)
 	inputIndex := make(map[uint64][]uint64)
 	for i, s := range series {
-		sig, lbls := signature(s, !o.matching.On, o.groupingLabels, keepLabels, buf)
+		sig, lbls := signature(s, !o.matching.On, o.groupingLabels, keepLabels, keepName, buf)
 		if _, ok := hashes[sig]; !ok {
 			hashes[sig] = make([]model.Series, 0, 1)
 			inputIndex[sig] = make([]uint64, 0, 1)
@@ -247,11 +248,17 @@ func (o *vectorOperator) join(
 	return outputIndex, highCardOutputIndex, lowCardOutputIndex
 }
 
-func signature(metric labels.Labels, without bool, grouping []string, keepOriginalLabels bool, buf []byte) (uint64, labels.Labels) {
+func signature(metric labels.Labels, without bool, grouping []string, keepOriginalLabels, keepName bool, buf []byte) (uint64, labels.Labels) {
 	buf = buf[:0]
-	lb := labels.NewBuilder(metric).Del(labels.MetricName)
+	lb := labels.NewBuilder(metric)
+	if !keepName {
+		lb = lb.Del(labels.MetricName)
+	}
 	if without {
-		dropLabels := append(grouping, labels.MetricName)
+		dropLabels := grouping
+		if !keepName {
+			dropLabels = append(grouping, labels.MetricName)
+		}
 		key, _ := metric.HashWithoutLabels(buf, dropLabels...)
 		if !keepOriginalLabels {
 			lb.Del(dropLabels...)
