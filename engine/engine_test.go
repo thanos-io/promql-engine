@@ -97,6 +97,12 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "func with scalar arg that selects storage, checks whether same series handled correctly",
+			load: `load 30s
+			    thanos_cache_redis_hits_total{name="caching-bucket",service="thanos-store"} 1+1x30`,
+			query: `clamp_min(thanos_cache_redis_hits_total, scalar(max(thanos_cache_redis_hits_total) by (service))) + clamp_min(thanos_cache_redis_hits_total, scalar(max(thanos_cache_redis_hits_total) by (service)))`,
+		},
+		{
 			name: "sum + rate divided by itself",
 			load: `load 30s
 			thanos_cache_redis_hits_total{name="caching-bucket",service="thanos-store"} 1+1x30`,
