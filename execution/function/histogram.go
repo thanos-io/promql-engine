@@ -22,7 +22,7 @@ type histogramSeries struct {
 	upperBound float64
 }
 
-// functionOperator returns []model.StepVector after processing input with desired function.
+// histogramOperator is a function operator that calculates percentiles.
 type histogramOperator struct {
 	pool *model.VectorPool
 
@@ -55,7 +55,7 @@ func NewHistogramOperator(pool *model.VectorPool, args parser.Expressions, nextO
 
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
 	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
-	return fmt.Sprintf("[*functionOperator] %v(%v)", "histogram_quantile", o.funcArgs), next
+	return fmt.Sprintf("[*functionOperator] %s(%v)", "histogram_quantile", o.funcArgs), next
 }
 
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {
