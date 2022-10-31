@@ -5,6 +5,7 @@ package aggregate
 
 import (
 	"fmt"
+	"math"
 
 	"github.com/efficientgo/core/errors"
 
@@ -81,6 +82,27 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 	case "count":
 		return func(in []float64) float64 {
 			return float64(len(in))
+		}, nil
+	case "stddev":
+	case "stdvar":
+		return func(in []float64) float64 {
+			var groupCount int
+			var mean float64
+			var value float64
+
+			for _, v := range in {
+				groupCount++
+				delta := v - mean
+				mean += delta / float64(groupCount)
+				value += delta * (v - mean)
+			}
+			switch t {
+			case "stdvar":
+				return value / float64(groupCount)
+			case "stddev":
+				return math.Sqrt(value / float64(groupCount))
+			}
+			return 0
 		}, nil
 	case "avg":
 		return func(in []float64) float64 {
