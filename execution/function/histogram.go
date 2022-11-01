@@ -55,7 +55,7 @@ func NewHistogramOperator(pool *model.VectorPool, args parser.Expressions, nextO
 
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
 	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
-	return fmt.Sprintf("[*functionOperator] %s(%v)", "histogram_quantile", o.funcArgs), next
+	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
 }
 
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {
