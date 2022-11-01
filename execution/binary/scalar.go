@@ -148,7 +148,7 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 		if vectorSeries[i] != nil {
 			lbls := vectorSeries[i]
 			if !o.opType.IsComparisonOperator() {
-				lbls = function.DropMetricName(lbls)
+				lbls, _ = function.DropMetricName(lbls)
 			}
 			series[i] = lbls
 		}

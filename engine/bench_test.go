@@ -186,6 +186,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 			name:  "aggr within func query",
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
 		},
+		{
+			name:  "histogram_quantile",
+			query: `histogram_quantile(0.9, http_response_seconds_bucket)`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -407,15 +411,19 @@ func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *t
 }
 
 func synthesizeLoad(numPods, numContainers int) string {
-	load := `
-load 30s`
+	load := "load 30s\n"
 	for i := 0; i < numPods; i++ {
 		for j := 0; j < numContainers; j++ {
-			load += fmt.Sprintf(`
-  http_requests_total{pod="p%d", container="c%d"} %d+%dx720`, i, j, i, j)
+			load += fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"} %d+%dx720%s`, i, j, i, j, "\n")
 		}
-		load += fmt.Sprintf(`
-  http_responses_total{pod="p%d"} %dx720`, i, i)
+		load += fmt.Sprintf(`http_responses_total{pod="p%d"} %dx720%s`, i, i, "\n")
+	}
+
+	for i := 0; i < numPods; i++ {
+		for j := 0; j < 10; j++ {
+			load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="%d"} %d+%dx720%s`, i, j, i, j, "\n")
+		}
+		load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="+Inf"} %d+%dx720%s`, i, i, i, "\n")
 	}
 
 	return load

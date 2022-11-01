@@ -92,6 +92,23 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return newShardedVectorSelector(selector, opts, e.Offset)
 
 	case *parser.Call:
+		hints.Func = e.Func.Name
+		hints.Grouping = nil
+		hints.By = false
+
+		if e.Func.Name == "histogram_quantile" {
+			nextOperators := make([]model.VectorOperator, len(e.Args))
+			for i := range e.Args {
+				next, err := newOperator(e.Args[i], storage, opts, hints)
+				if err != nil {
+					return nil, err
+				}
+				nextOperators[i] = exchange.NewCancellable(next)
+			}
+
+			return function.NewHistogramOperator(model.NewVectorPool(stepsBatch), e.Args, nextOperators, stepsBatch)
+		}
+
 		// TODO(saswatamcode): Tracked in https://github.com/thanos-community/promql-engine/issues/23
 		// Based on the category we can create an apt query plan.
 		call, err := function.NewFunctionCall(e.Func)
@@ -102,10 +119,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		if e.Func.Variadic != 0 {
 			return nil, errors.Wrapf(parse.ErrNotImplemented, "got variadic function: %s", e)
 		}
-
-		hints.Func = e.Func.Name
-		hints.Grouping = nil
-		hints.By = false
 
 		// TODO(saswatamcode): Range vector result might need new operator
 		// before it can be non-nested. https://github.com/thanos-community/promql-engine/issues/39
@@ -155,7 +168,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			nextOperators[i] = exchange.NewCancellable(next)
 		}
 
-		return function.NewfunctionOperator(e, call, nextOperators, stepsBatch)
+		return function.NewFunctionOperator(e, call, nextOperators, stepsBatch)
 
 	case *parser.AggregateExpr:
 		hints.Func = e.Op.String()
@@ -204,6 +217,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 	case *parser.StepInvariantExpr:
+		switch t := e.Expr.(type) {
+		case *parser.NumberLiteral:
+			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val), nil
+		}
 		next, err := newCancellableOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
 		if err != nil {
 			return nil, err
