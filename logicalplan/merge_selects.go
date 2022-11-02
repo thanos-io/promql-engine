@@ -19,11 +19,10 @@ import (
 // and apply an additional filter for {c="d"}.
 type MergeSelectsOptimizer struct{}
 
-func (m MergeSelectsOptimizer) Optimize(expr parser.Expr) parser.Expr {
+func (m MergeSelectsOptimizer) Optimize(expr parser.Expr, l *Log) parser.Expr {
 	heap := make(matcherHeap)
 	extractSelectors(heap, expr)
-	replaceMatchers(heap, &expr)
-
+	replaceMatchers(heap, &expr, l)
 	return expr
 }
 
@@ -42,7 +41,7 @@ func extractSelectors(selectors matcherHeap, expr parser.Expr) {
 	})
 }
 
-func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
+func replaceMatchers(selectors matcherHeap, expr *parser.Expr, log *Log) {
 	traverse(expr, func(node *parser.Expr) {
 		e, ok := (*node).(*parser.VectorSelector)
 		if !ok {
@@ -76,6 +75,9 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 				}
 			}
 			e.LabelMatchers = replacement
+
+			log.Addf("MergeSelectsOptimizer: Replacing %v with FilteredSelector{}", e.String())
+
 			*node = &FilteredSelector{
 				Filters:        filters,
 				VectorSelector: e,

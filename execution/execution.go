@@ -60,7 +60,15 @@ func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, st
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
 		Step: step.Milliseconds(),
 	}
+
 	return newCancellableOperator(expr, selectorPool, opts, hints)
+}
+
+type DataInfo struct {
+}
+
+type SetupInfo struct {
+	CPUs int
 }
 
 func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (*exchange.CancellableOperator, error) {
