@@ -86,6 +86,12 @@ func (o *vectorSelector) GetPool() *model.VectorPool {
 }
 
 func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}

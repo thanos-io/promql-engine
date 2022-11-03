@@ -77,6 +77,12 @@ func (u *stepInvariantOperator) GetPool() *model.VectorPool {
 }
 
 func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	in, err := u.next.Next(ctx)
 	if err != nil {
 		return nil, err

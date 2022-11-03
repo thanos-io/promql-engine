@@ -68,6 +68,12 @@ func (u *unaryNegation) GetPool() *model.VectorPool {
 }
 
 func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	in, err := u.next.Next(ctx)
 	if err != nil {
 		return nil, err
