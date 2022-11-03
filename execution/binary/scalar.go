@@ -83,6 +83,12 @@ func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 }
 
 func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	in, err := o.next.Next(ctx)
 	if err != nil {
 		return nil, err

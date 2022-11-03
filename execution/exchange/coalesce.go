@@ -57,6 +57,12 @@ func (c *coalesceOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 }
 
 func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	var out []model.StepVector = nil
 	var wg sync.WaitGroup
 	var mu sync.RWMutex

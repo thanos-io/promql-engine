@@ -80,6 +80,12 @@ func (o *functionOperator) GetPool() *model.VectorPool {
 }
 
 func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}

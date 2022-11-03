@@ -133,6 +133,12 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 }
 
 func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	lhs, err := o.lhs.Next(ctx)
 	if err != nil {
 		return nil, err

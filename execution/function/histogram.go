@@ -73,6 +73,12 @@ func (o *histogramOperator) GetPool() *model.VectorPool {
 }
 
 func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
 	if err != nil {

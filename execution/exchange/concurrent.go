@@ -46,6 +46,12 @@ func (c *concurrencyOperator) GetPool() *model.VectorPool {
 }
 
 func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	c.once.Do(func() {
 		go c.pull(ctx)
 		go c.drainBufferOnCancel(ctx)

@@ -60,16 +60,7 @@ func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, st
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
 		Step: step.Milliseconds(),
 	}
-	return newCancellableOperator(expr, selectorPool, opts, hints)
-}
-
-func newCancellableOperator(expr parser.Expr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (*exchange.CancellableOperator, error) {
-	operator, err := newOperator(expr, selectorPool, opts, hints)
-	if err != nil {
-		return nil, err
-	}
-
-	return exchange.NewCancellable(operator), nil
+	return newOperator(expr, selectorPool, opts, hints)
 }
 
 func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -103,7 +94,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 				if err != nil {
 					return nil, err
 				}
-				nextOperators[i] = exchange.NewCancellable(next)
+				nextOperators[i] = next
 			}
 
 			return function.NewHistogramOperator(model.NewVectorPool(stepsBatch), e.Args, nextOperators, stepsBatch)
@@ -148,9 +139,9 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 				operators := make([]model.VectorOperator, 0, numShards)
 				for i := 0; i < numShards; i++ {
 					operator := exchange.NewConcurrent(
-						exchange.NewCancellable(
-							scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, e, opts, t.Range, vs.Offset, i, numShards),
-						), 2)
+						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, e, opts, t.Range, vs.Offset, i, numShards),
+						2,
+					)
 					operators = append(operators, operator)
 				}
 
@@ -165,7 +156,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			if err != nil {
 				return nil, err
 			}
-			nextOperators[i] = exchange.NewCancellable(next)
+			nextOperators[i] = next
 		}
 
 		return function.NewFunctionOperator(e, call, nextOperators, stepsBatch)
@@ -175,7 +166,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		hints.Grouping = e.Grouping
 		hints.By = !e.Without
 
-		next, err := newCancellableOperator(e.Expr, storage, opts, hints)
+		next, err := newOperator(e.Expr, storage, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +175,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return nil, err
 		}
 
-		return exchange.NewConcurrent(exchange.NewCancellable(a), 2), nil
+		return exchange.NewConcurrent(a, 2), nil
 
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
@@ -194,14 +185,14 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return newVectorBinaryOperator(e, storage, opts, hints)
 
 	case *parser.ParenExpr:
-		return newCancellableOperator(e.Expr, storage, opts, hints)
+		return newOperator(e.Expr, storage, opts, hints)
 
 	case *parser.StringLiteral:
 		// TODO(saswatamcode): This requires separate model with strings.
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e)
 
 	case *parser.UnaryExpr:
-		next, err := newCancellableOperator(e.Expr, storage, opts, hints)
+		next, err := newOperator(e.Expr, storage, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -221,7 +212,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		case *parser.NumberLiteral:
 			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val), nil
 		}
-		next, err := newCancellableOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
+		next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
 		if err != nil {
 			return nil, err
 		}
@@ -251,9 +242,8 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
 		operator := exchange.NewConcurrent(
-			exchange.NewCancellable(
-				scan.NewVectorSelector(
-					model.NewVectorPool(stepsBatch), selector, opts, offset, i, numShards)), 2)
+			scan.NewVectorSelector(
+				model.NewVectorPool(stepsBatch), selector, opts, offset, i, numShards), 2)
 		operators = append(operators, operator)
 	}
 
@@ -261,11 +251,11 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 }
 
 func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	leftOperator, err := newCancellableOperator(e.LHS, selectorPool, opts, hints)
+	leftOperator, err := newOperator(e.LHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newCancellableOperator(e.RHS, selectorPool, opts, hints)
+	rightOperator, err := newOperator(e.RHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
@@ -273,11 +263,11 @@ func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 }
 
 func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	lhs, err := newCancellableOperator(e.LHS, selectorPool, opts, hints)
+	lhs, err := newOperator(e.LHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rhs, err := newCancellableOperator(e.RHS, selectorPool, opts, hints)
+	rhs, err := newOperator(e.RHS, selectorPool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
