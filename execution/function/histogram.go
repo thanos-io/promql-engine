@@ -166,7 +166,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	o.outputIndex = make([]histogramSeries, len(series))
 
 	for i, s := range series {
-		lbls, bucketLabel := dropLabel(s, "le")
+		lbls, bucketLabel := dropLabel(s.Copy(), "le")
 		value, err := strconv.ParseFloat(bucketLabel.Value, 64)
 		if err != nil {
 			continue
