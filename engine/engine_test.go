@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -1619,7 +1618,7 @@ func TestInstantQuery(t *testing.T) {
 									queryTime = tc.queryTime
 								}
 
-								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DebugWriter: os.Stdout})
+								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
 								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 								testutil.Ok(t, err)
 								defer q1.Close()

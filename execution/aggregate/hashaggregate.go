@@ -66,10 +66,18 @@ func NewHashAggregate(
 }
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
-	if a.by {
-		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
+	var ops []model.VectorOperator
+
+	if a.paramOp != nil {
+		ops = append(ops, a.paramOp)
 	}
-	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
+
+	ops = append(ops, a.next)
+
+	if a.by {
+		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
+	}
+	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), ops
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
