@@ -29,6 +29,8 @@ type coalesceOperator struct {
 	series []labels.Labels
 
 	pool      *model.VectorPool
+	mu        sync.Mutex
+	wg        sync.WaitGroup
 	operators []model.VectorOperator
 }
 
@@ -64,13 +66,11 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	}
 
 	var out []model.StepVector = nil
-	var wg sync.WaitGroup
-	var mu sync.RWMutex
 	var errChan = make(errorChan, len(c.operators))
 	for _, o := range c.operators {
-		wg.Add(1)
+		c.wg.Add(1)
 		go func(o model.VectorOperator) {
-			defer wg.Done()
+			defer c.wg.Done()
 
 			in, err := o.Next(ctx)
 			if err != nil {
@@ -80,32 +80,25 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			if in == nil {
 				return
 			}
-			mu.RLock()
+			c.mu.Lock()
+			defer c.mu.Unlock()
+
 			if len(in) > 0 && out == nil {
-				mu.RUnlock()
-				mu.Lock()
-				if len(in) > 0 && out == nil {
-					out = c.pool.GetVectorBatch()
-					for i := 0; i < len(in); i++ {
-						out = append(out, c.pool.GetStepVector(in[i].T))
-					}
+				out = c.pool.GetVectorBatch()
+				for i := 0; i < len(in); i++ {
+					out = append(out, c.pool.GetStepVector(in[i].T))
 				}
-				mu.Unlock()
-			} else {
-				mu.RUnlock()
 			}
 
-			mu.Lock()
 			for i := 0; i < len(in); i++ {
 				out[i].Samples = append(out[i].Samples, in[i].Samples...)
 				out[i].SampleIDs = append(out[i].SampleIDs, in[i].SampleIDs...)
 				o.GetPool().PutStepVector(in[i])
 			}
-			mu.Unlock()
 			o.GetPool().PutVectors(in)
 		}(o)
 	}
-	wg.Wait()
+	c.wg.Wait()
 	close(errChan)
 
 	if err := errChan.getError(); err != nil {
