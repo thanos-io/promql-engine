@@ -42,6 +42,9 @@ type Opts struct {
 	// DisableOptimizers disables Query optimizations using logicalPlan.DefaultOptimizers.
 	DisableOptimizers bool
 
+	// AdditionalOptimizers are optimizers which are run in addition to the default ones.
+	AdditionalOptimizers []logicalplan.Optimizer
+
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
 	// in the new engine, instead of falling back to prometheus engine.
 	DisableFallback bool
@@ -69,12 +72,12 @@ func New(opts Opts) v1.QueryEngine {
 				Help: "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
-
-		debugWriter:       opts.DebugWriter,
-		disableFallback:   opts.DisableFallback,
-		disableOptimizers: opts.DisableOptimizers,
-		logger:            opts.Logger,
-		lookbackDelta:     opts.LookbackDelta,
+		debugWriter:          opts.DebugWriter,
+		disableFallback:      opts.DisableFallback,
+		disableOptimizers:    opts.DisableOptimizers,
+		logger:               opts.Logger,
+		lookbackDelta:        opts.LookbackDelta,
+		additionalOptimizers: opts.AdditionalOptimizers,
 	}
 }
 
@@ -82,11 +85,13 @@ type compatibilityEngine struct {
 	prom    *promql.Engine
 	queries *prometheus.CounterVec
 
-	debugWriter       io.Writer
-	disableFallback   bool
-	disableOptimizers bool
-	logger            log.Logger
-	lookbackDelta     time.Duration
+	debugWriter io.Writer
+
+	disableFallback      bool
+	disableOptimizers    bool
+	logger               log.Logger
+	lookbackDelta        time.Duration
+	additionalOptimizers []logicalplan.Optimizer
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -140,7 +145,8 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 
 	lplan := logicalplan.New(expr, start, end)
 	if !e.disableOptimizers {
-		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
+		optimizers := append(logicalplan.DefaultOptimizers, e.additionalOptimizers...)
+		lplan = lplan.Optimize(optimizers)
 	}
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)

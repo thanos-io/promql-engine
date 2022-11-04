@@ -64,6 +64,7 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 			traverse(&n, transform)
 		}
 	case *parser.BinaryExpr:
+		transform(expr)
 		traverse(&node.LHS, transform)
 		traverse(&node.RHS, transform)
 	case *parser.UnaryExpr:
