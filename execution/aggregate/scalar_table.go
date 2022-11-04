@@ -114,7 +114,7 @@ type accumulator struct {
 	Reset     func()
 }
 
-func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorFunc, error) {
+func makeAccumulatorFunc(expr parser.ItemType, arg float64) (newAccumulatorFunc, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
@@ -284,7 +284,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 			}
 		}, nil
 	case "quantile":
-		q := arg.(*parser.NumberLiteral).Val
+		q := arg
 		return func() *accumulator {
 			var hasValue bool
 			points := make([]float64, 0)

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -1025,6 +1026,26 @@ func TestInstantQuery(t *testing.T) {
 			query: "quantile by (pod) (0.9, rate(http_requests_total[1m]))",
 		},
 		{
+			name: "quantile by pod with binary",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "quantile by (pod) (1 - 0.1, rate(http_requests_total[1m]))",
+		},
+		{
+			name: "quantile by pod with expression",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "quantile by (pod) (scalar(min(http_requests_total)), rate(http_requests_total[1m]))",
+		},
+		{
 			name: "quantile",
 			load: `load 30s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -1598,7 +1619,7 @@ func TestInstantQuery(t *testing.T) {
 									queryTime = tc.queryTime
 								}
 
-								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
+								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DebugWriter: os.Stdout})
 								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 								testutil.Ok(t, err)
 								defer q1.Close()
