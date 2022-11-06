@@ -43,7 +43,7 @@ func newVectorizedTable(a vectorAccumulator) *vectorTable {
 	}
 }
 
-func (t *vectorTable) aggregate(vector model.StepVector) {
+func (t *vectorTable) aggregate(_ float64, vector model.StepVector) {
 	if len(vector.SampleIDs) == 0 {
 		t.hasValue = false
 		return

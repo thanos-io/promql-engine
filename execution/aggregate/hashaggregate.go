@@ -48,17 +48,23 @@ func NewHashAggregate(
 	labels []string,
 	stepsBatch int,
 ) (model.VectorOperator, error) {
+	newAccumulator, err := makeAccumulatorFunc(aggregation)
+	if err != nil {
+		return nil, err
+	}
+
 	// Grouping labels need to be sorted in order for metric hashing to work.
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
 	slices.Sort(labels)
 	a := &aggregate{
-		next:        next,
-		paramOp:     paramOp,
-		vectorPool:  points,
-		by:          by,
-		aggregation: aggregation,
-		labels:      labels,
-		stepsBatch:  stepsBatch,
+		next:           next,
+		paramOp:        paramOp,
+		vectorPool:     points,
+		by:             by,
+		aggregation:    aggregation,
+		labels:         labels,
+		stepsBatch:     stepsBatch,
+		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
 
@@ -82,7 +88,7 @@ func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
-	a.once.Do(func() { err = a.initialize(ctx) })
+	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
 		return nil, err
 	}
@@ -110,14 +116,24 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	defer a.next.GetPool().PutVectors(in)
 
-	a.once.Do(func() { err = a.initialize(ctx) })
+	var arg float64
+
+	if a.paramOp != nil {
+		p, err := a.paramOp.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		arg = p[0].Samples[0]
+	}
+
+	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
 		return nil, err
 	}
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		if err := a.workers[i].Send(vector); err != nil {
+		if err := a.workers[i].Send(arg, vector); err != nil {
 			return nil, err
 		}
 	}
@@ -134,24 +150,12 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	return result, nil
 }
 
-func (a *aggregate) initialize(ctx context.Context) error {
+func (a *aggregate) initializeTables(ctx context.Context) error {
 	var (
 		tables []aggregateTable
 		series []labels.Labels
-		arg    float64
 		err    error
 	)
-
-	if a.paramOp != nil {
-		p, err := a.paramOp.Next(ctx)
-
-		if err != nil {
-			return err
-		}
-		arg = p[0].Samples[0]
-	}
-
-	a.newAccumulator, err = makeAccumulatorFunc(a.aggregation, arg)
 
 	if a.by && len(a.labels) == 0 {
 		tables, series, err = a.initializeVectorizedTables(ctx)
@@ -168,9 +172,9 @@ func (a *aggregate) initialize(ctx context.Context) error {
 	return nil
 }
 
-func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.StepVector {
+func (a *aggregate) workerTask(workerID int, arg float64, vector model.StepVector) model.StepVector {
 	table := a.tables[workerID]
-	table.aggregate(vector)
+	table.aggregate(arg, vector)
 	return table.toVector(a.vectorPool)
 }
 
