@@ -1003,6 +1003,19 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
+			name: "topk with expression as argument not returning any value",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(scalar(min(non_existent_metric)), http_requests_total) by (series)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(500, 0),
+			step:  2 * time.Second,
+		},
+		{
 			name: "bottomK",
 			load: `load 30s
 				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -1061,7 +1074,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								defer q1.Close()
 
 								newResult := q1.Exec(context.Background())
-								testutil.Ok(t, newResult.Err)
 
 								oldEngine := promql.NewEngine(opts)
 								q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
@@ -1069,9 +1081,12 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								defer q2.Close()
 
 								oldResult := q2.Exec(context.Background())
-								testutil.Ok(t, oldResult.Err)
-
-								testutil.Equals(t, oldResult, newResult)
+								if oldResult.Err == nil {
+									testutil.Ok(t, newResult.Err)
+									testutil.Equals(t, oldResult, newResult)
+								} else {
+									testutil.NotOk(t, newResult.Err)
+								}
 							})
 						}
 					})

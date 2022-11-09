@@ -91,6 +91,10 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 	}
 
+	if len(args) != len(in) {
+		return nil, fmt.Errorf("scalar argument not found")
+	}
+
 	a.once.Do(func() { err = a.init(ctx) })
 	if err != nil {
 		return nil, err
@@ -98,9 +102,6 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		if len(vector.SampleIDs) == 0 {
-			continue
-		}
 		a.aggregate(vector.T, &result, int(args[i].Samples[0]), vector.SampleIDs, vector.Samples)
 		a.next.GetPool().PutStepVector(vector)
 	}
