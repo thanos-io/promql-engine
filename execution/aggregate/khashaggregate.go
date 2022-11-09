@@ -82,14 +82,13 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	defer a.next.GetPool().PutVectors(in)
 
-	var arg float64
+	var args []model.StepVector
 
 	if a.paramOp != nil {
-		p, err := a.paramOp.Next(ctx)
+		args, err = a.paramOp.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
-		arg = p[0].Samples[0]
 	}
 
 	a.once.Do(func() { err = a.init(ctx) })
@@ -98,8 +97,11 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	result := a.vectorPool.GetVectorBatch()
-	for _, vector := range in {
-		a.aggregate(vector.T, &result, int(arg), vector.SampleIDs, vector.Samples)
+	for i, vector := range in {
+		if len(vector.SampleIDs) == 0 {
+			continue
+		}
+		a.aggregate(vector.T, &result, int(args[i].Samples[0]), vector.SampleIDs, vector.Samples)
 		a.next.GetPool().PutStepVector(vector)
 	}
 
