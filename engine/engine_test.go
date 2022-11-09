@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"sort"
 	"testing"
 	"time"
 
@@ -16,11 +17,11 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"go.uber.org/goleak"
-
 	"github.com/thanos-community/promql-engine/engine"
+	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -995,7 +996,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
 				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
 				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
-			query: "bottomk(2, http_requests_total) by series",
+			query: "bottomk(2, http_requests_total) by (series)",
 			start: time.Unix(0, 0),
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
@@ -1065,10 +1066,11 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load      string
-		name      string
-		query     string
-		queryTime time.Time
+		load                     string
+		name                     string
+		query                    string
+		queryTime                time.Time
+		compareSeriesResultOrder bool // if true, the series in the result between the old and new engine should have the same order
 	}{
 		{
 			name: "increase plus offset",
@@ -1182,7 +1184,53 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query: "topk(2, http_requests_total)",
+			query:                    "topk(2, http_requests_total)",
+			compareSeriesResultOrder: true,
+		},
+		{
+			name: "topk by series",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1
+						http_requests_total{pod="nginx-2", series="1"} 2
+						http_requests_total{pod="nginx-3", series="1"} 8
+						http_requests_total{pod="nginx-4", series="2"} 6
+						http_requests_total{pod="nginx-5", series="2"} 8
+						http_requests_total{pod="nginx-6", series="3"} 15
+						http_requests_total{pod="nginx-7", series="3"} 11
+						http_requests_total{pod="nginx-8", series="4"} 22
+						http_requests_total{pod="nginx-9", series="4"} 89`,
+			query:                    "topk(2, http_requests_total) by (series)",
+			compareSeriesResultOrder: true,
+		},
+		{
+			name: "bottomK",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1
+						http_requests_total{pod="nginx-2", series="1"} 2
+						http_requests_total{pod="nginx-3", series="1"} 8
+						http_requests_total{pod="nginx-4", series="2"} 6
+						http_requests_total{pod="nginx-5", series="2"} 8
+						http_requests_total{pod="nginx-6", series="3"} 15
+						http_requests_total{pod="nginx-7", series="3"} 11
+						http_requests_total{pod="nginx-8", series="4"} 22
+						http_requests_total{pod="nginx-9", series="4"} 89`,
+			query:                    "bottomk(2, http_requests_total)",
+			compareSeriesResultOrder: true,
+		},
+		{
+			name: "bottomk by series",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1
+						http_requests_total{pod="nginx-2", series="1"} 2
+						http_requests_total{pod="nginx-3", series="1"} 8
+						http_requests_total{pod="nginx-4", series="2"} 6
+						http_requests_total{pod="nginx-5", series="2"} 8
+						http_requests_total{pod="nginx-6", series="3"} 15
+						http_requests_total{pod="nginx-7", series="3"} 11
+						http_requests_total{pod="nginx-8", series="4"} 22
+						http_requests_total{pod="nginx-9", series="4"} 89`,
+			query:                    "bottomk(2, http_requests_total) by (series)",
+			compareSeriesResultOrder: true,
 		},
 		{
 			name: "max",
@@ -1710,6 +1758,12 @@ func TestInstantQuery(t *testing.T) {
 
 								oldResult := q2.Exec(context.Background())
 								testutil.Ok(t, oldResult.Err)
+
+								if !tc.compareSeriesResultOrder {
+									sortByLabels(oldResult)
+									sortByLabels(newResult)
+								}
+
 								testutil.Equals(t, oldResult, newResult)
 							})
 						}
@@ -2214,3 +2268,28 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 	})
 
 }
+
+func sortByLabels(r *promql.Result) {
+	switch r.Value.Type() {
+	case parser.ValueTypeVector:
+		m, _ := r.Vector()
+		sort.Sort(samplesByLabels(m))
+		r.Value = m
+	case parser.ValueTypeMatrix:
+		m, _ := r.Matrix()
+		sort.Sort(seriesByLabels(m))
+		r.Value = m
+	}
+}
+
+type seriesByLabels []promql.Series
+
+func (b seriesByLabels) Len() int           { return len(b) }
+func (b seriesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b seriesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
+
+type samplesByLabels []promql.Sample
+
+func (b samplesByLabels) Len() int           { return len(b) }
+func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
+func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
