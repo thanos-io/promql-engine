@@ -179,12 +179,17 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			}
 		}
 
-		a, err := aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, stepsBatch)
+		if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
+			next, err = aggregate.NewKHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping)
+		} else {
+			next, err = aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, e.Op, e.Param, !e.Without, e.Grouping, stepsBatch)
+		}
+
 		if err != nil {
 			return nil, err
 		}
-
-		return exchange.NewConcurrent(a, 2), nil
+		
+		return exchange.NewConcurrent(next, 2), nil
 
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {

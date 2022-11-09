@@ -948,6 +948,58 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		//	http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
 		//	query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
 		//},
+		{
+			name: "topk",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(2, http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "topk by",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(2, http_requests_total) by (series)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "bottomK",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "bottomk(2, http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "bottomK by",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "bottomk(2, http_requests_total) by series",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1117,6 +1169,20 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-1"} 1+1x15
 						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg(http_requests_total)",
+		},
+		{
+			name: "topk",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1
+						http_requests_total{pod="nginx-2", series="1"} 2
+						http_requests_total{pod="nginx-3", series="1"} 8
+						http_requests_total{pod="nginx-4", series="2"} 6
+						http_requests_total{pod="nginx-5", series="2"} 8
+						http_requests_total{pod="nginx-6", series="3"} 15
+						http_requests_total{pod="nginx-7", series="3"} 11
+						http_requests_total{pod="nginx-8", series="4"} 22
+						http_requests_total{pod="nginx-9", series="4"} 89`,
+			query: "topk(2, http_requests_total)",
 		},
 		{
 			name: "max",
@@ -1644,7 +1710,6 @@ func TestInstantQuery(t *testing.T) {
 
 								oldResult := q2.Exec(context.Background())
 								testutil.Ok(t, oldResult.Err)
-
 								testutil.Equals(t, oldResult, newResult)
 							})
 						}
