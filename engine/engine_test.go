@@ -20,8 +20,9 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/thanos-community/promql-engine/engine"
 	"go.uber.org/goleak"
+
+	"github.com/thanos-community/promql-engine/engine"
 )
 
 func TestMain(m *testing.M) {
@@ -1072,6 +1073,12 @@ func TestInstantQuery(t *testing.T) {
 		queryTime                time.Time
 		compareSeriesResultOrder bool // if true, the series in the result between the old and new engine should have the same order
 	}{
+		{
+			name:      "scalar",
+			load:      ``,
+			queryTime: time.Unix(160, 0),
+			query:     "12 + 1",
+		},
 		{
 			name: "increase plus offset",
 			load: `load 1s

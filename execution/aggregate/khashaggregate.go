@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package aggregate
 
 import (
@@ -10,8 +13,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/thanos-community/promql-engine/execution/model"
 	"golang.org/x/exp/slices"
+
+	"github.com/thanos-community/promql-engine/execution/model"
 )
 
 type kAggregate struct {
