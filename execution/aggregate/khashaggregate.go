@@ -24,10 +24,11 @@ type kAggregate struct {
 	labels      []string
 	aggregation parser.ItemType
 
-	once          sync.Once
-	series        []labels.Labels
-	seriesAggHash map[uint64]uint64
-	compare       func(float64, float64) bool
+	once        sync.Once
+	series      []labels.Labels
+	inputToHeap []*samplesHeap
+	heaps       []*samplesHeap
+	compare     func(float64, float64) bool
 }
 
 func NewKHashAggregate(
@@ -54,14 +55,13 @@ func NewKHashAggregate(
 	slices.Sort(labels)
 
 	a := &kAggregate{
-		next:          next,
-		vectorPool:    points,
-		by:            by,
-		aggregation:   aggregation,
-		labels:        labels,
-		paramOp:       paramOp,
-		seriesAggHash: map[uint64]uint64{},
-		compare:       compare,
+		next:        next,
+		vectorPool:  points,
+		by:          by,
+		aggregation: aggregation,
+		labels:      labels,
+		paramOp:     paramOp,
+		compare:     compare,
 	}
 
 	return a, nil
@@ -95,14 +95,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for _, vector := range in {
-		aggregatedVectors := a.byAggregation(vector)
-		for _, av := range aggregatedVectors {
-			if len(av.SampleIDs) == 0 {
-				continue
-			}
-			s := a.aggregate(vector.T, int(arg), av.SampleIDs, av.Samples)
-			result = append(result, s)
-		}
+		a.aggregate(vector.T, &result, int(arg), vector.SampleIDs, vector.Samples)
 		a.next.GetPool().PutStepVector(vector)
 	}
 
@@ -135,59 +128,55 @@ func (a *kAggregate) init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	aggHash := make(map[uint64]uint64)
+	hapsHash := make(map[uint64]*samplesHeap)
 	buf := make([]byte, 1024)
 	for i := 0; i < len(series); i++ {
 		hash, _, _ := hashMetric(series[i], !a.by, a.labels, buf)
-		if _, ok := aggHash[hash]; !ok {
-			aggHash[hash] = uint64(len(aggHash))
+		h, ok := hapsHash[hash]
+		if !ok {
+			h = &samplesHeap{compare: a.compare}
+			hapsHash[hash] = h
+			a.heaps = append(a.heaps, h)
 		}
-		a.seriesAggHash[uint64(i)] = aggHash[hash]
+		a.inputToHeap = append(a.inputToHeap, h)
 	}
 	a.vectorPool.SetStepSize(len(series))
 	a.series = series
 	return nil
 }
 
-func (a *kAggregate) byAggregation(v model.StepVector) []model.StepVector {
-	r := make([]model.StepVector, len(a.seriesAggHash))
-	for i, id := range v.SampleIDs {
-		r[a.seriesAggHash[id]].SampleIDs = append(r[a.seriesAggHash[id]].SampleIDs, id)
-		r[a.seriesAggHash[id]].Samples = append(r[a.seriesAggHash[id]].Samples, v.Samples[i])
-	}
-	return r
-}
-
-func (a *kAggregate) aggregate(t int64, k int, SampleIDs []uint64, samples []float64) model.StepVector {
-	result := a.vectorPool.GetStepVector(t)
-	h := samplesHeap{compare: a.compare}
-	for i, d := range SampleIDs {
-		e := entry{sId: d, total: samples[i]}
-		if h.Len() < k || h.compare(h.entries[0].total, e.total) || math.IsNaN(h.entries[0].total) {
+func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, SampleIDs []uint64, samples []float64) {
+	for i, sId := range SampleIDs {
+		h := a.inputToHeap[sId]
+		if h.Len() < k || h.compare(h.entries[0].total, samples[i]) || math.IsNaN(h.entries[0].total) {
 			if k == 1 && h.Len() == 1 {
-				h.entries[0].sId = e.sId
-				h.entries[0].total = e.total
+				h.entries[0].sId = sId
+				h.entries[0].total = samples[i]
 				continue
 			}
 
 			if h.Len() == k {
-				heap.Pop(&h)
+				heap.Pop(h)
 			}
 
-			heap.Push(&h, &e)
+			heap.Push(h, &entry{sId: sId, total: samples[i]})
 		}
 	}
 
-	// The heap keeps the lowest value on top, so reverse it.
-	if len(h.entries) > 1 {
-		sort.Sort(sort.Reverse(h))
-	}
+	for _, h := range a.heaps {
+		s := a.vectorPool.GetStepVector(t)
+		// The heap keeps the lowest value on top, so reverse it.
+		if len(h.entries) > 1 {
+			sort.Sort(sort.Reverse(h))
+		}
 
-	for _, e := range h.entries {
-		result.SampleIDs = append(result.SampleIDs, e.sId)
-		result.Samples = append(result.Samples, e.total)
+		for _, e := range h.entries {
+			s.SampleIDs = append(s.SampleIDs, e.sId)
+			s.Samples = append(s.Samples, e.total)
+		}
+		*result = append(*result, s)
+		h.entries = h.entries[:0]
 	}
-	return result
 }
 
 type entry struct {
