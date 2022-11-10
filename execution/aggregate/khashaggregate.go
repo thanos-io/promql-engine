@@ -21,6 +21,8 @@ import (
 type kAggregate struct {
 	next    model.VectorOperator
 	paramOp model.VectorOperator
+	// params holds the aggregate parameter for each step.
+	params []float64
 
 	vectorPool *model.VectorPool
 
@@ -42,6 +44,7 @@ func NewKHashAggregate(
 	aggregation parser.ItemType,
 	by bool,
 	labels []string,
+	stepsBatch int,
 ) (model.VectorOperator, error) {
 	var compare func(float64, float64) bool
 
@@ -66,6 +69,7 @@ func NewKHashAggregate(
 		labels:      labels,
 		paramOp:     paramOp,
 		compare:     compare,
+		params:      make([]float64, stepsBatch),
 	}
 
 	return a, nil
@@ -86,6 +90,14 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	if err != nil {
 		return nil, err
 	}
+	for i := range a.params {
+		a.params[i] = math.NaN()
+		if i < len(args) {
+			a.params[i] = args[i].Samples[0]
+			a.paramOp.GetPool().PutStepVector(args[i])
+		}
+	}
+	a.paramOp.GetPool().PutVectors(args)
 
 	if len(args) != len(in) {
 		return nil, fmt.Errorf("scalar argument not found")
@@ -98,7 +110,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		a.aggregate(vector.T, &result, int(args[i].Samples[0]), vector.SampleIDs, vector.Samples)
+		a.aggregate(vector.T, &result, int(a.params[i]), vector.SampleIDs, vector.Samples)
 		a.next.GetPool().PutStepVector(vector)
 	}
 
