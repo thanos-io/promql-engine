@@ -134,6 +134,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 			vectors[batchIndex].Samples = vector.Samples[:1]
 			vectors[batchIndex].SampleIDs = vector.SampleIDs[:1]
+			vector.SampleIDs[0] = 0
 			vector.Samples[0] = math.NaN()
 			continue
 		}
@@ -158,13 +159,8 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 func (o *functionOperator) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
-		if o.funcExpr.Func.Name == "vector" {
+		if o.funcExpr.Func.Name == "vector" || o.funcExpr.Func.Name == "scalar" {
 			o.series = []labels.Labels{labels.New()}
-			return
-		}
-
-		if o.funcExpr.Func.Name == "scalar" {
-			o.series = []labels.Labels{}
 			return
 		}
 
