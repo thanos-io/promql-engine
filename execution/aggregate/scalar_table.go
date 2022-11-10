@@ -24,11 +24,10 @@ type aggregateTable interface {
 }
 
 type scalarTable struct {
-	timestamp      int64
-	inputs         []uint64
-	outputs        []*model.Series
-	accumulators   []*accumulator
-	newAccumulator newAccumulatorFunc
+	timestamp    int64
+	inputs       []uint64
+	outputs      []*model.Series
+	accumulators []*accumulator
 }
 
 func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, newAccumulator newAccumulatorFunc) []aggregateTable {
@@ -40,22 +39,19 @@ func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.S
 }
 
 func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, newAccumulator newAccumulatorFunc) *scalarTable {
+	accumulators := make([]*accumulator, len(outputs))
+	for i := 0; i < len(accumulators); i++ {
+		accumulators[i] = newAccumulator()
+	}
 	return &scalarTable{
-		inputs:         inputSampleIDs,
-		outputs:        outputs,
-		newAccumulator: newAccumulator,
+		inputs:       inputSampleIDs,
+		outputs:      outputs,
+		accumulators: accumulators,
 	}
 }
 
 func (t *scalarTable) aggregate(arg float64, vector model.StepVector) {
-	if len(t.accumulators) == 0 {
-		t.accumulators = make([]*accumulator, len(t.outputs))
-		for i := 0; i < len(t.accumulators); i++ {
-			t.accumulators[i] = t.newAccumulator(arg)
-		}
-	} else {
-		t.reset()
-	}
+	t.reset(arg)
 
 	for i := range vector.Samples {
 		t.addSample(vector.T, vector.SampleIDs[i], vector.Samples[i])
@@ -70,9 +66,9 @@ func (t *scalarTable) addSample(ts int64, sampleID uint64, sample float64) {
 	t.accumulators[output.ID].AddFunc(sample)
 }
 
-func (t *scalarTable) reset() {
+func (t *scalarTable) reset(arg float64) {
 	for i := range t.outputs {
-		t.accumulators[i].Reset()
+		t.accumulators[i].Reset(arg)
 	}
 }
 
@@ -110,20 +106,20 @@ func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byt
 	return key, string(bytes), lb.Labels(nil)
 }
 
-type newAccumulatorFunc func(arg float64) *accumulator
+type newAccumulatorFunc func() *accumulator
 
 type accumulator struct {
 	AddFunc   func(v float64)
 	ValueFunc func() float64
 	HasValue  func() bool
-	Reset     func()
+	Reset     func(arg float64)
 }
 
 func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var value float64
 			var hasValue bool
 
@@ -134,14 +130,14 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
 			}
 		}, nil
 	case "max":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var value float64
 			var hasValue bool
 
@@ -156,14 +152,14 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
 			}
 		}, nil
 	case "min":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var value float64
 			var hasValue bool
 
@@ -178,14 +174,14 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
 			}
 		}, nil
 	case "count":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var value float64
 			var hasValue bool
 
@@ -196,14 +192,14 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
 			}
 		}, nil
 	case "avg":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var count, sum float64
 			var hasValue bool
 
@@ -215,7 +211,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return sum / count },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					sum = 0
 					count = 0
@@ -223,7 +219,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			}
 		}, nil
 	case "group":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var hasValue bool
 			return &accumulator{
 				AddFunc: func(v float64) {
@@ -231,13 +227,13 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return 1 },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 				},
 			}
 		}, nil
 	case "stddev":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var count float64
 			var mean, cMean float64
 			var aux, cAux float64
@@ -252,7 +248,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return math.Sqrt((aux + cAux) / count) },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					count = 0
 					mean = 0
@@ -263,7 +259,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			}
 		}, nil
 	case "stdvar":
-		return func(_ float64) *accumulator {
+		return func() *accumulator {
 			var count float64
 			var mean, cMean float64
 			var aux, cAux float64
@@ -278,7 +274,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				},
 				ValueFunc: func() float64 { return (aux + cAux) / count },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					count = 0
 					mean = 0
@@ -289,8 +285,9 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			}
 		}, nil
 	case "quantile":
-		return func(arg float64) *accumulator {
+		return func() *accumulator {
 			var hasValue bool
+			var arg float64
 			points := make([]float64, 0)
 			return &accumulator{
 				AddFunc: func(v float64) {
@@ -301,8 +298,9 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					return quantile(arg, points)
 				},
 				HasValue: func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(a float64) {
 					hasValue = false
+					arg = a
 					points = points[:0]
 				},
 			}

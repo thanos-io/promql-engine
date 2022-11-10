@@ -116,14 +116,17 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	defer a.next.GetPool().PutVectors(in)
 
-	var arg float64
+	var args []model.StepVector
 
 	if a.paramOp != nil {
-		p, err := a.paramOp.Next(ctx)
+		args, err = a.paramOp.Next(ctx)
 		if err != nil {
 			return nil, err
 		}
-		arg = p[0].Samples[0]
+
+		if len(args) != len(in) {
+			return nil, fmt.Errorf("scalar argument not found")
+		}
 	}
 
 	a.once.Do(func() { err = a.initializeTables(ctx) })
@@ -133,7 +136,13 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		if err := a.workers[i].Send(arg, vector); err != nil {
+		if a.paramOp == nil {
+			err = a.workers[i].Send(0, vector)
+		} else {
+			err = a.workers[i].Send(args[i].Samples[0], vector)
+		}
+
+		if err != nil {
 			return nil, err
 		}
 	}
