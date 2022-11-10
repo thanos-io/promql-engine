@@ -29,6 +29,13 @@ import (
 	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
+type QueryType int
+
+const (
+	InstantQuery QueryType = 1
+	RangeQuery   QueryType = 2
+)
+
 type Opts struct {
 	promql.EngineOpts
 
@@ -116,6 +123,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		engine: e,
 		expr:   expr,
 		ts:     ts,
+		t:      InstantQuery,
 	}, nil
 }
 
@@ -153,6 +161,7 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 		Query:  &Query{exec: exec},
 		engine: e,
 		expr:   expr,
+		t:      RangeQuery,
 	}, nil
 }
 
@@ -174,7 +183,8 @@ type compatibilityQuery struct {
 	*Query
 	engine *compatibilityEngine
 	expr   parser.Expr
-	ts     time.Time // Empty for instant queries.
+	ts     time.Time // Empty for range queries.
+	t      QueryType
 
 	cancel context.CancelFunc
 }
@@ -253,7 +263,7 @@ loop:
 	}
 
 	// For range Query we expect always a Matrix value type.
-	if q.ts.Equal(time.Time{}) {
+	if q.t == RangeQuery {
 		resultMatrix := make(promql.Matrix, 0, len(series))
 		for _, s := range series {
 			if len(s.Points) == 0 {
