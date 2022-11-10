@@ -22,7 +22,8 @@ import (
 )
 
 type aggregate struct {
-	next model.VectorOperator
+	next    model.VectorOperator
+	paramOp model.VectorOperator
 
 	vectorPool *model.VectorPool
 
@@ -41,13 +42,13 @@ type aggregate struct {
 func NewHashAggregate(
 	points *model.VectorPool,
 	next model.VectorOperator,
+	paramOp model.VectorOperator,
 	aggregation parser.ItemType,
-	param parser.Expr,
 	by bool,
 	labels []string,
 	stepsBatch int,
 ) (model.VectorOperator, error) {
-	newAccumulator, err := makeAccumulatorFunc(aggregation, param)
+	newAccumulator, err := makeAccumulatorFunc(aggregation)
 	if err != nil {
 		return nil, err
 	}
@@ -57,6 +58,7 @@ func NewHashAggregate(
 	slices.Sort(labels)
 	a := &aggregate{
 		next:           next,
+		paramOp:        paramOp,
 		vectorPool:     points,
 		by:             by,
 		aggregation:    aggregation,
@@ -70,10 +72,18 @@ func NewHashAggregate(
 }
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
-	if a.by {
-		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
+	var ops []model.VectorOperator
+
+	if a.paramOp != nil {
+		ops = append(ops, a.paramOp)
 	}
-	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.next}
+
+	ops = append(ops, a.next)
+
+	if a.by {
+		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
+	}
+	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), ops
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -106,6 +116,19 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	defer a.next.GetPool().PutVectors(in)
 
+	var args []model.StepVector
+
+	if a.paramOp != nil {
+		args, err = a.paramOp.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		if len(args) != len(in) {
+			return nil, fmt.Errorf("scalar argument not found")
+		}
+	}
+
 	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
 		return nil, err
@@ -113,7 +136,13 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		if err := a.workers[i].Send(vector); err != nil {
+		if a.paramOp == nil {
+			err = a.workers[i].Send(0, vector)
+		} else {
+			err = a.workers[i].Send(args[i].Samples[0], vector)
+		}
+
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -152,9 +181,9 @@ func (a *aggregate) initializeTables(ctx context.Context) error {
 	return nil
 }
 
-func (a *aggregate) workerTask(workerID int, vector model.StepVector) model.StepVector {
+func (a *aggregate) workerTask(workerID int, arg float64, vector model.StepVector) model.StepVector {
 	table := a.tables[workerID]
-	table.aggregate(vector)
+	table.aggregate(arg, vector)
 	return table.toVector(a.vectorPool)
 }
 

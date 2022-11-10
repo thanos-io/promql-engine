@@ -165,12 +165,21 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		hints.Func = e.Op.String()
 		hints.Grouping = e.Grouping
 		hints.By = !e.Without
+		var paramOp model.VectorOperator
 
 		next, err := newOperator(e.Expr, storage, opts, hints)
 		if err != nil {
 			return nil, err
 		}
-		a, err := aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, e.Op, e.Param, !e.Without, e.Grouping, stepsBatch)
+
+		if e.Param != nil {
+			paramOp, err = newOperator(e.Param, storage, opts, hints)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		a, err := aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, stepsBatch)
 		if err != nil {
 			return nil, err
 		}

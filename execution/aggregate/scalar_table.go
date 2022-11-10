@@ -18,7 +18,7 @@ import (
 )
 
 type aggregateTable interface {
-	aggregate(vector model.StepVector)
+	aggregate(arg float64, vector model.StepVector)
 	toVector(pool *model.VectorPool) model.StepVector
 	size() int
 }
@@ -50,8 +50,9 @@ func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, newAccumul
 	}
 }
 
-func (t *scalarTable) aggregate(vector model.StepVector) {
-	t.reset()
+func (t *scalarTable) aggregate(arg float64, vector model.StepVector) {
+	t.reset(arg)
+
 	for i := range vector.Samples {
 		t.addSample(vector.T, vector.SampleIDs[i], vector.Samples[i])
 	}
@@ -65,9 +66,9 @@ func (t *scalarTable) addSample(ts int64, sampleID uint64, sample float64) {
 	t.accumulators[output.ID].AddFunc(sample)
 }
 
-func (t *scalarTable) reset() {
+func (t *scalarTable) reset(arg float64) {
 	for i := range t.outputs {
-		t.accumulators[i].Reset()
+		t.accumulators[i].Reset(arg)
 	}
 }
 
@@ -111,10 +112,10 @@ type accumulator struct {
 	AddFunc   func(v float64)
 	ValueFunc func() float64
 	HasValue  func() bool
-	Reset     func()
+	Reset     func(arg float64)
 }
 
-func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorFunc, error) {
+func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
@@ -129,7 +130,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
@@ -151,7 +152,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
@@ -173,7 +174,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
@@ -191,7 +192,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return value },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
 				},
@@ -210,7 +211,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return sum / count },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					sum = 0
 					count = 0
@@ -226,7 +227,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return 1 },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 				},
 			}
@@ -247,7 +248,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return math.Sqrt((aux + cAux) / count) },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					count = 0
 					mean = 0
@@ -273,7 +274,7 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 				},
 				ValueFunc: func() float64 { return (aux + cAux) / count },
 				HasValue:  func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(_ float64) {
 					hasValue = false
 					count = 0
 					mean = 0
@@ -284,9 +285,9 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 			}
 		}, nil
 	case "quantile":
-		q := arg.(*parser.NumberLiteral).Val
 		return func() *accumulator {
 			var hasValue bool
+			var arg float64
 			points := make([]float64, 0)
 			return &accumulator{
 				AddFunc: func(v float64) {
@@ -294,11 +295,12 @@ func makeAccumulatorFunc(expr parser.ItemType, arg parser.Expr) (newAccumulatorF
 					points = append(points, v)
 				},
 				ValueFunc: func() float64 {
-					return quantile(q, points)
+					return quantile(arg, points)
 				},
 				HasValue: func() bool { return hasValue },
-				Reset: func() {
+				Reset: func(a float64) {
 					hasValue = false
+					arg = a
 					points = points[:0]
 				},
 			}

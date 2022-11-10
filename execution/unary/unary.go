@@ -82,7 +82,7 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, nil
 	}
 	for i, vector := range in {
-		if err := u.workers[i].Send(vector); err != nil {
+		if err := u.workers[i].Send(0, vector); err != nil {
 			return nil, err
 		}
 	}
@@ -98,7 +98,7 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	return in, nil
 }
 
-func (u *unaryNegation) workerTask(_ int, vector model.StepVector) model.StepVector {
+func (u *unaryNegation) workerTask(_ int, _ float64, vector model.StepVector) model.StepVector {
 	floats.Scale(-1, vector.Samples)
 	return vector
 }

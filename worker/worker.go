@@ -31,19 +31,24 @@ func (g Group) Start(ctx context.Context) {
 	wg.Wait()
 }
 
+type input struct {
+	arg float64
+	in  model.StepVector
+}
+
 type Worker struct {
 	ctx context.Context
 
 	workerID int
-	input    chan model.StepVector
+	input    chan *input
 	output   chan model.StepVector
 	doWork   Task
 }
 
-type Task func(workerID int, in model.StepVector) model.StepVector
+type Task func(workerID int, arg float64, in model.StepVector) model.StepVector
 
 func New(workerID int, task Task) *Worker {
-	input := make(chan model.StepVector, 1)
+	input := make(chan *input, 1)
 	output := make(chan model.StepVector, 1)
 
 	return &Worker{
@@ -63,18 +68,18 @@ func (w *Worker) start(done doneFunc, ctx context.Context) {
 			close(w.output)
 			return
 		case task := <-w.input:
-			w.output <- w.doWork(w.workerID, task)
+			w.output <- w.doWork(w.workerID, task.arg, task.in)
 		}
 	}
 }
 
-func (w *Worker) Send(input model.StepVector) error {
+func (w *Worker) Send(arg float64, in model.StepVector) error {
 	select {
 	case <-w.ctx.Done():
 		close(w.input)
 		return w.ctx.Err()
 	default:
-		w.input <- input
+		w.input <- &input{arg: arg, in: in}
 		return nil
 	}
 }
