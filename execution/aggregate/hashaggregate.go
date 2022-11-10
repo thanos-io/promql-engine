@@ -6,15 +6,15 @@ package aggregate
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
 	"golang.org/x/exp/slices"
 
+	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
 	"github.com/thanos-community/promql-engine/worker"
-
-	"github.com/thanos-community/promql-engine/execution/model"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -24,6 +24,8 @@ import (
 type aggregate struct {
 	next    model.VectorOperator
 	paramOp model.VectorOperator
+	// params holds the aggregate parameter for each step.
+	params []float64
 
 	vectorPool *model.VectorPool
 
@@ -59,6 +61,7 @@ func NewHashAggregate(
 	a := &aggregate{
 		next:           next,
 		paramOp:        paramOp,
+		params:         make([]float64, stepsBatch),
 		vectorPool:     points,
 		by:             by,
 		aggregation:    aggregation,
@@ -77,7 +80,6 @@ func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 	if a.paramOp != nil {
 		ops = append(ops, a.paramOp)
 	}
-
 	ops = append(ops, a.next)
 
 	if a.by {
@@ -116,33 +118,29 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	defer a.next.GetPool().PutVectors(in)
 
-	var args []model.StepVector
-
-	if a.paramOp != nil {
-		args, err = a.paramOp.Next(ctx)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(args) != len(in) {
-			return nil, fmt.Errorf("scalar argument not found")
-		}
-	}
-
 	a.once.Do(func() { err = a.initializeTables(ctx) })
 	if err != nil {
 		return nil, err
 	}
 
+	if a.paramOp != nil {
+		args, err := a.paramOp.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for i := range a.params {
+			a.params[i] = math.NaN()
+			if i < len(args) {
+				a.params[i] = args[i].Samples[0]
+				a.paramOp.GetPool().PutStepVector(args[i])
+			}
+		}
+		a.paramOp.GetPool().PutVectors(args)
+	}
+
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		if a.paramOp == nil {
-			err = a.workers[i].Send(0, vector)
-		} else {
-			err = a.workers[i].Send(args[i].Samples[0], vector)
-		}
-
-		if err != nil {
+		if err = a.workers[i].Send(a.params[i], vector); err != nil {
 			return nil, err
 		}
 	}

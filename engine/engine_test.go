@@ -851,6 +851,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `10 + scalar(max(http_requests_total))`,
 		},
 		{
+			name: "quantile",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50	`,
+			query: "quantile(scalar(sum(http_requests_total)), rate(http_requests_total[1m]))",
+		},
+		{
 			name: "clamp",
 			load: `load 30s
 			http_requests_total{pod="nginx-1"} 1+1x15

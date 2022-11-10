@@ -135,6 +135,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
 		},
 		{
+			name:  "quantile with variable parameter",
+			query: "quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)",
+		},
+		{
 			name:  "binary operation with one to one",
 			query: `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
 		},
@@ -356,7 +360,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 }
 
 func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) *promql.Result {
-	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{})
+	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{DisableFallback: true})
 }
 
 func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
