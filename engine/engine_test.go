@@ -1232,7 +1232,8 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:        "topk(2, http_requests_total)",
+			query: "topk(2, http_requests_total)",
+			// TODO (alanprot): Top/BottomK series order on result. https://github.com/thanos-community/promql-engine/issues/120
 			sortByLabels: true,
 		},
 		{
