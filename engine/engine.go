@@ -207,8 +207,9 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	}
 
 	series := make([]promql.Series, len(resultSeries))
-	seriesMapping := map[uint64]int{}
-
+	for i := 0; i < len(resultSeries); i++ {
+		series[i].Metric = resultSeries[i]
+	}
 loop:
 	for {
 		select {
@@ -248,14 +249,10 @@ loop:
 
 			for _, vector := range r {
 				for i, s := range vector.SampleIDs {
-					si, ok := seriesMapping[s]
-					if !ok {
-						si = len(seriesMapping)
-						seriesMapping[s] = si
-						series[si].Metric = resultSeries[s]
-						series[si].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
+					if len(series[s].Points) == 0 {
+						series[s].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
 					}
-					series[si].Points = append(series[si].Points, promql.Point{
+					series[s].Points = append(series[s].Points, promql.Point{
 						T: vector.T,
 						V: vector.Samples[i],
 					})

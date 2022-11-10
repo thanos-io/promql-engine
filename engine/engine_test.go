@@ -1108,11 +1108,11 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load                     string
-		name                     string
-		query                    string
-		queryTime                time.Time
-		compareSeriesResultOrder bool // if true, the series in the result between the old and new engine should have the same order
+		load         string
+		name         string
+		query        string
+		queryTime    time.Time
+		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
 	}{
 		{
 			name:      "scalar",
@@ -1232,8 +1232,8 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:                    "topk(2, http_requests_total)",
-			compareSeriesResultOrder: true,
+			query:        "topk(2, http_requests_total)",
+			sortByLabels: true,
 		},
 		{
 			name: "topk by series",
@@ -1247,8 +1247,8 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:                    "topk(2, http_requests_total) by (series)",
-			compareSeriesResultOrder: true,
+			query:        "topk(2, http_requests_total) by (series)",
+			sortByLabels: true,
 		},
 		{
 			name: "bottomK",
@@ -1262,8 +1262,8 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:                    "bottomk(2, http_requests_total)",
-			compareSeriesResultOrder: true,
+			query:        "bottomk(2, http_requests_total)",
+			sortByLabels: true,
 		},
 		{
 			name: "bottomk by series",
@@ -1277,8 +1277,8 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:                    "bottomk(2, http_requests_total) by (series)",
-			compareSeriesResultOrder: true,
+			query:        "bottomk(2, http_requests_total) by (series)",
+			sortByLabels: true,
 		},
 		{
 			name: "max",
@@ -1807,7 +1807,7 @@ func TestInstantQuery(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 								testutil.Ok(t, oldResult.Err)
 
-								if !tc.compareSeriesResultOrder {
+								if tc.sortByLabels {
 									sortByLabels(oldResult)
 									sortByLabels(newResult)
 								}
