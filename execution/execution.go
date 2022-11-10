@@ -182,13 +182,13 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
 			next, err = aggregate.NewKHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping)
 		} else {
-			next, err = aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, e.Op, e.Param, !e.Without, e.Grouping, stepsBatch)
+			next, err = aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, stepsBatch)
 		}
 
 		if err != nil {
 			return nil, err
 		}
-		
+
 		return exchange.NewConcurrent(next, 2), nil
 
 	case *parser.BinaryExpr:

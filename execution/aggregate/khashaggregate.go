@@ -82,13 +82,9 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	defer a.next.GetPool().PutVectors(in)
 
-	var args []model.StepVector
-
-	if a.paramOp != nil {
-		args, err = a.paramOp.Next(ctx)
-		if err != nil {
-			return nil, err
-		}
+	args, err := a.paramOp.Next(ctx)
+	if err != nil {
+		return nil, err
 	}
 
 	if len(args) != len(in) {
