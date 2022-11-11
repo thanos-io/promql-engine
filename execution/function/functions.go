@@ -385,10 +385,11 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime i
 	} else {
 		extrapolateToInterval += averageDurationBetweenSamples / 2
 	}
-	resultValue = resultValue * (extrapolateToInterval / sampledInterval)
+	factor := extrapolateToInterval / sampledInterval
 	if isRate {
-		resultValue = resultValue / float64(selectRange/1000)
+		factor /= float64(selectRange / 1000)
 	}
+	resultValue *= factor
 
 	return resultValue
 }

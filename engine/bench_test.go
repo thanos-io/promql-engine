@@ -46,7 +46,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			for i := 0; i < len(series); i++ {
 				for ts := start.UnixMilli(); ts <= end.UnixMilli(); ts += step.Milliseconds() {
 					numIterations++
-					if ok := series[i].Seek(ts); !ok {
+					if val := series[i].Seek(ts); val == chunkenc.ValNone {
 						break
 					}
 				}
@@ -69,7 +69,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 					seriesTs := ts
 					for currStep := 0; currStep < stepCount && seriesTs <= end.UnixMilli(); currStep++ {
 						numIterations++
-						if ok := series[i].Seek(seriesTs); !ok {
+						if valType := series[i].Seek(seriesTs); valType == chunkenc.ValNone {
 							break
 						}
 						seriesTs += step.Milliseconds()

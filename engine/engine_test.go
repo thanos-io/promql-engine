@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -2067,16 +2068,32 @@ type slowIterator struct {
 	ts int64
 }
 
-func (d *slowIterator) At() (int64, float64) { return d.ts, 1 }
-func (d *slowIterator) Next() bool {
+func (d *slowIterator) AtHistogram() (int64, *histogram.Histogram) {
+	panic("not implemented")
+}
+
+func (d *slowIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+	panic("not implemented")
+}
+
+func (d *slowIterator) AtT() int64 {
+	return d.ts
+}
+
+func (d *slowIterator) At() (int64, float64) {
+	return d.ts, 1
+}
+
+func (d *slowIterator) Next() chunkenc.ValueType {
 	<-time.After(10 * time.Millisecond)
 	d.ts += 30 * 1000
-	return true
+	return chunkenc.ValFloat
 }
-func (d *slowIterator) Seek(t int64) bool {
+
+func (d *slowIterator) Seek(t int64) chunkenc.ValueType {
 	<-time.After(10 * time.Millisecond)
 	d.ts = t
-	return true
+	return chunkenc.ValFloat
 }
 func (d *slowIterator) Err() error { return nil }
 
