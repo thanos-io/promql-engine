@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
 	"github.com/thanos-community/promql-engine/execution/model"
 	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
@@ -18,6 +20,8 @@ import (
 
 	"github.com/prometheus/prometheus/storage"
 )
+
+var ErrNativeHistogramsUnsupported = fmt.Errorf("querying native histograms is not supported")
 
 type vectorScanner struct {
 	labels    labels.Labels
@@ -112,7 +116,10 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, ok := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			_, v, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			if err != nil {
+				return nil, err
+			}
 			if ok {
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				vectors[currStep].Samples = append(vectors[currStep].Samples, v)
@@ -154,25 +161,34 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-// TODO(fpetkovski): Add error handling and max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, bool) {
+// TODO(fpetkovski): Add max samples limit.
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, bool, error) {
 	refTime := ts - offset
 	var t int64
 	var v float64
 
-	ok := it.Seek(refTime)
-	if ok {
+	valueType := it.Seek(refTime)
+	switch valueType {
+	case chunkenc.ValNone:
+		if it.Err() != nil {
+			return 0, 0, false, it.Err()
+		}
+	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		return 0, 0, false, ErrNativeHistogramsUnsupported
+	case chunkenc.ValFloat:
 		t, v = it.At()
+	default:
+		panic(fmt.Errorf("unknown value type %v", valueType))
 	}
-
-	if !ok || t > refTime {
-		t, v, ok = it.PeekPrev()
+	if valueType == chunkenc.ValNone || t > refTime {
+		var ok bool
+		t, v, _, _, ok = it.PeekPrev()
 		if !ok || t < refTime-lookbackDelta {
-			return 0, 0, false
+			return 0, 0, false, nil
 		}
 	}
 	if value.IsStaleNaN(v) {
-		return 0, 0, false
+		return 0, 0, false, nil
 	}
-	return t, v, true
+	return t, v, true, nil
 }
