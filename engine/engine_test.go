@@ -5,6 +5,7 @@ package engine_test
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"runtime"
@@ -821,15 +822,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	+ on() group_left()
 	sum(http_requests_total{ns="nginx"})`,
 		},
-		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
-		// {
-		// 	name: "scalar func with NaN",
-		// 	load: `load 30s
-		//  	http_requests_total{pod="nginx-1"} 1+1x15
-		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
+		{
+			name: "scalar func with NaN",
+			load: `load 30s
+		 	http_requests_total{pod="nginx-1"} 1+1x15
+		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(http_requests_total)`,
+		},
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
@@ -934,20 +933,19 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
 			query: `histogram_quantile(0.9, sum by (pod, le) (http_requests_total))`,
 		},
-		// TODO(fpetkovski): Uncomment once support for testing NaNs is added.
-		//{
-		//	name: "histogram quantile with scalar operator",
-		//	load: `load 30s
-		//	quantile{pod="nginx-1", le="1"} 1+1x2
-		//	http_requests_total{pod="nginx-1", le="1"} 1+3x10
-		//	http_requests_total{pod="nginx-2", le="1"} 2+3x10
-		//	http_requests_total{pod="nginx-1", le="2"} 1+2x10
-		//	http_requests_total{pod="nginx-2", le="2"} 2+2x10
-		//	http_requests_total{pod="nginx-2", le="5"} 3+2x10
-		//	http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
-		//	http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
-		//	query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
-		//},
+		{
+			name: "histogram quantile with scalar operator",
+			load: `load 30s
+			quantile{pod="nginx-1", le="1"} 1+1x2
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -991,7 +989,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 								testutil.Ok(t, oldResult.Err)
 
-								testutil.Equals(t, oldResult, newResult)
+								jsonEqual(t, oldResult, newResult)
 							})
 						}
 					})
@@ -1527,15 +1525,13 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
-		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
-		// {
-		// 	name: "scalar func with NaN",
-		// 	load: `load 30s
-		//  	http_requests_total{pod="nginx-1"} 1+1x15
-		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
+		{
+			name: "scalar func with NaN",
+			load: `load 30s
+		 	http_requests_total{pod="nginx-1"} 1+1x15
+		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(http_requests_total)`,
+		},
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
@@ -1645,7 +1641,7 @@ func TestInstantQuery(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 								testutil.Ok(t, oldResult.Err)
 
-								testutil.Equals(t, oldResult, newResult)
+								jsonEqual(t, oldResult, newResult)
 							})
 						}
 					})
@@ -2148,4 +2144,12 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
 	})
 
+}
+
+func jsonEqual(t *testing.T, expected interface{}, actual interface{}) {
+	e, err := json.Marshal(expected)
+	testutil.Ok(t, err)
+	a, err := json.Marshal(actual)
+	testutil.Ok(t, err)
+	testutil.Equals(t, e, a)
 }
