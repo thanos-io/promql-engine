@@ -143,10 +143,10 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 			step.Samples = append(step.Samples, val)
 		}
 		out = append(out, step)
-		o.scalarOp.GetPool().PutStepVector(vector)
+		o.vectorOp.GetPool().PutStepVector(vector)
 	}
 
-	o.scalarOp.GetPool().PutVectors(vectors)
+	o.vectorOp.GetPool().PutVectors(vectors)
 	return out, nil
 }
 
