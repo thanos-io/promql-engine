@@ -73,7 +73,7 @@ func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, er
 }
 
 func (u *stepInvariantOperator) GetPool() *model.VectorPool {
-	return u.next.GetPool()
+	return u.vectorPool
 }
 
 func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, error) {
