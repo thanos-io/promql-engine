@@ -209,9 +209,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	series := make([]promql.Series, len(resultSeries))
 	for i := 0; i < len(resultSeries); i++ {
 		series[i].Metric = resultSeries[i]
-		series[i].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
 	}
-
 loop:
 	for {
 		select {
@@ -228,7 +226,7 @@ loop:
 
 			// Case where Series call might return nil, but samples are present.
 			// For example scalar(http_request_total) where http_request_total has multiple values.
-			if len(series) == 0 && len(r) != 0 {
+			if len(resultSeries) == 0 && len(r) != 0 {
 				numSeries := 0
 				for i := range r {
 					numSeries += len(r[i].Samples)
@@ -251,6 +249,9 @@ loop:
 
 			for _, vector := range r {
 				for i, s := range vector.SampleIDs {
+					if len(series[s].Points) == 0 {
+						series[s].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
+					}
 					series[s].Points = append(series[s].Points, promql.Point{
 						T: vector.T,
 						V: vector.Samples[i],
