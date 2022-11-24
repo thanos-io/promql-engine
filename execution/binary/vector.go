@@ -232,9 +232,13 @@ func (o *vectorOperator) join(
 			continue
 		}
 	}
+	lowCardOutputSize := 0
+	for _, lowCardOutputs := range lowCardInputIndex {
+		lowCardOutputSize += len(lowCardOutputs)
+	}
 
 	highCardOutputIndex := make([]*uint64, outputSize)
-	lowCardOutputIndex := make([][]uint64, len(lowCardInputIndex))
+	lowCardOutputIndex := make([][]uint64, lowCardOutputSize)
 	for hash, highCardSeries := range highCardHashes {
 		lowCardSeriesID := lowCardInputIndex[hash][0]
 		lowCardSeries := lowCardHashes[hash][0]
