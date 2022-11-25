@@ -232,22 +232,30 @@ func (o *vectorOperator) join(
 			continue
 		}
 	}
+	lowCardOutputSize := 0
+	for _, lowCardOutputs := range lowCardInputIndex {
+		lowCardOutputSize += len(lowCardOutputs)
+	}
 
 	highCardOutputIndex := make([]*uint64, outputSize)
-	lowCardOutputIndex := make([][]uint64, len(lowCardInputIndex))
+	lowCardOutputIndex := make([][]uint64, lowCardOutputSize)
 	for hash, highCardSeries := range highCardHashes {
-		lowCardSeriesID := lowCardInputIndex[hash][0]
-		lowCardSeries := lowCardHashes[hash][0]
-		// Each low cardinality series can map to multiple output series.
-		lowCardOutputIndex[lowCardSeriesID] = make([]uint64, 0, len(highCardSeries))
+		for _, lowCardSeriesID := range lowCardInputIndex[hash] {
+			// Each low cardinality series can map to multiple output series.
+			lowCardOutputIndex[lowCardSeriesID] = make([]uint64, 0, len(highCardSeries))
+		}
 
+		lowCardSeries := lowCardHashes[hash][0]
 		for i, output := range highCardSeries {
 			outputSeries := buildOutputSeries(uint64(len(outputIndex)), output, lowCardSeries, includeLabels)
 			outputIndex = append(outputIndex, outputSeries)
 
 			highCardSeriesID := highCardInputIndex[hash][i]
 			highCardOutputIndex[highCardSeriesID] = &outputSeries.ID
-			lowCardOutputIndex[lowCardSeriesID] = append(lowCardOutputIndex[lowCardSeriesID], outputSeries.ID)
+
+			for _, lowCardSeriesID := range lowCardInputIndex[hash] {
+				lowCardOutputIndex[lowCardSeriesID] = append(lowCardOutputIndex[lowCardSeriesID], outputSeries.ID)
+			}
 		}
 	}
 
