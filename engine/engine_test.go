@@ -65,17 +65,6 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 
 }
 
-func storageWithSeries(series storage.Series) *storage.MockQueryable {
-	seriesSet := &testSeriesSet{series: series}
-	return &storage.MockQueryable{
-		MockQuerier: &storage.MockQuerier{
-			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-				return seriesSet
-			},
-		},
-	}
-}
-
 func TestQueriesAgainstOldEngine(t *testing.T) {
 	start := time.Unix(0, 0)
 	end := time.Unix(240, 0)
@@ -1001,6 +990,52 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 }
 
+func TestBinopEdgeCases(t *testing.T) {
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	series := []storage.Series{
+		newMockSeries(
+			[]string{labels.MetricName, "foo"},
+			[]int64{0, 30000, 60000, 1200000, 1500000, 1800000},
+			[]float64{1, 2, 3, 4, 5, 6},
+		),
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "id", "1"},
+			[]int64{0, 30000},
+			[]float64{1, 2},
+		),
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "id", "2"},
+			[]int64{1200000, 1500000},
+			[]float64{3, 4},
+		),
+	}
+	query := `foo * on () group_left bar`
+
+	start := time.Unix(0, 0)
+	end := time.Unix(30000, 0)
+	step := time.Second * 30
+
+	oldEngine := promql.NewEngine(opts)
+	q1, err := oldEngine.NewRangeQuery(storageWithSeries(series...), nil, query, start, end, step)
+	testutil.Ok(t, err)
+
+	newEngine := engine.New(engine.Opts{})
+	q2, err := newEngine.NewRangeQuery(storageWithSeries(series...), nil, query, start, end, step)
+	testutil.Ok(t, err)
+
+	ctx := context.Background()
+	oldResult := q1.Exec(ctx)
+
+	newResult := q2.Exec(ctx)
+	testutil.Equals(t, oldResult, newResult)
+}
+
 func TestInstantQuery(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 	// Negative offset and at modifier are enabled by default
@@ -1675,9 +1710,7 @@ func TestQueryCancellation(t *testing.T) {
 	querier := &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-				return &testSeriesSet{
-					series: &slowSeries{},
-				}
+				return newTestSeriesSet(&slowSeries{})
 			},
 		},
 	}
@@ -2059,13 +2092,104 @@ func TestFallback(t *testing.T) {
 	}
 }
 
-type testSeriesSet struct {
-	i      int
-	series storage.Series
+func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
+	return &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				result := make([]storage.Series, 0)
+				for _, s := range series {
+				loopMatchers:
+					for _, m := range matchers {
+						for _, l := range s.Labels() {
+							if m.Name == l.Name && m.Matches(l.Value) {
+								result = append(result, s)
+								break loopMatchers
+							}
+						}
+					}
+				}
+				return newTestSeriesSet(result...)
+			},
+		},
+	}
 }
 
-func (s *testSeriesSet) Next() bool                 { s.i++; return s.i < 2 }
-func (s *testSeriesSet) At() storage.Series         { return s.series }
+type mockSeries struct {
+	labels     []string
+	timestamps []int64
+	values     []float64
+}
+
+func newMockSeries(labels []string, timestamps []int64, values []float64) *mockSeries {
+	return &mockSeries{labels: labels, timestamps: timestamps, values: values}
+}
+
+func (m mockSeries) Labels() labels.Labels {
+	return labels.FromStrings(m.labels...)
+}
+
+func (m mockSeries) Iterator() chunkenc.Iterator {
+	return &mockIterator{
+		i:          -1,
+		timestamps: m.timestamps,
+		values:     m.values,
+	}
+}
+
+type mockIterator struct {
+	i          int
+	timestamps []int64
+	values     []float64
+}
+
+func (m *mockIterator) Next() chunkenc.ValueType {
+	m.i++
+	if m.i >= len(m.values) {
+		return chunkenc.ValNone
+	}
+
+	return chunkenc.ValFloat
+}
+
+func (m *mockIterator) Seek(t int64) chunkenc.ValueType {
+	for {
+		next := m.Next()
+		if next == chunkenc.ValNone {
+			return chunkenc.ValNone
+		}
+
+		if m.AtT() >= t {
+			return next
+		}
+	}
+}
+
+func (m *mockIterator) At() (int64, float64) {
+	return m.timestamps[m.i], m.values[m.i]
+}
+
+func (m *mockIterator) AtHistogram() (int64, *histogram.Histogram) { return 0, nil }
+
+func (m *mockIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) { return 0, nil }
+
+func (m *mockIterator) AtT() int64 { return m.timestamps[m.i] }
+
+func (m *mockIterator) Err() error { return nil }
+
+type testSeriesSet struct {
+	i      int
+	series []storage.Series
+}
+
+func newTestSeriesSet(series ...storage.Series) storage.SeriesSet {
+	return &testSeriesSet{
+		i:      -1,
+		series: series,
+	}
+}
+
+func (s *testSeriesSet) Next() bool                 { s.i++; return s.i < len(s.series) }
+func (s *testSeriesSet) At() storage.Series         { return s.series[s.i] }
 func (s *testSeriesSet) Err() error                 { return nil }
 func (s *testSeriesSet) Warnings() storage.Warnings { return nil }
 
