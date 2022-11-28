@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/thanos-community/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
@@ -343,7 +344,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			opts := engine.Opts{DisableOptimizers: true}
+			opts := engine.Opts{LogicalOptimizers: logicalplan.NoOptimizers}
 			ng := engine.New(opts)
 			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
 			testutil.Ok(b, err)

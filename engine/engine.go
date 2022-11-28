@@ -39,11 +39,8 @@ const (
 type Opts struct {
 	promql.EngineOpts
 
-	// DisableOptimizers disables Query optimizations using logicalPlan.DefaultOptimizers.
-	DisableOptimizers bool
-
-	// AdditionalOptimizers are optimizers which are run in addition to the default ones.
-	AdditionalOptimizers []logicalplan.Optimizer
+	// LogicalOptimizers are optimizers which are run in addition to the default ones.
+	LogicalOptimizers []logicalplan.Optimizer
 
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
 	// in the new engine, instead of falling back to prometheus engine.
@@ -72,12 +69,11 @@ func New(opts Opts) v1.QueryEngine {
 				Help: "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
-		debugWriter:          opts.DebugWriter,
-		disableFallback:      opts.DisableFallback,
-		disableOptimizers:    opts.DisableOptimizers,
-		logger:               opts.Logger,
-		lookbackDelta:        opts.LookbackDelta,
-		additionalOptimizers: opts.AdditionalOptimizers,
+		debugWriter:       opts.DebugWriter,
+		disableFallback:   opts.DisableFallback,
+		logger:            opts.Logger,
+		lookbackDelta:     opts.LookbackDelta,
+		logicalOptimizers: opts.LogicalOptimizers,
 	}
 }
 
@@ -87,11 +83,10 @@ type compatibilityEngine struct {
 
 	debugWriter io.Writer
 
-	disableFallback      bool
-	disableOptimizers    bool
-	logger               log.Logger
-	lookbackDelta        time.Duration
-	additionalOptimizers []logicalplan.Optimizer
+	disableFallback   bool
+	logger            log.Logger
+	lookbackDelta     time.Duration
+	logicalOptimizers []logicalplan.Optimizer
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -105,7 +100,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	}
 
 	lplan := logicalplan.New(expr, ts, ts)
-	if !e.disableOptimizers {
+	if e.logicalOptimizers == nil {
 		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
 	}
 
@@ -144,8 +139,8 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	lplan := logicalplan.New(expr, start, end)
-	if !e.disableOptimizers {
-		optimizers := append(logicalplan.DefaultOptimizers, e.additionalOptimizers...)
+	if e.logicalOptimizers == nil {
+		optimizers := append(logicalplan.DefaultOptimizers, e.logicalOptimizers...)
 		lplan = lplan.Optimize(optimizers)
 	}
 

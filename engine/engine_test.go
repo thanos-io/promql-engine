@@ -1059,17 +1059,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
 
-								var additionalOptimizers []logicalplan.Optimizer
+								var optimizers = logicalplan.NoOptimizers
 								if !disableOptimizers {
-									additionalOptimizers = []logicalplan.Optimizer{
-										logicalplan.PropagateMatchersOptimizer{},
-									}
+									optimizers = logicalplan.Optimizers
 								}
 								newEngine := engine.New(engine.Opts{
-									EngineOpts:           opts,
-									DisableFallback:      disableFallback,
-									DisableOptimizers:    disableOptimizers,
-									AdditionalOptimizers: additionalOptimizers,
+									EngineOpts:        opts,
+									DisableFallback:   disableFallback,
+									LogicalOptimizers: optimizers,
 								})
 								q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
 								testutil.Ok(t, err)
@@ -1840,17 +1837,14 @@ func TestInstantQuery(t *testing.T) {
 									queryTime = tc.queryTime
 								}
 
-								var additionalOptimizers []logicalplan.Optimizer
+								var optimizers = logicalplan.NoOptimizers
 								if !disableOptimizers {
-									additionalOptimizers = []logicalplan.Optimizer{
-										logicalplan.PropagateMatchersOptimizer{},
-									}
+									optimizers = logicalplan.Optimizers
 								}
 								newEngine := engine.New(engine.Opts{
-									EngineOpts:           opts,
-									DisableFallback:      disableFallback,
-									DisableOptimizers:    disableOptimizers,
-									AdditionalOptimizers: additionalOptimizers,
+									EngineOpts:        opts,
+									DisableFallback:   disableFallback,
+									LogicalOptimizers: optimizers,
 								})
 
 								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
