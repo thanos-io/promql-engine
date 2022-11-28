@@ -1059,9 +1059,9 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
 
-								var optimizers = logicalplan.NoOptimizers
-								if !disableOptimizers {
-									optimizers = logicalplan.Optimizers
+								optimizers := logicalplan.AllOptimizers
+								if disableOptimizers {
+									optimizers = logicalplan.NoOptimizers
 								}
 								newEngine := engine.New(engine.Opts{
 									EngineOpts:        opts,
@@ -1837,9 +1837,9 @@ func TestInstantQuery(t *testing.T) {
 									queryTime = tc.queryTime
 								}
 
-								var optimizers = logicalplan.NoOptimizers
-								if !disableOptimizers {
-									optimizers = logicalplan.Optimizers
+								optimizers := logicalplan.AllOptimizers
+								if disableOptimizers {
+									optimizers = logicalplan.NoOptimizers
 								}
 								newEngine := engine.New(engine.Opts{
 									EngineOpts:        opts,

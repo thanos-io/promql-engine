@@ -10,9 +10,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-var NoOptimizers = []Optimizer{}
-
-var Optimizers = append(DefaultOptimizers, PropagateMatchersOptimizer{})
+var (
+	NoOptimizers  = []Optimizer{}
+	AllOptimizers = append(DefaultOptimizers, PropagateMatchersOptimizer{})
+)
 
 var DefaultOptimizers = []Optimizer{
 	SortMatchers{},
