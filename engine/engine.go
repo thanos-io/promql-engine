@@ -39,8 +39,8 @@ const (
 type Opts struct {
 	promql.EngineOpts
 
-	// DisableOptimizers disables Query optimizations using logicalPlan.DefaultOptimizers.
-	DisableOptimizers bool
+	// LogicalOptimizers are optimizers that are run if the value is not nil. If it is nil then the default optimizers are run. Default optimizer list is available in the logicalplan package.
+	LogicalOptimizers []logicalplan.Optimizer
 
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
 	// in the new engine, instead of falling back to prometheus engine.
@@ -50,6 +50,14 @@ type Opts struct {
 	// If nil, nothing will be printed.
 	// NOTE: Users will not check the errors, debug writing is best effort.
 	DebugWriter io.Writer
+}
+
+func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
+	if o.LogicalOptimizers == nil {
+		return logicalplan.DefaultOptimizers
+	}
+
+	return o.LogicalOptimizers
 }
 
 func New(opts Opts) v1.QueryEngine {
@@ -69,12 +77,11 @@ func New(opts Opts) v1.QueryEngine {
 				Help: "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
-
 		debugWriter:       opts.DebugWriter,
 		disableFallback:   opts.DisableFallback,
-		disableOptimizers: opts.DisableOptimizers,
 		logger:            opts.Logger,
 		lookbackDelta:     opts.LookbackDelta,
+		logicalOptimizers: opts.getLogicalOptimizers(),
 	}
 }
 
@@ -82,11 +89,12 @@ type compatibilityEngine struct {
 	prom    *promql.Engine
 	queries *prometheus.CounterVec
 
-	debugWriter       io.Writer
+	debugWriter io.Writer
+
 	disableFallback   bool
-	disableOptimizers bool
 	logger            log.Logger
 	lookbackDelta     time.Duration
+	logicalOptimizers []logicalplan.Optimizer
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -100,9 +108,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	}
 
 	lplan := logicalplan.New(expr, ts, ts)
-	if !e.disableOptimizers {
-		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
-	}
+	lplan = lplan.Optimize(e.logicalOptimizers)
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
 	if e.triggerFallback(err) {
@@ -139,9 +145,7 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	lplan := logicalplan.New(expr, start, end)
-	if !e.disableOptimizers {
-		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
-	}
+	lplan = lplan.Optimize(e.logicalOptimizers)
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
 	if e.triggerFallback(err) {

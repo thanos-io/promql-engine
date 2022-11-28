@@ -23,6 +23,7 @@ import (
 	"go.uber.org/goleak"
 
 	"github.com/thanos-community/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
 func TestMain(m *testing.M) {
@@ -1057,7 +1058,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					t.Run(fmt.Sprintf("disableOptimizers=%v", disableOptimizers), func(t *testing.T) {
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback, DisableOptimizers: disableOptimizers})
+
+								optimizers := logicalplan.AllOptimizers
+								if disableOptimizers {
+									optimizers = logicalplan.NoOptimizers
+								}
+								newEngine := engine.New(engine.Opts{
+									EngineOpts:        opts,
+									DisableFallback:   disableFallback,
+									LogicalOptimizers: optimizers,
+								})
 								q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
 								testutil.Ok(t, err)
 								defer q1.Close()
@@ -1806,10 +1816,10 @@ func TestInstantQuery(t *testing.T) {
 		},
 	}
 
-	disableOptimizers := []bool{true, false}
+	disableOptimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, withoutOptimizers := range disableOptimizers {
-		t.Run(fmt.Sprintf("disableOptimizers=%t", withoutOptimizers), func(t *testing.T) {
+	for _, disableOptimizers := range disableOptimizerOpts {
+		t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
 			for _, lookbackDelta := range lookbackDeltas {
 				opts.LookbackDelta = lookbackDelta
 				for _, tc := range cases {
@@ -1827,7 +1837,16 @@ func TestInstantQuery(t *testing.T) {
 									queryTime = tc.queryTime
 								}
 
-								newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: disableFallback})
+								optimizers := logicalplan.AllOptimizers
+								if disableOptimizers {
+									optimizers = logicalplan.NoOptimizers
+								}
+								newEngine := engine.New(engine.Opts{
+									EngineOpts:        opts,
+									DisableFallback:   disableFallback,
+									LogicalOptimizers: optimizers,
+								})
+
 								q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 								testutil.Ok(t, err)
 								defer q1.Close()

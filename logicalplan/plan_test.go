@@ -89,3 +89,46 @@ func TestDefaultOptimizers(t *testing.T) {
 		})
 	}
 }
+
+func TestMatcherPropagation(t *testing.T) {
+	cases := []struct {
+		name     string
+		expr     string
+		expected string
+	}{
+		{
+			name:     "common matchers with same metric",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} - node_filesystem_files`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - node_filesystem_files`,
+		},
+		{
+			name:     "common matchers with same overlapping selectors",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} - node_filesystem_files{host!="$host"}`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - node_filesystem_files{host!="$host"}`,
+		},
+		{
+			name:     "common matchers with many-to-one",
+			expr:     `node_filesystem_files{host="$host",mountpoint="/"} - on () group_left () node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - on () group_left () node_filesystem_files_free`,
+		},
+		{
+			name:     "common matchers",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} - node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - node_filesystem_files_free{host="$host",mountpoint="/"}`,
+		},
+	}
+
+	optimizers := []Optimizer{PropagateMatchersOptimizer{}}
+	spaces := regexp.MustCompile(`\s+`)
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
+			optimizedPlan := plan.Optimize(optimizers)
+			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
+			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+		})
+	}
+}
