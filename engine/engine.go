@@ -39,7 +39,7 @@ const (
 type Opts struct {
 	promql.EngineOpts
 
-	// LogicalOptimizers are optimizers which are run in addition to the default ones.
+	// LogicalOptimizers are optimizers that are run if the value is not nil. If it is nil then the default optimizers are run. Default optimizer list is available in the logicalplan package.
 	LogicalOptimizers []logicalplan.Optimizer
 
 	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
@@ -50,6 +50,14 @@ type Opts struct {
 	// If nil, nothing will be printed.
 	// NOTE: Users will not check the errors, debug writing is best effort.
 	DebugWriter io.Writer
+}
+
+func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
+	if o.LogicalOptimizers == nil {
+		return logicalplan.DefaultOptimizers
+	}
+
+	return o.LogicalOptimizers
 }
 
 func New(opts Opts) v1.QueryEngine {
@@ -73,7 +81,7 @@ func New(opts Opts) v1.QueryEngine {
 		disableFallback:   opts.DisableFallback,
 		logger:            opts.Logger,
 		lookbackDelta:     opts.LookbackDelta,
-		logicalOptimizers: opts.LogicalOptimizers,
+		logicalOptimizers: opts.getLogicalOptimizers(),
 	}
 }
 
@@ -100,9 +108,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	}
 
 	lplan := logicalplan.New(expr, ts, ts)
-	if e.logicalOptimizers == nil {
-		lplan = lplan.Optimize(logicalplan.DefaultOptimizers)
-	}
+	lplan = lplan.Optimize(e.logicalOptimizers)
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
 	if e.triggerFallback(err) {
@@ -139,10 +145,7 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	lplan := logicalplan.New(expr, start, end)
-	if e.logicalOptimizers == nil {
-		optimizers := append(logicalplan.DefaultOptimizers, e.logicalOptimizers...)
-		lplan = lplan.Optimize(optimizers)
-	}
+	lplan = lplan.Optimize(e.logicalOptimizers)
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
 	if e.triggerFallback(err) {
