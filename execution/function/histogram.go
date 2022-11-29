@@ -118,6 +118,9 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 		for i, seriesID := range vector.SampleIDs {
 			outputSeries := o.outputIndex[seriesID]
 			outputSeriesID := outputSeries.outputID
+			if outputSeriesID >= len(o.seriesBuckets) {
+				continue
+			}
 			bucket := le{
 				upperBound: outputSeries.upperBound,
 				count:      vector.Samples[i],
