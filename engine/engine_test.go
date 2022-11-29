@@ -915,6 +915,18 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `histogram_quantile(0.9, http_requests_total)`,
 		},
 		{
+			name: "histogram quantile on malformed data",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+3x10
+			http_requests_total{pod="nginx-2"} 2+3x10
+			http_requests_total{pod="nginx-1"} 1+2x10
+			http_requests_total{pod="nginx-2"} 2+2x10
+			http_requests_total{pod="nginx-2"} 3+2x10
+			http_requests_total{pod="nginx-1"} 1+1x10
+			http_requests_total{pod="nginx-2"} 4+1x10`,
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
 			name: "histogram quantile with sum",
 			load: `load 30s
 			http_requests_total{pod="nginx-1", le="1"} 1+3x10
