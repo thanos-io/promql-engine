@@ -4,6 +4,7 @@
 package binary
 
 import (
+	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -12,9 +13,37 @@ import (
 	"github.com/thanos-community/promql-engine/execution/parse"
 )
 
-type sample struct {
-	t int64
-	v float64
+type binOpSide string
+
+const (
+	lhBinOpSide binOpSide = "left"
+	rhBinOpSide binOpSide = "right"
+)
+
+type errManyToManyMatch struct {
+	sampleID          uint64
+	duplicateSampleID uint64
+	side              binOpSide
+}
+
+func (err errManyToManyMatch) Error() string {
+	return fmt.Sprintf("many-to-many match on %s", err.side)
+}
+
+func newManyToManyMatchError(sampleID, duplicateSampleID uint64, side binOpSide) *errManyToManyMatch {
+	return &errManyToManyMatch{
+		sampleID:          sampleID,
+		duplicateSampleID: duplicateSampleID,
+		side:              side,
+	}
+}
+
+type outputSample struct {
+	lhT        int64
+	rhT        int64
+	lhSampleID uint64
+	rhSampleID uint64
+	v          float64
 }
 
 type table struct {
@@ -23,7 +52,7 @@ type table struct {
 	operation operation
 	card      parser.VectorMatchCardinality
 
-	outputValues []sample
+	outputValues []outputSample
 	// highCardOutputIndex is a mapping from series ID of the high cardinality
 	// operator to an output series ID.
 	// During joins, each high cardinality series that has a matching
@@ -40,10 +69,14 @@ func newTable(
 	pool *model.VectorPool,
 	card parser.VectorMatchCardinality,
 	operation operation,
-	outputValues []sample,
+	outputValues []outputSample,
 	highCardOutputCache outputIndex,
 	lowCardOutputCache outputIndex,
 ) *table {
+	for i := range outputValues {
+		outputValues[i].lhT = -1
+		outputValues[i].rhT = -1
+	}
 	return &table{
 		pool: pool,
 		card: card,
@@ -55,7 +88,7 @@ func newTable(
 	}
 }
 
-func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) model.StepVector {
+func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) (model.StepVector, *errManyToManyMatch) {
 	ts := lhs.T
 	step := t.pool.GetStepVector(ts)
 
@@ -68,7 +101,13 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 		lhsVal := lhs.Samples[i]
 		outputSampleIDs := lhsIndex.outputSamples(sampleID)
 		for _, outputSampleID := range outputSampleIDs {
-			t.outputValues[outputSampleID].t = lhs.T
+			if t.card != parser.CardManyToOne && t.outputValues[outputSampleID].lhT == ts {
+				prevSampleID := t.outputValues[outputSampleID].lhSampleID
+				return model.StepVector{}, newManyToManyMatchError(prevSampleID, sampleID, lhBinOpSide)
+			}
+
+			t.outputValues[outputSampleID].lhSampleID = sampleID
+			t.outputValues[outputSampleID].lhT = lhs.T
 			t.outputValues[outputSampleID].v = lhsVal
 		}
 	}
@@ -77,12 +116,18 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 		rhVal := rhs.Samples[i]
 		outputSampleIDs := rhsIndex.outputSamples(sampleID)
 		for _, outputSampleID := range outputSampleIDs {
-			lhSample := t.outputValues[outputSampleID]
-			if rhs.T != lhSample.t {
+			outputSample := t.outputValues[outputSampleID]
+			if rhs.T != outputSample.lhT {
 				continue
 			}
+			if t.card != parser.CardOneToMany && outputSample.rhT == rhs.T {
+				prevSampleID := t.outputValues[outputSampleID].rhSampleID
+				return model.StepVector{}, newManyToManyMatchError(prevSampleID, sampleID, rhBinOpSide)
+			}
+			t.outputValues[outputSampleID].rhSampleID = sampleID
+			t.outputValues[outputSampleID].rhT = rhs.T
 
-			outputVal, keep := t.operation([2]float64{lhSample.v, rhVal}, 0)
+			outputVal, keep := t.operation([2]float64{outputSample.v, rhVal}, 0)
 			if !keep {
 				continue
 			}
@@ -91,7 +136,7 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 		}
 	}
 
-	return step
+	return step, nil
 }
 
 // operands is a length 2 array which contains lhs and rhs.
