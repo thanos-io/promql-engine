@@ -4,7 +4,6 @@
 package binary
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -24,10 +23,6 @@ type errManyToManyMatch struct {
 	sampleID          uint64
 	duplicateSampleID uint64
 	side              binOpSide
-}
-
-func (err errManyToManyMatch) Error() string {
-	return fmt.Sprintf("many-to-many match on %s", err.side)
 }
 
 func newManyToManyMatchError(sampleID, duplicateSampleID uint64, side binOpSide) *errManyToManyMatch {
