@@ -465,6 +465,33 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `1 - (100 * sum(foo{method="get"}) / sum(foo))`,
 		},
 		{
+			name: "binary operation with many-to-many matching",
+			load: `load 30s
+				foo{code="200", method="get"} 1+1x20
+				foo{code="200", method="post"} 1+1x20
+				bar{code="200", method="get"} 1+1x20
+				bar{code="200", method="post"} 1+1x20`,
+			query: `foo + on(code) bar`,
+		},
+		{
+			name: "binary operation with many-to-many matching lhs high card",
+			load: `load 30s
+				foo{code="200", method="get"} 1+1x20
+				foo{code="200", method="post"} 1+1x20
+				bar{code="200", method="get"} 1+1x20
+				bar{code="200", method="post"} 1+1x20`,
+			query: `foo + on(code) group_left bar`,
+		},
+		{
+			name: "binary operation with many-to-many matching rhs high card",
+			load: `load 30s
+				foo{code="200", method="get"} 1+1x20
+				foo{code="200", method="post"} 1+1x20
+				bar{code="200", method="get"} 1+1x20
+				bar{code="200", method="post"} 1+1x20`,
+			query: `foo + on(code) group_right bar`,
+		},
+		{
 			name: "vector binary op ==",
 			load: `load 30s
 				foo{method="get", code="500"} 1+1x40
