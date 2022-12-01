@@ -83,7 +83,7 @@ func newTable(
 	}
 }
 
-func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) (model.StepVector, *errManyToManyMatch) {
+func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector, returnBool bool) (model.StepVector, *errManyToManyMatch) {
 	ts := lhs.T
 	step := t.pool.GetStepVector(ts)
 
@@ -123,7 +123,12 @@ func (t *table) execBinaryOperation(lhs model.StepVector, rhs model.StepVector) 
 			t.outputValues[outputSampleID].rhT = rhs.T
 
 			outputVal, keep := t.operation([2]float64{outputSample.v, rhVal}, 0)
-			if !keep {
+			if returnBool {
+				outputVal = 0
+				if keep {
+					outputVal = 1
+				}
+			} else if !keep {
 				continue
 			}
 			step.SampleIDs = append(step.SampleIDs, outputSampleID)

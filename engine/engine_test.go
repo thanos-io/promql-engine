@@ -576,6 +576,36 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `sum(foo) by (method) % sum(bar) by (method)`,
 		},
 		{
+			name: "vector/vector binary op",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "(1 + rate(http_requests_total[30s])) > bool rate(http_requests_total[30s])",
+		},
+		{
+			name: "vector/scalar binary op with a complicated expression on LHS",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "rate(http_requests_total[30s]) > bool 0",
+		},
+		{
+			name: "vector/scalar binary op with a complicated expression on RHS",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "0 < bool rate(http_requests_total[30s])",
+		},
+		{
 			name:  "scalar binary op == true",
 			load:  ``,
 			query: `1 == bool 1`,
@@ -598,7 +628,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		{
 			name:  "scalar binary op <",
 			load:  ``,
-			query: `1 > bool 2`,
+			query: `1 < bool 2`,
 		},
 		{
 			name:  "scalar binary op >=",

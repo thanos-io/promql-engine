@@ -273,7 +273,7 @@ func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op)
+	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool)
 }
 
 func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -294,7 +294,7 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 		scalarSide = binary.ScalarSideLeft
 	}
 
-	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, scalarSide)
+	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, scalarSide, e.ReturnBool)
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
