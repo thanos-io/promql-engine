@@ -67,7 +67,10 @@ func (w *Worker) start(done doneFunc, ctx context.Context) {
 		case <-w.ctx.Done():
 			close(w.output)
 			return
-		case task := <-w.input:
+		case task, ok := <-w.input:
+			if !ok {
+				return
+			}
 			w.output <- w.doWork(w.workerID, task.arg, task.in)
 		}
 	}
