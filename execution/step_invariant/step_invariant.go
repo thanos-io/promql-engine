@@ -5,9 +5,9 @@ package step_invariant
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
