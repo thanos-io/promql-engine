@@ -38,6 +38,9 @@ type vectorOperator struct {
 	// table is used to calculate the binary operation of two step vectors between
 	// the lhs and rhs operator.
 	table *table
+
+	// If true then 1/0 needs to be returned instead of the value.
+	returnBool bool
 }
 
 func NewVectorOperator(
@@ -46,6 +49,7 @@ func NewVectorOperator(
 	rhs model.VectorOperator,
 	matching *parser.VectorMatching,
 	operation parser.ItemType,
+	returnBool bool,
 ) (model.VectorOperator, error) {
 	op, err := newOperation(operation, true)
 	if err != nil {
@@ -66,6 +70,7 @@ func NewVectorOperator(
 		groupingLabels: groupings,
 		operation:      op,
 		opType:         operation,
+		returnBool:     returnBool,
 	}, nil
 }
 
@@ -169,7 +174,7 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	batch := o.pool.GetVectorBatch()
 	for i, vector := range lhs {
 		if i < len(rhs) {
-			step, err := o.table.execBinaryOperation(lhs[i], rhs[i])
+			step, err := o.table.execBinaryOperation(lhs[i], rhs[i], o.returnBool)
 			if err == nil {
 				batch = append(batch, step)
 				o.rhs.GetPool().PutStepVector(rhs[i])
