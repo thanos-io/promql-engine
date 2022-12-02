@@ -134,7 +134,7 @@ func (u *stepInvariantOperator) cacheInputVector(ctx context.Context) error {
 
 		// Make sure we only have exactly one step vector.
 		if len(in) != 1 {
-			err = fmt.Errorf("unexpected number of samples")
+			err = errors.New("unexpected number of samples")
 			return
 		}
 
