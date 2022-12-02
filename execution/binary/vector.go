@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/exp/slices"
@@ -193,7 +194,7 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 			group := sampleID.MatchLabels(o.matching.On, o.matching.MatchingLabels...)
 			msg := "found duplicate series for the match group %s on the %s hand-side of the operation: [%s, %s]" +
 				";many-to-many matching not allowed: matching labels must be unique on one side"
-			return nil, fmt.Errorf(msg, group, err.side, sampleID.String(), duplicateSampleID.String())
+			return nil, errors.Newf(msg, group, err.side, sampleID.String(), duplicateSampleID.String())
 		}
 		o.lhs.GetPool().PutStepVector(vector)
 	}

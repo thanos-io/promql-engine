@@ -62,11 +62,12 @@ format: $(GOIMPORTS)
 lint: format deps $(GOLANGCI_LINT) $(FAILLINT) $(COPYRIGHT) docs
 	$(call require_clean_work_tree,'detected not clean work tree before running lint, previous job changed something?')
 	@echo ">> verifying modules being imported"
-	@# TODO(bwplotka): Add, Printf, DefaultRegisterer, NewGaugeFunc and MustRegister once exception are accepted. Add fmt.{Errorf}=github.com/pkg/errors.{Errorf} once https://github.com/fatih/faillint/issues/10 is addressed.
+	@# TODO(bwplotka): Add, Printf, DefaultRegisterer, NewGaugeFunc and MustRegister once exception are accepted.
 	@$(FAILLINT) -paths "errors=github.com/efficientgo/core/errors,\
+fmt.{Errorf}=github.com/efficientgo/core/errors.{Wrap,Wrapf},\
 github.com/prometheus/prometheus/pkg/testutils=github.com/efficientgo/core/testutil,\
 github.com/stretchr/testify=github.com/efficientgo/core/testutil" ./...
-	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint}" -ignore-tests ./...
+	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests ./...
 	@echo ">> linting all of the Go files GOGC=${GOGC}"
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
 	"github.com/thanos-community/promql-engine/execution/model"
@@ -21,7 +22,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-var ErrNativeHistogramsUnsupported = fmt.Errorf("querying native histograms is not supported")
+var ErrNativeHistogramsUnsupported = errors.Newf("querying native histograms is not supported")
 
 type vectorScanner struct {
 	labels    labels.Labels
@@ -178,7 +179,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	case chunkenc.ValFloat:
 		t, v = it.At()
 	default:
-		panic(fmt.Errorf("unknown value type %v", valueType))
+		panic(errors.Newf("unknown value type %v", valueType))
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool

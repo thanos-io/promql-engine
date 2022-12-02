@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"runtime"
@@ -363,7 +362,7 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 		buf = buf[:runtime.Stack(buf, false)]
 
 		level.Error(logger).Log("msg", "runtime panic in engine", "expr", expr.String(), "err", e, "stacktrace", string(buf))
-		*errp = fmt.Errorf("unexpected error: %w", err)
+		*errp = errors.Wrap(err, "unexpected error")
 	}
 }
 
