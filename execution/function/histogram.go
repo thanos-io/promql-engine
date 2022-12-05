@@ -35,9 +35,12 @@ type histogramOperator struct {
 
 	// scalarPoints is a reusable buffer for points from the first argument of histogram_quantile.
 	scalarPoints []float64
+
 	// outputIndex is a mapping from input series ID to the output series ID and its upper boundary value
 	// parsed from the le label.
-	outputIndex []histogramSeries
+	// If outputIndex[i] is nil then series[i] has no valid `le` label.
+	outputIndex []*histogramSeries
+
 	// seriesBuckets are the buckets for each individual series.
 	seriesBuckets []buckets
 }
@@ -117,6 +120,10 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 		o.resetBuckets()
 		for i, seriesID := range vector.SampleIDs {
 			outputSeries := o.outputIndex[seriesID]
+			// This means that it has an invalid `le` label.
+			if outputSeries == nil {
+				continue
+			}
 			outputSeriesID := outputSeries.outputID
 			bucket := le{
 				upperBound: outputSeries.upperBound,
@@ -127,12 +134,9 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 
 		step := o.pool.GetStepVector(vector.T)
 		for i, stepBuckets := range o.seriesBuckets {
-			// We need at least2 buckets to calculate a quantile.
-			if len(stepBuckets) < 2 {
-				continue
-			}
-
-			if stepIndex >= len(o.scalarPoints) {
+			// We only have one bucket so it needs to be NaN.
+			// Or, if we are after how many scalar points we have.
+			if len(stepBuckets) == 1 || stepIndex >= len(o.scalarPoints) {
 				step.SampleIDs = append(step.SampleIDs, uint64(i))
 				step.Samples = append(step.Samples, math.NaN())
 				continue
@@ -163,7 +167,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	)
 
 	o.series = make([]labels.Labels, 0)
-	o.outputIndex = make([]histogramSeries, len(series))
+	o.outputIndex = make([]*histogramSeries, len(series))
 
 	for i, s := range series {
 		lbls, bucketLabel := dropLabel(s.Copy(), "le")
@@ -187,12 +191,11 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 			seriesHashes[seriesHash] = seriesID
 		}
 
-		o.outputIndex[i] = histogramSeries{
+		o.outputIndex[i] = &histogramSeries{
 			outputID:   seriesID,
 			upperBound: value,
 		}
 	}
-
 	o.seriesBuckets = make([]buckets, len(o.series))
 	o.pool.SetStepSize(len(o.series))
 	return nil

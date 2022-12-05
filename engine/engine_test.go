@@ -7,12 +7,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -76,6 +78,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	// since Prometheus v2.33.0 so we also enable them.
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
+		Logger:               log.NewLogfmtLogger(os.Stderr),
 		MaxSamples:           1e10,
 		EnableNegativeOffset: true,
 		EnableAtModifier:     true,
@@ -987,6 +990,53 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
 			query: `histogram_quantile(0.9, http_requests_total)`,
 		},
+		{
+			name: "histogram quantile on malformed data",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1+3x10
+			http_requests_total{pod="nginx-2"} 2+3x10`,
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		// TODO: uncomment once support for testing NaNs is added.
+		/*
+			{
+				name: "histogram quantile on malformed, interleaved data",
+				load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+3x10
+					http_requests_total{pod="nginx-2"} 2+3x10
+					http_requests_total{pod="nginx-3", le="0.05"} 2+3x10
+					http_requests_total{pod="nginx-4", le="0.1"} 2+3x10`,
+				query: `histogram_quantile(0.9, http_requests_total)`,
+			},
+			{
+				name: "histogram quantile on malformed, interleaved data 2",
+				load: `load 30s
+					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
+					http_requests_total{pod="nginx-2", le="0.02"} 2+3x10
+					http_requests_total{pod="nginx-3"} 2+3x10
+					http_requests_total{pod="nginx-4"} 2+3x10`,
+				query: `histogram_quantile(0.9, http_requests_total)`,
+			},
+			{
+				name: "histogram quantile on malformed, interleaved data 3",
+				load: `load 30s
+					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
+					http_requests_total{pod="nginx-2"} 2+3x10
+					http_requests_total{pod="nginx-3"} 2+3x10
+					http_requests_total{pod="nginx-4", le="0.03"} 2+3x10`,
+				query: `histogram_quantile(0.9, http_requests_total)`,
+			},
+			{
+				name: "histogram quantile on malformed, interleaved data 4",
+				load: `load 30s
+					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
+					http_requests_total{pod="nginx-2"} 2+3x10
+					http_requests_total{pod="nginx-2", le="0.05"} 2+3x10
+					http_requests_total{pod="nginx-2", le="0.2"} 2+3x10
+					http_requests_total{pod="nginx-3"} 2+3x10
+					http_requests_total{pod="nginx-4", le="0.03"} 2+3x10`,
+				query: `histogram_quantile(0.9, http_requests_total)`,
+			},*/
 		{
 			name: "histogram quantile with sum",
 			load: `load 30s
