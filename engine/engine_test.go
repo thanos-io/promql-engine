@@ -852,6 +852,22 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 		{
+			name: "binop with @ end() modifier inside query range",
+			load: `load 30s
+					http_requests_total 2+3x100
+					http_responses_total 2+4x100`,
+			query: "max(http_requests_total @ end()) / max(http_responses_total)",
+			end:   time.Unix(600, 0),
+		},
+		{
+			name: "binop with @ end() modifier outside of query range",
+			load: `load 30s
+					http_requests_total 2+3x100
+					http_responses_total 2+4x100`,
+			query: "max(http_requests_total @ end()) / max(http_responses_total)",
+			end:   time.Unix(60000, 0),
+		},
+		{
 			name: "selector merge",
 			load: `load 30s
 					http_requests_total{pod="nginx-1", ns="nginx"} 1+1x15

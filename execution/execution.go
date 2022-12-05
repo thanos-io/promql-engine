@@ -230,7 +230,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		if err != nil {
 			return nil, err
 		}
-		return step_invariant.NewStepInvariantOperator(model.NewVectorPool(stepsBatch), next, e.Expr, opts)
+		return step_invariant.NewStepInvariantOperator(model.NewVectorPool(stepsBatch), next, e.Expr, opts, stepsBatch)
 
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
