@@ -125,9 +125,6 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 				continue
 			}
 			outputSeriesID := outputSeries.outputID
-			if outputSeriesID >= len(o.seriesBuckets) {
-				continue
-			}
 			bucket := le{
 				upperBound: outputSeries.upperBound,
 				count:      vector.Samples[i],
@@ -142,11 +139,6 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 			if len(stepBuckets) == 1 || stepIndex >= len(o.scalarPoints) {
 				step.SampleIDs = append(step.SampleIDs, uint64(i))
 				step.Samples = append(step.Samples, math.NaN())
-				continue
-			}
-
-			// We need at least 2 buckets to calculate a quantile.
-			if len(stepBuckets) < 2 {
 				continue
 			}
 
