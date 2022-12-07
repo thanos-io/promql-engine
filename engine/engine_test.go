@@ -1077,6 +1077,12 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
+			name: "topk on empty result",
+			load: `load 30s
+				metric_a 1+1x2`,
+			query: "topk(2, histogram_quantile(0.1, metric_b))",
+		},
+		{
 			name: "topk by",
 			load: `load 30s
 				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40

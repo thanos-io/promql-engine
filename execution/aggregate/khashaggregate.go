@@ -100,7 +100,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	a.paramOp.GetPool().PutVectors(args)
 
-	if len(args) != len(in) {
+	if len(args) < len(in) {
 		return nil, errors.New("scalar argument not found")
 	}
 
