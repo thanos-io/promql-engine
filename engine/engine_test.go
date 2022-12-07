@@ -1047,7 +1047,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2", le="5"} 3+2x10
 			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
 			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
-			query: `histogram_quantile(0.9, sum by (pod, le) (http_requests_total))`,
+			query: `histogram_quantile(0.9, sum by (pod, le) (rate(http_requests_total[2m])))`,
 		},
 		// TODO(fpetkovski): Uncomment once support for testing NaNs is added.
 		//{

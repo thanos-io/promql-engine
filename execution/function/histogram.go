@@ -134,8 +134,12 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 
 		step := o.pool.GetStepVector(vector.T)
 		for i, stepBuckets := range o.seriesBuckets {
-			// We only have one bucket so it needs to be NaN.
-			// Or, if we are after how many scalar points we have.
+			// It could be zero if multiple input series map to the same output series ID.
+			if len(stepBuckets) == 0 {
+				continue
+			}
+			// If there is only bucket or if we are after how many
+			// scalar points we have then it needs to be NaN.
 			if len(stepBuckets) == 1 || stepIndex >= len(o.scalarPoints) {
 				step.SampleIDs = append(step.SampleIDs, uint64(i))
 				step.Samples = append(step.Samples, math.NaN())
