@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"reflect"
 	"runtime"
 	"sort"
+	"sync"
 	"testing"
 	"time"
 
@@ -2047,12 +2049,15 @@ func TestQueryCancellation(t *testing.T) {
 
 type hintRecordingQuerier struct {
 	storage.Querier
+	mux   sync.Mutex
 	hints []*storage.SelectHints
 }
 
 func (h *hintRecordingQuerier) Close() error { return nil }
 
 func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+	h.mux.Lock()
+	defer h.mux.Unlock()
 	h.hints = append(h.hints, hints)
 	return storage.EmptySeriesSet()
 }
@@ -2367,7 +2372,18 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			res := query.Exec(context.Background())
 			testutil.Ok(t, res.Err)
 
-			testutil.Equals(t, tc.expected, hintsRecorder.hints)
+			// Selects are done in parallel so check that all hints are
+			// present, but order does not matter.
+			testutil.Equals(t, len(tc.expected), len(hintsRecorder.hints))
+			for _, expected := range tc.expected {
+				contains := false
+				for _, hint := range hintsRecorder.hints {
+					if reflect.DeepEqual(expected, hint) {
+						contains = true
+					}
+				}
+				testutil.Assert(t, contains, "hints did not contain contain %#v", expected)
+			}
 		})
 	}
 }

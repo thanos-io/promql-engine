@@ -93,15 +93,25 @@ func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 }
 
 func (o *vectorOperator) initOutputs(ctx context.Context) error {
-	// TODO(fpetkovski): Execute in parallel.
-	highCardSide, err := o.lhs.Series(ctx)
-	if err != nil {
-		return err
-	}
+	var highCardSide []labels.Labels
+	var errChan = make(chan error, 1)
+	go func() {
+		var err error
+		highCardSide, err = o.lhs.Series(ctx)
+		if err != nil {
+			errChan <- err
+		}
+		close(errChan)
+	}()
+
 	lowCardSide, err := o.rhs.Series(ctx)
 	if err != nil {
 		return err
 	}
+	if err := <-errChan; err != nil {
+		return err
+	}
+
 	o.lhSampleIDs = highCardSide
 	o.rhSampleIDs = lowCardSide
 
