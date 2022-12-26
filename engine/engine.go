@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"github.com/thanos-community/promql-engine/api"
 	"io"
 	"math"
 	"runtime"
@@ -20,8 +21,6 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
-	v1 "github.com/prometheus/prometheus/web/api/v1"
-
 	"github.com/thanos-community/promql-engine/execution"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
@@ -59,7 +58,51 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 	return o.LogicalOptimizers
 }
 
-func New(opts Opts) v1.QueryEngine {
+type localEngine struct {
+	q      storage.Queryable
+	engine *compatibilityEngine
+}
+
+func NewLocalEngine(opts Opts, q storage.Queryable) *localEngine {
+	return &localEngine{
+		q:      q,
+		engine: New(opts),
+	}
+}
+
+func (l localEngine) NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	return l.engine.NewInstantQuery(l.q, opts, qs, ts)
+}
+
+func (l localEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	return l.engine.NewRangeQuery(l.q, opts, qs, start, end, interval)
+}
+
+type distributedEngine struct {
+	engines     []api.ThanosEngine
+	localEngine *localEngine
+}
+
+func NewDistributedEngine(opts Opts, engines []api.ThanosEngine) *distributedEngine {
+	opts.LogicalOptimizers = append(
+		opts.LogicalOptimizers,
+		logicalplan.DistributedExecutionOptimizer{Engines: engines},
+	)
+	return &distributedEngine{
+		engines:     engines,
+		localEngine: NewLocalEngine(opts, nil),
+	}
+}
+
+func (l distributedEngine) NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	return l.localEngine.NewInstantQuery(opts, qs, ts)
+}
+
+func (l distributedEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	return l.localEngine.NewRangeQuery(opts, qs, start, end, interval)
+}
+
+func New(opts Opts) *compatibilityEngine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
 	}
@@ -198,7 +241,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	ret = &promql.Result{
 		Value: promql.Vector{},
 	}
-	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
+	//defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()

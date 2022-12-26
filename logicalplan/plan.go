@@ -63,6 +63,7 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.MatrixSelector:
 		transform(&node.VectorSelector)
 	case *parser.AggregateExpr:
+		transform(expr)
 		traverse(&node.Expr, transform)
 	case *parser.Call:
 		for _, n := range node.Args {
@@ -79,6 +80,44 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.SubqueryExpr:
 		traverse(&node.Expr, transform)
 	}
+}
+
+func traverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(parent *parser.Expr, node *parser.Expr) bool) bool {
+	switch node := (*current).(type) {
+	case *parser.StepInvariantExpr:
+		return traverseBottomUp(current, &node.Expr, transform)
+	case *parser.VectorSelector:
+		return transform(parent, current)
+	case *parser.MatrixSelector:
+		return transform(parent, &node.VectorSelector)
+	case *parser.AggregateExpr:
+		if stop := traverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
+	case *parser.Call:
+		for _, n := range node.Args {
+			if stop := traverseBottomUp(current, &n, transform); stop {
+				return stop
+			}
+		}
+		return transform(parent, current)
+	case *parser.BinaryExpr:
+		lstop := traverseBottomUp(current, &node.LHS, transform)
+		rstop := traverseBottomUp(current, &node.RHS, transform)
+		if lstop || rstop {
+			return true
+		}
+		return transform(parent, current)
+	case *parser.UnaryExpr:
+		return traverseBottomUp(current, &node.Expr, transform)
+	case *parser.ParenExpr:
+		return traverseBottomUp(current, &node.Expr, transform)
+	case *parser.SubqueryExpr:
+		return traverseBottomUp(current, &node.Expr, transform)
+	}
+
+	return true
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L2658.

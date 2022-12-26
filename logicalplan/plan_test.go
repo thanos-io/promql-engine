@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"github.com/thanos-community/promql-engine/api"
 	"regexp"
 	"strings"
 	"testing"
@@ -131,4 +132,124 @@ func TestMatcherPropagation(t *testing.T) {
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
 		})
 	}
+}
+
+func TestDistributedExecution(t *testing.T) {
+	cases := []struct {
+		name     string
+		expr     string
+		expected string
+	}{
+		{
+			name: "sum-rate",
+			expr: `sum by (pod) (rate(http_requests_total[5m]))`,
+			expected: `
+sum by (pod) (
+  coalesce(
+    remote(sum by (pod) (rate(http_requests_total[5m]))),
+    remote(sum by (pod) (rate(http_requests_total[5m])))
+  )
+)`,
+		},
+		{
+			name: "avg",
+			expr: `avg by (pod) (http_requests_total)`,
+			expected: `
+avg by (pod) (
+  coalesce(
+    remote(http_requests_total),
+    remote(http_requests_total)
+  )
+)`,
+		},
+		{
+			name: "two-level aggregation",
+			expr: `max by (pod) (sum by (pod) (http_requests_total))`,
+			expected: `
+max by (pod) (
+  sum by (pod) ( 
+    coalesce(
+      remote(sum by (pod) (http_requests_total)),
+      remote(sum by (pod) (http_requests_total))
+    )
+  )
+)`,
+		},
+		{
+			name: "aggregation of binary expression",
+			expr: `max by (pod) (metric_a / metric_b)`,
+			expected: `
+max by (pod) (
+  coalesce(remote(metric_a), remote(metric_a)) 
+  / 
+  coalesce(remote(metric_b), remote(metric_b))
+)
+`,
+		},
+		{
+			name: "unsupported aggregation in the operand path",
+			expr: `max by (pod) (sort(avg(http_requests_total)))`,
+			expected: `
+max by (pod) (sort(avg(
+  coalesce(
+    remote(http_requests_total),
+    remote(http_requests_total)
+  )
+)))`,
+		},
+		{
+			name: "binary operation in the operand path",
+			expr: `max by (pod) (sort(metric_a / metric_b))`,
+			expected: `
+max by (pod) (sort(
+  coalesce(remote(metric_a), remote(metric_a)) 
+  / 
+  coalesce(remote(metric_b), remote(metric_b))
+))`,
+		},
+		{
+			name: "binary operation with aggregations",
+			expr: `sum by (pod) (metric_a) / sum by (pod) (metric_b)`,
+			expected: `
+sum by (pod) (coalesce(
+  remote(sum by (pod) (metric_a)), 
+  remote(sum by (pod) (metric_a)))
+) 
+/ 
+sum by (pod) (coalesce(
+  remote(sum by (pod) (metric_b)), 
+  remote(sum by (pod) (metric_b)))
+)`,
+		},
+	}
+
+	engines := make([]api.ThanosEngine, 2)
+	optimizers := []Optimizer{DistributedExecutionOptimizer{Engines: engines}}
+	spaces := regexp.MustCompile(`\s+`)
+	openParenthesis := regexp.MustCompile(`\(\s+`)
+	closedParenthesis := regexp.MustCompile(`\s+\)`)
+	replacements := map[string]*regexp.Regexp{
+		" ": spaces,
+		"(": openParenthesis,
+		")": closedParenthesis,
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
+			optimizedPlan := plan.Optimize(optimizers)
+			expectedPlan := cleanUp(replacements, tcase.expected)
+			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+		})
+	}
+}
+
+func cleanUp(replacements map[string]*regexp.Regexp, expr string) string {
+	for replacement, match := range replacements {
+		expr = match.ReplaceAllString(expr, replacement)
+	}
+	return strings.Trim(expr, " ")
 }

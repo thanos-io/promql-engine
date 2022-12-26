@@ -28,16 +28,18 @@ type coalesceOperator struct {
 	once   sync.Once
 	series []labels.Labels
 
-	pool      *model.VectorPool
-	mu        sync.Mutex
-	wg        sync.WaitGroup
-	operators []model.VectorOperator
+	pool          *model.VectorPool
+	mu            sync.Mutex
+	wg            sync.WaitGroup
+	operators     []model.VectorOperator
+	sampleOffsets []uint64
 }
 
 func NewCoalesce(pool *model.VectorPool, operators ...model.VectorOperator) model.VectorOperator {
 	return &coalesceOperator{
-		pool:      pool,
-		operators: operators,
+		pool:          pool,
+		operators:     operators,
+		sampleOffsets: make([]uint64, len(operators)),
 	}
 }
 
@@ -65,11 +67,17 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	default:
 	}
 
+	var err error
+	c.once.Do(func() { err = c.loadSeries(ctx) })
+	if err != nil {
+		return nil, err
+	}
+
 	var out []model.StepVector = nil
 	var errChan = make(errorChan, len(c.operators))
-	for _, o := range c.operators {
+	for idx, o := range c.operators {
 		c.wg.Add(1)
-		go func(o model.VectorOperator) {
+		go func(opIdx int, o model.VectorOperator) {
 			defer c.wg.Done()
 
 			in, err := o.Next(ctx)
@@ -80,6 +88,13 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			if in == nil {
 				return
 			}
+
+			for _, vector := range in {
+				for i := range vector.SampleIDs {
+					vector.SampleIDs[i] += c.sampleOffsets[opIdx]
+				}
+			}
+
 			c.mu.Lock()
 			defer c.mu.Unlock()
 
@@ -91,12 +106,16 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			}
 
 			for i := 0; i < len(in); i++ {
+				if len(in[i].Samples) > 0 {
+					out[i].T = in[i].T
+				}
+
 				out[i].Samples = append(out[i].Samples, in[i].Samples...)
 				out[i].SampleIDs = append(out[i].SampleIDs, in[i].SampleIDs...)
 				o.GetPool().PutStepVector(in[i])
 			}
 			o.GetPool().PutVectors(in)
-		}(o)
+		}(idx, o)
 	}
 	c.wg.Wait()
 	close(errChan)
@@ -119,6 +138,7 @@ func (c *coalesceOperator) loadSeries(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		c.sampleOffsets[i] = uint64(size)
 		size += len(series)
 	}
 
