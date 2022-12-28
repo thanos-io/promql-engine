@@ -14,6 +14,10 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+var spaces = regexp.MustCompile(`\s+`)
+var openParenthesis = regexp.MustCompile(`\(\s+`)
+var closedParenthesis = regexp.MustCompile(`\s+\)`)
+
 func TestDefaultOptimizers(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -77,7 +81,6 @@ func TestDefaultOptimizers(t *testing.T) {
 		},
 	}
 
-	spaces := regexp.MustCompile(`\s+`)
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
@@ -120,7 +123,6 @@ func TestMatcherPropagation(t *testing.T) {
 	}
 
 	optimizers := []Optimizer{PropagateMatchersOptimizer{}}
-	spaces := regexp.MustCompile(`\s+`)
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
@@ -221,13 +223,18 @@ sum by (pod) (coalesce(
   remote(sum by (pod) (metric_b)))
 )`,
 		},
+		{
+			name: "function sharding",
+			expr: `rate(http_requests_total[2m])`,
+			expected: `
+coalesce(
+  remote(rate(http_requests_total[2m])), 
+  remote(rate(http_requests_total[2m])))`,
+		},
 	}
 
-	engines := make([]api.ThanosEngine, 2)
+	engines := make([]api.RemoteEngine, 2)
 	optimizers := []Optimizer{DistributedExecutionOptimizer{Engines: engines}}
-	spaces := regexp.MustCompile(`\s+`)
-	openParenthesis := regexp.MustCompile(`\(\s+`)
-	closedParenthesis := regexp.MustCompile(`\s+\)`)
 	replacements := map[string]*regexp.Regexp{
 		" ": spaces,
 		"(": openParenthesis,

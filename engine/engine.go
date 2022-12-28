@@ -79,18 +79,23 @@ func (l localEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end
 }
 
 type distributedEngine struct {
-	engines     []api.ThanosEngine
+	engines     []api.RemoteEngine
 	localEngine *localEngine
 }
 
-func NewDistributedEngine(opts Opts, engines []api.ThanosEngine) *distributedEngine {
+func NewDistributedEngine(opts Opts, engines []api.RemoteEngine) *distributedEngine {
+	opts.DisableFallback = true
 	opts.LogicalOptimizers = append(
 		opts.LogicalOptimizers,
 		logicalplan.DistributedExecutionOptimizer{Engines: engines},
 	)
 	return &distributedEngine{
-		engines:     engines,
-		localEngine: NewLocalEngine(opts, nil),
+		engines: engines,
+		localEngine: NewLocalEngine(
+			opts,
+			storage.QueryableFunc(func(_ context.Context, _, _ int64) (storage.Querier, error) {
+				return storage.NoopQuerier(), nil
+			})),
 	}
 }
 

@@ -26,7 +26,7 @@ func (r Coalesce) Type() parser.ValueType { return parser.ValueTypeMatrix }
 func (r Coalesce) PromQLExpr() {}
 
 type RemoteExecution struct {
-	Engine api.ThanosEngine
+	Engine api.RemoteEngine
 	Query  string
 }
 
@@ -55,11 +55,11 @@ var distributiveAggregations = map[parser.ItemType]struct{}{
 // DistributedExecutionOptimizer produces a logical plan suitable for
 // distributed Query execution.
 type DistributedExecutionOptimizer struct {
-	Engines []api.ThanosEngine
+	Engines []api.RemoteEngine
 }
 
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
-	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) bool {
+	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current) {
 			return true

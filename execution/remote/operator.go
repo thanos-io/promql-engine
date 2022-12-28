@@ -60,6 +60,7 @@ func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	out := e.pool.GetVectorBatch()
 	for i := 0; i < e.stepsBatch && i < len(e.timeStamps); i++ {
+		addStep := true
 		ts := e.timeStamps[i]
 		for seriesID := range e.result {
 			if len(e.result[seriesID].Points) == 0 {
@@ -67,11 +68,12 @@ func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 
 			if e.result[seriesID].Points[0].T == ts {
-				if i >= len(out) {
+				if addStep {
 					out = append(out, e.pool.GetStepVector(ts))
+					addStep = false
 				}
-				n := len(out) - 1
 
+				n := len(out) - 1
 				out[n].SampleIDs = append(out[n].SampleIDs, uint64(seriesID))
 				out[n].Samples = append(out[n].Samples, e.result[seriesID].Points[0].V)
 				e.result[seriesID].Points = e.result[seriesID].Points[1:]
@@ -92,6 +94,8 @@ func (e *Execution) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (e *Execution) execute(ctx context.Context) error {
+	defer e.query.Close()
+
 	result := e.query.Exec(ctx)
 	if result.Err != nil {
 		return result.Err
