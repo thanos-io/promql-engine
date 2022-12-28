@@ -251,7 +251,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return nil, err
 		}
 
-		return remote.NewExecution(qry, model.NewVectorPool(stepsBatch), stepsBatch), nil
+		return remote.NewExecution(qry, model.NewVectorPool(stepsBatch), opts), nil
 
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)

@@ -5,31 +5,27 @@ import (
 	"fmt"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"sort"
+	"github.com/thanos-community/promql-engine/execution/scan"
+	"github.com/thanos-community/promql-engine/query"
 	"sync"
 
 	"github.com/thanos-community/promql-engine/execution/model"
 )
 
 type Execution struct {
-	query      promql.Query
-	result     promql.Matrix
-	timeStamps []int64
+	query promql.Query
+	pool  *model.VectorPool
+	opts  *query.Options
 
-	once       sync.Once
-	pool       *model.VectorPool
-	stepsBatch int
+	once           sync.Once
+	vectorSelector model.VectorOperator
 }
 
-func NewExecution(
-	query promql.Query,
-	pool *model.VectorPool,
-	stepsBatch int,
-) *Execution {
+func NewExecution(query promql.Query, pool *model.VectorPool, opts *query.Options) *Execution {
 	return &Execution{
-		query:      query,
-		pool:       pool,
-		stepsBatch: stepsBatch,
+		query: query,
+		pool:  pool,
+		opts:  opts,
 	}
 }
 
@@ -40,49 +36,11 @@ func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
 		return nil, err
 	}
 
-	series := make([]labels.Labels, 0, len(e.result))
-	for _, s := range e.result {
-		series = append(series, s.Metric)
-	}
-	return series, nil
+	return e.vectorSelector.Series(ctx)
 }
 
 func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
-	var err error
-	e.once.Do(func() { err = e.execute(ctx) })
-	if err != nil {
-		return nil, err
-	}
-
-	if len(e.timeStamps) == 0 {
-		return nil, nil
-	}
-
-	out := e.pool.GetVectorBatch()
-	for i := 0; i < e.stepsBatch && i < len(e.timeStamps); i++ {
-		addStep := true
-		ts := e.timeStamps[i]
-		for seriesID := range e.result {
-			if len(e.result[seriesID].Points) == 0 {
-				continue
-			}
-
-			if e.result[seriesID].Points[0].T == ts {
-				if addStep {
-					out = append(out, e.pool.GetStepVector(ts))
-					addStep = false
-				}
-
-				n := len(out) - 1
-				out[n].SampleIDs = append(out[n].SampleIDs, uint64(seriesID))
-				out[n].Samples = append(out[n].Samples, e.result[seriesID].Points[0].V)
-				e.result[seriesID].Points = e.result[seriesID].Points[1:]
-			}
-		}
-	}
-	e.timeStamps = e.timeStamps[len(out):]
-
-	return out, nil
+	return e.vectorSelector.Next(ctx)
 }
 
 func (e *Execution) GetPool() *model.VectorPool {
@@ -106,21 +64,6 @@ func (e *Execution) execute(ctx context.Context) error {
 		return err
 	}
 
-	timestampSet := make(map[int64]struct{})
-	for _, series := range matrix {
-		for _, p := range series.Points {
-			timestampSet[p.T] = struct{}{}
-		}
-	}
-
-	e.timeStamps = make([]int64, 0, len(timestampSet))
-	for ts := range timestampSet {
-		e.timeStamps = append(e.timeStamps, ts)
-	}
-	sort.Slice(e.timeStamps, func(i, j int) bool {
-		return e.timeStamps[i] < e.timeStamps[j]
-	})
-
-	e.result = matrix
+	e.vectorSelector = scan.NewVectorSelector(e.pool, newStorageAdapter(matrix), e.opts, 0, 0, 1)
 	return nil
 }
