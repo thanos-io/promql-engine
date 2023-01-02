@@ -1272,9 +1272,9 @@ func TestDistributedAggregations(t *testing.T) {
 	}
 
 	queries := []struct {
-		name      string
-		query     string
-		expectErr bool
+		name           string
+		query          string
+		expectFallback bool
 	}{
 		{name: "sum", query: `sum by (pod) (bar)`},
 		{name: "avg", query: `avg by (pod) (bar)`},
@@ -1285,26 +1285,24 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
 		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
-		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectErr: true},
+		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
 	}
 
+	allSeries := storageWithSeries(append(ssetA, ssetB...)...)
 	for _, tcase := range queries {
 		t.Run(tcase.name, func(t *testing.T) {
 			distOpts := localOpts
+			distOpts.DisableFallback = !tcase.expectFallback
 			distEngine := engine.NewDistributedEngine(distOpts, []api.RemoteEngine{
 				engine.NewLocalEngine(localOpts, storageWithSeries(ssetA...)),
 				engine.NewLocalEngine(localOpts, storageWithSeries(ssetB...)),
 			})
-			distQry, err := distEngine.NewRangeQuery(nil, tcase.query, start, end, step)
-			if tcase.expectErr {
-				testutil.NotOk(t, err)
-				return
-			}
+			distQry, err := distEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
 			testutil.Ok(t, err)
-			distResult := distQry.Exec(context.Background())
 
+			distResult := distQry.Exec(context.Background())
 			promEngine := promql.NewEngine(localOpts.EngineOpts)
-			promQry, err := promEngine.NewRangeQuery(storageWithSeries(append(ssetA, ssetB...)...), nil, tcase.query, start, end, step)
+			promQry, err := promEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
 			testutil.Ok(t, err)
 			promResult := promQry.Exec(context.Background())
 
