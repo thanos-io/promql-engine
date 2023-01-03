@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/promql"
+
 	"github.com/thanos-community/promql-engine/execution/remote"
 
 	"github.com/efficientgo/core/errors"
