@@ -4,11 +4,12 @@
 package logicalplan
 
 import (
-	"github.com/thanos-community/promql-engine/api"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/thanos-community/promql-engine/api"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -234,7 +235,7 @@ coalesce(
 	}
 
 	engines := make([]api.RemoteEngine, 2)
-	optimizers := []Optimizer{DistributedExecutionOptimizer{Engines: engines}}
+	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: engines}}
 	replacements := map[string]*regexp.Regexp{
 		" ": spaces,
 		"(": openParenthesis,

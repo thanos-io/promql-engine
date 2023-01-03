@@ -6,7 +6,6 @@ package engine_test
 import (
 	"context"
 	"fmt"
-	"github.com/thanos-community/promql-engine/api"
 	"math"
 	"os"
 	"reflect"
@@ -15,6 +14,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/thanos-community/promql-engine/api"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
@@ -1227,6 +1228,18 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 }
 
+type mockQueryEndpoints struct {
+	engines []api.RemoteEngine
+}
+
+func (m mockQueryEndpoints) Engines() []api.RemoteEngine {
+	return m.engines
+}
+
+func NewMockQueryEndpoints(engines []api.RemoteEngine) api.RemoteEndpoints {
+	return &mockQueryEndpoints{engines: engines}
+}
+
 func TestDistributedAggregations(t *testing.T) {
 	localOpts := engine.Opts{
 		EngineOpts: promql.EngineOpts{
@@ -1293,10 +1306,10 @@ func TestDistributedAggregations(t *testing.T) {
 		t.Run(tcase.name, func(t *testing.T) {
 			distOpts := localOpts
 			distOpts.DisableFallback = !tcase.expectFallback
-			distEngine := engine.NewDistributedEngine(distOpts, []api.RemoteEngine{
+			distEngine := engine.NewDistributedEngine(distOpts, NewMockQueryEndpoints([]api.RemoteEngine{
 				engine.NewLocalEngine(localOpts, storageWithSeries(ssetA...)),
 				engine.NewLocalEngine(localOpts, storageWithSeries(ssetB...)),
-			})
+			}))
 			distQry, err := distEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
 			testutil.Ok(t, err)
 

@@ -5,12 +5,16 @@ package engine
 
 import (
 	"context"
-	"github.com/thanos-community/promql-engine/api"
+
+	v1 "github.com/prometheus/prometheus/web/api/v1"
+
 	"io"
 	"math"
 	"runtime"
 	"sort"
 	"time"
+
+	"github.com/thanos-community/promql-engine/api"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
@@ -21,6 +25,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
+
 	"github.com/thanos-community/promql-engine/execution"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
@@ -79,20 +84,22 @@ func (l localEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end
 }
 
 type distributedEngine struct {
-	engines     []api.RemoteEngine
+	endpoints   api.RemoteEndpoints
 	localEngine *compatibilityEngine
 }
 
-func NewDistributedEngine(opts Opts, engines []api.RemoteEngine) *distributedEngine {
+func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngine {
 	opts.LogicalOptimizers = append(
 		opts.LogicalOptimizers,
-		logicalplan.DistributedExecutionOptimizer{Engines: engines},
+		logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
 	)
 	return &distributedEngine{
-		engines:     engines,
+		endpoints:   endpoints,
 		localEngine: New(opts),
 	}
 }
+
+func (l distributedEngine) SetQueryLogger(log promql.QueryLogger) {}
 
 func (l distributedEngine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	return l.localEngine.NewInstantQuery(q, opts, qs, ts)

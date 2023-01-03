@@ -1,9 +1,14 @@
 package api
 
 import (
-	"github.com/prometheus/prometheus/promql"
 	"time"
+
+	"github.com/prometheus/prometheus/promql"
 )
+
+type RemoteEndpoints interface {
+	Engines() []RemoteEngine
+}
 
 type RemoteEngine interface {
 	NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)

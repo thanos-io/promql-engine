@@ -132,30 +132,42 @@ func (c *coalesceOperator) Next(ctx context.Context) ([]model.StepVector, error)
 }
 
 func (c *coalesceOperator) loadSeries(ctx context.Context) error {
-	size := 0
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var numSeries uint64
+	allSeries := make([][]labels.Labels, len(c.operators))
+	errChan := make(errorChan, len(c.operators))
 	for i := 0; i < len(c.operators); i++ {
-		series, err := c.operators[i].Series(ctx)
-		if err != nil {
-			return err
-		}
-		c.sampleOffsets[i] = uint64(size)
-		size += len(series)
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			series, err := c.operators[i].Series(ctx)
+			if err != nil {
+				errChan <- err
+				return
+			}
+
+			allSeries[i] = series
+			mu.Lock()
+			numSeries += uint64(len(series))
+			mu.Unlock()
+		}(i)
+	}
+	wg.Wait()
+	close(errChan)
+	if err := errChan.getError(); err != nil {
+		return err
 	}
 
-	idx := 0
-	result := make([]labels.Labels, size)
-	for _, o := range c.operators {
-		series, err := o.Series(ctx)
-		if err != nil {
-			return err
-		}
-		for i := 0; i < len(series); i++ {
-			result[idx] = series[i]
-			idx++
-		}
+	var offset uint64
+	c.sampleOffsets = make([]uint64, len(c.operators))
+	c.series = make([]labels.Labels, 0, numSeries)
+	for i, series := range allSeries {
+		c.sampleOffsets[i] = offset
+		c.series = append(c.series, series...)
+		offset += uint64(len(series))
 	}
-	c.series = result
+
 	c.pool.SetStepSize(len(c.series))
-
 	return nil
 }

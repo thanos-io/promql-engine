@@ -5,7 +5,9 @@ package logicalplan
 
 import (
 	"fmt"
+
 	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/thanos-community/promql-engine/api"
 )
 
@@ -55,10 +57,11 @@ var distributiveAggregations = map[parser.ItemType]struct{}{
 // DistributedExecutionOptimizer produces a logical plan suitable for
 // distributed Query execution.
 type DistributedExecutionOptimizer struct {
-	Engines []api.RemoteEngine
+	Endpoints api.RemoteEndpoints
 }
 
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
+	engines := m.Endpoints.Engines()
 	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current) {
@@ -72,7 +75,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 			if aggr.Op == parser.COUNT {
 				localAggregation = parser.SUM
 			}
-			subQueries := m.makeSubQueries(current)
+			subQueries := m.makeSubQueries(current, engines)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -89,20 +92,20 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 			return false
 		}
 
-		*current = m.makeSubQueries(current)
+		*current = m.makeSubQueries(current, engines)
 		return true
 	})
 
 	return plan
 }
 
-func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr) Coalesce {
+func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr, engines []api.RemoteEngine) Coalesce {
 	remoteQueries := Coalesce{
-		Expressions: make(parser.Expressions, len(m.Engines)),
+		Expressions: make(parser.Expressions, len(engines)),
 	}
-	for i := 0; i < len(m.Engines); i++ {
+	for i := 0; i < len(engines); i++ {
 		remoteQueries.Expressions[i] = &RemoteExecution{
-			Engine: m.Engines[i],
+			Engine: engines[i],
 			Query:  (*current).String(),
 		}
 	}
