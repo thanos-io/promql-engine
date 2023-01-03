@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/thanos-community/promql-engine/execution/model"
@@ -141,6 +142,18 @@ func (c *coalesceOperator) loadSeries(ctx context.Context) error {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
+			defer func() {
+				e := recover()
+				if e == nil {
+					return
+				}
+
+				switch err := e.(type) {
+				case error:
+					errChan <- errors.Wrapf(err, "unexpected error")
+				}
+
+			}()
 			series, err := c.operators[i].Series(ctx)
 			if err != nil {
 				errChan <- err

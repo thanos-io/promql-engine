@@ -86,7 +86,10 @@ func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries
 		end = len(series)
 	}
 
-	shard := series[start:end]
+	slice := series[start:end]
+	shard := make([]SignedSeries, len(slice))
+	copy(shard, slice)
+
 	for i := range shard {
 		shard[i].Signature = uint64(i)
 	}
