@@ -3,13 +3,14 @@ package remote
 import (
 	"context"
 	"fmt"
+	"sync"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/scan"
 	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
-	"sync"
 )
 
 type Execution struct {

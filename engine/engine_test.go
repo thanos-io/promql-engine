@@ -1228,18 +1228,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 }
 
-type mockQueryEndpoints struct {
-	engines []api.RemoteEngine
-}
-
-func (m mockQueryEndpoints) Engines() []api.RemoteEngine {
-	return m.engines
-}
-
-func NewMockQueryEndpoints(engines []api.RemoteEngine) api.RemoteEndpoints {
-	return &mockQueryEndpoints{engines: engines}
-}
-
 func TestDistributedAggregations(t *testing.T) {
 	localOpts := engine.Opts{
 		EngineOpts: promql.EngineOpts{
@@ -1306,7 +1294,7 @@ func TestDistributedAggregations(t *testing.T) {
 		t.Run(tcase.name, func(t *testing.T) {
 			distOpts := localOpts
 			distOpts.DisableFallback = !tcase.expectFallback
-			distEngine := engine.NewDistributedEngine(distOpts, NewMockQueryEndpoints([]api.RemoteEngine{
+			distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints([]api.RemoteEngine{
 				engine.NewLocalEngine(localOpts, storageWithSeries(ssetA...)),
 				engine.NewLocalEngine(localOpts, storageWithSeries(ssetB...)),
 			}))

@@ -235,7 +235,7 @@ coalesce(
 	}
 
 	engines := make([]api.RemoteEngine, 2)
-	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: engines}}
+	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 	replacements := map[string]*regexp.Regexp{
 		" ": spaces,
 		"(": openParenthesis,
