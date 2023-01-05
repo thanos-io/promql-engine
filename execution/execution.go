@@ -159,7 +159,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			nextOperators[i] = next
 		}
 
-		return function.NewFunctionOperator(e, call, nextOperators, stepsBatch)
+		return function.NewFunctionOperator(e, call, nextOperators, stepsBatch, opts)
 
 	case *parser.AggregateExpr:
 		hints.Func = e.Op.String()

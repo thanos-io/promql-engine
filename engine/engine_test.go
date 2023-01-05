@@ -666,6 +666,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "http_requests_total",
 		},
 		{
+			name:  "time function",
+			load:  "",
+			query: "time()",
+		},
+		{
 			name:  "empty series with func",
 			load:  "",
 			query: "sum(http_requests_total)",
