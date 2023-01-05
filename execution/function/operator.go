@@ -16,6 +16,7 @@ import (
 
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
+	"github.com/thanos-community/promql-engine/query"
 )
 
 // functionOperator returns []model.StepVector after processing input with desired function.
@@ -32,7 +33,70 @@ type functionOperator struct {
 	pointBuf     []promql.Point
 }
 
-func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
+type noArgFunctionOperator struct {
+	mint        int64
+	maxt        int64
+	step        int64
+	currentStep int64
+	stepsBatch  int
+	funcExpr    *parser.Call
+	call        FunctionCall
+	vectorPool  *model.VectorPool
+}
+
+func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
+	return fmt.Sprintf("[*noArgFunctionOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{}
+}
+
+func (o *noArgFunctionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	return []labels.Labels{}, nil
+}
+
+func (o *noArgFunctionOperator) GetPool() *model.VectorPool {
+	return o.vectorPool
+}
+
+func (o *noArgFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	if o.currentStep > o.maxt {
+		return nil, nil
+	}
+	ret := o.vectorPool.GetVectorBatch()
+	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
+		sv := o.vectorPool.GetStepVector(o.currentStep)
+		result := o.call(FunctionArgs{
+			StepTime: o.currentStep,
+		})
+		sv.T = o.currentStep
+		sv.Samples = []float64{result.V}
+		sv.SampleIDs = []uint64{}
+
+		ret = append(ret, sv)
+		o.currentStep += o.step
+	}
+
+	return ret, nil
+}
+
+func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+	// Short-circuit functions that take no args. Their only input is the step's timestamp.
+	if len(nextOps) == 0 {
+		interval := opts.Step.Milliseconds()
+		// We set interval to be at least 1.
+		if interval == 0 {
+			interval = 1
+		}
+
+		return &noArgFunctionOperator{
+			currentStep: opts.Start.UnixMilli(),
+			mint:        opts.Start.UnixMilli(),
+			maxt:        opts.End.UnixMilli(),
+			step:        interval,
+			stepsBatch:  stepsBatch,
+			funcExpr:    funcExpr,
+			call:        call,
+			vectorPool:  model.NewVectorPool(stepsBatch),
+		}, nil
+	}
 	scalarPoints := make([][]float64, stepsBatch)
 	for i := 0; i < stepsBatch; i++ {
 		scalarPoints[i] = make([]float64, len(nextOps)-1)

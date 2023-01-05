@@ -138,6 +138,14 @@ var Funcs = map[string]FunctionCall{
 			},
 		}
 	},
+	"time": func(f FunctionArgs) promql.Sample {
+		return promql.Sample{
+			Point: promql.Point{
+				T: f.StepTime,
+				V: float64(f.StepTime) / 1000,
+			},
+		}
+	},
 	"changes": func(f FunctionArgs) promql.Sample {
 		if len(f.Points) == 0 {
 			return InvalidSample

@@ -33,7 +33,7 @@ func FuzzEngineQueryRangeMatrixFunctions(f *testing.F) {
 		}
 		for funcName := range function.Funcs {
 			// Skipping multi-arg functions in fuzz test for now.
-			if len(parser.Functions[funcName].ArgTypes) > 1 || funcName == "scalar" {
+			if len(parser.Functions[funcName].ArgTypes) > 1 || funcName == "scalar" || funcName == "time" {
 				continue
 			}
 
