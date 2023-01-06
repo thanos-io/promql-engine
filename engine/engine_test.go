@@ -142,6 +142,165 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "deriv(http_requests_total[30s])",
 		},
 		{
+			name: "abs",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -5+1x15
+					http_requests_total{pod="nginx-2"} -5+2x18`,
+			query: "abs(http_requests_total)",
+		},
+		{
+			name: "ceil",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -5.5+1x15
+					http_requests_total{pod="nginx-2"} -5.5+2x18`,
+			query: "ceil(http_requests_total)",
+		},
+		{
+			name: "exp",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -5.5+1x15
+					http_requests_total{pod="nginx-2"} -5.5+2x18`,
+			query: "exp(http_requests_total)",
+		},
+		{
+			name: "floor",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -5.5+1x15
+					http_requests_total{pod="nginx-2"} -5.5+2x18`,
+			query: "floor(http_requests_total)",
+		},
+		{
+			name: "sqrt",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "sqrt(http_requests_total)",
+		},
+		{
+			name: "ln",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "ln(http_requests_total)",
+		},
+		{
+			name: "log2",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "log2(http_requests_total)",
+		},
+		{
+			name: "log10",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "log10(http_requests_total)",
+		},
+		{
+			name: "sin",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "sin(http_requests_total)",
+		},
+		{
+			name: "cos",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "cos(http_requests_total)",
+		},
+		{
+			name: "tan",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "tan(http_requests_total)",
+		},
+		{
+			name: "asin",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "asin(http_requests_total)",
+		},
+		{
+			name: "acos",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "acos(http_requests_total)",
+		},
+		{
+			name: "atan",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "atan(http_requests_total)",
+		},
+		{
+			name: "sinh",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "sinh(http_requests_total)",
+		},
+		{
+			name: "cosh",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "cosh(http_requests_total)",
+		},
+		{
+			name: "tanh",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "tanh(http_requests_total)",
+		},
+		{
+			name: "asinh",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "asinh(http_requests_total)",
+		},
+		{
+			name: "acosh",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "acosh(http_requests_total)",
+		},
+		{
+			name: "atanh",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 0
+					http_requests_total{pod="nginx-2"} 1`,
+			query: "atanh(http_requests_total)",
+		},
+		{
+			name: "rad",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "rad(http_requests_total)",
+		},
+		{
+			name: "deg",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 5.5+1x15
+					http_requests_total{pod="nginx-2"} 5.5+2x18`,
+			query: "deg(http_requests_total)",
+		},
+		{
+			name:  "pi",
+			load:  ``,
+			query: "pi()",
+		},
+		{
 			name: "sum",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -182,6 +341,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					http_requests_total{pod="nginx-1"} 1+1x15
 					http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg_over_time(http_requests_total[30s])",
+		},
+		{
+			name: "abs",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} -10+1x15
+					http_requests_total{pod="nginx-2"} -10+2x18`,
+			query: "abs(http_requests_total)",
 		},
 		{
 			name: "max",

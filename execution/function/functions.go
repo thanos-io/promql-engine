@@ -29,7 +29,57 @@ type FunctionArgs struct {
 // FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
 type FunctionCall func(f FunctionArgs) promql.Sample
 
+func simpleFunc(f func(float64) float64) FunctionCall {
+	return func(fa FunctionArgs) promql.Sample {
+		if len(fa.Points) == 0 {
+			return InvalidSample
+		}
+		return promql.Sample{
+			Metric: fa.Labels,
+			Point: promql.Point{
+				T: fa.StepTime,
+				V: f(fa.Points[0].V),
+			},
+		}
+	}
+
+}
+
 var Funcs = map[string]FunctionCall{
+	"abs":   simpleFunc(math.Abs),
+	"ceil":  simpleFunc(math.Ceil),
+	"exp":   simpleFunc(math.Exp),
+	"floor": simpleFunc(math.Floor),
+	"sqrt":  simpleFunc(math.Sqrt),
+	"ln":    simpleFunc(math.Log),
+	"log2":  simpleFunc(math.Log2),
+	"log10": simpleFunc(math.Log10),
+	"sin":   simpleFunc(math.Sin),
+	"cos":   simpleFunc(math.Cos),
+	"tan":   simpleFunc(math.Tan),
+	"asin":  simpleFunc(math.Asin),
+	"acos":  simpleFunc(math.Acos),
+	"atan":  simpleFunc(math.Atan),
+	"sinh":  simpleFunc(math.Sinh),
+	"cosh":  simpleFunc(math.Cosh),
+	"tanh":  simpleFunc(math.Tanh),
+	"asinh": simpleFunc(math.Asinh),
+	"acosh": simpleFunc(math.Acosh),
+	"atanh": simpleFunc(math.Atanh),
+	"rad": simpleFunc(func(v float64) float64 {
+		return v * math.Pi / 180
+	}),
+	"deg": simpleFunc(func(v float64) float64 {
+		return v * 180 / math.Pi
+	}),
+	"pi": func(f FunctionArgs) promql.Sample {
+		return promql.Sample{
+			Point: promql.Point{
+				T: f.StepTime,
+				V: math.Pi,
+			},
+		}
+	},
 	"sum_over_time": func(f FunctionArgs) promql.Sample {
 		if len(f.Points) == 0 {
 			return InvalidSample
