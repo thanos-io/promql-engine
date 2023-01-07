@@ -72,6 +72,14 @@ var Funcs = map[string]FunctionCall{
 	"deg": simpleFunc(func(v float64) float64 {
 		return v * 180 / math.Pi
 	}),
+	"timestamp": func(f FunctionArgs) promql.Sample {
+		return promql.Sample{
+			Point: promql.Point{
+				T: f.StepTime,
+				V: float64(f.Points[0].T) / 1000,
+			},
+		}
+	},
 	"pi": func(f FunctionArgs) promql.Sample {
 		return promql.Sample{
 			Point: promql.Point{
