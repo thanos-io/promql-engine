@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-community/promql-engine/api"
+
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -1401,6 +1403,92 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestDistributedAggregations(t *testing.T) {
+	localOpts := engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+		},
+	}
+
+	start := time.Unix(0, 0)
+	end := time.Unix(120, 0)
+	step := time.Second * 30
+
+	ssetA := []storage.Series{
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "region", "east", "pod", "nginx-1"},
+			[]int64{0, 30000, 60000, 90000, 120000},
+			[]float64{1, 2, 3, 4, 5},
+		),
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "region", "east", "pod", "nginx-2"},
+			[]int64{0, 30000, 60000, 90000, 120000},
+			[]float64{2, 3, 4, 5, 6},
+		),
+	}
+	ssetB := []storage.Series{
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "region", "west-1", "pod", "nginx-1"},
+			[]int64{0, 30000, 60000, 90000, 120000},
+			[]float64{3, 4, 5, 6, 7},
+		),
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "region", "west-2", "pod", "nginx-1"},
+			[]int64{0, 30000, 60000, 90000, 120000},
+			[]float64{4, 5, 6, 7, 8},
+		),
+		newMockSeries(
+			[]string{labels.MetricName, "bar", "region", "west-1", "pod", "nginx-2"},
+			[]int64{0, 30000, 60000, 90000, 120000},
+			[]float64{5, 6, 7, 8, 9},
+		),
+	}
+
+	queries := []struct {
+		name           string
+		query          string
+		expectFallback bool
+	}{
+		{name: "sum", query: `sum by (pod) (bar)`},
+		{name: "avg", query: `avg by (pod) (bar)`},
+		{name: "count", query: `count by (pod) (bar)`},
+		{name: "group", query: `group by (pod) (bar)`},
+		{name: "topk", query: `topk by (pod) (1, bar)`},
+		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
+		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
+		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
+		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
+		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
+	}
+
+	allSeries := storageWithSeries(append(ssetA, ssetB...)...)
+	for _, tcase := range queries {
+		t.Run(tcase.name, func(t *testing.T) {
+			distOpts := localOpts
+			distOpts.DisableFallback = !tcase.expectFallback
+			distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints([]api.RemoteEngine{
+				engine.NewLocalEngine(localOpts, storageWithSeries(ssetA...)),
+				engine.NewLocalEngine(localOpts, storageWithSeries(ssetB...)),
+			}))
+			distQry, err := distEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
+			testutil.Ok(t, err)
+
+			distResult := distQry.Exec(context.Background())
+			promEngine := promql.NewEngine(localOpts.EngineOpts)
+			promQry, err := promEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
+			testutil.Ok(t, err)
+			promResult := promQry.Exec(context.Background())
+
+			roundValues(promResult)
+			roundValues(distResult)
+			testutil.Equals(t, promResult, distResult)
+		})
 	}
 }
 
@@ -2808,3 +2896,21 @@ type samplesByLabels []promql.Sample
 func (b samplesByLabels) Len() int           { return len(b) }
 func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
+
+// roundValues rounds all values to 10 decimal points and
+// can be used to eliminate floating point division errors
+// when comparing two promql results.
+func roundValues(r *promql.Result) {
+	switch result := r.Value.(type) {
+	case promql.Matrix:
+		for i := range result {
+			for j := range result[i].Points {
+				result[i].Points[j].V = math.Floor(result[i].Points[j].V*1e10) / 1e10
+			}
+		}
+	case promql.Vector:
+		for i := range result {
+			result[i].V = math.Floor(result[i].V*10e10) / 10e10
+		}
+	}
+}

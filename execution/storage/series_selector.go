@@ -79,11 +79,19 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	return seriesSet.Err()
 }
 
-func seriesShard(series []SignedSeries, shard int, numShards int) []SignedSeries {
-	start := shard * len(series) / numShards
-	end := (shard + 1) * len(series) / numShards
+func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries {
+	start := index * len(series) / numShards
+	end := (index + 1) * len(series) / numShards
 	if end > len(series) {
 		end = len(series)
 	}
-	return series[start:end]
+
+	slice := series[start:end]
+	shard := make([]SignedSeries, len(slice))
+	copy(shard, slice)
+
+	for i := range shard {
+		shard[i].Signature = uint64(i)
+	}
+	return shard
 }

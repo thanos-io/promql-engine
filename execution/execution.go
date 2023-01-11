@@ -20,6 +20,10 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/prometheus/prometheus/promql"
+
+	"github.com/thanos-community/promql-engine/execution/remote"
+
 	"github.com/efficientgo/core/errors"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -231,6 +235,25 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return nil, err
 		}
 		return step_invariant.NewStepInvariantOperator(model.NewVectorPool(stepsBatch), next, e.Expr, opts, stepsBatch)
+
+	case logicalplan.Coalesce:
+		operators := make([]model.VectorOperator, len(e.Expressions))
+		for i, expr := range e.Expressions {
+			operator, err := newOperator(expr, storage, opts, hints)
+			if err != nil {
+				return nil, err
+			}
+			operators[i] = operator
+		}
+		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+
+	case *logicalplan.RemoteExecution:
+		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{}, e.Query, opts.Start, opts.End, opts.Step)
+		if err != nil {
+			return nil, err
+		}
+
+		return exchange.NewConcurrent(remote.NewExecution(qry, model.NewVectorPool(stepsBatch), opts), 2), nil
 
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
