@@ -16,6 +16,7 @@ import (
 	engstore "github.com/thanos-community/promql-engine/execution/storage"
 	"github.com/thanos-community/promql-engine/query"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 
@@ -117,13 +118,17 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			_, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return nil, err
 			}
 			if ok {
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
-				vectors[currStep].Samples = append(vectors[currStep].Samples, v)
+				if h != nil {
+					vectors[currStep].HistogramSamples = append(vectors[currStep].HistogramSamples, h)
+				} else {
+					vectors[currStep].Samples = append(vectors[currStep].Samples, v)
+				}
 			}
 			seriesTs += o.step
 		}
@@ -163,7 +168,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 }
 
 // TODO(fpetkovski): Add max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, bool, error) {
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
 	refTime := ts - offset
 	var t int64
 	var v float64
@@ -172,10 +177,13 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	switch valueType {
 	case chunkenc.ValNone:
 		if it.Err() != nil {
-			return 0, 0, false, it.Err()
+			return 0, 0, nil, false, it.Err()
 		}
-	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-		return 0, 0, false, ErrNativeHistogramsUnsupported
+	case chunkenc.ValFloatHistogram:
+		return 0, 0, nil, false, ErrNativeHistogramsUnsupported
+	case chunkenc.ValHistogram:
+		t, h := it.AtHistogram()
+		return t, 0, h.ToFloat(), true, nil
 	case chunkenc.ValFloat:
 		t, v = it.At()
 	default:
@@ -185,11 +193,11 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 		var ok bool
 		t, v, _, _, ok = it.PeekPrev()
 		if !ok || t < refTime-lookbackDelta {
-			return 0, 0, false, nil
+			return 0, 0, nil, false, nil
 		}
 	}
 	if value.IsStaleNaN(v) {
-		return 0, 0, false, nil
+		return 0, 0, nil, false, nil
 	}
-	return t, v, true, nil
+	return t, v, nil, true, nil
 }

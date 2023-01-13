@@ -3,7 +3,10 @@
 
 package model
 
-import "github.com/prometheus/prometheus/model/labels"
+import (
+	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
+)
 
 type Series struct {
 	// ID is a numerical, zero-based identifier for a series.
@@ -13,7 +16,8 @@ type Series struct {
 }
 
 type StepVector struct {
-	T         int64
-	SampleIDs []uint64
-	Samples   []float64
+	T                int64
+	SampleIDs        []uint64
+	Samples          []float64
+	HistogramSamples []*histogram.FloatHistogram
 }

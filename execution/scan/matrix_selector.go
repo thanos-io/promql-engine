@@ -150,8 +150,12 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 			if result.Point != function.InvalidSample.Point {
 				vectors[currStep].T = result.T
-				vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
 				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
+				if result.H != nil {
+					vectors[currStep].HistogramSamples = append(vectors[currStep].HistogramSamples, result.H)
+				} else {
+					vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
+				}
 			}
 
 			o.scanners[i].previousPoints = rangePoints
@@ -252,8 +256,13 @@ loop:
 		switch buf.Next() {
 		case chunkenc.ValNone:
 			break loop
-		case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-			return nil, ErrNativeHistogramsUnsupported
+		case chunkenc.ValFloatHistogram:
+			return out, ErrNativeHistogramsUnsupported
+		case chunkenc.ValHistogram:
+			t, h := buf.AtHistogram()
+			if t >= mint {
+				out = append(out, promql.Point{T: t, H: h.ToFloat()})
+			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
 			if value.IsStaleNaN(v) {
@@ -268,8 +277,13 @@ loop:
 
 	// The sought sample might also be in the range.
 	switch soughtValueType {
-	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		return nil, ErrNativeHistogramsUnsupported
+	case chunkenc.ValFloatHistogram:
+		return out, ErrNativeHistogramsUnsupported
+	case chunkenc.ValHistogram:
+		t, h := it.AtHistogram()
+		if t == maxt {
+			out = append(out, promql.Point{T: t, H: h.ToFloat()})
+		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {

@@ -5,14 +5,17 @@ package model
 
 import (
 	"sync"
+
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 type VectorPool struct {
 	vectors sync.Pool
 
-	stepSize  int
-	samples   sync.Pool
-	sampleIDs sync.Pool
+	stepSize         int
+	samples          sync.Pool
+	sampleIDs        sync.Pool
+	histogramSamples sync.Pool
 }
 
 func NewVectorPool(stepsBatch int) *VectorPool {
@@ -35,7 +38,12 @@ func NewVectorPool(stepsBatch int) *VectorPool {
 			return &sampleIDs
 		},
 	}
-
+	pool.histogramSamples = sync.Pool{
+		New: func() any {
+			sampleIDs := make([]*histogram.FloatHistogram, 0, pool.stepSize)
+			return &sampleIDs
+		},
+	}
 	return pool
 }
 
@@ -50,9 +58,10 @@ func (p *VectorPool) PutVectors(vector []StepVector) {
 
 func (p *VectorPool) GetStepVector(t int64) StepVector {
 	return StepVector{
-		T:         t,
-		SampleIDs: *p.sampleIDs.Get().(*[]uint64),
-		Samples:   *p.samples.Get().(*[]float64),
+		T:                t,
+		SampleIDs:        *p.sampleIDs.Get().(*[]uint64),
+		Samples:          *p.samples.Get().(*[]float64),
+		HistogramSamples: *p.histogramSamples.Get().(*[]*histogram.FloatHistogram),
 	}
 }
 
@@ -61,6 +70,7 @@ func (p *VectorPool) PutStepVector(v StepVector) {
 	v.Samples = v.Samples[:0]
 	p.sampleIDs.Put(&v.SampleIDs)
 	p.samples.Put(&v.Samples)
+	p.histogramSamples.Put(&v.HistogramSamples)
 }
 
 func (p *VectorPool) SetStepSize(n int) {

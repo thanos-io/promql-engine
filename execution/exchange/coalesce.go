@@ -98,10 +98,11 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 			// Map input IDs to output IDs.
 			for _, vector := range in {
 				for i := range vector.SampleIDs {
-					vector.SampleIDs[i] += c.sampleOffsets[opIdx]
+					vector.SampleIDs[i] = vector.SampleIDs[i] + c.sampleOffsets[opIdx]
 				}
 			}
 			c.inVectors[opIdx] = in
+			o.GetPool().PutVectors(in)
 		}(idx, o)
 	}
 	c.wg.Wait()
@@ -121,7 +122,11 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 
 		for i := 0; i < len(vector); i++ {
-			out[i].Samples = append(out[i].Samples, vector[i].Samples...)
+			if len(vector[i].HistogramSamples) > 0 {
+				out[i].HistogramSamples = append(out[i].HistogramSamples, vector[i].HistogramSamples...)
+			} else {
+				out[i].Samples = append(out[i].Samples, vector[i].Samples...)
+			}
 			out[i].SampleIDs = append(out[i].SampleIDs, vector[i].SampleIDs...)
 			c.operators[opIdx].GetPool().PutStepVector(vector[i])
 		}
