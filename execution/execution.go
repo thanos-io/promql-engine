@@ -247,6 +247,13 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 		return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 
+	case logicalplan.Deduplicate:
+		operator, err := newOperator(e.Expr, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewConcurrent(exchange.NewDedupOperator(model.NewVectorPool(stepsBatch), operator), 2), nil
+
 	case *logicalplan.RemoteExecution:
 		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{}, e.Query, opts.Start, opts.End, opts.Step)
 		if err != nil {

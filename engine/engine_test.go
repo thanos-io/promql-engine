@@ -1445,35 +1445,40 @@ func TestDistributedAggregations(t *testing.T) {
 	end := time.Unix(120, 0)
 	step := time.Second * 30
 
-	ssetA := []storage.Series{
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "east", "pod", "nginx-1"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{1, 2, 3, 4, 5},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "east", "pod", "nginx-2"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{2, 3, 4, 5, 6},
-		),
+	makeSeries := func(region, pod string) []string {
+		return []string{labels.MetricName, "bar", "region", region, "pod", pod}
 	}
-	ssetB := []storage.Series{
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "west-1", "pod", "nginx-1"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{3, 4, 5, 6, 7},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "west-2", "pod", "nginx-1"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{4, 5, 6, 7, 8},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "west-1", "pod", "nginx-2"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{5, 6, 7, 8, 9},
-		),
+
+	regionEast := []storage.Series{
+		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{2, 3, 4, 5}),
+		newMockSeries(makeSeries("east", "nginx-2"), []int64{30000, 60000, 90000, 120000}, []float64{3, 4, 5, 6}),
 	}
+	regionWest := []storage.Series{
+		newMockSeries(makeSeries("west-1", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{4, 5, 6, 7}),
+		newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{5, 6, 7, 8}),
+		newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30000, 60000, 90000, 120000}, []float64{6, 7, 8, 9}),
+	}
+	timeBasedOverlap := []storage.Series{
+		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000}, []float64{2, 3}),
+	}
+
+	engineEast := engine.NewRemoteEngine(
+		localOpts, storageWithSeries(regionEast...),
+		120000,
+		[]labels.Labels{labels.FromStrings("region", "east")},
+	)
+	engineWest := engine.NewRemoteEngine(
+		localOpts,
+		storageWithSeries(regionWest...),
+		120000,
+		[]labels.Labels{labels.FromStrings("region", "west")},
+	)
+	engineOverlap := engine.NewRemoteEngine(
+		localOpts,
+		storageWithSeries(timeBasedOverlap...),
+		60000,
+		[]labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "west")},
+	)
 
 	queries := []struct {
 		name           string
@@ -1492,21 +1497,20 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
 	}
 
-	allSeries := storageWithSeries(append(ssetA, ssetB...)...)
+	seriesUnion := storageWithSeries(append(regionEast, regionWest...)...)
 	for _, tcase := range queries {
 		t.Run(tcase.name, func(t *testing.T) {
 			distOpts := localOpts
 			distOpts.DisableFallback = !tcase.expectFallback
-			distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints([]api.RemoteEngine{
-				engine.NewLocalEngine(localOpts, storageWithSeries(ssetA...)),
-				engine.NewLocalEngine(localOpts, storageWithSeries(ssetB...)),
-			}))
-			distQry, err := distEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
+			distEngine := engine.NewDistributedEngine(distOpts,
+				api.NewStaticEndpoints([]api.RemoteEngine{engineEast, engineWest, engineOverlap}),
+			)
+			distQry, err := distEngine.NewRangeQuery(seriesUnion, nil, tcase.query, start, end, step)
 			testutil.Ok(t, err)
 
 			distResult := distQry.Exec(context.Background())
 			promEngine := promql.NewEngine(localOpts.EngineOpts)
-			promQry, err := promEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
+			promQry, err := promEngine.NewRangeQuery(seriesUnion, nil, tcase.query, start, end, step)
 			testutil.Ok(t, err)
 			promResult := promQry.Exec(context.Background())
 

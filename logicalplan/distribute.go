@@ -5,11 +5,28 @@ package logicalplan
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/api"
 )
+
+type Deduplicate struct {
+	Expr parser.Expr
+}
+
+func (r Deduplicate) String() string {
+	return fmt.Sprintf("dedup(%s)", r.Expr)
+}
+
+func (r Deduplicate) Pretty(level int) string { return r.String() }
+
+func (r Deduplicate) PositionRange() parser.PositionRange { return parser.PositionRange{} }
+
+func (r Deduplicate) Type() parser.ValueType { return parser.ValueTypeMatrix }
+
+func (r Deduplicate) PromQLExpr() {}
 
 type Coalesce struct {
 	Expressions parser.Expressions
@@ -62,6 +79,14 @@ type DistributedExecutionOptimizer struct {
 
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 	engines := m.Endpoints.Engines()
+
+	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
+	// Sorting engines by max times ensures that samples produced due to staleness will be
+	// overwritten and corrected by samples coming from engines with a higher max time.
+	sort.Slice(engines, func(i, j int) bool {
+		return engines[i].MaxT() < engines[j].MaxT()
+	})
+
 	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current) {
@@ -75,7 +100,9 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 			if aggr.Op == parser.COUNT {
 				localAggregation = parser.SUM
 			}
-			subQueries := m.makeSubQueries(current, engines)
+
+			remoteAggregation := getRemoteAggregation(aggr, engines)
+			subQueries := m.makeSubQueries(&remoteAggregation, engines)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -99,7 +126,37 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 	return plan
 }
 
-func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr, engines []api.RemoteEngine) Coalesce {
+func getRemoteAggregation(aggr *parser.AggregateExpr, engines []api.RemoteEngine) parser.Expr {
+	groupingSet := make(map[string]struct{})
+	for _, lbl := range aggr.Grouping {
+		groupingSet[lbl] = struct{}{}
+	}
+
+	for _, engine := range engines {
+		for _, lbls := range engine.LabelSets() {
+			for _, lbl := range lbls {
+				if aggr.Without {
+					delete(groupingSet, lbl.Name)
+				} else {
+					groupingSet[lbl.Name] = struct{}{}
+				}
+			}
+		}
+	}
+
+	groupingLabels := make([]string, 0, len(groupingSet))
+	for lbl := range groupingSet {
+		groupingLabels = append(groupingLabels, lbl)
+	}
+
+	sort.Strings(groupingLabels)
+
+	remoteAggregation := *aggr
+	remoteAggregation.Grouping = groupingLabels
+	return &remoteAggregation
+}
+
+func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr, engines []api.RemoteEngine) Deduplicate {
 	remoteQueries := Coalesce{
 		Expressions: make(parser.Expressions, len(engines)),
 	}
@@ -109,7 +166,10 @@ func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr, engi
 			Query:  (*current).String(),
 		}
 	}
-	return remoteQueries
+
+	return Deduplicate{
+		Expr: remoteQueries,
+	}
 }
 
 func isDistributive(expr *parser.Expr) bool {
