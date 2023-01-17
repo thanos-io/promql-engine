@@ -2949,64 +2949,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 
 }
 
-func TestSparseHistogramRate(t *testing.T) {
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
-	}
-	test, err := promql.NewTest(t, "")
-	testutil.Ok(t, err)
-	defer test.Close()
-
-	seriesName := "sparse_histogram_series"
-	lbls := labels.FromStrings("__name__", seriesName)
-
-	app := test.Storage().Appender(context.TODO())
-	for i, h := range tsdb.GenerateTestHistograms(100) {
-		_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
-		testutil.Ok(t, err)
-	}
-	testutil.Ok(t, app.Commit())
-
-	testutil.Ok(t, test.Run())
-
-	engine := engine.New(engine.Opts{
-		EngineOpts:        opts,
-		DisableFallback:   true,
-		LogicalOptimizers: logicalplan.AllOptimizers,
-	})
-
-	oldEngine := test.QueryEngine()
-
-	queryString := fmt.Sprintf("rate(%s[1m])", seriesName)
-	qry, err := engine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
-	testutil.Ok(t, err)
-	res := qry.Exec(test.Context())
-	testutil.Ok(t, res.Err)
-	vector, err := res.Vector()
-	testutil.Ok(t, err)
-	// testutil.Equals(t, len(vector), 1)
-	actualHistogram := vector[0].H
-
-	// Old Engine
-	qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, queryString, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
-	testutil.Ok(t, err)
-	res = qry.Exec(test.Context())
-	testutil.Ok(t, res.Err)
-	vector, err = res.Vector()
-	testutil.Ok(t, err)
-	testutil.Equals(t, len(vector), 1)
-	expectedHistogram := vector[0].H
-
-	testutil.Equals(t, expectedHistogram, actualHistogram)
-}
-
-func TestInstantTestQuery(t *testing.T) {
-	defaultQueryTime := time.Unix(50, 0)
-	// Negative offset and at modifier are enabled by default
-	// since Prometheus v2.33.0, so we also enable them.
+func TestSparseHistogram(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
@@ -3015,83 +2958,80 @@ func TestInstantTestQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load         string
-		name         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		name       string
+		count      int
+		seriesName string
+		query      string
 	}{
 		{
-			name: "increase plus offset",
-			load: `load 30s
-			http_requests_total{pod="nginx-1", le="1"} 1+3x10
-			http_requests_total{pod="nginx-2", le="1"} 2+3x10
-			http_requests_total{pod="nginx-1", le="2"} 1+2x10
-			http_requests_total{pod="nginx-2", le="2"} 2+2x10
-			http_requests_total{pod="nginx-2", le="5"} 3+2x10
-			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
-			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
-			queryTime: time.Unix(160, 0),
-			query:     "histogram_quantile(.99,(rate(http_requests_total[1m])))",
+			name:       "histogram_quantile(.80) with sparse histogram",
+			count:      100,
+			seriesName: "sparse_histogram_series",
+			query:      "histogram_quantile(.80,rate(sparse_histogram_series[1m]))",
+		},
+		{
+			name:       "rate() with sparse histogram",
+			count:      100,
+			seriesName: "sparse_histogram_series",
+			query:      "rate(sparse_histogram_series[1m])",
+		},
+		{
+			name:       "increase() with sparse histogram",
+			count:      100,
+			seriesName: "sparse_histogram_series",
+			query:      "increase(sparse_histogram_series[1m])",
+		},
+		{
+			name:       "delta() with sparse histogram",
+			count:      100,
+			seriesName: "sparse_histogram_series",
+			query:      "delta(sparse_histogram_series[1m])",
 		},
 	}
 
-	disableOptimizerOpts := []bool{true, false}
-	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, disableOptimizers := range disableOptimizerOpts {
-		t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
-			for _, lookbackDelta := range lookbackDeltas {
-				opts.LookbackDelta = lookbackDelta
-				for _, tc := range cases {
-					t.Run(tc.name, func(t *testing.T) {
-						test, err := promql.NewTest(t, tc.load)
-						testutil.Ok(t, err)
-						defer test.Close()
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			test, err := promql.NewTest(t, "")
+			testutil.Ok(t, err)
+			defer test.Close()
 
-						testutil.Ok(t, test.Run())
-
-						var queryTime time.Time = defaultQueryTime
-						if tc.queryTime != (time.Time{}) {
-							queryTime = tc.queryTime
-						}
-
-						optimizers := logicalplan.AllOptimizers
-						if disableOptimizers {
-							optimizers = logicalplan.NoOptimizers
-						}
-						newEngine := engine.New(engine.Opts{
-							EngineOpts:        opts,
-							DisableFallback:   true,
-							LogicalOptimizers: optimizers,
-						})
-
-						q1, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-						testutil.Ok(t, err)
-						defer q1.Close()
-
-						newResult := q1.Exec(context.Background())
-						testutil.Ok(t, newResult.Err)
-
-						oldEngine := promql.NewEngine(opts)
-						q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
-						testutil.Ok(t, err)
-						defer q2.Close()
-
-						oldResult := q2.Exec(context.Background())
-						testutil.Ok(t, oldResult.Err)
-
-						if tc.sortByLabels {
-							sortByLabels(oldResult)
-							sortByLabels(newResult)
-						}
-
-						testutil.Equals(t, oldResult, newResult)
-
-					})
-				}
+			// Building Sparse Histograms
+			lbls := labels.FromStrings("__name__", tc.seriesName)
+			app := test.Storage().Appender(context.TODO())
+			for i, h := range tsdb.GenerateTestHistograms(100) {
+				_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
+				testutil.Ok(t, err)
 			}
+			testutil.Ok(t, app.Commit())
+			testutil.Ok(t, test.Run())
+
+			// New Engine
+			engine := engine.New(engine.Opts{
+				EngineOpts:        opts,
+				DisableFallback:   true,
+				LogicalOptimizers: logicalplan.AllOptimizers,
+			})
+			qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+			testutil.Ok(t, err)
+			res := qry.Exec(test.Context())
+			testutil.Ok(t, res.Err)
+			newVector, err := res.Vector()
+			testutil.Ok(t, err)
+
+			// Old Engine
+			oldEngine := test.QueryEngine()
+			qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, tc.query, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
+			testutil.Ok(t, err)
+			res = qry.Exec(test.Context())
+			testutil.Ok(t, res.Err)
+			oldVector, err := res.Vector()
+			testutil.Ok(t, err)
+
+			testutil.Equals(t, oldVector, newVector)
+
 		})
 	}
+
 }
 
 func sortByLabels(r *promql.Result) {

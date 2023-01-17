@@ -40,8 +40,8 @@ func NewVectorPool(stepsBatch int) *VectorPool {
 	}
 	pool.histogramSamples = sync.Pool{
 		New: func() any {
-			sampleIDs := make([]*histogram.FloatHistogram, 0, pool.stepSize)
-			return &sampleIDs
+			histogramSamples := make([]*histogram.FloatHistogram, 0, pool.stepSize)
+			return &histogramSamples
 		},
 	}
 	return pool
@@ -68,6 +68,7 @@ func (p *VectorPool) GetStepVector(t int64) StepVector {
 func (p *VectorPool) PutStepVector(v StepVector) {
 	v.SampleIDs = v.SampleIDs[:0]
 	v.Samples = v.Samples[:0]
+	v.HistogramSamples = v.HistogramSamples[:0]
 	p.sampleIDs.Put(&v.SampleIDs)
 	p.samples.Put(&v.Samples)
 	p.histogramSamples.Put(&v.HistogramSamples)

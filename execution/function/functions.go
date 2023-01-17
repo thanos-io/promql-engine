@@ -316,7 +316,7 @@ var Funcs = map[string]FunctionCall{
 		if len(f.Points) < 2 {
 			return InvalidSample
 		}
-		v, h := extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange, f.Offset)
+		v, h := extrapolatedRate(f.Points, false, false, f.StepTime, f.SelectRange, f.Offset)
 		return promql.Sample{
 			Metric: f.Labels,
 			Point: promql.Point{
@@ -330,7 +330,7 @@ var Funcs = map[string]FunctionCall{
 		if len(f.Points) < 2 {
 			return InvalidSample
 		}
-		v, h := extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange, f.Offset)
+		v, h := extrapolatedRate(f.Points, true, false, f.StepTime, f.SelectRange, f.Offset)
 		return promql.Sample{
 			Metric: f.Labels,
 			Point: promql.Point{
@@ -423,7 +423,7 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime i
 	if samples[0].H != nil {
 		resultHistogram = histogramRate(samples, isCounter)
 	} else {
-		resultValue := samples[len(samples)-1].V - samples[0].V
+		resultValue = samples[len(samples)-1].V - samples[0].V
 		if isCounter {
 			var lastValue float64
 			for _, sample := range samples {
