@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"github.com/prometheus/prometheus/util/stats"
 	"math"
 	"os"
 	"reflect"
@@ -2422,6 +2423,34 @@ func TestFallback(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQueryStats(t *testing.T) {
+	start := time.Unix(0, 0)
+	end := time.Unix(120, 0)
+	step := time.Second * 30
+
+	query := `http_requests_total{pod="nginx-1"}`
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x1
+				http_requests_total{pod="nginx-2"} 1+2x1`
+	opts := promql.EngineOpts{
+		Timeout:    2 * time.Second,
+		MaxSamples: math.MaxInt64,
+	}
+
+	test, err := promql.NewTest(t, load)
+	testutil.Ok(t, err)
+	defer test.Close()
+
+	newEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts})
+	q, err := newEngine.NewRangeQuery(test.Storage(), nil, query, start, end, step)
+	testutil.Ok(t, err)
+	stats.NewQueryStats(q.Stats())
+
+	q, err = newEngine.NewInstantQuery(test.Storage(), nil, query, end)
+	testutil.Ok(t, err)
+	stats.NewQueryStats(q.Stats())
 }
 
 func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
