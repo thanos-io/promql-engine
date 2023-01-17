@@ -6,7 +6,6 @@ package engine_test
 import (
 	"context"
 	"fmt"
-	"github.com/prometheus/prometheus/util/stats"
 	"math"
 	"os"
 	"reflect"
@@ -25,6 +24,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/stats"
 	"go.uber.org/goleak"
 
 	"github.com/thanos-community/promql-engine/engine"
