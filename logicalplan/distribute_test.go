@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"math"
 	"regexp"
 	"testing"
 	"time"
@@ -26,10 +27,10 @@ func TestDistributedExecution(t *testing.T) {
 			expr: `sum by (pod) (rate(http_requests_total[5m]))`,
 			expected: `
 sum by (pod) (
-  coalesce(
+  dedup(coalesce(
     remote(sum by (pod, region) (rate(http_requests_total[5m]))),
     remote(sum by (pod, region) (rate(http_requests_total[5m])))
-  )
+  ))
 )`,
 		},
 		{
@@ -37,10 +38,10 @@ sum by (pod) (
 			expr: `sum without (pod, region) (rate(http_requests_total[5m]))`,
 			expected: `
 sum without (pod, region) (
-  coalesce(
+  dedup(coalesce(
     remote(sum without (pod) (rate(http_requests_total[5m]))),
     remote(sum without (pod) (rate(http_requests_total[5m])))
-  )
+  ))
 )`,
 		},
 		{
@@ -48,10 +49,10 @@ sum without (pod, region) (
 			expr: `avg by (pod) (http_requests_total)`,
 			expected: `
 avg by (pod) (
-  coalesce(
+  dedup(coalesce(
     remote(http_requests_total),
     remote(http_requests_total)
-  )
+  ))
 )`,
 		},
 		{
@@ -60,10 +61,10 @@ avg by (pod) (
 			expected: `
 max by (pod) (
   sum by (pod) ( 
-    coalesce(
+    dedup(coalesce(
       remote(sum by (pod, region) (http_requests_total)),
       remote(sum by (pod, region) (http_requests_total))
-    )
+    ))
   )
 )`,
 		},
@@ -72,9 +73,9 @@ max by (pod) (
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
 max by (pod) (
-  coalesce(remote(metric_a), remote(metric_a)) 
+  dedup(coalesce(remote(metric_a), remote(metric_a))) 
   / 
-  coalesce(remote(metric_b), remote(metric_b))
+  dedup(coalesce(remote(metric_b), remote(metric_b)))
 )
 `,
 		},
@@ -83,10 +84,10 @@ max by (pod) (
 			expr: `max by (pod) (sort(avg(http_requests_total)))`,
 			expected: `
 max by (pod) (sort(avg(
-  coalesce(
+  dedup(coalesce(
     remote(http_requests_total),
     remote(http_requests_total)
-  )
+  ))
 )))`,
 		},
 		{
@@ -94,32 +95,32 @@ max by (pod) (sort(avg(
 			expr: `max by (pod) (sort(metric_a / metric_b))`,
 			expected: `
 max by (pod) (sort(
-  coalesce(remote(metric_a), remote(metric_a)) 
+  dedup(coalesce(remote(metric_a), remote(metric_a))) 
   / 
-  coalesce(remote(metric_b), remote(metric_b))
+  dedup(coalesce(remote(metric_b), remote(metric_b)))
 ))`,
 		},
 		{
 			name: "binary operation with aggregations",
 			expr: `sum by (pod) (metric_a) / sum by (pod) (metric_b)`,
 			expected: `
-sum by (pod) (coalesce(
+sum by (pod) (dedup(coalesce(
   remote(sum by (pod, region) (metric_a)), 
   remote(sum by (pod, region) (metric_a)))
-) 
+))
 / 
-sum by (pod) (coalesce(
+sum by (pod) (dedup(coalesce(
   remote(sum by (pod, region) (metric_b)), 
-  remote(sum by (pod, region) (metric_b)))
+  remote(sum by (pod, region) (metric_b))))
 )`,
 		},
 		{
 			name: "function sharding",
 			expr: `rate(http_requests_total[2m])`,
 			expected: `
-coalesce(
+dedup(coalesce(
   remote(rate(http_requests_total[2m])), 
-  remote(rate(http_requests_total[2m])))`,
+  remote(rate(http_requests_total[2m]))))`,
 		},
 	}
 
@@ -150,6 +151,10 @@ coalesce(
 type engineMock struct {
 	api.RemoteEngine
 	labelSets []labels.Labels
+}
+
+func (e engineMock) MaxT() int64 {
+	return math.MaxInt64
 }
 
 func (e engineMock) LabelSets() []labels.Labels {
