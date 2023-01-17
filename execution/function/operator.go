@@ -188,31 +188,40 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		scalarIndex++
 	}
 
-	for batchIndex, vector := range vectors {
+	for batchIndex := range vectors {
 		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
 		// So need to handle this separately here, instead of going via call which is per point.
 		if o.funcExpr.Func.Name == "scalar" {
-			if len(vector.Samples) <= 1 {
+			if len(vectors[batchIndex].Samples) <= 1 {
 				continue
 			}
 
-			vectors[batchIndex].Samples = vector.Samples[:1]
-			vectors[batchIndex].SampleIDs = vector.SampleIDs[:1]
-			vector.Samples[0] = math.NaN()
+			vectors[batchIndex].Samples = vectors[batchIndex].Samples[:1]
+			vectors[batchIndex].SampleIDs = vectors[batchIndex].SampleIDs[:1]
+			vectors[batchIndex].Samples[0] = math.NaN()
 			continue
 		}
-
-		for i := range vector.Samples {
-			o.pointBuf[0].V = vector.Samples[i]
+		i := 0
+		for {
+			if i == len(vectors[batchIndex].Samples) {
+				break
+			}
+			o.pointBuf[0].V = vectors[batchIndex].Samples[i]
 			// Call function by separately passing major input and scalars.
 			result := o.call(FunctionArgs{
 				Labels:       o.series[0],
 				Points:       o.pointBuf,
-				StepTime:     vector.T,
+				StepTime:     vectors[batchIndex].T,
 				ScalarPoints: o.scalarPoints[batchIndex],
 			})
 
-			vector.Samples[i] = result.V
+			if result.Point == InvalidSample.Point {
+				vectors[batchIndex].SampleIDs = append(vectors[batchIndex].SampleIDs[:i], vectors[batchIndex].SampleIDs[i+1:]...)
+				vectors[batchIndex].Samples = append(vectors[batchIndex].Samples[:i], vectors[batchIndex].Samples[i+1:]...)
+				continue
+			}
+			vectors[batchIndex].Samples[i] = result.V
+			i++
 		}
 	}
 

@@ -501,10 +501,10 @@ func histogramRate(points []promql.Point, isCounter bool) *histogram.FloatHistog
 		minSchema = last.Schema
 	}
 
+	// https://github.com/prometheus/prometheus/blob/ccea61c7bf1e6bce2196ba8189a209945a204c5b/promql/functions.go#L183
 	// First iteration to find out two things:
 	// - What's the smallest relevant schema?
 	// - Are all data points histograms?
-	//   TODO(beorn7): Find a way to check that earlier, e.g. by handing in a
 	//   []FloatPoint and a []HistogramPoint separately.
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.H

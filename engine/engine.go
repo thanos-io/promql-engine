@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -392,22 +391,22 @@ loop:
 					if len(series[s].Points) == 0 {
 						series[s].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
 					}
-					if len(vector.HistogramSamples) > 0 {
-						series[s].Points = append(series[s].Points, promql.Point{
-							T: vector.T,
-							H: vector.HistogramSamples[i],
-						})
-					} else if i < len(vector.Samples) {
-						series[s].Points = append(series[s].Points, promql.Point{
-							T: vector.T,
-							V: vector.Samples[i],
-						})
+					series[s].Points = append(series[s].Points, promql.Point{
+						T: vector.T,
+						V: vector.Samples[i],
+					})
 
-					} else {
-						a := series[s].Points
-						fmt.Printf("ding %d", len(a))
-					}
 				}
+				for i, s := range vector.HistogramSampleIDs {
+					if len(series[s].Points) == 0 {
+						series[s].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
+					}
+					series[s].Points = append(series[s].Points, promql.Point{
+						T: vector.T,
+						H: vector.HistogramSamples[i],
+					})
+				}
+
 				q.Query.exec.GetPool().PutStepVector(vector)
 			}
 			q.Query.exec.GetPool().PutVectors(r)

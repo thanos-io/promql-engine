@@ -1181,6 +1181,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `histogram_quantile(0.9, http_requests_total)`,
 		},
 		{
+			name: "histogram quantile on partially malformed data",
+			load: `load 30s
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="2"} 2+3x10
+			http_requests_total{pod="nginx-3"} 3+3x10
+			http_requests_total{pod="nginx-4"} 4+3x10`,
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		// TODO: uncomment once support for testing NaNs is added.
+		{
 			name: "histogram quantile on malformed, interleaved data",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+3x10
@@ -2949,7 +2959,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 
 }
 
-func TestSparseHistogram(t *testing.T) {
+func TestNativeHistogram(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
@@ -2958,34 +2968,68 @@ func TestSparseHistogram(t *testing.T) {
 	}
 
 	cases := []struct {
-		name       string
-		count      int
-		seriesName string
-		query      string
+		name        string
+		count       int
+		metricsName string
+		labels      []string
+		query       string
+		mixedSample bool
 	}{
 		{
-			name:       "histogram_quantile(.80) with sparse histogram",
-			count:      100,
-			seriesName: "sparse_histogram_series",
-			query:      "histogram_quantile(.80,rate(sparse_histogram_series[1m]))",
+			name:        "irate() with native and counter histogram",
+			count:       100,
+			metricsName: "native_histogram_series_total",
+			query:       "irate(native_histogram_series_total[1m])",
+			mixedSample: true,
 		},
 		{
-			name:       "rate() with sparse histogram",
-			count:      100,
-			seriesName: "sparse_histogram_series",
-			query:      "rate(sparse_histogram_series[1m])",
+			name:        "irate() with native histogram",
+			count:       100,
+			metricsName: "native_histogram_series_total",
+			query:       "irate(native_histogram_series_total[1m])",
+			mixedSample: false,
 		},
 		{
-			name:       "increase() with sparse histogram",
-			count:      100,
-			seriesName: "sparse_histogram_series",
-			query:      "increase(sparse_histogram_series[1m])",
+			name:        "rate() with native and counter histogram",
+			count:       100,
+			metricsName: "native_histogram_series_total",
+			query:       "rate(native_histogram_series_total[1m])",
+			mixedSample: true,
 		},
 		{
-			name:       "delta() with sparse histogram",
-			count:      100,
-			seriesName: "sparse_histogram_series",
-			query:      "delta(sparse_histogram_series[1m])",
+			name:        "rate() with native histogram",
+			count:       100,
+			metricsName: "native_histogram_series",
+			query:       "rate(native_histogram_series[1m])",
+			mixedSample: false,
+		},
+		{
+			name:        "increase() with native and counter histogram",
+			count:       100,
+			metricsName: "native_histogram_series",
+			query:       "increase(native_histogram_series[1m])",
+			mixedSample: true,
+		},
+		{
+			name:        "increase() with native histogram",
+			count:       100,
+			metricsName: "native_histogram_series",
+			query:       "increase(native_histogram_series[1m])",
+			mixedSample: false,
+		},
+		{
+			name:        "delta() with native and counter histogram",
+			count:       100,
+			metricsName: "native_histogram_series",
+			query:       "delta(native_histogram_series[1m])",
+			mixedSample: true,
+		},
+		{
+			name:        "delta() with native histogram",
+			count:       100,
+			metricsName: "native_histogram_series",
+			query:       "delta(native_histogram_series[1m])",
+			mixedSample: false,
 		},
 	}
 
@@ -2995,13 +3039,23 @@ func TestSparseHistogram(t *testing.T) {
 			testutil.Ok(t, err)
 			defer test.Close()
 
-			// Building Sparse Histograms
-			lbls := labels.FromStrings("__name__", tc.seriesName)
+			// Building native histograms
+			tc.labels = append(tc.labels, "__name__", tc.metricsName)
+			lbls := labels.FromStrings(tc.labels...)
 			app := test.Storage().Appender(context.TODO())
-			for i, h := range tsdb.GenerateTestHistograms(100) {
-				_, err := app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
+			for i, h := range tsdb.GenerateTestHistograms(tc.count) {
+				if tc.mixedSample {
+					_, err = app.Append(0, labels.FromStrings(append(tc.labels, "le", "1")...), int64(i)*int64(15*time.Second/time.Millisecond), float64(i))
+					testutil.Ok(t, err)
+					_, err = app.Append(0, labels.FromStrings(append(tc.labels, "le", "2")...), int64(i)*int64(15*time.Second/time.Millisecond), float64(i))
+					testutil.Ok(t, err)
+					_, err = app.Append(0, labels.FromStrings(append(tc.labels, "le", "3")...), int64(i)*int64(15*time.Second/time.Millisecond), float64(i))
+					testutil.Ok(t, err)
+				}
+				_, err = app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
 				testutil.Ok(t, err)
 			}
+
 			testutil.Ok(t, app.Commit())
 			testutil.Ok(t, test.Run())
 
@@ -3011,6 +3065,7 @@ func TestSparseHistogram(t *testing.T) {
 				DisableFallback:   true,
 				LogicalOptimizers: logicalplan.AllOptimizers,
 			})
+
 			qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
 			testutil.Ok(t, err)
 			res := qry.Exec(test.Context())

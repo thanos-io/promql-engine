@@ -117,48 +117,40 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]model.StepVector, error) {
 	out := o.pool.GetVectorBatch()
 	for stepIndex, vector := range vectors {
-		step := o.pool.GetStepVector(vector.T)
-		if len(vector.HistogramSamples) > 0 {
-			// Deal with the sparse histograms.
-			for i, sample := range vector.HistogramSamples {
-				val := histogramQuantile(o.scalarPoints[stepIndex], sample)
-				step.SampleIDs = append(step.SampleIDs, uint64(i))
-				step.Samples = append(step.Samples, val)
+		o.resetBuckets()
+		for i, seriesID := range vector.SampleIDs {
+			outputSeries := o.outputIndex[seriesID]
+			// This means that it has an invalid `le` label.
+			if outputSeries == nil {
+				continue
 			}
-		} else {
-			o.resetBuckets()
-			for i, seriesID := range vector.SampleIDs {
-				outputSeries := o.outputIndex[seriesID]
-				// This means that it has an invalid `le` label.
-				if outputSeries == nil {
-					continue
-				}
-				outputSeriesID := outputSeries.outputID
-				bucket := le{
-					upperBound: outputSeries.upperBound,
-					count:      vector.Samples[i],
-				}
-				o.seriesBuckets[outputSeriesID] = append(o.seriesBuckets[outputSeriesID], bucket)
+			outputSeriesID := outputSeries.outputID
+			bucket := le{
+				upperBound: outputSeries.upperBound,
+				count:      vector.Samples[i],
 			}
-
-			for i, stepBuckets := range o.seriesBuckets {
-				// It could be zero if multiple input series map to the same output series ID.
-				if len(stepBuckets) == 0 {
-					continue
-				}
-				// If there is only bucket or if we are after how many
-				// scalar points we have then it needs to be NaN.
-				if len(stepBuckets) == 1 || stepIndex >= len(o.scalarPoints) {
-					step.SampleIDs = append(step.SampleIDs, uint64(i))
-					step.Samples = append(step.Samples, math.NaN())
-					continue
-				}
-
-				val := bucketQuantile(o.scalarPoints[stepIndex], stepBuckets)
-				step.SampleIDs = append(step.SampleIDs, uint64(i))
-				step.Samples = append(step.Samples, val)
-			}
+			o.seriesBuckets[outputSeriesID] = append(o.seriesBuckets[outputSeriesID], bucket)
 		}
+
+		step := o.pool.GetStepVector(vector.T)
+		for i, stepBuckets := range o.seriesBuckets {
+			// It could be zero if multiple input series map to the same output series ID.
+			if len(stepBuckets) == 0 {
+				continue
+			}
+			// If there is only bucket or if we are after how many
+			// scalar points we have then it needs to be NaN.
+			if len(stepBuckets) == 1 || stepIndex >= len(o.scalarPoints) {
+				step.SampleIDs = append(step.SampleIDs, uint64(i))
+				step.Samples = append(step.Samples, math.NaN())
+				continue
+			}
+
+			val := bucketQuantile(o.scalarPoints[stepIndex], stepBuckets)
+			step.SampleIDs = append(step.SampleIDs, uint64(i))
+			step.Samples = append(step.Samples, val)
+		}
+
 		out = append(out, step)
 		o.vectorOp.GetPool().PutStepVector(vector)
 	}
@@ -184,12 +176,9 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 
 	for i, s := range series {
 		lbls, bucketLabel := dropLabel(s.Copy(), "le")
-		var value float64
-		if len(bucketLabel.Name) > 0 {
-			value, err = strconv.ParseFloat(bucketLabel.Value, 64)
-			if err != nil {
-				continue
-			}
+		value, err := strconv.ParseFloat(bucketLabel.Value, 64)
+		if err != nil {
+			continue
 		}
 		lbls, _ = DropMetricName(lbls)
 

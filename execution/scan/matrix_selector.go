@@ -150,11 +150,12 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 			if result.Point != function.InvalidSample.Point {
 				vectors[currStep].T = result.T
-				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				if result.H != nil {
 					vectors[currStep].HistogramSamples = append(vectors[currStep].HistogramSamples, result.H)
+					vectors[currStep].HistogramSampleIDs = append(vectors[currStep].HistogramSampleIDs, series.signature)
 				} else {
 					vectors[currStep].Samples = append(vectors[currStep].Samples, result.V)
+					vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				}
 			}
 

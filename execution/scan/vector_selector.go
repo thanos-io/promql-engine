@@ -123,11 +123,12 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				return nil, err
 			}
 			if ok {
-				vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				if h != nil {
 					vectors[currStep].HistogramSamples = append(vectors[currStep].HistogramSamples, h)
+					vectors[currStep].HistogramSampleIDs = append(vectors[currStep].HistogramSampleIDs, series.signature)
 				} else {
 					vectors[currStep].Samples = append(vectors[currStep].Samples, v)
+					vectors[currStep].SampleIDs = append(vectors[currStep].SampleIDs, series.signature)
 				}
 			}
 			seriesTs += o.step

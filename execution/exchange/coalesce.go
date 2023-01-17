@@ -100,9 +100,11 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 				for i := range vector.SampleIDs {
 					vector.SampleIDs[i] = vector.SampleIDs[i] + c.sampleOffsets[opIdx]
 				}
+				for i := range vector.HistogramSampleIDs {
+					vector.HistogramSampleIDs[i] = vector.HistogramSampleIDs[i] + c.sampleOffsets[opIdx]
+				}
 			}
 			c.inVectors[opIdx] = in
-			o.GetPool().PutVectors(in)
 		}(idx, o)
 	}
 	c.wg.Wait()
@@ -122,11 +124,9 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 
 		for i := 0; i < len(vector); i++ {
-			if len(vector[i].HistogramSamples) > 0 {
-				out[i].HistogramSamples = append(out[i].HistogramSamples, vector[i].HistogramSamples...)
-			} else {
-				out[i].Samples = append(out[i].Samples, vector[i].Samples...)
-			}
+			out[i].HistogramSampleIDs = append(out[i].HistogramSampleIDs, vector[i].HistogramSampleIDs...)
+			out[i].HistogramSamples = append(out[i].HistogramSamples, vector[i].HistogramSamples...)
+			out[i].Samples = append(out[i].Samples, vector[i].Samples...)
 			out[i].SampleIDs = append(out[i].SampleIDs, vector[i].SampleIDs...)
 			c.operators[opIdx].GetPool().PutStepVector(vector[i])
 		}

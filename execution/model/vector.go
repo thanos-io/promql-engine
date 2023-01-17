@@ -16,8 +16,9 @@ type Series struct {
 }
 
 type StepVector struct {
-	T                int64
-	SampleIDs        []uint64
-	Samples          []float64
-	HistogramSamples []*histogram.FloatHistogram
+	T                  int64
+	SampleIDs          []uint64
+	Samples            []float64
+	HistogramSampleIDs []uint64
+	HistogramSamples   []*histogram.FloatHistogram
 }
