@@ -6,6 +6,7 @@ package function
 import (
 	"fmt"
 	"math"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -386,6 +387,46 @@ var Funcs = map[string]FunctionCall{
 			},
 		}
 	},
+	"days_in_month": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
+		})
+	},
+	"day_of_month": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.Day())
+		})
+	},
+	"day_of_week": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.Weekday())
+		})
+	},
+	"day_of_year": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.YearDay())
+		})
+	},
+	"hour": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.Hour())
+		})
+	},
+	"minute": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.Minute())
+		})
+	},
+	"month": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.Month())
+		})
+	},
+	"year": func(f FunctionArgs) promql.Sample {
+		return dateWrapper(f, func(t time.Time) float64 {
+			return float64(t.Year())
+		})
+	},
 }
 
 func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
@@ -674,4 +715,20 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 		c += (inc - t) + sum
 	}
 	return t, c
+}
+
+// Common code for date related functions.
+func dateWrapper(fa FunctionArgs, f func(time.Time) float64) promql.Sample {
+	if len(fa.Points) == 0 {
+		return promql.Sample{
+			Metric: labels.Labels{},
+			Point:  promql.Point{V: f(time.Unix(fa.StepTime/1000, 0).UTC())},
+		}
+	}
+	t := time.Unix(int64(fa.Points[0].V), 0).UTC()
+	lbls, _ := DropMetricName(fa.Labels)
+	return promql.Sample{
+		Metric: lbls,
+		Point:  promql.Point{V: f(t)},
+	}
 }

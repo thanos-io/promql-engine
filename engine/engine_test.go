@@ -1055,6 +1055,118 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(60000, 0),
 		},
 		{
+			name: "days_in_month with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month(http_requests_total)",
+		},
+		{
+			name: "days_in_month without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month()",
+		},
+		{
+			name: "day_of_month with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_month(http_requests_total)",
+		},
+		{
+			name: "day_of_month without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_month()",
+		},
+		{
+			name: "day_of_week with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month(http_requests_total)",
+		},
+		{
+			name: "day_of_week without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month()",
+		},
+		{
+			name: "day_of_year with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_year(http_requests_total)",
+		},
+		{
+			name: "day_of_year without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_year()",
+		},
+		{
+			name: "hour with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "hour(http_requests_total)",
+		},
+		{
+			name: "hour without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "hour()",
+		},
+		{
+			name: "minute with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "minute(http_requests_total)",
+		},
+		{
+			name: "minute without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "minute()",
+		},
+		{
+			name: "month with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "month(http_requests_total)",
+		},
+		{
+			name: "month without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "month()",
+		},
+		{
+			name: "year with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "year(http_requests_total)",
+		},
+		{
+			name: "year without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "year()",
+		},
+		{
 			name: "selector merge",
 			load: `load 30s
 					http_requests_total{pod="nginx-1", ns="nginx"} 1+1x15
