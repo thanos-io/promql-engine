@@ -345,6 +345,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "absent(http_requests_total[30s])",
 		},
 		{
+			name: "absent",
+			load: `load 30s`,
+			query: "absent(http_requests_total[30s])",
+		},
+		{
 			name: "average",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
