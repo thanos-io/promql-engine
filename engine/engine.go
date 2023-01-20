@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 
+	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"io"
@@ -174,11 +175,12 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	}
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exec, opts: opts},
-		engine: e,
-		expr:   expr,
-		ts:     ts,
-		t:      InstantQuery,
+		Query:      &Query{exec: exec, opts: opts},
+		engine:     e,
+		expr:       expr,
+		ts:         ts,
+		t:          InstantQuery,
+		resultSort: newResultSort(expr),
 	}, nil
 }
 
@@ -233,12 +235,83 @@ func (q *Query) Profile() {
 	// TODO(bwplotka): Return profile.
 }
 
+type sortOrder bool
+
+const (
+	sortOrderAsc  sortOrder = false
+	sortOrderDesc sortOrder = true
+)
+
+type resultSort struct {
+	sortByValues  bool
+	sortOrder     sortOrder
+	sortingLabels []string
+	groupBy       bool
+}
+
+func newResultSort(expr parser.Expr) resultSort {
+	aggr, ok := expr.(*parser.AggregateExpr)
+	if !ok {
+		return resultSort{}
+	}
+
+	switch aggr.Op {
+	case parser.TOPK:
+		return resultSort{
+			sortByValues:  true,
+			sortingLabels: aggr.Grouping,
+			sortOrder:     sortOrderDesc,
+			groupBy:       !aggr.Without,
+		}
+	case parser.BOTTOMK:
+		return resultSort{
+			sortByValues:  true,
+			sortingLabels: aggr.Grouping,
+			sortOrder:     sortOrderAsc,
+			groupBy:       !aggr.Without,
+		}
+	default:
+		return resultSort{}
+	}
+}
+
+func (s resultSort) comparer(samples *promql.Vector) func(i int, j int) bool {
+	return func(i int, j int) bool {
+		if !s.sortByValues {
+			return i < j
+		}
+
+		var iLbls labels.Labels
+		var jLbls labels.Labels
+		iLb := labels.NewBuilder((*samples)[i].Metric)
+		jLb := labels.NewBuilder((*samples)[j].Metric)
+		if s.groupBy {
+			iLbls = iLb.Keep(s.sortingLabels...).Labels(nil)
+			jLbls = jLb.Keep(s.sortingLabels...).Labels(nil)
+		} else {
+			iLbls = iLb.Del(s.sortingLabels...).Labels(nil)
+			jLbls = jLb.Del(s.sortingLabels...).Labels(nil)
+		}
+
+		lblsCmp := labels.Compare(iLbls, jLbls)
+		if lblsCmp != 0 {
+			return lblsCmp < 0
+		}
+
+		if s.sortOrder == sortOrderAsc {
+			return (*samples)[i].V < (*samples)[j].V
+		}
+		return (*samples)[i].V > (*samples)[j].V
+	}
+}
+
 type compatibilityQuery struct {
 	*Query
-	engine *compatibilityEngine
-	expr   parser.Expr
-	ts     time.Time // Empty for range queries.
-	t      QueryType
+	engine     *compatibilityEngine
+	expr       parser.Expr
+	ts         time.Time // Empty for range queries.
+	t          QueryType
+	resultSort resultSort
 
 	cancel context.CancelFunc
 }
@@ -352,6 +425,7 @@ loop:
 				},
 			})
 		}
+		sort.Slice(vector, q.resultSort.comparer(&vector))
 		result = vector
 	case parser.ValueTypeScalar:
 		v := math.NaN()
