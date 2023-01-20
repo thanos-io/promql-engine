@@ -18,6 +18,8 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/thanos-community/promql-engine/api"
+	"github.com/thanos-community/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
@@ -30,9 +32,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
 	"go.uber.org/goleak"
-
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
 func TestMain(m *testing.M) {
@@ -1391,7 +1390,12 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 								if oldResult.Err == nil {
 									testutil.Ok(t, newResult.Err)
-									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+									if hasNaNs(oldResult) {
+										t.Log("Applying comparison with NaN equality.")
+										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+									} else {
+										testutil.Equals(t, oldResult, newResult)
+									}
 								} else {
 									testutil.NotOk(t, newResult.Err)
 								}
@@ -1402,6 +1406,29 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			})
 		}
 	}
+}
+
+func hasNaNs(result *promql.Result) bool {
+	switch result := result.Value.(type) {
+	case promql.Matrix:
+		for _, vector := range result {
+			for _, point := range vector.Points {
+				if math.IsNaN(point.V) {
+					return true
+				}
+			}
+		}
+	case promql.Vector:
+		for _, point := range result {
+			if math.IsNaN(point.V) {
+				return true
+			}
+		}
+	case promql.Scalar:
+		return math.IsNaN(result.V)
+	}
+
+	return false
 }
 
 func TestDistributedAggregations(t *testing.T) {
@@ -2260,7 +2287,12 @@ func TestInstantQuery(t *testing.T) {
 									sortByLabels(newResult)
 								}
 
-								testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+								if hasNaNs(oldResult) {
+									t.Log("Applying comparison with NaN equality.")
+									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+								} else {
+									testutil.Equals(t, oldResult, newResult)
+								}
 							})
 						}
 					})
