@@ -1460,6 +1460,8 @@ func TestDistributedAggregations(t *testing.T) {
 	}
 	timeBasedOverlap := []storage.Series{
 		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000}, []float64{2, 3}),
+		newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30000, 60000}, []float64{5, 6}),
+		newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30000, 60000}, []float64{6, 7}),
 	}
 
 	engineEast := engine.NewRemoteEngine(

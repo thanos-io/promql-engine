@@ -4,7 +4,6 @@
 package logicalplan
 
 import (
-	"math"
 	"regexp"
 	"testing"
 	"time"
@@ -26,22 +25,19 @@ func TestDistributedExecution(t *testing.T) {
 			name: "sum-rate",
 			expr: `sum by (pod) (rate(http_requests_total[5m]))`,
 			expected: `
-sum by (pod) (
-  dedup(coalesce(
-    remote(sum by (pod, region) (rate(http_requests_total[5m]))),
-    remote(sum by (pod, region) (rate(http_requests_total[5m])))
-  ))
-)`,
+sum by (pod) (dedup(
+  remote(sum by (pod, region) (rate(http_requests_total[5m]))), 
+  remote(sum by (pod, region) (rate(http_requests_total[5m])))))`,
 		},
 		{
 			name: "sum-rate without labels preserves engine labels",
 			expr: `sum without (pod, region) (rate(http_requests_total[5m]))`,
 			expected: `
 sum without (pod, region) (
-  dedup(coalesce(
+  dedup(
     remote(sum without (pod) (rate(http_requests_total[5m]))),
     remote(sum without (pod) (rate(http_requests_total[5m])))
-  ))
+  )
 )`,
 		},
 		{
@@ -49,10 +45,10 @@ sum without (pod, region) (
 			expr: `avg by (pod) (http_requests_total)`,
 			expected: `
 avg by (pod) (
-  dedup(coalesce(
+  dedup(
     remote(http_requests_total),
     remote(http_requests_total)
-  ))
+  )
 )`,
 		},
 		{
@@ -61,10 +57,10 @@ avg by (pod) (
 			expected: `
 max by (pod) (
   sum by (pod) ( 
-    dedup(coalesce(
+    dedup(
       remote(sum by (pod, region) (http_requests_total)),
       remote(sum by (pod, region) (http_requests_total))
-    ))
+    )
   )
 )`,
 		},
@@ -73,9 +69,9 @@ max by (pod) (
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
 max by (pod) (
-  dedup(coalesce(remote(metric_a), remote(metric_a))) 
+  dedup(remote(metric_a), remote(metric_a)) 
   / 
-  dedup(coalesce(remote(metric_b), remote(metric_b)))
+  dedup(remote(metric_b), remote(metric_b))
 )
 `,
 		},
@@ -84,10 +80,10 @@ max by (pod) (
 			expr: `max by (pod) (sort(avg(http_requests_total)))`,
 			expected: `
 max by (pod) (sort(avg(
-  dedup(coalesce(
+  dedup(
     remote(http_requests_total),
     remote(http_requests_total)
-  ))
+  )
 )))`,
 		},
 		{
@@ -95,38 +91,39 @@ max by (pod) (sort(avg(
 			expr: `max by (pod) (sort(metric_a / metric_b))`,
 			expected: `
 max by (pod) (sort(
-  dedup(coalesce(remote(metric_a), remote(metric_a))) 
+  dedup(remote(metric_a), remote(metric_a)) 
   / 
-  dedup(coalesce(remote(metric_b), remote(metric_b)))
+  dedup(remote(metric_b), remote(metric_b))
 ))`,
 		},
 		{
 			name: "binary operation with aggregations",
 			expr: `sum by (pod) (metric_a) / sum by (pod) (metric_b)`,
 			expected: `
-sum by (pod) (dedup(coalesce(
+sum by (pod) (dedup(
   remote(sum by (pod, region) (metric_a)), 
   remote(sum by (pod, region) (metric_a)))
-))
+)
 / 
-sum by (pod) (dedup(coalesce(
+sum by (pod) (dedup(
   remote(sum by (pod, region) (metric_b)), 
-  remote(sum by (pod, region) (metric_b))))
-)`,
+  remote(sum by (pod, region) (metric_b))
+))`,
 		},
 		{
 			name: "function sharding",
 			expr: `rate(http_requests_total[2m])`,
 			expected: `
-dedup(coalesce(
+dedup(
   remote(rate(http_requests_total[2m])), 
-  remote(rate(http_requests_total[2m]))))`,
+  remote(rate(http_requests_total[2m]))
+)`,
 		},
 	}
 
 	engines := []api.RemoteEngine{
-		newEngineMock([]labels.Labels{labels.FromStrings("region", "east")}),
-		newEngineMock([]labels.Labels{labels.FromStrings("region", "west")}),
+		newEngineMock(1, []labels.Labels{labels.FromStrings("region", "east")}),
+		newEngineMock(2, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
 	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 	replacements := map[string]*regexp.Regexp{
@@ -150,17 +147,18 @@ dedup(coalesce(
 
 type engineMock struct {
 	api.RemoteEngine
+	maxT      int64
 	labelSets []labels.Labels
 }
 
 func (e engineMock) MaxT() int64 {
-	return math.MaxInt64
+	return e.maxT
 }
 
 func (e engineMock) LabelSets() []labels.Labels {
 	return e.labelSets
 }
 
-func newEngineMock(labelSets []labels.Labels) *engineMock {
-	return &engineMock{labelSets: labelSets}
+func newEngineMock(maxT int64, labelSets []labels.Labels) *engineMock {
+	return &engineMock{maxT: maxT, labelSets: labelSets}
 }

@@ -6,6 +6,7 @@ package exchange
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -25,7 +26,7 @@ func (c errorChan) getError() error {
 	return nil
 }
 
-// coalesce is a model.VectorOperator that merges input vectors from multiple downsteam operators
+// coalesce is a model.VectorOperator that merges input vectors from multiple downstream operators
 // into a single output vector.
 // coalesce guarantees that samples from different input vectors will be added to the output in the same order
 // as the input vectors themselves are provided in NewCoalesce.
@@ -137,7 +138,6 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 
 func (c *coalesce) loadSeries(ctx context.Context) error {
 	var wg sync.WaitGroup
-	var mu sync.Mutex
 	var numSeries uint64
 	allSeries := make([][]labels.Labels, len(c.operators))
 	errChan := make(errorChan, len(c.operators))
@@ -164,9 +164,7 @@ func (c *coalesce) loadSeries(ctx context.Context) error {
 			}
 
 			allSeries[i] = series
-			mu.Lock()
-			numSeries += uint64(len(series))
-			mu.Unlock()
+			atomic.AddUint64(&numSeries, uint64(len(series)))
 		}(i)
 	}
 	wg.Wait()
@@ -175,13 +173,11 @@ func (c *coalesce) loadSeries(ctx context.Context) error {
 		return err
 	}
 
-	var offset uint64
 	c.sampleOffsets = make([]uint64, len(c.operators))
 	c.series = make([]labels.Labels, 0, numSeries)
 	for i, series := range allSeries {
-		c.sampleOffsets[i] = offset
+		c.sampleOffsets[i] = uint64(len(c.series))
 		c.series = append(c.series, series...)
-		offset += uint64(len(series))
 	}
 
 	c.pool.SetStepSize(len(c.series))

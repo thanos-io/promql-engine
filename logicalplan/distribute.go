@@ -6,44 +6,25 @@ package logicalplan
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-community/promql-engine/api"
 )
 
-type Deduplicate struct {
-	Expr parser.Expr
+type RemoteExecutions []RemoteExecution
+
+func (rs RemoteExecutions) String() string {
+	parts := make([]string, len(rs))
+	for i, r := range rs {
+		parts[i] = r.String()
+	}
+	return strings.Join(parts, ", ")
 }
 
-func (r Deduplicate) String() string {
-	return fmt.Sprintf("dedup(%s)", r.Expr)
-}
-
-func (r Deduplicate) Pretty(level int) string { return r.String() }
-
-func (r Deduplicate) PositionRange() parser.PositionRange { return parser.PositionRange{} }
-
-func (r Deduplicate) Type() parser.ValueType { return parser.ValueTypeMatrix }
-
-func (r Deduplicate) PromQLExpr() {}
-
-type Coalesce struct {
-	Expressions parser.Expressions
-}
-
-func (r Coalesce) String() string {
-	return fmt.Sprintf("coalesce(%s)", r.Expressions)
-}
-
-func (r Coalesce) Pretty(level int) string { return r.String() }
-
-func (r Coalesce) PositionRange() parser.PositionRange { return parser.PositionRange{} }
-
-func (r Coalesce) Type() parser.ValueType { return parser.ValueTypeMatrix }
-
-func (r Coalesce) PromQLExpr() {}
-
+// RemoteExecution is a logical plan that describes a
+// remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
 	Engine api.RemoteEngine
 	Query  string
@@ -61,6 +42,25 @@ func (r RemoteExecution) Type() parser.ValueType { return parser.ValueTypeMatrix
 
 func (r RemoteExecution) PromQLExpr() {}
 
+// Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
+type Deduplicate struct {
+	Expressions RemoteExecutions
+}
+
+func (r Deduplicate) String() string {
+	return fmt.Sprintf("dedup(%s)", r.Expressions.String())
+}
+
+func (r Deduplicate) Pretty(level int) string { return r.String() }
+
+func (r Deduplicate) PositionRange() parser.PositionRange { return parser.PositionRange{} }
+
+func (r Deduplicate) Type() parser.ValueType { return parser.ValueTypeMatrix }
+
+func (r Deduplicate) PromQLExpr() {}
+
+// distributiveAggregations are all PromQL aggregations which support
+// distributed execution.
 var distributiveAggregations = map[parser.ItemType]struct{}{
 	parser.SUM:     {},
 	parser.MIN:     {},
@@ -80,13 +80,6 @@ type DistributedExecutionOptimizer struct {
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 	engines := m.Endpoints.Engines()
 
-	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
-	// Sorting engines by max times ensures that samples produced due to staleness will be
-	// overwritten and corrected by samples coming from engines with a higher max time.
-	sort.Slice(engines, func(i, j int) bool {
-		return engines[i].MaxT() < engines[j].MaxT()
-	})
-
 	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current) {
@@ -101,7 +94,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 				localAggregation = parser.SUM
 			}
 
-			remoteAggregation := getRemoteAggregation(aggr, engines)
+			remoteAggregation := newRemoteAggregation(aggr, engines)
 			subQueries := m.makeSubQueries(&remoteAggregation, engines)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
@@ -126,16 +119,16 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 	return plan
 }
 
-func getRemoteAggregation(aggr *parser.AggregateExpr, engines []api.RemoteEngine) parser.Expr {
+func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.RemoteEngine) parser.Expr {
 	groupingSet := make(map[string]struct{})
-	for _, lbl := range aggr.Grouping {
+	for _, lbl := range rootAggregation.Grouping {
 		groupingSet[lbl] = struct{}{}
 	}
 
 	for _, engine := range engines {
 		for _, lbls := range engine.LabelSets() {
 			for _, lbl := range lbls {
-				if aggr.Without {
+				if rootAggregation.Without {
 					delete(groupingSet, lbl.Name)
 				} else {
 					groupingSet[lbl.Name] = struct{}{}
@@ -148,27 +141,24 @@ func getRemoteAggregation(aggr *parser.AggregateExpr, engines []api.RemoteEngine
 	for lbl := range groupingSet {
 		groupingLabels = append(groupingLabels, lbl)
 	}
-
 	sort.Strings(groupingLabels)
 
-	remoteAggregation := *aggr
+	remoteAggregation := *rootAggregation
 	remoteAggregation.Grouping = groupingLabels
 	return &remoteAggregation
 }
 
 func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr, engines []api.RemoteEngine) Deduplicate {
-	remoteQueries := Coalesce{
-		Expressions: make(parser.Expressions, len(engines)),
-	}
+	remoteQueries := make(RemoteExecutions, len(engines))
 	for i := 0; i < len(engines); i++ {
-		remoteQueries.Expressions[i] = &RemoteExecution{
+		remoteQueries[i] = RemoteExecution{
 			Engine: engines[i],
 			Query:  (*current).String(),
 		}
 	}
 
 	return Deduplicate{
-		Expr: remoteQueries,
+		Expressions: remoteQueries,
 	}
 }
 

@@ -20,6 +20,11 @@ type dedupSample struct {
 // The dedupCache is an internal cache used to deduplicate samples inside a single step vector.
 type dedupCache []dedupSample
 
+// dedupOperator is a model.VectorOperator that deduplicates samples with
+// same IDs inside a single model.StepVector.
+// Deduplication is done using a last-sample-wins strategy, which means that
+// if multiple samples with the same ID are present in a StepVector, dedupOperator
+// will keep the last sample in that vector.
 type dedupOperator struct {
 	once   sync.Once
 	series []labels.Labels
