@@ -15,7 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/thanos-community/promql-engine/api"
+	"github.com/thanos-community/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
@@ -28,9 +32,6 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
 	"go.uber.org/goleak"
-
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
 func TestMain(m *testing.M) {
@@ -1072,15 +1073,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	+ on() group_left()
 	sum(http_requests_total{ns="nginx"})`,
 		},
-		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
-		// {
-		// 	name: "scalar func with NaN",
-		// 	load: `load 30s
-		//  	http_requests_total{pod="nginx-1"} 1+1x15
-		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
+		{
+			name: "scalar func with NaN",
+			load: `load 30s
+		 	http_requests_total{pod="nginx-1"} 1+1x15
+		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(http_requests_total)`,
+		},
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
@@ -1180,46 +1179,44 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2"} 2+3x10`,
 			query: `histogram_quantile(0.9, http_requests_total)`,
 		},
-		// TODO: uncomment once support for testing NaNs is added.
-		/*
-			{
-				name: "histogram quantile on malformed, interleaved data",
-				load: `load 30s
+		{
+			name: "histogram quantile on malformed, interleaved data",
+			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+3x10
 					http_requests_total{pod="nginx-2"} 2+3x10
 					http_requests_total{pod="nginx-3", le="0.05"} 2+3x10
 					http_requests_total{pod="nginx-4", le="0.1"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},
-			{
-				name: "histogram quantile on malformed, interleaved data 2",
-				load: `load 30s
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile on malformed, interleaved data 2",
+			load: `load 30s
 					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
 					http_requests_total{pod="nginx-2", le="0.02"} 2+3x10
 					http_requests_total{pod="nginx-3"} 2+3x10
 					http_requests_total{pod="nginx-4"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},
-			{
-				name: "histogram quantile on malformed, interleaved data 3",
-				load: `load 30s
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile on malformed, interleaved data 3",
+			load: `load 30s
 					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
 					http_requests_total{pod="nginx-2"} 2+3x10
 					http_requests_total{pod="nginx-3"} 2+3x10
 					http_requests_total{pod="nginx-4", le="0.03"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},
-			{
-				name: "histogram quantile on malformed, interleaved data 4",
-				load: `load 30s
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile on malformed, interleaved data 4",
+			load: `load 30s
 					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
 					http_requests_total{pod="nginx-2"} 2+3x10
 					http_requests_total{pod="nginx-2", le="0.05"} 2+3x10
 					http_requests_total{pod="nginx-2", le="0.2"} 2+3x10
 					http_requests_total{pod="nginx-3"} 2+3x10
 					http_requests_total{pod="nginx-4", le="0.03"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},*/
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
 		{
 			name: "histogram quantile with sum",
 			load: `load 30s
@@ -1232,20 +1229,19 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
 			query: `histogram_quantile(0.9, sum by (pod, le) (rate(http_requests_total[2m])))`,
 		},
-		// TODO(fpetkovski): Uncomment once support for testing NaNs is added.
-		//{
-		//	name: "histogram quantile with scalar operator",
-		//	load: `load 30s
-		//	quantile{pod="nginx-1", le="1"} 1+1x2
-		//	http_requests_total{pod="nginx-1", le="1"} 1+3x10
-		//	http_requests_total{pod="nginx-2", le="1"} 2+3x10
-		//	http_requests_total{pod="nginx-1", le="2"} 1+2x10
-		//	http_requests_total{pod="nginx-2", le="2"} 2+2x10
-		//	http_requests_total{pod="nginx-2", le="5"} 3+2x10
-		//	http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
-		//	http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
-		//	query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
-		//},
+		{
+			name: "histogram quantile with scalar operator",
+			load: `load 30s
+			quantile{pod="nginx-1", le="1"} 1+1x2
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
+		},
 		{
 			name: "topk",
 			load: `load 30s
@@ -1394,7 +1390,12 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 								if oldResult.Err == nil {
 									testutil.Ok(t, newResult.Err)
-									testutil.Equals(t, oldResult, newResult)
+									if hasNaNs(oldResult) {
+										t.Log("Applying comparison with NaN equality.")
+										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+									} else {
+										testutil.Equals(t, oldResult, newResult)
+									}
 								} else {
 									testutil.NotOk(t, newResult.Err)
 								}
@@ -1405,6 +1406,29 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			})
 		}
 	}
+}
+
+func hasNaNs(result *promql.Result) bool {
+	switch result := result.Value.(type) {
+	case promql.Matrix:
+		for _, vector := range result {
+			for _, point := range vector.Points {
+				if math.IsNaN(point.V) {
+					return true
+				}
+			}
+		}
+	case promql.Vector:
+		for _, point := range result {
+			if math.IsNaN(point.V) {
+				return true
+			}
+		}
+	case promql.Scalar:
+		return math.IsNaN(result.V)
+	}
+
+	return false
 }
 
 func TestDistributedAggregations(t *testing.T) {
@@ -2133,15 +2157,13 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
-		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
-		// {
-		// 	name: "scalar func with NaN",
-		// 	load: `load 30s
-		//  	http_requests_total{pod="nginx-1"} 1+1x15
-		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
+		{
+			name: "scalar func with NaN",
+			load: `load 30s
+		 	http_requests_total{pod="nginx-1"} 1+1x15
+		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(http_requests_total)`,
+		},
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
@@ -2265,7 +2287,12 @@ func TestInstantQuery(t *testing.T) {
 									sortByLabels(newResult)
 								}
 
-								testutil.Equals(t, oldResult, newResult)
+								if hasNaNs(oldResult) {
+									t.Log("Applying comparison with NaN equality.")
+									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+								} else {
+									testutil.Equals(t, oldResult, newResult)
+								}
 							})
 						}
 					})

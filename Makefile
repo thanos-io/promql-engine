@@ -30,7 +30,7 @@ export GOCACHE=/tmp/cache
 test:
 	@echo ">> running unit tests (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test -v -race -timeout=1m $(shell go list ./...);
+	@go test -v -race -timeout=5m $(shell go list ./...);
 
 .PHONY: deps
 deps: ## Ensures fresh go.mod and go.sum.
