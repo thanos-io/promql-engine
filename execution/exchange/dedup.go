@@ -33,7 +33,7 @@ type dedupOperator struct {
 	next model.VectorOperator
 	// outputIndex is a slice that is used as an index from input sample ID to output sample ID.
 	outputIndex []uint64
-	outputCache dedupCache
+	dedupCache  dedupCache
 }
 
 func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator) model.VectorOperator {
@@ -62,12 +62,16 @@ func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	for _, vector := range in {
 		for i, inputSampleID := range vector.SampleIDs {
 			outputSampleID := d.outputIndex[inputSampleID]
-			d.outputCache[outputSampleID].t = vector.T
-			d.outputCache[outputSampleID].v = vector.Samples[i]
+			d.dedupCache[outputSampleID].t = vector.T
+			d.dedupCache[outputSampleID].v = vector.Samples[i]
 		}
 
 		out := d.pool.GetStepVector(vector.T)
-		for outputSampleID, sample := range d.outputCache {
+		for outputSampleID, sample := range d.dedupCache {
+			// To avoid clearing the dedup cache for each step vector, we use the `t` field
+			// to detect whether a sample for the current step should be mapped to the output.
+			// If the timestamp of the sample does not match the input vector timestamp, it means that
+			// the sample was added in a previous iteration and should be skipped.
 			if sample.t == vector.T {
 				out.SampleIDs = append(out.SampleIDs, uint64(outputSampleID))
 				out.Samples = append(out.Samples, sample.v)
@@ -122,9 +126,9 @@ func (d *dedupOperator) loadSeries(ctx context.Context) error {
 		outputSeriesID := outputIndex[hash]
 		d.outputIndex[inputSeriesID] = outputSeriesID
 	}
-	d.outputCache = make(dedupCache, len(outputIndex))
-	for i := range d.outputCache {
-		d.outputCache[i].t = -1
+	d.dedupCache = make(dedupCache, len(outputIndex))
+	for i := range d.dedupCache {
+		d.dedupCache[i].t = -1
 	}
 
 	return nil
