@@ -119,6 +119,15 @@ dedup(
   remote(rate(http_requests_total[2m]))
 )`,
 		},
+		{
+			name: `histogram quantile`,
+			expr: `histogram_quantile(0.5, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket[5m])))`,
+			expected: `
+histogram_quantile(0.5, sum by (le) (dedup(
+  remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m]))), 
+  remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m])))
+)))`,
+		},
 	}
 
 	engines := []api.RemoteEngine{
