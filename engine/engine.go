@@ -64,29 +64,41 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 	return o.LogicalOptimizers
 }
 
-type localEngine struct {
-	q      storage.Queryable
-	engine *compatibilityEngine
+type remoteEngine struct {
+	q         storage.Queryable
+	engine    *compatibilityEngine
+	labelSets []labels.Labels
+	maxt      int64
 }
 
-func NewLocalEngine(opts Opts, q storage.Queryable) *localEngine {
-	return &localEngine{
-		q:      q,
-		engine: New(opts),
+func NewRemoteEngine(opts Opts, q storage.Queryable, maxt int64, labelSets []labels.Labels) *remoteEngine {
+	return &remoteEngine{
+		q:         q,
+		labelSets: labelSets,
+		maxt:      maxt,
+		engine:    New(opts),
 	}
 }
 
-func (l localEngine) NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (l remoteEngine) MaxT() int64 {
+	return l.maxt
+}
+
+func (l remoteEngine) LabelSets() []labels.Labels {
+	return l.labelSets
+}
+
+func (l remoteEngine) NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	return l.engine.NewInstantQuery(l.q, opts, qs, ts)
 }
 
-func (l localEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+func (l remoteEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	return l.engine.NewRangeQuery(l.q, opts, qs, start, end, interval)
 }
 
 type distributedEngine struct {
-	endpoints   api.RemoteEndpoints
-	localEngine *compatibilityEngine
+	endpoints    api.RemoteEndpoints
+	remoteEngine *compatibilityEngine
 }
 
 func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngine {
@@ -95,19 +107,19 @@ func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngi
 		logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
 	)
 	return &distributedEngine{
-		endpoints:   endpoints,
-		localEngine: New(opts),
+		endpoints:    endpoints,
+		remoteEngine: New(opts),
 	}
 }
 
 func (l distributedEngine) SetQueryLogger(log promql.QueryLogger) {}
 
 func (l distributedEngine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	return l.localEngine.NewInstantQuery(q, opts, qs, ts)
+	return l.remoteEngine.NewInstantQuery(q, opts, qs, ts)
 }
 
 func (l distributedEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
-	return l.localEngine.NewRangeQuery(q, opts, qs, start, end, interval)
+	return l.remoteEngine.NewRangeQuery(q, opts, qs, start, end, interval)
 }
 
 func New(opts Opts) *compatibilityEngine {
