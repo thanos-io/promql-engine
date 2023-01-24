@@ -1339,6 +1339,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name: "sgn",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} -10+1x50`,
+			query: "sgn(http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -2236,6 +2246,13 @@ func TestInstantQuery(t *testing.T) {
 				http_requests_total{pod="nginx-1"} 1+1x15
 				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)) + 10)`,
+		},
+		{
+			name: "sgn",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} -10+1x50`,
+			query: "sgn(http_requests_total)",
 		},
 	}
 
