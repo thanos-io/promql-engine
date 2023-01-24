@@ -377,6 +377,22 @@ var Funcs = map[string]FunctionCall{
 			},
 		}
 	},
+
+	"sgn": func(f FunctionArgs) promql.Sample {
+		var sign float64
+		if f.Points[0].V > 0 {
+			sign = 1
+		} else if f.Points[0].V < 0 {
+			sign = -1
+		}
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: sign,
+			},
+		}
+	},
 }
 
 func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
