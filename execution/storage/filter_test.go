@@ -6,6 +6,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	promstg "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
 	"github.com/thanos-community/promql-engine/execution/storage"
 )
 
