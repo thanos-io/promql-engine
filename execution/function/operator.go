@@ -42,21 +42,23 @@ type noArgFunctionOperator struct {
 	funcExpr    *parser.Call
 	call        FunctionCall
 	vectorPool  *model.VectorPool
+	series      []labels.Labels
+	sampleIDs   []uint64
 }
 
 func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*noArgFunctionOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{}
 }
 
-func (o *noArgFunctionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
-	return []labels.Labels{}, nil
+func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {
+	return o.series, nil
 }
 
 func (o *noArgFunctionOperator) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *noArgFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
@@ -68,7 +70,7 @@ func (o *noArgFunctionOperator) Next(ctx context.Context) ([]model.StepVector, e
 		})
 		sv.T = o.currentStep
 		sv.Samples = []float64{result.V}
-		sv.SampleIDs = []uint64{}
+		sv.SampleIDs = o.sampleIDs
 
 		ret = append(ret, sv)
 		o.currentStep += o.step
@@ -86,7 +88,7 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 			interval = 1
 		}
 
-		return &noArgFunctionOperator{
+		op := &noArgFunctionOperator{
 			currentStep: opts.Start.UnixMilli(),
 			mint:        opts.Start.UnixMilli(),
 			maxt:        opts.End.UnixMilli(),
@@ -95,7 +97,17 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 			funcExpr:    funcExpr,
 			call:        call,
 			vectorPool:  model.NewVectorPool(stepsBatch),
-		}, nil
+		}
+
+		switch funcExpr.Func.Name {
+		case "pi", "time", "scalar":
+		default:
+			// Other functions require non-nil labels.
+			op.series = []labels.Labels{{}}
+			op.sampleIDs = []uint64{0}
+		}
+
+		return op, nil
 	}
 	scalarPoints := make([][]float64, stepsBatch)
 	for i := 0; i < stepsBatch; i++ {
