@@ -76,8 +76,7 @@ func (t *scalarTable) toVector(pool *model.VectorPool) model.StepVector {
 	result := pool.GetStepVector(t.timestamp)
 	for i, v := range t.outputs {
 		if t.accumulators[i].HasValue() {
-			result.SampleIDs = append(result.SampleIDs, v.ID)
-			result.Samples = append(result.Samples, t.accumulators[i].ValueFunc())
+			result.AppendSample(pool, v.ID, t.accumulators[i].ValueFunc())
 		}
 	}
 	return result

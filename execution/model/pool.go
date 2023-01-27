@@ -12,11 +12,10 @@ import (
 type VectorPool struct {
 	vectors sync.Pool
 
-	stepSize           int
-	samples            sync.Pool
-	sampleIDs          sync.Pool
-	histogramSampleIDs sync.Pool
-	histogramSamples   sync.Pool
+	stepSize   int
+	samples    sync.Pool
+	sampleIDs  sync.Pool
+	histograms sync.Pool
 }
 
 func NewVectorPool(stepsBatch int) *VectorPool {
@@ -39,18 +38,13 @@ func NewVectorPool(stepsBatch int) *VectorPool {
 			return &sampleIDs
 		},
 	}
-	pool.histogramSamples = sync.Pool{
+	pool.histograms = sync.Pool{
 		New: func() any {
-			histogramSamples := make([]*histogram.FloatHistogram, 0, pool.stepSize)
-			return &histogramSamples
+			histograms := make([]*histogram.FloatHistogram, 0, pool.stepSize)
+			return &histograms
 		},
 	}
-	pool.histogramSampleIDs = sync.Pool{
-		New: func() any {
-			histogramSampleIDs := make([]uint64, 0, pool.stepSize)
-			return &histogramSampleIDs
-		},
-	}
+
 	return pool
 }
 
@@ -64,23 +58,33 @@ func (p *VectorPool) PutVectors(vector []StepVector) {
 }
 
 func (p *VectorPool) GetStepVector(t int64) StepVector {
-	return StepVector{
-		T:                  t,
-		SampleIDs:          *p.sampleIDs.Get().(*[]uint64),
-		Samples:            *p.samples.Get().(*[]float64),
-		HistogramSampleIDs: *p.histogramSampleIDs.Get().(*[]uint64),
-		HistogramSamples:   *p.histogramSamples.Get().(*[]*histogram.FloatHistogram),
-	}
+	return StepVector{T: t}
+}
+
+func (p *VectorPool) getSampleBuffers() ([]uint64, []float64) {
+	return *p.sampleIDs.Get().(*[]uint64), *p.samples.Get().(*[]float64)
+}
+
+func (p *VectorPool) getHistogramBuffers() ([]uint64, []*histogram.FloatHistogram) {
+	return *p.sampleIDs.Get().(*[]uint64), *p.histograms.Get().(*[]*histogram.FloatHistogram)
 }
 
 func (p *VectorPool) PutStepVector(v StepVector) {
-	v.SampleIDs = v.SampleIDs[:0]
-	v.Samples = v.Samples[:0]
-	v.HistogramSampleIDs = v.HistogramSampleIDs[:0]
-	v.HistogramSamples = v.HistogramSamples[:0]
-	p.sampleIDs.Put(&v.SampleIDs)
-	p.samples.Put(&v.Samples)
-	p.histogramSamples.Put(&v.HistogramSamples)
+	if v.SampleIDs != nil {
+		v.SampleIDs = v.SampleIDs[:0]
+		p.sampleIDs.Put(&v.SampleIDs)
+
+		v.Samples = v.Samples[:0]
+		p.samples.Put(&v.Samples)
+	}
+
+	if v.HistogramIDs != nil {
+		v.Histograms = v.Histograms[:0]
+		p.histograms.Put(&v.Histograms)
+
+		v.HistogramIDs = v.HistogramIDs[:0]
+		p.sampleIDs.Put(&v.HistogramIDs)
+	}
 }
 
 func (p *VectorPool) SetStepSize(n int) {
