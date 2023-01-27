@@ -1095,6 +1095,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `sum(rate(metric{err!~".+"}[5m])) / sum(rate(metric{}[5m]))`,
 		},
 		{
+			name: "binop with negative matcher using regex, both sides have data",
+			load: `load 30s
+					metric{} 1+2x5
+					metric{err="FooBarKey"} 1+2x20`,
+			query: `sum(rate(metric{err!~".+"}[5m])) / sum(rate(metric{}[5m]))`,
+		},
+		{
 			name: "scalar func with NaN",
 			load: `load 30s
 		 	http_requests_total{pod="nginx-1"} 1+1x15
