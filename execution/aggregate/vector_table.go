@@ -58,10 +58,7 @@ func (t *vectorTable) toVector(pool *model.VectorPool) model.StepVector {
 	if !t.hasValue {
 		return result
 	}
-
-	result.T = t.timestamp
-	result.SampleIDs = append(result.SampleIDs, 0)
-	result.Samples = append(result.Samples, t.value)
+	result.AppendSample(pool, 0, t.value)
 	return result
 }
 

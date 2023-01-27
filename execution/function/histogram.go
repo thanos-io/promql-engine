@@ -141,14 +141,12 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 			// If there is only bucket or if we are after how many
 			// scalar points we have then it needs to be NaN.
 			if len(stepBuckets) == 1 || stepIndex >= len(o.scalarPoints) {
-				step.SampleIDs = append(step.SampleIDs, uint64(i))
-				step.Samples = append(step.Samples, math.NaN())
+				step.AppendSample(o.pool, uint64(i), math.NaN())
 				continue
 			}
 
 			val := bucketQuantile(o.scalarPoints[stepIndex], stepBuckets)
-			step.SampleIDs = append(step.SampleIDs, uint64(i))
-			step.Samples = append(step.Samples, val)
+			step.AppendSample(o.pool, uint64(i), val)
 		}
 
 		out = append(out, step)
