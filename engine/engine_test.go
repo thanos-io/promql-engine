@@ -2968,125 +2968,86 @@ func TestNativeHistogram(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		count       int
-		metricsName string
-		labels      []string
-		query       string
-		mixedSample bool
+		name  string
+		query string
 	}{
 		{
-			name:        "irate() with native and counter histogram",
-			count:       100,
-			metricsName: "native_histogram_series_total",
-			query:       "irate(native_histogram_series_total[1m])",
-			mixedSample: true,
+			name:  "plain selector",
+			query: "native_histogram_series",
 		},
 		{
-			name:        "irate() with native histogram",
-			count:       100,
-			metricsName: "native_histogram_series_total",
-			query:       "irate(native_histogram_series_total[1m])",
-			mixedSample: false,
+			name:  "irate() with native histogram",
+			query: "rate(native_histogram_series[1m])",
 		},
 		{
-			name:        "rate() with native and counter histogram",
-			count:       100,
-			metricsName: "native_histogram_series_total",
-			query:       "rate(native_histogram_series_total[1m])",
-			mixedSample: true,
+			name:  "rate() with native histogram",
+			query: "rate(native_histogram_series[1m])",
 		},
 		{
-			name:        "rate() with native histogram",
-			count:       100,
-			metricsName: "native_histogram_series",
-			query:       "rate(native_histogram_series[1m])",
-			mixedSample: false,
+			name:  "increase() with native histogram",
+			query: "increase(native_histogram_series[1m])",
 		},
 		{
-			name:        "increase() with native and counter histogram",
-			count:       100,
-			metricsName: "native_histogram_series",
-			query:       "increase(native_histogram_series[1m])",
-			mixedSample: true,
-		},
-		{
-			name:        "increase() with native histogram",
-			count:       100,
-			metricsName: "native_histogram_series",
-			query:       "increase(native_histogram_series[1m])",
-			mixedSample: false,
-		},
-		{
-			name:        "delta() with native and counter histogram",
-			count:       100,
-			metricsName: "native_histogram_series",
-			query:       "delta(native_histogram_series[1m])",
-			mixedSample: true,
-		},
-		{
-			name:        "delta() with native histogram",
-			count:       100,
-			metricsName: "native_histogram_series",
-			query:       "delta(native_histogram_series[1m])",
-			mixedSample: false,
+			name:  "delta() with native and counter histogram",
+			query: "delta(native_histogram_series[1m])",
 		},
 	}
 
+	mixedTypesOpts := []bool{false, true}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			test, err := promql.NewTest(t, "")
-			testutil.Ok(t, err)
-			defer test.Close()
+			for _, withMixedTypes := range mixedTypesOpts {
+				t.Run(fmt.Sprintf("mixedTypes=%t", withMixedTypes), func(t *testing.T) {
+					test, err := promql.NewTest(t, "")
+					testutil.Ok(t, err)
+					defer test.Close()
 
-			// Building native histograms
-			tc.labels = append(tc.labels, "__name__", tc.metricsName)
-			lbls := labels.FromStrings(tc.labels...)
-			app := test.Storage().Appender(context.TODO())
-			for i, h := range tsdb.GenerateTestHistograms(tc.count) {
-				if tc.mixedSample {
-					_, err = app.Append(0, labels.FromStrings(append(tc.labels, "le", "1")...), int64(i)*int64(15*time.Second/time.Millisecond), float64(i))
+					// Building native histograms
+					lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+					app := test.Storage().Appender(context.TODO())
+					for i, h := range tsdb.GenerateTestHistograms(100) {
+						ts := time.Unix(int64(i*15), 0).UnixMilli()
+						val := float64(i)
+						if withMixedTypes {
+							_, err = app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, val)
+							testutil.Ok(t, err)
+						}
+						_, err = app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h)
+						testutil.Ok(t, err)
+					}
+					testutil.Ok(t, app.Commit())
+					testutil.Ok(t, test.Run())
+
+					// New Engine
+					engine := engine.New(engine.Opts{
+						EngineOpts:        opts,
+						DisableFallback:   true,
+						LogicalOptimizers: logicalplan.AllOptimizers,
+					})
+
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
 					testutil.Ok(t, err)
-					_, err = app.Append(0, labels.FromStrings(append(tc.labels, "le", "2")...), int64(i)*int64(15*time.Second/time.Millisecond), float64(i))
+					res := qry.Exec(test.Context())
+					testutil.Ok(t, res.Err)
+					newVector, err := res.Vector()
 					testutil.Ok(t, err)
-					_, err = app.Append(0, labels.FromStrings(append(tc.labels, "le", "3")...), int64(i)*int64(15*time.Second/time.Millisecond), float64(i))
+
+					// Old Engine
+					oldEngine := test.QueryEngine()
+					qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
 					testutil.Ok(t, err)
-				}
-				_, err = app.AppendHistogram(0, lbls, int64(i)*int64(15*time.Second/time.Millisecond), h)
-				testutil.Ok(t, err)
+					res = qry.Exec(test.Context())
+					testutil.Ok(t, res.Err)
+					oldVector, err := res.Vector()
+					testutil.Ok(t, err)
+
+					// Make sure we're not getting back empty results.
+					testutil.Assert(t, len(oldVector) != 0)
+					testutil.Equals(t, oldVector, newVector)
+				})
 			}
-
-			testutil.Ok(t, app.Commit())
-			testutil.Ok(t, test.Run())
-
-			// New Engine
-			engine := engine.New(engine.Opts{
-				EngineOpts:        opts,
-				DisableFallback:   true,
-				LogicalOptimizers: logicalplan.AllOptimizers,
-			})
-
-			qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
-			testutil.Ok(t, err)
-			res := qry.Exec(test.Context())
-			testutil.Ok(t, res.Err)
-			newVector, err := res.Vector()
-			testutil.Ok(t, err)
-
-			// Old Engine
-			oldEngine := test.QueryEngine()
-			qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, tc.query, timestamp.Time(int64(5*time.Minute/time.Millisecond)))
-			testutil.Ok(t, err)
-			res = qry.Exec(test.Context())
-			testutil.Ok(t, res.Err)
-			oldVector, err := res.Vector()
-			testutil.Ok(t, err)
-
-			testutil.Equals(t, oldVector, newVector)
-
 		})
 	}
-
 }
 
 func sortByLabels(r *promql.Result) {

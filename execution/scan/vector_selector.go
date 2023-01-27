@@ -171,6 +171,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	refTime := ts - offset
 	var t int64
 	var v float64
+	var h *histogram.FloatHistogram
 
 	valueType := it.Seek(refTime)
 	switch valueType {
@@ -190,7 +191,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, _, _, ok = it.PeekPrev()
+		t, v, _, h, ok = it.PeekPrev()
 		if !ok || t < refTime-lookbackDelta {
 			return 0, 0, nil, false, nil
 		}
@@ -198,5 +199,5 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	if value.IsStaleNaN(v) {
 		return 0, 0, nil, false, nil
 	}
-	return t, v, nil, true, nil
+	return t, v, h, true, nil
 }

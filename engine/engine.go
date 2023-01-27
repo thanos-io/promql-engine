@@ -394,7 +394,6 @@ loop:
 						T: vector.T,
 						V: vector.Samples[i],
 					})
-
 				}
 				for i, s := range vector.HistogramIDs {
 					if len(series[s].Points) == 0 {
