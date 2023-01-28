@@ -45,14 +45,13 @@ func (f filter) Matches(series storage.Series) bool {
 	if len(f.matcherSet) == 0 {
 		return true
 	}
-	hasMatch := true
+
 	for name, m := range f.matcherSet {
 		label := series.Labels().Get(name)
 		if !m.Matches(label) {
-			hasMatch = false
-			break
+			return false
 		}
 	}
 
-	return hasMatch
+	return true
 }
