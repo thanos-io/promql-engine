@@ -79,6 +79,10 @@ The current implementation uses goroutines very liberally which means the query 
 
 The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
 
+## Continuous benchmark
+
+If you are interested in the benchmark results captured by continuous benchmark, please check [here](https://thanos-community.github.io/promql-engine/dev/bench/).
+
 ## Latest benchmarks
 
 These are the latest benchmarks captured on an Apple M1 Pro processor.
