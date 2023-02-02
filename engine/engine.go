@@ -88,10 +88,6 @@ func (l remoteEngine) LabelSets() []labels.Labels {
 	return l.labelSets
 }
 
-func (l remoteEngine) NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	return l.engine.NewInstantQuery(l.q, opts, qs, ts)
-}
-
 func (l remoteEngine) NewRangeQuery(opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	return l.engine.NewRangeQuery(l.q, opts, qs, start, end, interval)
 }
