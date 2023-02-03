@@ -366,7 +366,6 @@ loop:
 				for i := range r {
 					numSeries += len(r[i].Samples)
 				}
-
 				series = make([]promql.Series, numSeries)
 
 				for _, vector := range r {
@@ -390,6 +389,15 @@ loop:
 					series[s].Points = append(series[s].Points, promql.Point{
 						T: vector.T,
 						V: vector.Samples[i],
+					})
+				}
+				for i, s := range vector.HistogramIDs {
+					if len(series[s].Points) == 0 {
+						series[s].Points = make([]promql.Point, 0, 121) // Typically 1h of data.
+					}
+					series[s].Points = append(series[s].Points, promql.Point{
+						T: vector.T,
+						H: vector.Histograms[i],
 					})
 				}
 				q.Query.exec.GetPool().PutStepVector(vector)
@@ -429,6 +437,7 @@ loop:
 				Metric: series[i].Metric,
 				Point: promql.Point{
 					V: series[i].Points[0].V,
+					H: series[i].Points[0].H,
 					T: q.ts.UnixMilli(),
 				},
 			})

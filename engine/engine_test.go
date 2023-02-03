@@ -29,6 +29,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
 	"go.uber.org/goleak"
@@ -1319,6 +1320,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2"} 2+3x10`,
 			query: `histogram_quantile(0.9, http_requests_total)`,
 		},
+		{
+			name: "histogram quantile on partially malformed data",
+			load: `load 30s
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="2"} 2+3x10
+			http_requests_total{pod="nginx-3"} 3+3x10
+			http_requests_total{pod="nginx-4"} 4+3x10`,
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		// TODO: uncomment once support for testing NaNs is added.
 		{
 			name: "histogram quantile on malformed, interleaved data",
 			load: `load 30s
@@ -3110,6 +3121,103 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
 	})
 
+}
+
+func TestNativeHistogram(t *testing.T) {
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "plain selector",
+			query: "native_histogram_series",
+		},
+		{
+			name:  "irate() with native histogram",
+			query: "rate(native_histogram_series[1m])",
+		},
+		{
+			name:  "rate() with native histogram",
+			query: "rate(native_histogram_series[1m])",
+		},
+		{
+			name:  "increase() with native histogram",
+			query: "increase(native_histogram_series[1m])",
+		},
+		{
+			name:  "delta() with native and counter histogram",
+			query: "delta(native_histogram_series[1m])",
+		},
+	}
+
+	mixedTypesOpts := []bool{false, true}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, withMixedTypes := range mixedTypesOpts {
+				t.Run(fmt.Sprintf("mixedTypes=%t", withMixedTypes), func(t *testing.T) {
+					test, err := promql.NewTest(t, "")
+					testutil.Ok(t, err)
+					defer test.Close()
+					app := test.Storage().Appender(context.TODO())
+					err = createNativeHistogramSeries(app, withMixedTypes)
+					testutil.Ok(t, err)
+					testutil.Ok(t, app.Commit())
+					testutil.Ok(t, test.Run())
+
+					// New Engine
+					engine := engine.New(engine.Opts{
+						EngineOpts:        opts,
+						DisableFallback:   true,
+						LogicalOptimizers: logicalplan.AllOptimizers,
+					})
+
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
+					testutil.Ok(t, err)
+					res := qry.Exec(test.Context())
+					testutil.Ok(t, res.Err)
+					newVector, err := res.Vector()
+					testutil.Ok(t, err)
+
+					// Old Engine
+					oldEngine := test.QueryEngine()
+					qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
+					testutil.Ok(t, err)
+					res = qry.Exec(test.Context())
+					testutil.Ok(t, res.Err)
+					oldVector, err := res.Vector()
+					testutil.Ok(t, err)
+
+					// Make sure we're not getting back empty results.
+					testutil.Assert(t, len(oldVector) != 0)
+					testutil.Equals(t, oldVector, newVector)
+				})
+			}
+		})
+	}
+}
+
+func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
+	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+	for i, h := range tsdb.GenerateTestHistograms(100) {
+		ts := time.Unix(int64(i*15), 0).UnixMilli()
+		val := float64(i)
+		if withMixedTypes {
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, val); err != nil {
+				return err
+			}
+		}
+		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sortByLabels(r *promql.Result) {

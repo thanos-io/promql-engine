@@ -68,7 +68,6 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 		result := o.call(FunctionArgs{
 			StepTime: o.currentStep,
 		})
-		sv.T = o.currentStep
 		sv.Samples = []float64{result.V}
 		sv.SampleIDs = o.sampleIDs
 
