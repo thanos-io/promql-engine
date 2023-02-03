@@ -3001,20 +3001,9 @@ func TestNativeHistogram(t *testing.T) {
 					test, err := promql.NewTest(t, "")
 					testutil.Ok(t, err)
 					defer test.Close()
-
-					// Building native histograms
-					lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 					app := test.Storage().Appender(context.TODO())
-					for i, h := range tsdb.GenerateTestHistograms(100) {
-						ts := time.Unix(int64(i*15), 0).UnixMilli()
-						val := float64(i)
-						if withMixedTypes {
-							_, err = app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, val)
-							testutil.Ok(t, err)
-						}
-						_, err = app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h)
-						testutil.Ok(t, err)
-					}
+					err = createNativeHistogramSeries(app, withMixedTypes)
+					testutil.Ok(t, err)
 					testutil.Ok(t, app.Commit())
 					testutil.Ok(t, test.Run())
 
@@ -3048,6 +3037,23 @@ func TestNativeHistogram(t *testing.T) {
 			}
 		})
 	}
+}
+
+func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
+	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+	for i, h := range tsdb.GenerateTestHistograms(100) {
+		ts := time.Unix(int64(i*15), 0).UnixMilli()
+		val := float64(i)
+		if withMixedTypes {
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, val); err != nil {
+				return err
+			}
+		}
+		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func sortByLabels(r *promql.Result) {
