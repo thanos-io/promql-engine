@@ -2977,7 +2977,7 @@ func (m mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(m.labels...)
 }
 
-func (m mockSeries) Iterator() chunkenc.Iterator {
+func (m mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return &mockIterator{
 		i:          -1,
 		timestamps: m.timestamps,
@@ -3044,8 +3044,8 @@ func (s *testSeriesSet) Warnings() storage.Warnings { return nil }
 
 type slowSeries struct{}
 
-func (d slowSeries) Labels() labels.Labels       { return labels.FromStrings("foo", "bar") }
-func (d slowSeries) Iterator() chunkenc.Iterator { return &slowIterator{} }
+func (d slowSeries) Labels() labels.Labels                        { return labels.FromStrings("foo", "bar") }
+func (d slowSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator { return &slowIterator{} }
 
 type slowIterator struct {
 	ts int64
@@ -3213,7 +3213,7 @@ func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) erro
 				return err
 			}
 		}
-		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h); err != nil {
+		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h, nil); err != nil {
 			return err
 		}
 	}
