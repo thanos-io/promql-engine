@@ -1555,6 +1555,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 										t.Log("Applying comparison with NaN equality.")
 										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
 									} else {
+										nilEmptyLabels(oldResult)
+										nilEmptyLabels(newResult)
 										testutil.Equals(t, oldResult, newResult)
 									}
 								} else {
@@ -3259,6 +3261,18 @@ func roundValues(r *promql.Result) {
 	case promql.Vector:
 		for i := range result {
 			result[i].V = math.Floor(result[i].V*10e10) / 10e10
+		}
+	}
+}
+
+// nilEmptyLabels sets empty labelsets to nil to work around inconsistent
+// results from the old engine depending on the literal type (e.g. number vs. compare).
+func nilEmptyLabels(result *promql.Result) {
+	if value, ok := result.Value.(promql.Matrix); ok {
+		for i, s := range value {
+			if len(s.Metric) == 0 {
+				result.Value.(promql.Matrix)[i].Metric = nil
+			}
 		}
 	}
 }
