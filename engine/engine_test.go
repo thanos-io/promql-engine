@@ -3265,7 +3265,7 @@ func roundValues(r *promql.Result) {
 	}
 }
 
-// nilEmptyLabels sets empty labelsets to nil to work around inconsistent
+// emptyLabelsToNil sets empty labelsets to nil to work around inconsistent
 // results from the old engine depending on the literal type (e.g. number vs. compare).
 func emptyLabelsToNil(result *promql.Result) {
 	if value, ok := result.Value.(promql.Matrix); ok {
