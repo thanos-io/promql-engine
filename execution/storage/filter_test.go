@@ -83,6 +83,6 @@ func (s *mockLabelSeries) Labels() labels.Labels {
 	return s.labels
 }
 
-func (s *mockLabelSeries) Iterator() chunkenc.Iterator {
+func (s *mockLabelSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return nil
 }

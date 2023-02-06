@@ -1555,6 +1555,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 										t.Log("Applying comparison with NaN equality.")
 										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
 									} else {
+										emptyLabelsToNil(oldResult)
+										emptyLabelsToNil(newResult)
 										testutil.Equals(t, oldResult, newResult)
 									}
 								} else {
@@ -2977,7 +2979,7 @@ func (m mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(m.labels...)
 }
 
-func (m mockSeries) Iterator() chunkenc.Iterator {
+func (m mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return &mockIterator{
 		i:          -1,
 		timestamps: m.timestamps,
@@ -3044,8 +3046,8 @@ func (s *testSeriesSet) Warnings() storage.Warnings { return nil }
 
 type slowSeries struct{}
 
-func (d slowSeries) Labels() labels.Labels       { return labels.FromStrings("foo", "bar") }
-func (d slowSeries) Iterator() chunkenc.Iterator { return &slowIterator{} }
+func (d slowSeries) Labels() labels.Labels                        { return labels.FromStrings("foo", "bar") }
+func (d slowSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator { return &slowIterator{} }
 
 type slowIterator struct {
 	ts int64
@@ -3213,7 +3215,7 @@ func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) erro
 				return err
 			}
 		}
-		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h); err != nil {
+		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h, nil); err != nil {
 			return err
 		}
 	}
@@ -3259,6 +3261,18 @@ func roundValues(r *promql.Result) {
 	case promql.Vector:
 		for i := range result {
 			result[i].V = math.Floor(result[i].V*10e10) / 10e10
+		}
+	}
+}
+
+// emptyLabelsToNil sets empty labelsets to nil to work around inconsistent
+// results from the old engine depending on the literal type (e.g. number vs. compare).
+func emptyLabelsToNil(result *promql.Result) {
+	if value, ok := result.Value.(promql.Matrix); ok {
+		for i, s := range value {
+			if len(s.Metric) == 0 {
+				result.Value.(promql.Matrix)[i].Metric = nil
+			}
 		}
 	}
 }

@@ -157,7 +157,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
 				signature: s.Signature,
-				samples:   storage.NewMemoizedIterator(s.Iterator(), o.lookbackDelta),
+				samples:   storage.NewMemoizedIterator(s.Iterator(nil), o.lookbackDelta),
 			}
 			o.series[i] = s.Labels()
 		}

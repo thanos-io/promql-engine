@@ -206,7 +206,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = matrixScanner{
 				labels:    lbls,
 				signature: s.Signature,
-				samples:   storage.NewBufferIterator(s.Iterator(), o.selectRange),
+				samples:   storage.NewBufferIterator(s.Iterator(nil), o.selectRange),
 			}
 			o.series[i] = lbls
 		}
