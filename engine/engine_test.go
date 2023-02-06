@@ -1555,8 +1555,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 										t.Log("Applying comparison with NaN equality.")
 										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
 									} else {
-										nilEmptyLabels(oldResult)
-										nilEmptyLabels(newResult)
+										emptyLabelsToNil(oldResult)
+										emptyLabelsToNil(newResult)
 										testutil.Equals(t, oldResult, newResult)
 									}
 								} else {
