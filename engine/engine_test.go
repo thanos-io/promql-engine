@@ -1500,6 +1500,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name: "absent",
+			load: `load 30s
+				absent{pod="nginx-1", series="1"} 0
+				absent{pod="nginx-2", series="1"} 0`,
+			query: "absent(absent)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+        },
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -2430,6 +2440,15 @@ func TestInstantQuery(t *testing.T) {
 				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
 				http_requests_total{pod="nginx-2", series="1"} -10+1x50`,
 			query: "sgn(http_requests_total)",
+		},
+		{
+			name: "absent",
+			load: `load 30s
+			absent{pod="nginx-1", series="1"} 0
+			absent{pod="nginx-2", series="1"} 0`,
+			query: "absent(absent)",
+			queryTime: defaultQueryTime,
+			sortByLabels: true,
 		},
 	}
 

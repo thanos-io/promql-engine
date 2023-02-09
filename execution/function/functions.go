@@ -434,6 +434,22 @@ var Funcs = map[string]FunctionCall{
 			return float64(t.Year())
 		})
 	},
+	"absent": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
+			return promql.Sample{
+				Metric: f.Labels,
+				Point: promql.Point{
+					T: f.StepTime,
+					V: 1,
+				},
+			}
+		}
+
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{},
+		}
+    },
 }
 
 func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
