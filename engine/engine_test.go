@@ -1502,13 +1502,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		},
 		{
 			name: "absent",
-			load: `load 30s
-				absent{pod="nginx-1", series="1"} 0
-				absent{pod="nginx-2", series="1"} 0`,
-			query: "absent(absent)",
-			start: time.Unix(0, 0),
-			end:   time.Unix(3000, 0),
-			step:  2 * time.Second,
+			load: "",
+			query: `absent(metric)`,
+			start: time.Now().Add(-30 * time.Second),
+			end: time.Now(),
+			step: step,
         },
 	}
 
@@ -2443,12 +2441,10 @@ func TestInstantQuery(t *testing.T) {
 		},
 		{
 			name: "absent",
-			load: `load 30s
-			absent{pod="nginx-1", series="1"} 0
-			absent{pod="nginx-2", series="1"} 0`,
-			query: "absent(absent)",
-			queryTime: defaultQueryTime,
-			sortByLabels: true,
+			load: "",
+			query: `absent(metric)`,
+			queryTime: time.Now(),
+			sortByLabels: false,
 		},
 	}
 
