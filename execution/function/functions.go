@@ -450,6 +450,43 @@ var Funcs = map[string]FunctionCall{
 			Point: promql.Point{},
 		}
     },
+	"sort": func(f FunctionArgs) promql.Sample{
+		input := f.Args[0].(*promql.Vector)
+
+		samples := make(promql.Samples, len(input))
+		for i, s := range input{
+			samples[i] = s
+		}
+
+		sort.Slice(samples, func(i, j int) bool{
+			return samples[i].V < samples[j].V
+		})
+
+		// Convert sorted slice of samples back into vector.
+		result := make(promql.Vector, len(input))
+		for i, s := range samples{
+			result[i] = s
+		}
+		return result
+    },
+	"sort_desc": func(f FunctionArgs) promql.Sample {
+		input := f.Args[0].(*promql.Vector)
+
+		samples := make(promql.Samples, len(input))
+		for i, s := range input{
+			samples[i] = s
+		}
+
+		sort.Slice(samples, func(i, j int) bool {
+			return samples[i].V > samples[j].V
+		})
+
+		result := make(promql.Vector, len(input))
+		for i, s := range samples{
+			result[i] = s
+		}
+        return result
+    },
 }
 
 func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
