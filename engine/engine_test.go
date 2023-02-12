@@ -1501,13 +1501,23 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
-			name: "absent",
+			name: "absent with present series",
+			load: `load 30s
+				absent{pod="nginx-1", series="1"} 0
+				absent{pod="nginx-2", series="1"} 0`,
+			query: "absent(metric)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  10 * time.Second,
+		},
+		{
+			name: "absent with non-present series",
 			load: "",
-			query: `absent(metric)`,
-			start: time.Now().Add(-30 * time.Second),
-			end: time.Now(),
-			step: step,
-        },
+			query: "absent(non_existent_metric)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  10 * time.Second,
+		},
 		{
 			name: "sort",
 			load: `load 30s
@@ -2463,9 +2473,18 @@ func TestInstantQuery(t *testing.T) {
 			query: "sgn(http_requests_total)",
 		},
 		{
-			name: "absent",
+			name: "absent with present series",
+			load: `load 30s
+			absent{pod="nginx-1", series="1"} 0
+			absent{pod="nginx-2", series="1"} 0`,
+			query: "absent(metric)",
+			queryTime: time.Now(),
+			sortByLabels: true,
+	    },
+		{
+			name: "absent with non-present series",
 			load: "",
-			query: `absent(metric)`,
+			query: "absent(non_existent_metric)",
 			queryTime: time.Now(),
 			sortByLabels: false,
 		},
