@@ -1745,7 +1745,7 @@ func TestBinopEdgeCases(t *testing.T) {
 	q1, err := oldEngine.NewRangeQuery(storageWithSeries(series...), nil, query, start, end, step)
 	testutil.Ok(t, err)
 
-	newEngine := engine.New(engine.Opts{})
+	newEngine := engine.New(engine.Opts{EngineOpts: opts})
 	q2, err := newEngine.NewRangeQuery(storageWithSeries(series...), nil, query, start, end, step)
 	testutil.Ok(t, err)
 
@@ -2524,7 +2524,7 @@ func TestQueryCancellation(t *testing.T) {
 		},
 	}
 
-	newEngine := engine.New(engine.Opts{})
+	newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
 	q1, err := newEngine.NewRangeQuery(querier, nil, query, start, end, step)
 	testutil.Ok(t, err)
 
@@ -2536,6 +2536,34 @@ func TestQueryCancellation(t *testing.T) {
 
 	newResult := q1.Exec(ctx)
 	testutil.Equals(t, context.Canceled, newResult.Err)
+}
+
+func TestQueryTimeout(t *testing.T) {
+
+	end := time.Unix(120, 0)
+
+	query := `http_requests_total{pod="nginx-1"}`
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x1
+				http_requests_total{pod="nginx-2"} 1+2x1`
+
+	opts := promql.EngineOpts{
+		Timeout:    1 * time.Microsecond,
+		MaxSamples: math.MaxInt64,
+	}
+
+	test, err := promql.NewTest(t, load)
+	testutil.Ok(t, err)
+	defer test.Close()
+
+	newEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts})
+
+	q, err := newEngine.NewInstantQuery(test.Storage(), nil, query, end)
+	testutil.Ok(t, err)
+
+	res := q.Exec(context.Background())
+	testutil.NotOk(t, res.Err, "expected timeout error but got none")
+	testutil.Equals(t, context.DeadlineExceeded, res.Err)
 }
 
 type hintRecordingQuerier struct {
