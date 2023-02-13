@@ -3150,28 +3150,67 @@ func TestNativeHistogram(t *testing.T) {
 	}
 
 	cases := []struct {
-		name  string
-		query string
+		name                   string
+		query                  string
+		wantEmptyForMixedTypes bool
 	}{
 		{
 			name:  "plain selector",
 			query: "native_histogram_series",
 		},
 		{
-			name:  "irate() with native histogram",
+			name:  "irate()",
 			query: "rate(native_histogram_series[1m])",
 		},
 		{
-			name:  "rate() with native histogram",
+			name:  "rate()",
 			query: "rate(native_histogram_series[1m])",
 		},
 		{
-			name:  "increase() with native histogram",
+			name:  "increase()",
 			query: "increase(native_histogram_series[1m])",
 		},
 		{
-			name:  "delta() with native and counter histogram",
+			name:  "delta()",
 			query: "delta(native_histogram_series[1m])",
+		},
+		{
+			name:                   "sum()",
+			query:                  "sum(native_histogram_series)",
+			wantEmptyForMixedTypes: true,
+		},
+		{
+			name:                   "sum by (foo)",
+			query:                  "sum by (foo) (native_histogram_series)",
+			wantEmptyForMixedTypes: true,
+		},
+		{
+			name:  "count",
+			query: "count (native_histogram_series)",
+		},
+		{
+			name:  "count by (foo)",
+			query: "count by (foo) (native_histogram_series)",
+		},
+		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
+		// Uncomment once it gets fixed.
+		//{
+		//	name:  "max",
+		//	query: "max (native_histogram_series)",
+		//},
+		{
+			name:  "max by (foo)",
+			query: "max by (foo) (native_histogram_series)",
+		},
+		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
+		// Uncomment once it gets fixed.
+		//{
+		//	name:  "min",
+		//	query: "min (native_histogram_series)",
+		//},
+		{
+			name:  "min by (foo)",
+			query: "min by (foo) (native_histogram_series)",
 		},
 	}
 
@@ -3183,6 +3222,7 @@ func TestNativeHistogram(t *testing.T) {
 					test, err := promql.NewTest(t, "")
 					testutil.Ok(t, err)
 					defer test.Close()
+
 					app := test.Storage().Appender(context.TODO())
 					err = createNativeHistogramSeries(app, withMixedTypes)
 					testutil.Ok(t, err)
@@ -3196,25 +3236,52 @@ func TestNativeHistogram(t *testing.T) {
 						LogicalOptimizers: logicalplan.AllOptimizers,
 					})
 
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
-					testutil.Ok(t, err)
-					res := qry.Exec(test.Context())
-					testutil.Ok(t, res.Err)
-					newVector, err := res.Vector()
-					testutil.Ok(t, err)
+					t.Run("instant", func(t *testing.T) {
+						qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
+						testutil.Ok(t, err)
+						res := qry.Exec(test.Context())
+						testutil.Ok(t, res.Err)
+						newVector, err := res.Vector()
+						testutil.Ok(t, err)
 
-					// Old Engine
-					oldEngine := test.QueryEngine()
-					qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
-					testutil.Ok(t, err)
-					res = qry.Exec(test.Context())
-					testutil.Ok(t, res.Err)
-					oldVector, err := res.Vector()
-					testutil.Ok(t, err)
+						promEngine := test.QueryEngine()
+						qry, err = promEngine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
+						testutil.Ok(t, err)
+						res = qry.Exec(test.Context())
+						testutil.Ok(t, res.Err)
+						oldVector, err := res.Vector()
+						testutil.Ok(t, err)
 
-					// Make sure we're not getting back empty results.
-					testutil.Assert(t, len(oldVector) != 0)
-					testutil.Equals(t, oldVector, newVector)
+						// Make sure we're not getting back empty results.
+						if withMixedTypes && tc.wantEmptyForMixedTypes {
+							testutil.Assert(t, len(oldVector) == 0)
+						}
+						testutil.Equals(t, oldVector, newVector)
+					})
+
+					t.Run("range", func(t *testing.T) {
+						qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(60, 0), 30*time.Second)
+						testutil.Ok(t, err)
+						res := qry.Exec(test.Context())
+						testutil.Ok(t, res.Err)
+						actual, err := res.Matrix()
+						testutil.Ok(t, err)
+
+						promEngine := test.QueryEngine()
+						qry, err = promEngine.NewRangeQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(60, 0), 30*time.Second)
+						testutil.Ok(t, err)
+						res = qry.Exec(test.Context())
+						testutil.Ok(t, res.Err)
+						expected, err := res.Matrix()
+						testutil.Ok(t, err)
+
+						// Make sure we're not getting back empty results.
+						if withMixedTypes && tc.wantEmptyForMixedTypes {
+							testutil.Assert(t, len(expected) == 0)
+						}
+						testutil.Equals(t, len(expected), len(actual))
+						testutil.Equals(t, expected, actual)
+					})
 				})
 			}
 		})

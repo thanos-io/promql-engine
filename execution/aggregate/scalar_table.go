@@ -8,6 +8,8 @@ import (
 	"math"
 	"sort"
 
+	"github.com/prometheus/prometheus/model/histogram"
+
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -56,6 +58,9 @@ func (t *scalarTable) aggregate(arg float64, vector model.StepVector) {
 	for i := range vector.Samples {
 		t.addSample(vector.T, vector.SampleIDs[i], vector.Samples[i])
 	}
+	for i := range vector.Histograms {
+		t.addHistogram(vector.T, vector.HistogramIDs[i], vector.Histograms[i])
+	}
 }
 
 func (t *scalarTable) addSample(ts int64, sampleID uint64, sample float64) {
@@ -63,7 +68,15 @@ func (t *scalarTable) addSample(ts int64, sampleID uint64, sample float64) {
 	output := t.outputs[outputSampleID]
 
 	t.timestamp = ts
-	t.accumulators[output.ID].AddFunc(sample)
+	t.accumulators[output.ID].AddFunc(sample, nil)
+}
+
+func (t *scalarTable) addHistogram(ts int64, sampleID uint64, h *histogram.FloatHistogram) {
+	outputSampleID := t.inputs[sampleID]
+	output := t.outputs[outputSampleID]
+
+	t.timestamp = ts
+	t.accumulators[output.ID].AddFunc(0, h)
 }
 
 func (t *scalarTable) reset(arg float64) {
@@ -76,7 +89,12 @@ func (t *scalarTable) toVector(pool *model.VectorPool) model.StepVector {
 	result := pool.GetStepVector(t.timestamp)
 	for i, v := range t.outputs {
 		if t.accumulators[i].HasValue() {
-			result.AppendSample(pool, v.ID, t.accumulators[i].ValueFunc())
+			f, h := t.accumulators[i].ValueFunc()
+			if h == nil {
+				result.AppendSample(pool, v.ID, f)
+			} else {
+				result.AppendHistogram(pool, v.ID, h)
+			}
 		}
 	}
 	return result
@@ -108,8 +126,8 @@ func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byt
 type newAccumulatorFunc func() *accumulator
 
 type accumulator struct {
-	AddFunc   func(v float64)
-	ValueFunc func() float64
+	AddFunc   func(v float64, h *histogram.FloatHistogram)
+	ValueFunc func() (float64, *histogram.FloatHistogram)
 	HasValue  func() bool
 	Reset     func(arg float64)
 }
@@ -120,17 +138,29 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 	case "sum":
 		return func() *accumulator {
 			var value float64
-			var hasValue bool
+			var histSum *histogram.FloatHistogram
+			var hasFloatVal bool
 
 			return &accumulator{
-				AddFunc: func(v float64) {
-					hasValue = true
-					value += v
+				AddFunc: func(v float64, h *histogram.FloatHistogram) {
+					if h == nil {
+						hasFloatVal = true
+						value += v
+						return
+					}
+					if histSum == nil {
+						histSum = h
+						return
+					}
+					histSum = histSum.Add(h)
 				},
-				ValueFunc: func() float64 { return value },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return value, histSum
+				},
+				// Sum returns an empty result when floats are histograms are aggregated.
+				HasValue: func() bool { return hasFloatVal != (histSum != nil) },
 				Reset: func(_ float64) {
-					hasValue = false
+					hasFloatVal = false
 					value = 0
 				},
 			}
@@ -141,7 +171,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var hasValue bool
 
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					if !hasValue {
 						value = v
 					} else {
@@ -149,8 +179,10 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					}
 					hasValue = true
 				},
-				ValueFunc: func() float64 { return value },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return value, nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
@@ -163,7 +195,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var hasValue bool
 
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					if !hasValue {
 						value = v
 					} else {
@@ -171,8 +203,10 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					}
 					hasValue = true
 				},
-				ValueFunc: func() float64 { return value },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return value, nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
@@ -185,12 +219,14 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var hasValue bool
 
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(_ float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					value += 1
 				},
-				ValueFunc: func() float64 { return value },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return value, nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 					value = 0
@@ -203,13 +239,15 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var hasValue bool
 
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					count += 1
 					sum += v
 				},
-				ValueFunc: func() float64 { return sum / count },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return sum / count, nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 					sum = 0
@@ -221,11 +259,13 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 		return func() *accumulator {
 			var hasValue bool
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(_ float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 				},
-				ValueFunc: func() float64 { return 1 },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return 1, nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 				},
@@ -238,15 +278,17 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var aux, cAux float64
 			var hasValue bool
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					count++
 					delta := v - (mean + cMean)
 					mean, cMean = function.KahanSumInc(delta/count, mean, cMean)
 					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
 				},
-				ValueFunc: func() float64 { return math.Sqrt((aux + cAux) / count) },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return math.Sqrt((aux + cAux) / count), nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 					count = 0
@@ -264,15 +306,17 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var aux, cAux float64
 			var hasValue bool
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					count++
 					delta := v - (mean + cMean)
 					mean, cMean = function.KahanSumInc(delta/count, mean, cMean)
 					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
 				},
-				ValueFunc: func() float64 { return (aux + cAux) / count },
-				HasValue:  func() bool { return hasValue },
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return (aux + cAux) / count, nil
+				},
+				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
 					hasValue = false
 					count = 0
@@ -289,12 +333,12 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 			var arg float64
 			points := make([]float64, 0)
 			return &accumulator{
-				AddFunc: func(v float64) {
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					points = append(points, v)
 				},
-				ValueFunc: func() float64 {
-					return quantile(arg, points)
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					return quantile(arg, points), nil
 				},
 				HasValue: func() bool { return hasValue },
 				Reset: func(a float64) {
