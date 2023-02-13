@@ -68,19 +68,19 @@ var Funcs = map[string]FunctionCall{
 	"asinh": simpleFunc(math.Asinh),
 	"acosh": simpleFunc(math.Acosh),
 	"atanh": simpleFunc(math.Atanh),
-	"absent": func(f FunctionArgs) promql.Sample{
-		if len(f.Points) != 0 {
+	"absent": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 {
 			return promql.Sample{
+				Metric: f.Labels,
 				Point: promql.Point{
 					T: f.StepTime,
-					V: float64(1),
+					V: 1,
 				},
 			}
 		}
 		return promql.Sample{
-			Point: promql.Point{
-				T: f.StepTime,
-			},
+			Metric: f.Labels,
+			Point:  promql.Point{},
 		}
 	},
 	"rad": simpleFunc(func(v float64) float64 {
