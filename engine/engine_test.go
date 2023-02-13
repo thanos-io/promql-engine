@@ -2539,9 +2539,7 @@ func TestQueryCancellation(t *testing.T) {
 }
 
 func TestQueryTimeout(t *testing.T) {
-
 	end := time.Unix(120, 0)
-
 	query := `http_requests_total{pod="nginx-1"}`
 	load := `load 30s
 				http_requests_total{pod="nginx-1"} 1+1x1
