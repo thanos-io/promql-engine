@@ -3141,7 +3141,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 
 }
 
-func TestNativeHistogram(t *testing.T) {
+func TestNativeHistograms(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
@@ -3211,6 +3211,22 @@ func TestNativeHistogram(t *testing.T) {
 		{
 			name:  "min by (foo)",
 			query: "min by (foo) (native_histogram_series)",
+		},
+		{
+			name:  "histogram_sum",
+			query: "histogram_sum(native_histogram_series)",
+		},
+		{
+			name:  "histogram_count",
+			query: "histogram_count(native_histogram_series)",
+		},
+		{
+			name:  "histogram_quantile",
+			query: "histogram_quantile(0.7, native_histogram_series)",
+		},
+		{
+			name:  "histogram_fraction",
+			query: "histogram_fraction(0, 0.2, native_histogram_series)",
 		},
 	}
 
@@ -3292,9 +3308,11 @@ func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) erro
 	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	for i, h := range tsdb.GenerateTestHistograms(100) {
 		ts := time.Unix(int64(i*15), 0).UnixMilli()
-		val := float64(i)
 		if withMixedTypes {
-			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, val); err != nil {
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
+				return err
+			}
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
 				return err
 			}
 		}

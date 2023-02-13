@@ -394,6 +394,42 @@ var Funcs = map[string]FunctionCall{
 			},
 		}
 	},
+	"histogram_sum": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 || f.Points[0].H == nil {
+			return InvalidSample
+		}
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: f.Points[0].H.Sum,
+			},
+		}
+	},
+	"histogram_count": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 || f.Points[0].H == nil {
+			return InvalidSample
+		}
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: f.Points[0].H.Count,
+			},
+		}
+	},
+	"histogram_fraction": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) == 0 || f.Points[0].H == nil {
+			return InvalidSample
+		}
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: histogramFraction(f.ScalarPoints[0], f.ScalarPoints[1], f.Points[0].H),
+			},
+		}
+	},
 	"days_in_month": func(f FunctionArgs) promql.Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())

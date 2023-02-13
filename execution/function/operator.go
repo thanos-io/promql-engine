@@ -213,21 +213,47 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			continue
 		}
 
-		for i := range vector.Samples {
+		i := 0
+		for i < len(vectors[batchIndex].Samples) {
 			o.pointBuf[0].V = vector.Samples[i]
-			// Call function by separately passing major input and scalars.
-			result := o.call(FunctionArgs{
-				Labels:       o.series[0],
-				Points:       o.pointBuf,
-				StepTime:     vector.T,
-				ScalarPoints: o.scalarPoints[batchIndex],
-			})
+			result := o.call(o.newFunctionArgs(vector, batchIndex))
 
-			vector.Samples[i] = result.V
+			if result.Point != InvalidSample.Point {
+				vector.Samples[i] = result.V
+				i++
+			} else {
+				// This operator modifies samples directly in the input vector to avoid allocations.
+				// In case of an invalid output sample, we need to do an in-place removal of the input sample.
+				vectors[batchIndex].RemoveSample(i)
+			}
+		}
+
+		i = 0
+		for i < len(vector.Histograms) {
+			o.pointBuf[0].H = vector.Histograms[i]
+			result := o.call(o.newFunctionArgs(vector, batchIndex))
+
+			// This operator modifies samples directly in the input vector to avoid allocations.
+			// All current functions for histograms produce a float64 sample. It's therefore safe to
+			// always remove the input histogram so that it does not propagate to the output.
+			vectors[batchIndex].RemoveHistogram(i)
+			if result.Point != InvalidSample.Point {
+				vectors[batchIndex].AppendSample(o.GetPool(), vector.HistogramIDs[i], result.V)
+				i++
+			}
 		}
 	}
 
 	return vectors, nil
+}
+
+func (o *functionOperator) newFunctionArgs(vector model.StepVector, batchIndex int) FunctionArgs {
+	return FunctionArgs{
+		Labels:       o.series[0],
+		Points:       o.pointBuf,
+		StepTime:     vector.T,
+		ScalarPoints: o.scalarPoints[batchIndex],
+	}
 }
 
 func (o *functionOperator) loadSeries(ctx context.Context) error {
