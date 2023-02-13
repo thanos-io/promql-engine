@@ -128,7 +128,8 @@ func New(opts Opts) *compatibilityEngine {
 	}
 
 	return &compatibilityEngine{
-		prom: promql.NewEngine(opts.EngineOpts),
+		prom:    promql.NewEngine(opts.EngineOpts),
+		timeout: opts.Timeout,
 		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "promql_engine_queries_total",
@@ -145,6 +146,7 @@ func New(opts Opts) *compatibilityEngine {
 
 type compatibilityEngine struct {
 	prom    *promql.Engine
+	timeout time.Duration
 	queries *prometheus.CounterVec
 
 	debugWriter io.Writer
@@ -332,7 +334,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	}
 	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, q.engine.timeout)
 	defer cancel()
 	q.cancel = cancel
 
