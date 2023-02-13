@@ -6,6 +6,7 @@ package api
 import (
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 )
 
@@ -14,7 +15,8 @@ type RemoteEndpoints interface {
 }
 
 type RemoteEngine interface {
-	NewInstantQuery(opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
+	MaxT() int64
+	LabelSets() []labels.Labels
 	NewRangeQuery(opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
 }
 

@@ -15,7 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/thanos-community/promql-engine/api"
+	"github.com/thanos-community/promql-engine/engine"
+	"github.com/thanos-community/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
@@ -25,12 +29,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/stats"
 	"go.uber.org/goleak"
-
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
 func TestMain(m *testing.M) {
@@ -1066,6 +1068,118 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(60000, 0),
 		},
 		{
+			name: "days_in_month with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month(http_requests_total)",
+		},
+		{
+			name: "days_in_month without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month()",
+		},
+		{
+			name: "day_of_month with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_month(http_requests_total)",
+		},
+		{
+			name: "day_of_month without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_month()",
+		},
+		{
+			name: "day_of_week with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month(http_requests_total)",
+		},
+		{
+			name: "day_of_week without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "days_in_month()",
+		},
+		{
+			name: "day_of_year with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_year(http_requests_total)",
+		},
+		{
+			name: "day_of_year without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "day_of_year()",
+		},
+		{
+			name: "hour with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "hour(http_requests_total)",
+		},
+		{
+			name: "hour without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "hour()",
+		},
+		{
+			name: "minute with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "minute(http_requests_total)",
+		},
+		{
+			name: "minute without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "minute()",
+		},
+		{
+			name: "month with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "month(http_requests_total)",
+		},
+		{
+			name: "month without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "month()",
+		},
+		{
+			name: "year with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "year(http_requests_total)",
+		},
+		{
+			name: "year without input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "year()",
+		},
+		{
 			name: "selector merge",
 			load: `load 30s
 					http_requests_total{pod="nginx-1", ns="nginx"} 1+1x15
@@ -1084,15 +1198,41 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	+ on() group_left()
 	sum(http_requests_total{ns="nginx"})`,
 		},
-		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
-		// {
-		// 	name: "scalar func with NaN",
-		// 	load: `load 30s
-		//  	http_requests_total{pod="nginx-1"} 1+1x15
-		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
+		{
+			name: "binop with positive matcher using regex, only one side has data",
+			load: `load 30s
+					metric{} 1+2x5
+					metric{} 1+2x20`,
+			query: `sum(rate(metric{err=~".+"}[5m])) / sum(rate(metric{}[5m]))`,
+		},
+		{
+			name: "binop with positive matcher using regex, both sides have data",
+			load: `load 30s
+					metric{} 1+2x5
+					metric{err="FooBarKey"} 1+2x20`,
+			query: `sum(rate(metric{err=~".+"}[5m])) / sum(rate(metric{}[5m]))`,
+		},
+		{
+			name: "binop with negative matcher using regex, only one side has data",
+			load: `load 30s
+					metric{} 1+2x5
+					metric{} 1+2x20`,
+			query: `sum(rate(metric{err!~".+"}[5m])) / sum(rate(metric{}[5m]))`,
+		},
+		{
+			name: "binop with negative matcher using regex, both sides have data",
+			load: `load 30s
+					metric{} 1+2x5
+					metric{err="FooBarKey"} 1+2x20`,
+			query: `sum(rate(metric{err!~".+"}[5m])) / sum(rate(metric{}[5m]))`,
+		},
+		{
+			name: "scalar func with NaN",
+			load: `load 30s
+		 	http_requests_total{pod="nginx-1"} 1+1x15
+		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(http_requests_total)`,
+		},
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
@@ -1192,46 +1332,54 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2"} 2+3x10`,
 			query: `histogram_quantile(0.9, http_requests_total)`,
 		},
+		{
+			name: "histogram quantile on partially malformed data",
+			load: `load 30s
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="2"} 2+3x10
+			http_requests_total{pod="nginx-3"} 3+3x10
+			http_requests_total{pod="nginx-4"} 4+3x10`,
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
 		// TODO: uncomment once support for testing NaNs is added.
-		/*
-			{
-				name: "histogram quantile on malformed, interleaved data",
-				load: `load 30s
+		{
+			name: "histogram quantile on malformed, interleaved data",
+			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+3x10
 					http_requests_total{pod="nginx-2"} 2+3x10
 					http_requests_total{pod="nginx-3", le="0.05"} 2+3x10
 					http_requests_total{pod="nginx-4", le="0.1"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},
-			{
-				name: "histogram quantile on malformed, interleaved data 2",
-				load: `load 30s
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile on malformed, interleaved data 2",
+			load: `load 30s
 					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
 					http_requests_total{pod="nginx-2", le="0.02"} 2+3x10
 					http_requests_total{pod="nginx-3"} 2+3x10
 					http_requests_total{pod="nginx-4"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},
-			{
-				name: "histogram quantile on malformed, interleaved data 3",
-				load: `load 30s
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile on malformed, interleaved data 3",
+			load: `load 30s
 					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
 					http_requests_total{pod="nginx-2"} 2+3x10
 					http_requests_total{pod="nginx-3"} 2+3x10
 					http_requests_total{pod="nginx-4", le="0.03"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},
-			{
-				name: "histogram quantile on malformed, interleaved data 4",
-				load: `load 30s
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
+		{
+			name: "histogram quantile on malformed, interleaved data 4",
+			load: `load 30s
 					http_requests_total{pod="nginx-1", le="0.01"} 1+3x10
 					http_requests_total{pod="nginx-2"} 2+3x10
 					http_requests_total{pod="nginx-2", le="0.05"} 2+3x10
 					http_requests_total{pod="nginx-2", le="0.2"} 2+3x10
 					http_requests_total{pod="nginx-3"} 2+3x10
 					http_requests_total{pod="nginx-4", le="0.03"} 2+3x10`,
-				query: `histogram_quantile(0.9, http_requests_total)`,
-			},*/
+			query: `histogram_quantile(0.9, http_requests_total)`,
+		},
 		{
 			name: "histogram quantile with sum",
 			load: `load 30s
@@ -1244,20 +1392,19 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
 			query: `histogram_quantile(0.9, sum by (pod, le) (rate(http_requests_total[2m])))`,
 		},
-		// TODO(fpetkovski): Uncomment once support for testing NaNs is added.
-		//{
-		//	name: "histogram quantile with scalar operator",
-		//	load: `load 30s
-		//	quantile{pod="nginx-1", le="1"} 1+1x2
-		//	http_requests_total{pod="nginx-1", le="1"} 1+3x10
-		//	http_requests_total{pod="nginx-2", le="1"} 2+3x10
-		//	http_requests_total{pod="nginx-1", le="2"} 1+2x10
-		//	http_requests_total{pod="nginx-2", le="2"} 2+2x10
-		//	http_requests_total{pod="nginx-2", le="5"} 3+2x10
-		//	http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
-		//	http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
-		//	query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
-		//},
+		{
+			name: "histogram quantile with scalar operator",
+			load: `load 30s
+			quantile{pod="nginx-1", le="1"} 1+1x2
+			http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
+		},
 		{
 			name: "topk",
 			load: `load 30s
@@ -1355,6 +1502,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name: "sgn",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} -10+1x50`,
+			query: "sgn(http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1406,7 +1563,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 								if oldResult.Err == nil {
 									testutil.Ok(t, newResult.Err)
-									testutil.Equals(t, oldResult, newResult)
+									if hasNaNs(oldResult) {
+										t.Log("Applying comparison with NaN equality.")
+										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+									} else {
+										emptyLabelsToNil(oldResult)
+										emptyLabelsToNil(newResult)
+										testutil.Equals(t, oldResult, newResult)
+									}
 								} else {
 									testutil.NotOk(t, newResult.Err)
 								}
@@ -1419,6 +1583,29 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 }
 
+func hasNaNs(result *promql.Result) bool {
+	switch result := result.Value.(type) {
+	case promql.Matrix:
+		for _, vector := range result {
+			for _, point := range vector.Points {
+				if math.IsNaN(point.V) {
+					return true
+				}
+			}
+		}
+	case promql.Vector:
+		for _, point := range result {
+			if math.IsNaN(point.V) {
+				return true
+			}
+		}
+	case promql.Scalar:
+		return math.IsNaN(result.V)
+	}
+
+	return false
+}
+
 func TestDistributedAggregations(t *testing.T) {
 	localOpts := engine.Opts{
 		EngineOpts: promql.EngineOpts{
@@ -1429,39 +1616,47 @@ func TestDistributedAggregations(t *testing.T) {
 		},
 	}
 
-	start := time.Unix(0, 0)
-	end := time.Unix(120, 0)
-	step := time.Second * 30
+	instantTS := time.Unix(75, 0)
+	rangeStart := time.Unix(0, 0)
+	rangeEnd := time.Unix(120, 0)
+	rangeStep := time.Second * 30
 
-	ssetA := []storage.Series{
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "east", "pod", "nginx-1"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{1, 2, 3, 4, 5},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "east", "pod", "nginx-2"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{2, 3, 4, 5, 6},
-		),
+	makeSeries := func(region, pod string) []string {
+		return []string{labels.MetricName, "bar", "region", region, "pod", pod}
 	}
-	ssetB := []storage.Series{
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "west-1", "pod", "nginx-1"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{3, 4, 5, 6, 7},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "west-2", "pod", "nginx-1"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{4, 5, 6, 7, 8},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "region", "west-1", "pod", "nginx-2"},
-			[]int64{0, 30000, 60000, 90000, 120000},
-			[]float64{5, 6, 7, 8, 9},
-		),
+
+	regionEast := []storage.Series{
+		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{2, 3, 4, 5}),
+		newMockSeries(makeSeries("east", "nginx-2"), []int64{30000, 60000, 90000, 120000}, []float64{3, 4, 5, 6}),
 	}
+	regionWest := []storage.Series{
+		newMockSeries(makeSeries("west-1", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{4, 5, 6, 7}),
+		newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{5, 6, 7, 8}),
+		newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30000, 60000, 90000, 120000}, []float64{6, 7, 8, 9}),
+	}
+	timeBasedOverlap := []storage.Series{
+		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000}, []float64{2, 3}),
+		newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30000, 60000}, []float64{5, 6}),
+		newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30000, 60000}, []float64{6, 7}),
+	}
+
+	engineEast := engine.NewRemoteEngine(
+		localOpts, storageWithSeries(regionEast...),
+		120000,
+		[]labels.Labels{labels.FromStrings("region", "east")},
+	)
+	engineWest := engine.NewRemoteEngine(
+		localOpts,
+		storageWithSeries(regionWest...),
+		120000,
+		[]labels.Labels{labels.FromStrings("region", "west")},
+	)
+	engineOverlap := engine.NewRemoteEngine(
+		localOpts,
+		storageWithSeries(timeBasedOverlap...),
+		60000,
+		[]labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "west")},
+	)
 
 	queries := []struct {
 		name           string
@@ -1477,30 +1672,68 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
 		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
+		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
 		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
 	}
 
-	allSeries := storageWithSeries(append(ssetA, ssetB...)...)
+	seriesUnion := storageWithSeries(append(regionEast, regionWest...)...)
+	optimizersOpts := map[string][]logicalplan.Optimizer{
+		"none":    logicalplan.NoOptimizers,
+		"default": logicalplan.DefaultOptimizers,
+		"all":     logicalplan.AllOptimizers,
+	}
 	for _, tcase := range queries {
 		t.Run(tcase.name, func(t *testing.T) {
-			distOpts := localOpts
-			distOpts.DisableFallback = !tcase.expectFallback
-			distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints([]api.RemoteEngine{
-				engine.NewLocalEngine(localOpts, storageWithSeries(ssetA...)),
-				engine.NewLocalEngine(localOpts, storageWithSeries(ssetB...)),
-			}))
-			distQry, err := distEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
-			testutil.Ok(t, err)
+			for o, optimizers := range optimizersOpts {
+				t.Run(fmt.Sprintf("withOptimizers=%s", o), func(t *testing.T) {
+					localOpts.LogicalOptimizers = optimizers
+					t.Run("instant", func(t *testing.T) {
+						distOpts := localOpts
+						distOpts.DisableFallback = !tcase.expectFallback
+						distOpts.DebugWriter = os.Stdout
+						distEngine := engine.NewDistributedEngine(distOpts,
+							api.NewStaticEndpoints([]api.RemoteEngine{engineEast, engineWest, engineOverlap}),
+						)
+						distQry, err := distEngine.NewInstantQuery(seriesUnion, nil, tcase.query, instantTS)
+						testutil.Ok(t, err)
 
-			distResult := distQry.Exec(context.Background())
-			promEngine := promql.NewEngine(localOpts.EngineOpts)
-			promQry, err := promEngine.NewRangeQuery(allSeries, nil, tcase.query, start, end, step)
-			testutil.Ok(t, err)
-			promResult := promQry.Exec(context.Background())
+						distResult := distQry.Exec(context.Background())
+						promEngine := promql.NewEngine(localOpts.EngineOpts)
+						promQry, err := promEngine.NewInstantQuery(seriesUnion, nil, tcase.query, instantTS)
+						testutil.Ok(t, err)
+						promResult := promQry.Exec(context.Background())
 
-			roundValues(promResult)
-			roundValues(distResult)
-			testutil.Equals(t, promResult, distResult)
+						roundValues(promResult)
+						roundValues(distResult)
+
+						// Instant queries have no guarantees on result ordering.
+						sortByLabels(promResult)
+						sortByLabels(distResult)
+
+						testutil.Equals(t, promResult, distResult)
+					})
+
+					t.Run("range", func(t *testing.T) {
+						distOpts := localOpts
+						distOpts.DisableFallback = !tcase.expectFallback
+						distEngine := engine.NewDistributedEngine(distOpts,
+							api.NewStaticEndpoints([]api.RemoteEngine{engineEast, engineWest, engineOverlap}),
+						)
+						distQry, err := distEngine.NewRangeQuery(seriesUnion, nil, tcase.query, rangeStart, rangeEnd, rangeStep)
+						testutil.Ok(t, err)
+
+						distResult := distQry.Exec(context.Background())
+						promEngine := promql.NewEngine(localOpts.EngineOpts)
+						promQry, err := promEngine.NewRangeQuery(seriesUnion, nil, tcase.query, rangeStart, rangeEnd, rangeStep)
+						testutil.Ok(t, err)
+						promResult := promQry.Exec(context.Background())
+
+						roundValues(promResult)
+						roundValues(distResult)
+						testutil.Equals(t, promResult, distResult)
+					})
+				})
+			}
 		})
 	}
 }
@@ -1688,8 +1921,6 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
 			query: "topk(2, http_requests_total)",
-			// TODO (alanprot): Top/BottomK series order on result. https://github.com/thanos-community/promql-engine/issues/120
-			sortByLabels: true,
 		},
 		{
 			name: "topk by series",
@@ -1718,8 +1949,7 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:        "bottomk(2, http_requests_total)",
-			sortByLabels: true,
+			query: "bottomk(2, http_requests_total)",
 		},
 		{
 			name: "bottomk by series",
@@ -2145,15 +2375,13 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
-		// Result is correct but this likely fails due to https://github.com/golang/go/issues/12025.
-		// TODO(saswatamcode): Test NaN cases separately. https://github.com/thanos-community/promql-engine/issues/88
-		// {
-		// 	name: "scalar func with NaN",
-		// 	load: `load 30s
-		//  	http_requests_total{pod="nginx-1"} 1+1x15
-		//  	http_requests_total{pod="nginx-2"} 1+2x18`,
-		// 	query: `scalar(http_requests_total)`,
-		// },
+		{
+			name: "scalar func with NaN",
+			load: `load 30s
+		 	http_requests_total{pod="nginx-1"} 1+1x15
+		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `scalar(http_requests_total)`,
+		},
 		{
 			name: "scalar func with aggr",
 			load: `load 30s
@@ -2224,6 +2452,13 @@ func TestInstantQuery(t *testing.T) {
 				http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `clamp_min(http_requests_total, scalar(max(http_requests_total)) + 10)`,
 		},
+		{
+			name: "sgn",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} -10+1x50`,
+			query: "sgn(http_requests_total)",
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -2277,7 +2512,12 @@ func TestInstantQuery(t *testing.T) {
 									sortByLabels(newResult)
 								}
 
-								testutil.Equals(t, oldResult, newResult)
+								if hasNaNs(oldResult) {
+									t.Log("Applying comparison with NaN equality.")
+									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+								} else {
+									testutil.Equals(t, oldResult, newResult)
+								}
 							})
 						}
 					})
@@ -2767,7 +3007,7 @@ func (m mockSeries) Labels() labels.Labels {
 	return labels.FromStrings(m.labels...)
 }
 
-func (m mockSeries) Iterator() chunkenc.Iterator {
+func (m mockSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator {
 	return &mockIterator{
 		i:          -1,
 		timestamps: m.timestamps,
@@ -2834,8 +3074,8 @@ func (s *testSeriesSet) Warnings() storage.Warnings { return nil }
 
 type slowSeries struct{}
 
-func (d slowSeries) Labels() labels.Labels       { return labels.FromStrings("foo", "bar") }
-func (d slowSeries) Iterator() chunkenc.Iterator { return &slowIterator{} }
+func (d slowSeries) Labels() labels.Labels                        { return labels.FromStrings("foo", "bar") }
+func (d slowSeries) Iterator(chunkenc.Iterator) chunkenc.Iterator { return &slowIterator{} }
 
 type slowIterator struct {
 	ts int64
@@ -2913,6 +3153,103 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 
 }
 
+func TestNativeHistogram(t *testing.T) {
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "plain selector",
+			query: "native_histogram_series",
+		},
+		{
+			name:  "irate() with native histogram",
+			query: "rate(native_histogram_series[1m])",
+		},
+		{
+			name:  "rate() with native histogram",
+			query: "rate(native_histogram_series[1m])",
+		},
+		{
+			name:  "increase() with native histogram",
+			query: "increase(native_histogram_series[1m])",
+		},
+		{
+			name:  "delta() with native and counter histogram",
+			query: "delta(native_histogram_series[1m])",
+		},
+	}
+
+	mixedTypesOpts := []bool{false, true}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, withMixedTypes := range mixedTypesOpts {
+				t.Run(fmt.Sprintf("mixedTypes=%t", withMixedTypes), func(t *testing.T) {
+					test, err := promql.NewTest(t, "")
+					testutil.Ok(t, err)
+					defer test.Close()
+					app := test.Storage().Appender(context.TODO())
+					err = createNativeHistogramSeries(app, withMixedTypes)
+					testutil.Ok(t, err)
+					testutil.Ok(t, app.Commit())
+					testutil.Ok(t, test.Run())
+
+					// New Engine
+					engine := engine.New(engine.Opts{
+						EngineOpts:        opts,
+						DisableFallback:   true,
+						LogicalOptimizers: logicalplan.AllOptimizers,
+					})
+
+					qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
+					testutil.Ok(t, err)
+					res := qry.Exec(test.Context())
+					testutil.Ok(t, res.Err)
+					newVector, err := res.Vector()
+					testutil.Ok(t, err)
+
+					// Old Engine
+					oldEngine := test.QueryEngine()
+					qry, err = oldEngine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
+					testutil.Ok(t, err)
+					res = qry.Exec(test.Context())
+					testutil.Ok(t, res.Err)
+					oldVector, err := res.Vector()
+					testutil.Ok(t, err)
+
+					// Make sure we're not getting back empty results.
+					testutil.Assert(t, len(oldVector) != 0)
+					testutil.Equals(t, oldVector, newVector)
+				})
+			}
+		})
+	}
+}
+
+func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
+	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+	for i, h := range tsdb.GenerateTestHistograms(100) {
+		ts := time.Unix(int64(i*15), 0).UnixMilli()
+		val := float64(i)
+		if withMixedTypes {
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, val); err != nil {
+				return err
+			}
+		}
+		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h, nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func sortByLabels(r *promql.Result) {
 	switch r.Value.Type() {
 	case parser.ValueTypeVector:
@@ -2952,6 +3289,18 @@ func roundValues(r *promql.Result) {
 	case promql.Vector:
 		for i := range result {
 			result[i].V = math.Floor(result[i].V*10e10) / 10e10
+		}
+	}
+}
+
+// emptyLabelsToNil sets empty labelsets to nil to work around inconsistent
+// results from the old engine depending on the literal type (e.g. number vs. compare).
+func emptyLabelsToNil(result *promql.Result) {
+	if value, ok := result.Value.(promql.Matrix); ok {
+		for i, s := range value {
+			if len(s.Metric) == 0 {
+				result.Value.(promql.Matrix)[i].Metric = nil
+			}
 		}
 	}
 }

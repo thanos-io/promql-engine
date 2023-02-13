@@ -42,7 +42,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			ss := querier.Select(false, nil, matcher)
 			series := make([]chunkenc.Iterator, 0)
 			for ss.Next() {
-				series = append(series, ss.At().Iterator())
+				series = append(series, ss.At().Iterator(nil))
 			}
 			for i := 0; i < len(series); i++ {
 				for ts := start.UnixMilli(); ts <= end.UnixMilli(); ts += step.Milliseconds() {
@@ -61,7 +61,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			ss := querier.Select(false, nil, matcher)
 			series := make([]chunkenc.Iterator, 0)
 			for ss.Next() {
-				series = append(series, ss.At().Iterator())
+				series = append(series, ss.At().Iterator(nil))
 			}
 			stepCount := 10
 			ts := start.UnixMilli()

@@ -3,6 +3,10 @@ include .bingo/Variables.mk
 FILES_TO_FMT ?= $(shell find . -path ./vendor -prune -o -name '*.go' -print)
 MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 
+# if macos, use gsed
+SED ?= $(shell which gsed 2>/dev/null || which sed)
+
+
 define require_clean_work_tree
 	@git update-index -q --ignore-submodules --refresh
 
@@ -30,7 +34,7 @@ export GOCACHE=/tmp/cache
 test:
 	@echo ">> running unit tests (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test -v -race -timeout=1m $(shell go list ./...);
+	@go test -v -race -timeout=5m $(shell go list ./...);
 
 .PHONY: deps
 deps: ## Ensures fresh go.mod and go.sum.
