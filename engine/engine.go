@@ -98,10 +98,10 @@ type distributedEngine struct {
 }
 
 func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngine {
-	opts.LogicalOptimizers = append(
-		opts.LogicalOptimizers,
+	opts.LogicalOptimizers = []logicalplan.Optimizer{
 		logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
-	)
+	}
+
 	return &distributedEngine{
 		endpoints:    endpoints,
 		remoteEngine: New(opts),
