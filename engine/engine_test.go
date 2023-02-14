@@ -3193,7 +3193,7 @@ func TestNativeHistogram(t *testing.T) {
 			query: "count by (foo) (native_histogram_series)",
 		},
 		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed.
+		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
 		//{
 		//	name:  "max",
 		//	query: "max (native_histogram_series)",
@@ -3203,7 +3203,7 @@ func TestNativeHistogram(t *testing.T) {
 			query: "max by (foo) (native_histogram_series)",
 		},
 		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed.
+		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
 		//{
 		//	name:  "min",
 		//	query: "min (native_histogram_series)",
