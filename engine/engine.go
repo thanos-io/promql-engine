@@ -140,6 +140,7 @@ func New(opts Opts) *compatibilityEngine {
 		logger:            opts.Logger,
 		lookbackDelta:     opts.LookbackDelta,
 		logicalOptimizers: opts.getLogicalOptimizers(),
+		timeout:           opts.Timeout,
 	}
 }
 
@@ -153,6 +154,7 @@ type compatibilityEngine struct {
 	logger            log.Logger
 	lookbackDelta     time.Duration
 	logicalOptimizers []logicalplan.Optimizer
+	timeout           time.Duration
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -332,7 +334,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	}
 	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithTimeout(ctx, q.engine.timeout)
 	defer cancel()
 	q.cancel = cancel
 

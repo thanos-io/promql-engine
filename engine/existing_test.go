@@ -117,7 +117,10 @@ func TestRangeQuery(t *testing.T) {
 		},
 	}
 
-	ng := engine.New(engine.Opts{})
+	opts := promql.EngineOpts{
+		Timeout: 1 * time.Hour,
+	}
+	ng := engine.New(engine.Opts{EngineOpts: opts})
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
