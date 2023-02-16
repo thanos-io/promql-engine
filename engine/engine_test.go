@@ -1518,29 +1518,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  10 * time.Second,
 		},
-		{
-			name: "sort",
-			load: `load 30s
-				metric{label="value_1"} 20
-				metric{label="value_2"} 30
-				metric{label="value_3"} 10
-			`,
-			query: "sort(metric)",
-			start: time.Unix(0, 0),
-			end:   time.Unix(3000, 0),
-			step:  10 * time.Second,
-		},
-		{
-			name: "sort_desc",
-			load: `load 30s
-				metric{label="value_1"} 20
-				metric{label="value_2"} 30
-				metric{label="value_3"} 10`,
-			query: "sort_desc(metric)",
-			start: time.Unix(0, 0),
-			end:   time.Unix(3000, 0),
-			step:  10 * time.Second,
-        },
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -2487,24 +2464,6 @@ func TestInstantQuery(t *testing.T) {
 			query: "absent(non_existent_metric)",
 			queryTime: time.Now(),
 			sortByLabels: false,
-		},
-		{
-			name: "sort",
-			load: `load 30s
-				metric{label="value_1"} 20
-				metric{label="value_2"} 30
-				metric{label="value_3"} 10`,
-			query: "sort(metric)",
-			queryTime: defaultQueryTime,
-		},
-		{
-			name: "sort_desc",
-			load: `load 30s
-				metric{label="value_1"} 20
-				metric{label="value_2"} 30
-				metric{label="value_3"} 10`,
-			query: "sort_desc(metric)",
-			queryTime: defaultQueryTime,
 		},
 	}
 

@@ -7,9 +7,8 @@ import (
 	"fmt"
 	"math"
 	"time"
-	"sort"
-
-	"github.com/efficientgo/core/errors"
+	
+    "github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -27,7 +26,6 @@ type FunctionArgs struct {
 	SelectRange  int64
 	ScalarPoints []float64
 	Offset       int64
-	Args         []interface{}
 }
 
 // FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
@@ -450,57 +448,6 @@ var Funcs = map[string]FunctionCall{
 		return promql.Sample{
 			Metric: f.Labels,
 			Point: promql.Point{},
-		}
-    },
-	"sort": func(f FunctionArgs) promql.Sample{
-		input := f.Args[0].(*promql.Vector)
-
-		samples := make(promql.Sample, len(input))
-		for i, s := range input{
-			samples[i] = s
-		}
-
-		sort.Slice(samples, func(i, j int) bool{
-			return samples[i].V < samples[j].V
-		})
-
-		// Convert sorted slice of samples back into vector.
-		result := make(promql.Vector, len(input))
-		for i, s := range samples{
-			result[i] = s
-		}
-
-		// Return a sample with the sorted vector as its value
-		return promql.Sample{
-			Metric: promql.Metric{},
-			Point: promql.Point{
-				T: f.StepTime,
-				V: result,
-			},
-	    }
-    },
-	"sort_desc": func(f FunctionArgs) promql.Sample {
-		input := f.Args[0].(*promql.Vector)
-
-		samples := make(promql.Sample, len(input))
-		for i, s := range input{
-			samples[i] = s
-		}
-
-		sort.Slice(samples, func(i, j int) bool {
-			return samples[i].V > samples[j].V
-		})
-
-		result := make(promql.Vector, len(input))
-		for i, s := range samples{
-			result[i] = s
-		}
-        return promql.Sample{
-			Metric: promql.Metric{},
-			Point: promql.Point{
-				T: f.StepTime,
-				V: result,
-			},
 		}
     },
 }
