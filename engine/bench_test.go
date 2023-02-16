@@ -344,7 +344,10 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			opts := engine.Opts{LogicalOptimizers: logicalplan.NoOptimizers}
+			opts := engine.Opts{
+				LogicalOptimizers: logicalplan.NoOptimizers,
+				EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+			}
 			ng := engine.New(opts)
 			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
 			testutil.Ok(b, err)
@@ -357,7 +360,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			ng := engine.New(engine.Opts{})
+			ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
 			testutil.Ok(b, err)
 
@@ -369,7 +372,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 }
 
 func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) *promql.Result {
-	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{DisableFallback: true})
+	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{DisableFallback: true, EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 }
 
 func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
@@ -381,7 +384,7 @@ func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start 
 }
 
 func executeInstantQuery(b *testing.B, q string, test *promql.Test, start time.Time) {
-	ng := engine.New(engine.Opts{})
+	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 	qry, err := ng.NewInstantQuery(test.Queryable(), nil, q, start)
 	testutil.Ok(b, err)
 
