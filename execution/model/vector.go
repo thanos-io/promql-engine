@@ -43,6 +43,11 @@ func (s *StepVector) AppendSamples(pool *VectorPool, ids []uint64, vals []float6
 	s.Samples = append(s.Samples, vals...)
 }
 
+func (s *StepVector) RemoveSample(index int) {
+	s.Samples = append(s.Samples[:index], s.Samples[index+1:]...)
+	s.SampleIDs = append(s.SampleIDs[:index], s.SampleIDs[index+1:]...)
+}
+
 func (s *StepVector) AppendHistogram(pool *VectorPool, histogramID uint64, h *histogram.FloatHistogram) {
 	if s.Histograms == nil {
 		s.HistogramIDs, s.Histograms = pool.getHistogramBuffers()
@@ -60,4 +65,9 @@ func (s *StepVector) AppendHistograms(pool *VectorPool, histogramIDs []uint64, h
 	}
 	s.HistogramIDs = append(s.HistogramIDs, histogramIDs...)
 	s.Histograms = append(s.Histograms, hs...)
+}
+
+func (s *StepVector) RemoveHistogram(index int) {
+	s.Histograms = append(s.Histograms[:index], s.Histograms[index+1:]...)
+	s.HistogramIDs = append(s.HistogramIDs[:index], s.HistogramIDs[index+1:]...)
 }
