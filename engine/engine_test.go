@@ -2985,6 +2985,42 @@ func TestQueryStats(t *testing.T) {
 	stats.NewQueryStats(q.Stats())
 }
 
+func TestQueryConcurrency(t *testing.T) {
+	start := time.Unix(0, 0)
+	end := time.Unix(120, 0)
+	step := time.Second * 30
+
+	query := `http_requests_total{pod="nginx-1"}`
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x1
+				http_requests_total{pod="nginx-2"} 1+2x1`
+	opts := promql.EngineOpts{
+		Timeout:    2 * time.Second,
+		MaxSamples: math.MaxInt64,
+	}
+
+	test, err := promql.NewTest(t, load)
+	testutil.Ok(t, err)
+	defer test.Close()
+	ctx := context.TODO()
+
+	serialEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts, QueryConcurrency: 1})
+	serialRange, err := serialEngine.NewRangeQuery(test.Storage(), nil, query, start, end, step)
+	testutil.Ok(t, err)
+
+	serialInstant, err := serialEngine.NewInstantQuery(test.Storage(), nil, query, end)
+	testutil.Ok(t, err)
+
+	concurrentEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts, QueryConcurrency: runtime.GOMAXPROCS(0)})
+	concurrentRange, err := concurrentEngine.NewRangeQuery(test.Storage(), nil, query, start, end, step)
+	testutil.Ok(t, err)
+	testutil.Equals(t, serialRange.Exec(ctx), concurrentRange.Exec(ctx))
+
+	concurrentInstant, err := concurrentEngine.NewInstantQuery(test.Storage(), nil, query, end)
+	testutil.Ok(t, err)
+	testutil.Equals(t, serialInstant.Exec(ctx), concurrentInstant.Exec(ctx))
+}
+
 func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 	return &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{

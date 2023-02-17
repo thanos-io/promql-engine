@@ -50,22 +50,18 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
-	opts := &query.Options{
-		Start:         mint,
-		End:           maxt,
-		Step:          step,
-		LookbackDelta: lookbackDelta,
-		StepsBatch:    stepsBatch,
+func New(expr parser.Expr, queryable storage.Queryable, queryOptions *query.Options) (model.VectorOperator, error) {
+	if queryOptions.StepsBatch == 0 {
+		queryOptions.StepsBatch = 10
 	}
 	selectorPool := engstore.NewSelectorPool(queryable)
 	hints := storage.SelectHints{
-		Start: mint.UnixMilli(),
-		End:   maxt.UnixMilli(),
+		Start: queryOptions.Start.UnixMilli(),
+		End:   queryOptions.End.UnixMilli(),
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
-		Step: step.Milliseconds(),
+		Step: queryOptions.Step.Milliseconds(),
 	}
-	return newOperator(expr, selectorPool, opts, hints)
+	return newOperator(expr, selectorPool, queryOptions, hints)
 }
 
 func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -279,10 +275,7 @@ func unpackVectorSelector(t *parser.MatrixSelector) (*parser.VectorSelector, []*
 }
 
 func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Options, offset time.Duration) (model.VectorOperator, error) {
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
+	numShards := opts.MaxShards
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
 		operator := exchange.NewConcurrent(

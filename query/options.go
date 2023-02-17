@@ -14,6 +14,7 @@ type Options struct {
 	LookbackDelta time.Duration
 
 	StepsBatch int64
+	MaxShards  int
 }
 
 func (o *Options) NumSteps() int {

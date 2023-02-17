@@ -6,6 +6,8 @@ package engine
 import (
 	"context"
 
+	"github.com/thanos-community/promql-engine/query"
+
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
@@ -54,6 +56,9 @@ type Opts struct {
 	// If nil, nothing will be printed.
 	// NOTE: Users will not check the errors, debug writing is best effort.
 	DebugWriter io.Writer
+
+	// QueryConcurrency represents the maximum amount of concurrent Go routines that will be spawned to handle a query.
+	QueryConcurrency int
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
@@ -127,6 +132,14 @@ func New(opts Opts) *compatibilityEngine {
 		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
 
+	maxShards := opts.QueryConcurrency
+	if maxShards == 0 {
+		maxShards = runtime.GOMAXPROCS(0) / 2
+	}
+	if maxShards < 1 {
+		maxShards = 1
+	}
+
 	return &compatibilityEngine{
 		prom: promql.NewEngine(opts.EngineOpts),
 		queries: promauto.With(opts.Reg).NewCounterVec(
@@ -141,6 +154,7 @@ func New(opts Opts) *compatibilityEngine {
 		lookbackDelta:     opts.LookbackDelta,
 		logicalOptimizers: opts.getLogicalOptimizers(),
 		timeout:           opts.Timeout,
+		maxShards:         maxShards,
 	}
 }
 
@@ -155,6 +169,7 @@ type compatibilityEngine struct {
 	lookbackDelta     time.Duration
 	logicalOptimizers []logicalplan.Optimizer
 	timeout           time.Duration
+	maxShards         int
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -169,8 +184,13 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 
 	lplan := logicalplan.New(expr, ts, ts)
 	lplan = lplan.Optimize(e.logicalOptimizers)
-
-	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, &query.Options{
+		Start:         ts,
+		End:           ts,
+		Step:          0,
+		LookbackDelta: e.lookbackDelta,
+		MaxShards:     e.maxShards,
+	})
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
@@ -208,7 +228,13 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	lplan := logicalplan.New(expr, start, end)
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, &query.Options{
+		Start:         start,
+		End:           end,
+		Step:          step,
+		LookbackDelta: e.lookbackDelta,
+		MaxShards:     e.maxShards,
+	})
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
