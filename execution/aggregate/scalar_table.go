@@ -152,6 +152,10 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 						histSum = h
 						return
 					}
+					// https://github.com/prometheus/prometheus/blob/57bcbf18880f7554ae34c5b341d52fc53f059a97/model/histogram/float_histogram.go#L86
+					if histSum.Schema > h.Schema {
+						return
+					}
 					histSum = histSum.Add(h)
 				},
 				ValueFunc: func() (float64, *histogram.FloatHistogram) {
