@@ -152,7 +152,17 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 						histSum = h
 						return
 					}
-					histSum = histSum.Add(h)
+					// The histogram being added must have
+					// an equal or larger schema.
+					// https://github.com/prometheus/prometheus/blob/57bcbf18880f7554ae34c5b341d52fc53f059a97/promql/engine.go#L2448-L2456
+					if h.Schema >= histSum.Schema {
+						histSum = histSum.Add(h)
+					} else {
+						t := h.Copy()
+						t.Add(histSum)
+						histSum = t
+					}
+
 				},
 				ValueFunc: func() (float64, *histogram.FloatHistogram) {
 					return value, histSum
