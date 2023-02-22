@@ -229,17 +229,17 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		}
 
 		i = 0
-		for i < len(vector.Histograms) {
+		for i < len(vectors[batchIndex].Histograms) {
 			o.pointBuf[0].H = vector.Histograms[i]
 			result := o.call(o.newFunctionArgs(vector, batchIndex))
 
 			// This operator modifies samples directly in the input vector to avoid allocations.
 			// All current functions for histograms produce a float64 sample. It's therefore safe to
 			// always remove the input histogram so that it does not propagate to the output.
+			sampleID := vectors[batchIndex].HistogramIDs[i]
 			vectors[batchIndex].RemoveHistogram(i)
 			if result.Point != InvalidSample.Point {
-				vectors[batchIndex].AppendSample(o.GetPool(), vector.HistogramIDs[i], result.V)
-				i++
+				vectors[batchIndex].AppendSample(o.GetPool(), sampleID, result.V)
 			}
 		}
 	}
