@@ -133,7 +133,13 @@ func histogramSum(histograms []*histogram.FloatHistogram) *histogram.FloatHistog
 
 	histSum := histograms[0]
 	for i := 1; i < len(histograms); i++ {
-		histSum = histSum.Add(histograms[i])
+		if histograms[i].Schema >= histSum.Schema {
+			histSum = histSum.Add(histograms[i])
+		} else {
+			t := histograms[i].Copy()
+			t.Add(histSum)
+			histSum = t
+		}
 	}
 	return histSum
 }

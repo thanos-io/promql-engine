@@ -3332,8 +3332,29 @@ func TestNativeHistograms(t *testing.T) {
 
 func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
 	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
-	for i, h := range tsdb.GenerateTestHistograms(100) {
+	h1 := tsdb.GenerateTestHistograms(100)
+	h2 := tsdb.GenerateTestHistograms(100)
+	higherSchemaHist := &histogram.Histogram{
+		Schema: 3,
+		PositiveSpans: []histogram.Span{
+			{Offset: -5, Length: 2}, // -5 -4
+			{Offset: 2, Length: 3},  // -1 0 1
+			{Offset: 2, Length: 2},  // 4 5
+		},
+		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
+		Count:           13,
+	}
+	for i := range h1 {
 		ts := time.Unix(int64(i*15), 0).UnixMilli()
+		if i == 0 {
+			// Inject a histogram with a higher schema.
+			// Regression test for https://github.com/thanos-community/promql-engine/pull/182 and
+			// https://github.com/thanos-community/promql-engine/pull/183.
+			if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, higherSchemaHist, nil); err != nil {
+				return err
+			}
+		}
+
 		if withMixedTypes {
 			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
 				return err
@@ -3342,7 +3363,10 @@ func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) erro
 				return err
 			}
 		}
-		if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, h, nil); err != nil {
+		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "1")...), ts, h1[i], nil); err != nil {
+			return err
+		}
+		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "2")...), ts, h2[i], nil); err != nil {
 			return err
 		}
 	}
