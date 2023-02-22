@@ -90,6 +90,12 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 			next:     nextOps[0],
 			funcExpr: funcExpr,
 		}, nil
+	case "absent":
+		return &absentOperator{
+			next:     nextOps[0],
+			pool:     model.NewVectorPool(stepsBatch),
+			funcExpr: funcExpr,
+		}, nil
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.

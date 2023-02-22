@@ -298,6 +298,10 @@ var Funcs = map[string]FunctionCall{
 		// This is handled specially by operator.
 		return promql.Sample{}
 	},
+	"absent": func(f FunctionArgs) promql.Sample {
+		// This is handled specially by operator.
+		return promql.Sample{}
+	},
 	"rate": func(f FunctionArgs) promql.Sample {
 		if len(f.Samples) < 2 {
 			return InvalidSample

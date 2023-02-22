@@ -1768,6 +1768,17 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				storage_info{storage_info="Swap", storage_index="30"} 1x20`,
 			query: `avg by (storage_info) (storage_used * on (instance, storage_index) group_left(storage_info) (sum by (instance, storage_index, storage_info) (storage_info)))`,
 		},
+		{
+			name: "absent with partial data in range",
+			load: `load 30s
+				existent{job="myjob"} 1 1 1`,
+			query: `absent(existent{job="myjob"})`,
+		},
+		{
+			name:  "absent with no data in range",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob"})`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -3418,6 +3429,38 @@ func TestInstantQuery(t *testing.T) {
 				http_requests_total{pod="nginx-2", series="1"} -10+1x50
 				http_requests_total{pod="nginx-3", series="1"} NaN`,
 			query: "sgn(http_requests_total)",
+		},
+		{
+			name:  "absent and series does not exist",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob"})`,
+		},
+		{
+			name: "absent and series exists",
+			load: `load 30s
+				existent{job="myjob"} 1`,
+			query: `absent(existent{job="myjob"})`,
+		},
+		{
+			name:  "absent and regex matcher",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob", instance=~".*"})`,
+		},
+		{
+			name:  "absent and duplicate matchers",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob", job="yourjob", foo="bar"})`,
+		},
+		{
+			name:  "absent and nested function",
+			load:  `load 30s`,
+			query: `absent(sum(nonexistent{job="myjob"}))`,
+		},
+		{
+			name: "absent and nested absent with existing series",
+			load: `load 30s
+				existent{job="myjob"} 1`,
+			query: `absent(absent(existent{job="myjob"}))`,
 		},
 	}
 
