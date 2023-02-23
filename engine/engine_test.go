@@ -849,6 +849,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "time()",
 		},
 		{
+			name:  "binary operation on time function",
+			load:  "",
+			query: "time() - 20",
+		},
+		{
+			name:  "reverse binary operaton on time function",
+			load:  "",
+			query: "20 - time()",
+		},
+		{
 			name:  "empty series with func",
 			load:  "",
 			query: "sum(http_requests_total)",

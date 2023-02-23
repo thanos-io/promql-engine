@@ -63,7 +63,7 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 		return nil, nil
 	}
 	ret := o.vectorPool.GetVectorBatch()
-	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
+	for i := 0; o.currentStep <= o.maxt; i++ {
 		sv := o.vectorPool.GetStepVector(o.currentStep)
 		result := o.call(FunctionArgs{
 			StepTime: o.currentStep,
