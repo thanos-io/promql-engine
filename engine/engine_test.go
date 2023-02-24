@@ -79,7 +79,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
 	start := time.Unix(0, 0)
-	end := time.Unix(240, 0)
+	end := time.Unix(1800, 0)
 	step := time.Second * 30
 	// Negative offset and at modifier are enabled by default
 	// since Prometheus v2.33.0 so we also enable them.
@@ -849,6 +849,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "time()",
 		},
 		{
+			name:  "time function in binary expression",
+			load:  "",
+			query: "time() - 10",
+		},
+		{
 			name:  "empty series with func",
 			load:  "",
 			query: "sum(http_requests_total)",
@@ -1549,18 +1554,19 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								defer q2.Close()
 
 								oldResult := q2.Exec(context.Background())
-								if oldResult.Err == nil {
-									testutil.Ok(t, newResult.Err)
-									if hasNaNs(oldResult) {
-										t.Log("Applying comparison with NaN equality.")
-										testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
-									} else {
-										emptyLabelsToNil(oldResult)
-										emptyLabelsToNil(newResult)
-										testutil.Equals(t, oldResult, newResult)
-									}
-								} else {
+								if oldResult.Err != nil {
 									testutil.NotOk(t, newResult.Err)
+									return
+								}
+
+								testutil.Ok(t, newResult.Err)
+								if hasNaNs(oldResult) {
+									t.Log("Applying comparison with NaN equality.")
+									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+								} else {
+									emptyLabelsToNil(oldResult)
+									emptyLabelsToNil(newResult)
+									testutil.Equals(t, oldResult, newResult)
 								}
 							})
 						}

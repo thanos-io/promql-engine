@@ -363,24 +363,8 @@ loop:
 
 			// Case where Series call might return nil, but samples are present.
 			// For example scalar(http_request_total) where http_request_total has multiple values.
-			if len(resultSeries) == 0 && len(r) != 0 {
-				numSeries := 0
-				for i := range r {
-					numSeries += len(r[i].Samples)
-				}
-				series = make([]promql.Series, numSeries)
-
-				for _, vector := range r {
-					for i := range vector.Samples {
-						series[i].Points = append(series[i].Points, promql.Point{
-							T: vector.T,
-							V: vector.Samples[i],
-						})
-					}
-					q.Query.exec.GetPool().PutStepVector(vector)
-				}
-				q.Query.exec.GetPool().PutVectors(r)
-				continue
+			if len(series) == 0 && len(r) != 0 {
+				series = make([]promql.Series, len(r[0].Samples))
 			}
 
 			for _, vector := range r {

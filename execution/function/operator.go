@@ -100,6 +100,7 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 
 		switch funcExpr.Func.Name {
 		case "pi", "time", "scalar":
+			op.sampleIDs = []uint64{0}
 		default:
 			// Other functions require non-nil labels.
 			op.series = []labels.Labels{{}}
@@ -202,14 +203,20 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	for batchIndex, vector := range vectors {
 		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
 		// So need to handle this separately here, instead of going via call which is per point.
+		// TODO(fpetkovski): make this decision once in the constructor and create a new operator.
 		if o.funcExpr.Func.Name == "scalar" {
-			if len(vector.Samples) <= 1 {
+			if len(vector.Samples) == 0 {
+				vectors[batchIndex].SampleIDs = []uint64{0}
+				vectors[batchIndex].Samples = []float64{math.NaN()}
 				continue
 			}
 
-			vectors[batchIndex].Samples = vector.Samples[:1]
 			vectors[batchIndex].SampleIDs = vector.SampleIDs[:1]
-			vector.Samples[0] = math.NaN()
+			vectors[batchIndex].SampleIDs[0] = 0
+			if len(vector.Samples) > 1 {
+				vectors[batchIndex].Samples = vector.Samples[:1]
+				vectors[batchIndex].Samples[0] = math.NaN()
+			}
 			continue
 		}
 
