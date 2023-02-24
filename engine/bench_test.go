@@ -203,6 +203,14 @@ func BenchmarkRangeQuery(b *testing.B) {
 			name:  "histogram_quantile",
 			query: `histogram_quantile(0.9, http_response_seconds_bucket)`,
 		},
+		{
+			name:  "sort",
+			query: `sort(http_response_seconds_bucket)`,
+		},
+		{
+			name:  "sort_desc",
+			query: `sort_desc(http_response_seconds_bucket)`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -294,6 +302,14 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 		{
 			name:  "vector and scalar comparison",
 			query: `http_requests_total > 10`,
+		},
+		{
+			name:  "sort",
+			query: `sort(http_requests_total)`,
+		},
+		{
+			name:  "sort_desc",
+			query: `sort_desc(http_requests_total)`,
 		},
 	}
 

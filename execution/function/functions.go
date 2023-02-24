@@ -394,6 +394,28 @@ var Funcs = map[string]FunctionCall{
 			},
 		}
 	},
+	"sort": func(f FunctionArgs) promql.Sample {
+		// This is handled specially by the engine.
+		// Return identical points, sorting is handled when presenting results.
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: f.Points[0].V,
+			},
+		}
+	},
+	"sort_desc": func(f FunctionArgs) promql.Sample {
+		// This is handled specially by the engine.
+		// Return identical points, sorting is handled when presenting results.
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: f.Points[0].V,
+			},
+		}
+	},
 	"histogram_sum": func(f FunctionArgs) promql.Sample {
 		if len(f.Points) == 0 || f.Points[0].H == nil {
 			return InvalidSample

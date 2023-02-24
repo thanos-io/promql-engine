@@ -1505,6 +1505,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name: "sort_desc",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "sort_desc(http_requests_total)",
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1808,6 +1818,28 @@ func TestInstantQuery(t *testing.T) {
 			http_requests_total{pod="nginx-1"} 1+1x180`,
 			queryTime: time.Unix(160, 0),
 			query:     "increase(http_requests_total[1m] offset 1m)",
+		},
+		{
+			name: "sort",
+			load: `load 1s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			queryTime: time.Unix(0, 0),
+			query:     "sort(http_requests_total)",
+		},
+		{
+			name: "sort_desc",
+			load: `load 1s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			queryTime: time.Unix(0, 0),
+			query:     "sort_desc(http_requests_total)",
 		},
 		{
 			name: "quantile by pod",
@@ -2932,8 +2964,8 @@ func TestFallback(t *testing.T) {
 	end := time.Unix(120, 0)
 	step := time.Second * 30
 
-	// TODO(fpetkovski): Update this expression once we add support for sort_desc.
-	query := `sort_desc(http_requests_total{pod="nginx-1"})`
+	// TODO(fpetkovski): Update this expression once we add support for predict_linear.
+	query := `predict_linear(http_requests_total{pod="nginx-1"}[5m], 10)`
 	load := `load 30s
 				http_requests_total{pod="nginx-1"} 1+1x1
 				http_requests_total{pod="nginx-2"} 1+2x40`

@@ -285,10 +285,11 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 		o.series = make([]labels.Labels, len(series))
 		for i, s := range series {
 			lbls := s
-			if o.funcExpr.Func.Name != "last_over_time" {
+			switch o.funcExpr.Func.Name {
+			case "last_over_time", "sort", "sort_desc":
+			default:
 				lbls, _ = DropMetricName(s.Copy())
 			}
-
 			o.series[i] = lbls
 		}
 	})

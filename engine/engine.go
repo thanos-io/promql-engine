@@ -253,39 +253,60 @@ const (
 )
 
 type resultSort struct {
+	// for sort / sort_desc functions
+	isSortFunc bool
+
+	// for aggregations
 	sortByValues  bool
-	sortOrder     sortOrder
 	sortingLabels []string
 	groupBy       bool
+
+	// for all
+	sortOrder sortOrder
 }
 
 func newResultSort(expr parser.Expr) resultSort {
-	aggr, ok := expr.(*parser.AggregateExpr)
-	if !ok {
-		return resultSort{}
-	}
-
-	switch aggr.Op {
-	case parser.TOPK:
-		return resultSort{
-			sortByValues:  true,
-			sortingLabels: aggr.Grouping,
-			sortOrder:     sortOrderDesc,
-			groupBy:       !aggr.Without,
+	switch texpr := expr.(type) {
+	case *parser.Call:
+		switch texpr.Func.Name {
+		case "sort":
+			return resultSort{isSortFunc: true, sortOrder: sortOrderAsc}
+		case "sort_desc":
+			return resultSort{isSortFunc: true, sortOrder: sortOrderDesc}
 		}
-	case parser.BOTTOMK:
-		return resultSort{
-			sortByValues:  true,
-			sortingLabels: aggr.Grouping,
-			sortOrder:     sortOrderAsc,
-			groupBy:       !aggr.Without,
+	case *parser.AggregateExpr:
+		switch texpr.Op {
+		case parser.TOPK:
+			return resultSort{
+				sortByValues:  true,
+				sortingLabels: texpr.Grouping,
+				sortOrder:     sortOrderDesc,
+				groupBy:       !texpr.Without,
+			}
+		case parser.BOTTOMK:
+			return resultSort{
+				sortByValues:  true,
+				sortingLabels: texpr.Grouping,
+				sortOrder:     sortOrderAsc,
+				groupBy:       !texpr.Without,
+			}
 		}
-	default:
-		return resultSort{}
 	}
+	return resultSort{}
 }
 
 func (s resultSort) comparer(samples *promql.Vector) func(i int, j int) bool {
+	if s.isSortFunc {
+		return func(i int, j int) bool {
+			if math.IsNaN((*samples)[j].V) {
+				return true
+			}
+			if s.sortOrder == sortOrderAsc {
+				return (*samples)[i].V < (*samples)[j].V
+			}
+			return (*samples)[i].V > (*samples)[j].V
+		}
+	}
 	return func(i int, j int) bool {
 		if !s.sortByValues {
 			return i < j
