@@ -47,13 +47,14 @@ func newVectorizedTable(a vectorAccumulator) *vectorTable {
 }
 
 func (t *vectorTable) aggregate(_ float64, vector model.StepVector) {
+	t.timestamp = vector.T
+
 	if len(vector.SampleIDs) == 0 && len(vector.Histograms) == 0 {
 		t.hasValue = false
 		return
 	}
-
 	t.hasValue = true
-	t.timestamp = vector.T
+
 	var ok bool
 	t.value, t.histValue, ok = t.accumulator(vector.Samples, vector.Histograms)
 	if !ok {
