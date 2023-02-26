@@ -1223,7 +1223,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			name: "scalar func with NaN",
 			load: `load 30s
 		 	http_requests_total{pod="nginx-1"} 1+1x15
-		 	http_requests_total{pod="nginx-2"} 1+2x18`,
+		 	http_requests_total{pod="nginx-2"} NaN`,
 			query: `scalar(http_requests_total)`,
 		},
 		{
@@ -2450,7 +2450,8 @@ func TestInstantQuery(t *testing.T) {
 			name: "sgn",
 			load: `load 30s
 				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
-				http_requests_total{pod="nginx-2", series="1"} -10+1x50`,
+				http_requests_total{pod="nginx-2", series="1"} -10+1x50
+				http_requests_total{pod="nginx-3", series="1"} NaN`,
 			query: "sgn(http_requests_total)",
 		},
 	}
