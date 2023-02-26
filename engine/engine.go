@@ -258,67 +258,73 @@ const (
 	sortOrderDesc sortOrder = true
 )
 
-type resultSort struct {
-	// for sort / sort_desc functions
-	isSortFunc bool
+type resultSorter interface {
+	comparer(samples *promql.Vector) func(i, j int) bool
+}
 
-	// for aggregations
-	sortByValues  bool
-	sortingLabels []string
-	groupBy       bool
-
-	// for all
+type sortFuncResultSort struct {
 	sortOrder sortOrder
 }
 
-func newResultSort(expr parser.Expr) resultSort {
+type aggregateResultSort struct {
+	sortingLabels []string
+	groupBy       bool
+
+	sortOrder sortOrder
+}
+
+type noSortResultSort struct {
+}
+
+func newResultSort(expr parser.Expr) resultSorter {
 	switch texpr := expr.(type) {
 	case *parser.Call:
 		switch texpr.Func.Name {
 		case "sort":
-			return resultSort{isSortFunc: true, sortOrder: sortOrderAsc}
+			return sortFuncResultSort{sortOrder: sortOrderAsc}
 		case "sort_desc":
-			return resultSort{isSortFunc: true, sortOrder: sortOrderDesc}
+			return sortFuncResultSort{sortOrder: sortOrderDesc}
 		}
 	case *parser.AggregateExpr:
 		switch texpr.Op {
 		case parser.TOPK:
-			return resultSort{
-				sortByValues:  true,
+			return aggregateResultSort{
 				sortingLabels: texpr.Grouping,
 				sortOrder:     sortOrderDesc,
 				groupBy:       !texpr.Without,
 			}
 		case parser.BOTTOMK:
-			return resultSort{
-				sortByValues:  true,
+			return aggregateResultSort{
 				sortingLabels: texpr.Grouping,
 				sortOrder:     sortOrderAsc,
 				groupBy:       !texpr.Without,
 			}
 		}
 	}
-	return resultSort{}
+	return noSortResultSort{}
+}
+func (s noSortResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
+	return func(i, j int) bool { return i < j }
 }
 
-func (s resultSort) comparer(samples *promql.Vector) func(i, j int) bool {
-	valueIsLess := func(i, j int) bool {
-		if math.IsNaN((*samples)[j].V) {
-			return true
-		}
-		if s.sortOrder == sortOrderAsc {
-			return (*samples)[i].V < (*samples)[j].V
-		}
-		return (*samples)[i].V > (*samples)[j].V
+func valueCompare(order sortOrder, l, r float64) bool {
+	if math.IsNaN(r) {
+		return true
 	}
-	if s.isSortFunc {
-		return valueIsLess
+	if order == sortOrderAsc {
+		return l < r
 	}
-	return func(i int, j int) bool {
-		if !s.sortByValues {
-			return i < j
-		}
+	return l > r
+}
 
+func (s sortFuncResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
+	return func(i, j int) bool {
+		return valueCompare(s.sortOrder, (*samples)[i].V, (*samples)[j].V)
+	}
+}
+
+func (s aggregateResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
+	return func(i int, j int) bool {
 		var iLbls labels.Labels
 		var jLbls labels.Labels
 		iLb := labels.NewBuilder((*samples)[i].Metric)
@@ -335,7 +341,7 @@ func (s resultSort) comparer(samples *promql.Vector) func(i, j int) bool {
 		if lblsCmp != 0 {
 			return lblsCmp < 0
 		}
-		return valueIsLess(i, j)
+		return valueCompare(s.sortOrder, (*samples)[i].V, (*samples)[j].V)
 	}
 }
 
@@ -345,7 +351,7 @@ type compatibilityQuery struct {
 	expr       parser.Expr
 	ts         time.Time // Empty for range queries.
 	t          QueryType
-	resultSort resultSort
+	resultSort resultSorter
 
 	cancel context.CancelFunc
 }
