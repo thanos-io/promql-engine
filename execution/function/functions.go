@@ -81,6 +81,9 @@ var Funcs = map[string]FunctionCall{
 		} else if v < 0 {
 			sign = -1
 		}
+		if math.IsNaN(v) {
+			sign = math.NaN()
+		}
 		return sign
 	}),
 	"timestamp": func(f FunctionArgs) promql.Sample {
