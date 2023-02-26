@@ -57,11 +57,13 @@ type Opts struct {
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
+	var optimizers []logicalplan.Optimizer
 	if o.LogicalOptimizers == nil {
-		return logicalplan.DefaultOptimizers
+		optimizers = logicalplan.DefaultOptimizers
+	} else {
+		optimizers = o.LogicalOptimizers
 	}
-
-	return o.LogicalOptimizers
+	return append(optimizers, logicalplan.TrimSortFunctions{})
 }
 
 type remoteEngine struct {
@@ -166,6 +168,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	if err != nil {
 		return nil, err
 	}
+	// determine sorting order before optimizers run, we do this by looking for "sort"
+	// and "sort_desc" and optimize them away afterwards since they are only needed at
+	// the presentation layer and not when computing the results.
+	resultSort := newResultSort(expr)
 
 	lplan := logicalplan.New(expr, ts, ts)
 	lplan = lplan.Optimize(e.logicalOptimizers)
@@ -190,7 +196,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		expr:       expr,
 		ts:         ts,
 		t:          InstantQuery,
-		resultSort: newResultSort(expr),
+		resultSort: resultSort,
 	}, nil
 }
 
@@ -295,17 +301,18 @@ func newResultSort(expr parser.Expr) resultSort {
 	return resultSort{}
 }
 
-func (s resultSort) comparer(samples *promql.Vector) func(i int, j int) bool {
-	if s.isSortFunc {
-		return func(i int, j int) bool {
-			if math.IsNaN((*samples)[j].V) {
-				return true
-			}
-			if s.sortOrder == sortOrderAsc {
-				return (*samples)[i].V < (*samples)[j].V
-			}
-			return (*samples)[i].V > (*samples)[j].V
+func (s resultSort) comparer(samples *promql.Vector) func(i, j int) bool {
+	valueIsLess := func(i, j int) bool {
+		if math.IsNaN((*samples)[j].V) {
+			return true
 		}
+		if s.sortOrder == sortOrderAsc {
+			return (*samples)[i].V < (*samples)[j].V
+		}
+		return (*samples)[i].V > (*samples)[j].V
+	}
+	if s.isSortFunc {
+		return valueIsLess
 	}
 	return func(i int, j int) bool {
 		if !s.sortByValues {
@@ -328,11 +335,7 @@ func (s resultSort) comparer(samples *promql.Vector) func(i int, j int) bool {
 		if lblsCmp != 0 {
 			return lblsCmp < 0
 		}
-
-		if s.sortOrder == sortOrderAsc {
-			return (*samples)[i].V < (*samples)[j].V
-		}
-		return (*samples)[i].V > (*samples)[j].V
+		return valueIsLess(i, j)
 	}
 }
 

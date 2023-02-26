@@ -47,6 +47,7 @@ func simpleFunc(f func(float64) float64) FunctionCall {
 
 }
 
+// The engine handles sort and sort_desc when presenting the results. They are not needed here.
 var Funcs = map[string]FunctionCall{
 	"abs":   simpleFunc(math.Abs),
 	"ceil":  simpleFunc(math.Ceil),
@@ -391,28 +392,6 @@ var Funcs = map[string]FunctionCall{
 			Point: promql.Point{
 				T: f.StepTime,
 				V: math.Min(max, v),
-			},
-		}
-	},
-	"sort": func(f FunctionArgs) promql.Sample {
-		// This is handled specially by the engine.
-		// Return identical points, sorting is handled when presenting results.
-		return promql.Sample{
-			Metric: f.Labels,
-			Point: promql.Point{
-				T: f.StepTime,
-				V: f.Points[0].V,
-			},
-		}
-	},
-	"sort_desc": func(f FunctionArgs) promql.Sample {
-		// This is handled specially by the engine.
-		// Return identical points, sorting is handled when presenting results.
-		return promql.Sample{
-			Metric: f.Labels,
-			Point: promql.Point{
-				T: f.StepTime,
-				V: f.Points[0].V,
 			},
 		}
 	},

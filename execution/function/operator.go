@@ -286,7 +286,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 		for i, s := range series {
 			lbls := s
 			switch o.funcExpr.Func.Name {
-			case "last_over_time", "sort", "sort_desc":
+			case "last_over_time":
 			default:
 				lbls, _ = DropMetricName(s.Copy())
 			}
