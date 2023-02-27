@@ -19,13 +19,15 @@ import (
 
 type Execution struct {
 	query          promql.Query
+	opts           *query.Options
 	vectorSelector model.VectorOperator
 }
 
 func NewExecution(query promql.Query, pool *model.VectorPool, opts *query.Options) *Execution {
 	return &Execution{
 		query:          query,
-		vectorSelector: scan.NewVectorSelector(pool, newStorageFromQuery(query), opts, 0, 0, 1),
+		opts:           opts,
+		vectorSelector: scan.NewVectorSelector(pool, newStorageFromQuery(query, opts), opts, 0, 0, 1),
 	}
 }
 
@@ -42,20 +44,22 @@ func (e *Execution) GetPool() *model.VectorPool {
 }
 
 func (e *Execution) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*remoteExec] %s", e.query), nil
+	return fmt.Sprintf("[*remoteExec] %s (%d, %d)", e.query, e.opts.Start.Unix(), e.opts.End.Unix()), nil
 }
 
 type storageAdapter struct {
 	query promql.Query
+	opts  *query.Options
 
 	once   sync.Once
 	err    error
 	series []engstore.SignedSeries
 }
 
-func newStorageFromQuery(query promql.Query) *storageAdapter {
+func newStorageFromQuery(query promql.Query, opts *query.Options) *storageAdapter {
 	return &storageAdapter{
 		query: query,
+		opts:  opts,
 	}
 }
 

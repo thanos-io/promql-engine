@@ -20,34 +20,42 @@ var DefaultOptimizers = []Optimizer{
 	MergeSelectsOptimizer{},
 }
 
+type Opts struct {
+	Start time.Time
+	End   time.Time
+	Step  time.Duration
+}
+
 type Plan interface {
 	Optimize([]Optimizer) Plan
 	Expr() parser.Expr
 }
 
 type Optimizer interface {
-	Optimize(parser.Expr) parser.Expr
+	Optimize(expr parser.Expr, opts *Opts) parser.Expr
 }
 
 type plan struct {
 	expr parser.Expr
+	opts *Opts
 }
 
-func New(expr parser.Expr, mint, maxt time.Time) Plan {
-	expr = promql.PreprocessExpr(expr, mint, maxt)
-	setOffsetForAtModifier(mint.UnixMilli(), expr)
+func New(expr parser.Expr, opts *Opts) Plan {
+	expr = promql.PreprocessExpr(expr, opts.Start, opts.End)
+	setOffsetForAtModifier(opts.Start.UnixMilli(), expr)
 
 	return &plan{
 		expr: expr,
+		opts: opts,
 	}
 }
 
 func (p *plan) Optimize(optimizers []Optimizer) Plan {
 	for _, o := range optimizers {
-		p.expr = o.Optimize(p.expr)
+		p.expr = o.Optimize(p.expr, p.opts)
 	}
 
-	return &plan{p.expr}
+	return &plan{expr: p.expr, opts: p.opts}
 }
 
 func (p *plan) Expr() parser.Expr {

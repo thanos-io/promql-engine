@@ -71,19 +71,25 @@ type remoteEngine struct {
 	engine    *compatibilityEngine
 	labelSets []labels.Labels
 	maxt      int64
+	mint      int64
 }
 
-func NewRemoteEngine(opts Opts, q storage.Queryable, maxt int64, labelSets []labels.Labels) *remoteEngine {
+func NewRemoteEngine(opts Opts, q storage.Queryable, mint, maxt int64, labelSets []labels.Labels) *remoteEngine {
 	return &remoteEngine{
 		q:         q,
 		labelSets: labelSets,
 		maxt:      maxt,
+		mint:      mint,
 		engine:    New(opts),
 	}
 }
 
 func (l remoteEngine) MaxT() int64 {
 	return l.maxt
+}
+
+func (l remoteEngine) MinT() int64 {
+	return l.mint
 }
 
 func (l remoteEngine) LabelSets() []labels.Labels {
@@ -173,7 +179,11 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	// the presentation layer and not when computing the results.
 	resultSort := newResultSort(expr)
 
-	lplan := logicalplan.New(expr, ts, ts)
+	lplan := logicalplan.New(expr, &logicalplan.Opts{
+		Start: ts,
+		End:   ts,
+		Step:  1,
+	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
@@ -211,7 +221,11 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 		return nil, errors.Newf("invalid expression type %q for range Query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
-	lplan := logicalplan.New(expr, start, end)
+	lplan := logicalplan.New(expr, &logicalplan.Opts{
+		Start: start,
+		End:   end,
+		Step:  step,
+	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)

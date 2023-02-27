@@ -5,7 +5,6 @@ package logicalplan
 
 import (
 	"testing"
-	"time"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -51,7 +50,7 @@ func TestTrimSorts(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
+			plan := New(expr, &Opts{})
 			optimizedPlan := plan.Optimize(optimizers)
 			testutil.Equals(t, tcase.expected, optimizedPlan.Expr().String())
 		})

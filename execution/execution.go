@@ -255,13 +255,16 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return exchange.NewConcurrent(dedup, 2), nil
 
 	case logicalplan.RemoteExecution:
-		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{}, e.Query, opts.Start, opts.End, opts.Step)
+		// Create a new remote query scoped to the calculated start time.
+		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{}, e.Query, e.QueryRangeStart, opts.End, opts.Step)
 		if err != nil {
 			return nil, err
 		}
 
-		return exchange.NewConcurrent(remote.NewExecution(qry, model.NewVectorPool(stepsBatch), opts), 2), nil
-
+		// The selector uses the original query time to make sure that steps from different
+		// have the same timestamps.
+		remoteExec := remote.NewExecution(qry, model.NewVectorPool(stepsBatch), opts)
+		return exchange.NewConcurrent(remoteExec, 2), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}

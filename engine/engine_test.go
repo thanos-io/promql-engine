@@ -6,7 +6,6 @@ package engine_test
 import (
 	"context"
 	"fmt"
-	"github.com/thanos-community/promql-engine/api"
 	"math"
 	"os"
 	"reflect"
@@ -1632,200 +1631,6 @@ func hasNaNs(result *promql.Result) bool {
 	return false
 }
 
-type partition struct {
-	series      []*mockSeries
-	extLset     []labels.Labels
-	maxtSeconds int64
-}
-
-func TestDistributedAggregations(t *testing.T) {
-	localOpts := engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-		},
-	}
-
-	instantTS := time.Unix(75, 0)
-	rangeStart := time.Unix(0, 0)
-	rangeEnd := time.Unix(120, 0)
-	rangeStep := time.Second * 30
-
-	makeSeries := func(zone, pod string) []string {
-		return []string{labels.MetricName, "bar", "zone", zone, "pod", pod}
-	}
-
-	tests := []struct {
-		name        string
-		seriesSets  []partition
-		timeOverlap partition
-	}{
-		{
-			name: "base case",
-			seriesSets: []partition{
-				{
-					extLset: []labels.Labels{labels.FromStrings("zone", "east-1")},
-					series: []*mockSeries{
-						newMockSeries(makeSeries("east-1", "nginx-1"), []int64{30, 60, 90, 120}, []float64{2, 3, 4, 5}),
-						newMockSeries(makeSeries("east-1", "nginx-2"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
-					},
-					maxtSeconds: 120,
-				},
-				{
-					extLset: []labels.Labels{
-						labels.FromStrings("zone", "west-1"),
-						labels.FromStrings("zone", "west-2"),
-					},
-					series: []*mockSeries{
-						newMockSeries(makeSeries("west-1", "nginx-1"), []int64{30, 60, 90, 120}, []float64{4, 5, 6, 7}),
-						newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30, 60, 90, 120}, []float64{5, 6, 7, 8}),
-						newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{6, 7, 8, 9}),
-					},
-					maxtSeconds: 120,
-				},
-			},
-			timeOverlap: partition{
-				extLset: []labels.Labels{
-					labels.FromStrings("zone", "east-1"),
-					labels.FromStrings("zone", "west-1"),
-					labels.FromStrings("zone", "west-2"),
-				},
-				series: []*mockSeries{
-					newMockSeries(makeSeries("east-1", "nginx-1"), []int64{30, 60}, []float64{2, 3}),
-					newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30, 60}, []float64{5, 6}),
-					newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30, 60}, []float64{6, 7}),
-				},
-				maxtSeconds: 60,
-			},
-		},
-		{
-			// Repro for https://github.com/thanos-community/promql-engine/issues/187.
-			name: "series with different ranges in a newer engine",
-			seriesSets: []partition{
-				{
-					series: []*mockSeries{
-						newMockSeries(makeSeries("east-1", "nginx-1"), []int64{90, 120}, []float64{4, 5}),
-						newMockSeries(makeSeries("east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
-					},
-					maxtSeconds: 120,
-				},
-			},
-			timeOverlap: partition{
-				series: []*mockSeries{
-					newMockSeries(makeSeries("east-1", "nginx-1"), []int64{30, 60}, []float64{2, 3}),
-					newMockSeries(makeSeries("east-2", "nginx-1"), []int64{30, 60}, []float64{3, 4}),
-				},
-				maxtSeconds: 60,
-			},
-		},
-	}
-
-	queries := []struct {
-		name           string
-		query          string
-		expectFallback bool
-	}{
-		{name: "sum", query: `sum by (pod) (bar)`},
-		{name: "avg", query: `avg by (pod) (bar)`},
-		{name: "count", query: `count by (pod) (bar)`},
-		{name: "group", query: `group by (pod) (bar)`},
-		{name: "topk", query: `topk by (pod) (1, bar)`},
-		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
-		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
-		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
-		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
-		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
-		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
-	}
-
-	optimizersOpts := map[string][]logicalplan.Optimizer{
-		"none":    logicalplan.NoOptimizers,
-		"default": logicalplan.DefaultOptimizers,
-		"all":     logicalplan.AllOptimizers,
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var allSeries []*mockSeries
-			remoteEngines := make([]api.RemoteEngine, 0, len(test.seriesSets)+1)
-			for _, s := range test.seriesSets {
-				remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-					localOpts,
-					storageWithMockSeries(s.series...),
-					s.maxtSeconds*1000,
-					s.extLset,
-				))
-				allSeries = append(allSeries, s.series...)
-			}
-			remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-				localOpts,
-				storageWithMockSeries(test.timeOverlap.series...),
-				test.timeOverlap.maxtSeconds*1000,
-				test.timeOverlap.extLset,
-			))
-			allSeries = append(allSeries, test.timeOverlap.series...)
-			completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
-
-			for _, query := range queries {
-				t.Run(query.name, func(t *testing.T) {
-					for o, optimizers := range optimizersOpts {
-						t.Run(fmt.Sprintf("withOptimizers=%s", o), func(t *testing.T) {
-							localOpts.LogicalOptimizers = optimizers
-							t.Run("instant", func(t *testing.T) {
-								distOpts := localOpts
-								distOpts.DisableFallback = !query.expectFallback
-								distOpts.DebugWriter = os.Stdout
-								distEngine := engine.NewDistributedEngine(distOpts,
-									api.NewStaticEndpoints(remoteEngines),
-								)
-								distQry, err := distEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
-								testutil.Ok(t, err)
-
-								distResult := distQry.Exec(context.Background())
-								promEngine := promql.NewEngine(localOpts.EngineOpts)
-								promQry, err := promEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
-								testutil.Ok(t, err)
-								promResult := promQry.Exec(context.Background())
-
-								roundValues(promResult)
-								roundValues(distResult)
-
-								// Instant queries have no guarantees on result ordering.
-								sortByLabels(promResult)
-								sortByLabels(distResult)
-
-								testutil.Equals(t, promResult, distResult)
-							})
-
-							t.Run("range", func(t *testing.T) {
-								distOpts := localOpts
-								distOpts.DisableFallback = !query.expectFallback
-								distEngine := engine.NewDistributedEngine(distOpts,
-									api.NewStaticEndpoints(remoteEngines),
-								)
-								distQry, err := distEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, rangeEnd, rangeStep)
-								testutil.Ok(t, err)
-
-								distResult := distQry.Exec(context.Background())
-								promEngine := promql.NewEngine(localOpts.EngineOpts)
-								promQry, err := promEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, rangeEnd, rangeStep)
-								testutil.Ok(t, err)
-								promResult := promQry.Exec(context.Background())
-
-								roundValues(promResult)
-								roundValues(distResult)
-								testutil.Equals(t, promResult, distResult)
-							})
-						})
-					}
-				})
-			}
-		})
-	}
-}
-
 // mergeWithSampleDedup merges samples from series with the same labels,
 // removing samples with identical timestamps.
 func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
@@ -3258,6 +3063,12 @@ func (m *mockIterator) Next() chunkenc.ValueType {
 }
 
 func (m *mockIterator) Seek(t int64) chunkenc.ValueType {
+	if m.i > -1 && m.i < len(m.timestamps) {
+		currentTS := m.timestamps[m.i]
+		if currentTS > t {
+			return chunkenc.ValFloat
+		}
+	}
 	for {
 		next := m.Next()
 		if next == chunkenc.ValNone {

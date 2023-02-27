@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -26,12 +27,16 @@ func (rs RemoteExecutions) String() string {
 // RemoteExecution is a logical plan that describes a
 // remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
-	Engine api.RemoteEngine
-	Query  string
+	Engine          api.RemoteEngine
+	Query           string
+	QueryRangeStart time.Time
 }
 
 func (r RemoteExecution) String() string {
-	return fmt.Sprintf("remote(%s)", r.Query)
+	if r.QueryRangeStart.UnixMilli() == 0 {
+		return fmt.Sprintf("remote(%s)", r.Query)
+	}
+	return fmt.Sprintf("remote(%s) [%s]", r.Query, r.QueryRangeStart.String())
 }
 
 func (r RemoteExecution) Pretty(level int) string { return r.String() }
@@ -77,9 +82,8 @@ type DistributedExecutionOptimizer struct {
 	Endpoints api.RemoteEndpoints
 }
 
-func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
+func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) parser.Expr {
 	engines := m.Endpoints.Engines()
-
 	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current) {
@@ -95,7 +99,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 			}
 
 			remoteAggregation := newRemoteAggregation(aggr, engines)
-			subQueries := m.makeSubQueries(&remoteAggregation, engines)
+			subQueries := m.makeSubQueries(&remoteAggregation, engines, opts)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -112,7 +116,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr) parser.Expr {
 			return false
 		}
 
-		*current = m.makeSubQueries(current, engines)
+		*current = m.makeSubQueries(current, engines, opts)
 		return true
 	})
 
@@ -148,18 +152,50 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 	return &remoteAggregation
 }
 
-func (m DistributedExecutionOptimizer) makeSubQueries(current *parser.Expr, engines []api.RemoteEngine) Deduplicate {
-	remoteQueries := make(RemoteExecutions, len(engines))
-	for i := 0; i < len(engines); i++ {
-		remoteQueries[i] = RemoteExecution{
-			Engine: engines[i],
-			Query:  (*current).String(),
+func (m DistributedExecutionOptimizer) makeSubQueries(expr *parser.Expr, engines []api.RemoteEngine, opts *Opts) Deduplicate {
+	remoteQueries := make(RemoteExecutions, 0, len(engines))
+	for _, e := range engines {
+		// TODO(fpetkovski): Add pruning based on external labels.
+		if e.MaxT() < opts.Start.UnixMilli() {
+			continue
 		}
+		if e.MinT() > opts.End.UnixMilli() {
+			continue
+		}
+
+		start := opts.Start
+		if e.MinT() > start.UnixMilli() {
+			start = calculateStepAlignedStart(e, opts)
+		}
+
+		remoteQueries = append(remoteQueries, RemoteExecution{
+			Engine:          e,
+			Query:           (*expr).String(),
+			QueryRangeStart: start,
+		})
 	}
 
 	return Deduplicate{
 		Expressions: remoteQueries,
 	}
+}
+
+// calculateStepAlignedStart returns a start time for the query based on the
+// engine min time and the query step size.
+// The purpose of this alignment is to make sure that the steps for the remote query
+// have the same timestamps as the ones for the central query.
+func calculateStepAlignedStart(engine api.RemoteEngine, opts *Opts) time.Time {
+	originalSteps := numSteps(opts.Start, opts.End, opts.Step)
+	remoteQuerySteps := numSteps(time.UnixMilli(engine.MinT()), opts.End, opts.Step)
+
+	stepsToSkip := originalSteps - remoteQuerySteps
+	stepAlignedStartTime := opts.Start.UnixMilli() + stepsToSkip*opts.Step.Milliseconds()
+
+	return time.UnixMilli(stepAlignedStartTime)
+}
+
+func numSteps(start, end time.Time, step time.Duration) int64 {
+	return (end.UnixMilli()-start.UnixMilli())/step.Milliseconds() + 1
 }
 
 func isDistributive(expr *parser.Expr) bool {

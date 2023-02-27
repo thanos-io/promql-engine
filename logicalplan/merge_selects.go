@@ -19,7 +19,7 @@ import (
 // and apply an additional filter for {c="d"}.
 type MergeSelectsOptimizer struct{}
 
-func (m MergeSelectsOptimizer) Optimize(expr parser.Expr) parser.Expr {
+func (m MergeSelectsOptimizer) Optimize(expr parser.Expr, _ *Opts) parser.Expr {
 	heap := make(matcherHeap)
 	extractSelectors(heap, expr)
 	replaceMatchers(heap, &expr)
