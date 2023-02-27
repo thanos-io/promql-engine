@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -82,16 +83,9 @@ func FuzzEngineQueryRangeMatrixFunctions(f *testing.F) {
 }
 
 func FuzzEngineInstantQueryAggregations(f *testing.F) {
+	f.Add(uint32(0), 0, math.NaN(), 1.0, 1.0, 2.0)
 
-	f.Add(uint32(0), true, 1.0, 1.0, 1.0, 2.0)
-
-	f.Fuzz(func(t *testing.T, ts uint32, by bool, initialVal1, initialVal2, inc1, inc2 float64) {
-		if math.IsNaN(initialVal1) || math.IsNaN(initialVal2) || math.IsNaN(inc1) || math.IsNaN(inc2) {
-			return
-		}
-		if math.IsInf(initialVal1, 0) || math.IsInf(initialVal2, 0) || math.IsInf(inc1, 0) || math.IsInf(inc2, 0) {
-			return
-		}
+	f.Fuzz(func(t *testing.T, ts uint32, groupingHash int, initialVal1, initialVal2, inc1, inc2 float64) {
 		if inc1 < 0 || inc2 < 0 {
 			return
 		}
@@ -99,8 +93,8 @@ func FuzzEngineInstantQueryAggregations(f *testing.F) {
 			"stddev", "sum", "max", "min", "avg", "group", "stdvar", "count",
 		} {
 			load := fmt.Sprintf(`load 30s
-			http_requests_total{pod="nginx-1"} %.2f+%.2fx4
-			http_requests_total{pod="nginx-2"} %2.f+%.2fx4`, initialVal1, inc1, initialVal2, inc2)
+			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx4
+			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx4`, initialVal1, inc1, initialVal2, inc2)
 
 			opts := promql.EngineOpts{
 				Timeout:    1 * time.Hour,
@@ -117,11 +111,15 @@ func FuzzEngineInstantQueryAggregations(f *testing.F) {
 
 			newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: true})
 
-			var byOp string
-			if by {
-				byOp = " by (pod)"
+			var grouping string
+			switch groupingHash % 3 {
+			case 0:
+				grouping = " by (pod)"
+			case 1:
+				grouping = " without (route)"
+			default:
 			}
-			query := fmt.Sprintf("%s(http_requests_total)%s", funcName, byOp)
+			query := fmt.Sprintf("%s(http_requests_total)%s", funcName, grouping)
 			q1, err := newEngine.NewInstantQuery(test.Storage(), nil, query, queryTime)
 			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
@@ -134,8 +132,81 @@ func FuzzEngineInstantQueryAggregations(f *testing.F) {
 			oldResult := q2.Exec(context.Background())
 			testutil.Ok(t, oldResult.Err)
 
-			testutil.Equals(t, oldResult, newResult)
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, query)
 		}
-
 	})
 }
+
+var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
+	compareFloats := func(l, r float64) bool {
+		const epsilon = 1e-6
+
+		if math.IsNaN(l) && math.IsNaN(r) {
+			return true
+		}
+		if math.IsNaN(l) || math.IsNaN(r) {
+			return false
+		}
+
+		return math.Abs(l-r) < epsilon
+	}
+
+	if x.Err != y.Err {
+		return false
+	}
+
+	vx, xvec := x.Value.(promql.Vector)
+	vy, yvec := y.Value.(promql.Vector)
+
+	if xvec && yvec {
+		if len(vx) != len(vy) {
+			return false
+		}
+		for i := 0; i < len(vx); i++ {
+			if !cmp.Equal(vx[i].Metric, vy[i].Metric) {
+				return false
+			}
+			if vx[i].T != vy[i].T {
+				return false
+			}
+			if !compareFloats(vx[i].V, vy[i].V) {
+				return false
+			}
+		}
+		return true
+	}
+
+	mx, xmat := x.Value.(promql.Matrix)
+	my, ymat := y.Value.(promql.Matrix)
+
+	if xmat && ymat {
+		if len(mx) != len(my) {
+			return false
+		}
+		for i := 0; i < len(mx); i++ {
+			mxs := mx[i]
+			mys := my[i]
+
+			if !cmp.Equal(mxs.Metric, mys.Metric) {
+				return false
+			}
+
+			xps := mxs.Points
+			yps := mys.Points
+
+			if len(xps) != len(yps) {
+				return false
+			}
+			for j := 0; j < len(xps); j++ {
+				if xps[j].T != yps[j].T {
+					return false
+				}
+				if !compareFloats(xps[j].V, yps[i].V) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	return false
+})

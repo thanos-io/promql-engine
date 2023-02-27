@@ -109,6 +109,7 @@ func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byt
 	if without {
 		lb := labels.NewBuilder(metric)
 		lb.Del(grouping...)
+		lb.Del(labels.MetricName)
 		key, bytes := metric.HashWithoutLabels(buf, grouping...)
 		return key, string(bytes), lb.Labels(nil)
 	}
@@ -296,6 +297,9 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
 				},
 				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					if count == 1 {
+						return 0, nil
+					}
 					return math.Sqrt((aux + cAux) / count), nil
 				},
 				HasValue: func() bool { return hasValue },
@@ -324,6 +328,9 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
 				},
 				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					if count == 1 {
+						return 0, nil
+					}
 					return (aux + cAux) / count, nil
 				},
 				HasValue: func() bool { return hasValue },
