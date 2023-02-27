@@ -57,11 +57,13 @@ type Opts struct {
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
+	var optimizers []logicalplan.Optimizer
 	if o.LogicalOptimizers == nil {
-		return logicalplan.DefaultOptimizers
+		optimizers = logicalplan.DefaultOptimizers
+	} else {
+		optimizers = o.LogicalOptimizers
 	}
-
-	return o.LogicalOptimizers
+	return append(optimizers, logicalplan.TrimSortFunctions{})
 }
 
 type remoteEngine struct {
@@ -166,6 +168,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	if err != nil {
 		return nil, err
 	}
+	// determine sorting order before optimizers run, we do this by looking for "sort"
+	// and "sort_desc" and optimize them away afterwards since they are only needed at
+	// the presentation layer and not when computing the results.
+	resultSort := newResultSort(expr)
 
 	lplan := logicalplan.New(expr, ts, ts)
 	lplan = lplan.Optimize(e.logicalOptimizers)
@@ -190,7 +196,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		expr:       expr,
 		ts:         ts,
 		t:          InstantQuery,
-		resultSort: newResultSort(expr),
+		resultSort: resultSort,
 	}, nil
 }
 
@@ -252,45 +258,73 @@ const (
 	sortOrderDesc sortOrder = true
 )
 
-type resultSort struct {
-	sortByValues  bool
-	sortOrder     sortOrder
+type resultSorter interface {
+	comparer(samples *promql.Vector) func(i, j int) bool
+}
+
+type sortFuncResultSort struct {
+	sortOrder sortOrder
+}
+
+type aggregateResultSort struct {
 	sortingLabels []string
 	groupBy       bool
+
+	sortOrder sortOrder
 }
 
-func newResultSort(expr parser.Expr) resultSort {
-	aggr, ok := expr.(*parser.AggregateExpr)
-	if !ok {
-		return resultSort{}
-	}
+type noSortResultSort struct {
+}
 
-	switch aggr.Op {
-	case parser.TOPK:
-		return resultSort{
-			sortByValues:  true,
-			sortingLabels: aggr.Grouping,
-			sortOrder:     sortOrderDesc,
-			groupBy:       !aggr.Without,
+func newResultSort(expr parser.Expr) resultSorter {
+	switch texpr := expr.(type) {
+	case *parser.Call:
+		switch texpr.Func.Name {
+		case "sort":
+			return sortFuncResultSort{sortOrder: sortOrderAsc}
+		case "sort_desc":
+			return sortFuncResultSort{sortOrder: sortOrderDesc}
 		}
-	case parser.BOTTOMK:
-		return resultSort{
-			sortByValues:  true,
-			sortingLabels: aggr.Grouping,
-			sortOrder:     sortOrderAsc,
-			groupBy:       !aggr.Without,
+	case *parser.AggregateExpr:
+		switch texpr.Op {
+		case parser.TOPK:
+			return aggregateResultSort{
+				sortingLabels: texpr.Grouping,
+				sortOrder:     sortOrderDesc,
+				groupBy:       !texpr.Without,
+			}
+		case parser.BOTTOMK:
+			return aggregateResultSort{
+				sortingLabels: texpr.Grouping,
+				sortOrder:     sortOrderAsc,
+				groupBy:       !texpr.Without,
+			}
 		}
-	default:
-		return resultSort{}
+	}
+	return noSortResultSort{}
+}
+func (s noSortResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
+	return func(i, j int) bool { return i < j }
+}
+
+func valueCompare(order sortOrder, l, r float64) bool {
+	if math.IsNaN(r) {
+		return true
+	}
+	if order == sortOrderAsc {
+		return l < r
+	}
+	return l > r
+}
+
+func (s sortFuncResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
+	return func(i, j int) bool {
+		return valueCompare(s.sortOrder, (*samples)[i].V, (*samples)[j].V)
 	}
 }
 
-func (s resultSort) comparer(samples *promql.Vector) func(i int, j int) bool {
+func (s aggregateResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
 	return func(i int, j int) bool {
-		if !s.sortByValues {
-			return i < j
-		}
-
 		var iLbls labels.Labels
 		var jLbls labels.Labels
 		iLb := labels.NewBuilder((*samples)[i].Metric)
@@ -307,11 +341,7 @@ func (s resultSort) comparer(samples *promql.Vector) func(i int, j int) bool {
 		if lblsCmp != 0 {
 			return lblsCmp < 0
 		}
-
-		if s.sortOrder == sortOrderAsc {
-			return (*samples)[i].V < (*samples)[j].V
-		}
-		return (*samples)[i].V > (*samples)[j].V
+		return valueCompare(s.sortOrder, (*samples)[i].V, (*samples)[j].V)
 	}
 }
 
@@ -321,7 +351,7 @@ type compatibilityQuery struct {
 	expr       parser.Expr
 	ts         time.Time // Empty for range queries.
 	t          QueryType
-	resultSort resultSort
+	resultSort resultSorter
 
 	cancel context.CancelFunc
 }

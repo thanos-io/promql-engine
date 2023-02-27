@@ -47,6 +47,7 @@ func simpleFunc(f func(float64) float64) FunctionCall {
 
 }
 
+// The engine handles sort and sort_desc when presenting the results. They are not needed here.
 var Funcs = map[string]FunctionCall{
 	"abs":   simpleFunc(math.Abs),
 	"ceil":  simpleFunc(math.Ceil),
