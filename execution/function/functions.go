@@ -87,6 +87,23 @@ var Funcs = map[string]FunctionCall{
 		}
 		return sign
 	}),
+	"round": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) != 1 || len(f.ScalarPoints) > 1 {
+			return InvalidSample
+		}
+
+		toNearest := 1.0
+		if len(f.ScalarPoints) > 0 {
+			toNearest = f.ScalarPoints[0]
+		}
+		toNearestInverse := 1.0 / toNearest
+		return promql.Sample{
+			Point: promql.Point{
+				T: f.StepTime,
+				V: math.Floor(f.Points[0].V*toNearestInverse+0.5) / toNearestInverse,
+			},
+		}
+	},
 	"timestamp": func(f FunctionArgs) promql.Sample {
 		return promql.Sample{
 			Point: promql.Point{

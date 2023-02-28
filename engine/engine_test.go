@@ -1820,6 +1820,28 @@ func TestInstantQuery(t *testing.T) {
 			query:     "increase(http_requests_total[1m] offset 1m)",
 		},
 		{
+			name: "round",
+			load: `load 1s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			queryTime: time.Unix(0, 0),
+			query:     "round(http_requests_total)",
+		},
+		{
+			name: "round with argument",
+			load: `load 1s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			queryTime: time.Unix(0, 0),
+			query:     "round(http_requests_total, 0.5)",
+		},
+		{
 			name: "sort",
 			load: `load 1s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
