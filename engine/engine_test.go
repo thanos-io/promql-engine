@@ -100,6 +100,30 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "stddev with NaN 1",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", route="/"} NaN
+				       http_requests_total{pod="nginx-2", route="/"} 1`,
+			query: "stddev by (route) (http_requests_total)",
+		},
+		{
+			name: "stddev with NaN 2",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", route="/"} NaN
+				       http_requests_total{pod="nginx-2", route="/"} 1`,
+			query: "stddev by (pod) (http_requests_total)",
+		},
+		{
+			name: "aggregate without",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1"} 1+1.1x1
+				       http_requests_total{pod="nginx-2"} 2+2.3x1`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(60, 0),
+			step:  30 * time.Second,
+			query: "avg without (pod) (http_requests_total)",
+		},
+		{
 			name: "func with scalar arg that selects storage, checks whether same series handled correctly",
 			load: `load 30s
 			    thanos_cache_redis_hits_total{name="caching-bucket",service="thanos-store"} 1+1x30`,
