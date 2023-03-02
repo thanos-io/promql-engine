@@ -222,6 +222,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		i := 0
 		for i < len(vectors[batchIndex].Samples) {
+			o.pointBuf[0].H = nil
 			o.pointBuf[0].V = vector.Samples[i]
 			result := o.call(o.newFunctionArgs(vector, batchIndex))
 

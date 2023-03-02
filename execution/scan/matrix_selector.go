@@ -255,12 +255,10 @@ loop:
 		switch buf.Next() {
 		case chunkenc.ValNone:
 			break loop
-		case chunkenc.ValFloatHistogram:
-			return out, ErrNativeHistogramsUnsupported
-		case chunkenc.ValHistogram:
-			t, h := buf.AtHistogram()
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			t, h := buf.AtFloatHistogram()
 			if t >= mint {
-				out = append(out, promql.Point{T: t, H: h.ToFloat()})
+				out = append(out, promql.Point{T: t, H: h})
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -276,12 +274,10 @@ loop:
 
 	// The sought sample might also be in the range.
 	switch soughtValueType {
-	case chunkenc.ValFloatHistogram:
-		return out, ErrNativeHistogramsUnsupported
-	case chunkenc.ValHistogram:
-		t, h := it.AtHistogram()
+	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		t, h := it.AtFloatHistogram()
 		if t == maxt {
-			out = append(out, promql.Point{T: t, H: h.ToFloat()})
+			out = append(out, promql.Point{T: t, H: h})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()

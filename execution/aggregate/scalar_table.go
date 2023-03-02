@@ -171,6 +171,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				// Sum returns an empty result when floats are histograms are aggregated.
 				HasValue: func() bool { return hasFloatVal != (histSum != nil) },
 				Reset: func(_ float64) {
+					histSum = nil
 					hasFloatVal = false
 					value = 0
 				},

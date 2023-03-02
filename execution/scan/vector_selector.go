@@ -23,8 +23,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-var ErrNativeHistogramsUnsupported = errors.Newf("querying native histograms is not supported")
-
 type vectorScanner struct {
 	labels    labels.Labels
 	signature uint64
@@ -179,9 +177,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 		if it.Err() != nil {
 			return 0, 0, nil, false, it.Err()
 		}
-	case chunkenc.ValFloatHistogram:
-		return 0, 0, nil, false, ErrNativeHistogramsUnsupported
-	case chunkenc.ValHistogram:
+	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, h = it.AtFloatHistogram()
 	case chunkenc.ValFloat:
 		t, v = it.At()
@@ -198,5 +194,6 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	if value.IsStaleNaN(v) {
 		return 0, 0, nil, false, nil
 	}
+
 	return t, v, h, true, nil
 }

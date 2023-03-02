@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/thanos-community/promql-engine/execution/model"
@@ -15,6 +16,7 @@ import (
 type dedupSample struct {
 	t int64
 	v float64
+	h *histogram.FloatHistogram
 }
 
 // The dedupCache is an internal cache used to deduplicate samples inside a single step vector.
@@ -66,6 +68,12 @@ func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 			d.dedupCache[outputSampleID].v = vector.Samples[i]
 		}
 
+		for i, inputSampleID := range vector.HistogramIDs {
+			outputSampleID := d.outputIndex[inputSampleID]
+			d.dedupCache[outputSampleID].t = vector.T
+			d.dedupCache[outputSampleID].h = vector.Histograms[i]
+		}
+
 		out := d.pool.GetStepVector(vector.T)
 		for outputSampleID, sample := range d.dedupCache {
 			// To avoid clearing the dedup cache for each step vector, we use the `t` field
@@ -73,7 +81,11 @@ func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 			// If the timestamp of the sample does not match the input vector timestamp, it means that
 			// the sample was added in a previous iteration and should be skipped.
 			if sample.t == vector.T {
-				out.AppendSample(d.pool, uint64(outputSampleID), sample.v)
+				if sample.h == nil {
+					out.AppendSample(d.pool, uint64(outputSampleID), sample.v)
+				} else {
+					out.AppendHistogram(d.pool, uint64(outputSampleID), sample.h)
+				}
 			}
 		}
 		result = append(result, out)
