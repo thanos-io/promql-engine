@@ -268,6 +268,14 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 			query: "count(http_requests_total)",
 		},
 		{
+			name:  "round",
+			query: "round(http_requests_total)",
+		},
+		{
+			name:  "round with argument",
+			query: "round(http_requests_total, 0.5)",
+		},
+		{
 			name:  "avg",
 			query: "avg(http_requests_total)",
 		},
