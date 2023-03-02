@@ -177,6 +177,8 @@ func isDistributive(expr *parser.Expr) bool {
 		if _, ok := distributiveAggregations[aggr.Op]; !ok {
 			return false
 		}
+	case *parser.Call:
+		return len(aggr.Args) > 0
 	}
 
 	return true

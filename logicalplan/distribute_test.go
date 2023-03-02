@@ -128,6 +128,21 @@ histogram_quantile(0.5, sum by (le) (dedup(
   remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m])))
 )))`,
 		},
+		{
+			name:     "binary expression with time",
+			expr:     `time() - max by (foo) (bar)`,
+			expected: `time() - max by (foo) (dedup(remote(max by (foo, region) (bar)), remote(max by (foo, region) (bar))))`,
+		},
+		{
+			name:     "number literal",
+			expr:     `1`,
+			expected: `1`,
+		},
+		{
+			name:     "aggregation with number literal",
+			expr:     `max(foo) - 1`,
+			expected: `max(dedup(remote(max by (region) (foo)), remote(max by (region) (foo)))) - 1`,
+		},
 	}
 
 	engines := []api.RemoteEngine{
