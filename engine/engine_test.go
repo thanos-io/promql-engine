@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
@@ -3355,7 +3356,7 @@ func TestNativeHistograms(t *testing.T) {
 }
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
-	numHistograms := 5
+	numHistograms := 100
 	mixedTypesOpts := []bool{false, true}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3401,7 +3402,12 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 
 						sortByLabels(promResult)
 						sortByLabels(newResult)
-						testutil.Equals(t, promVector, newVector)
+						if hasNaNs(promResult) {
+							t.Log("Applying comparison with NaN equality.")
+							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, promVector, newVector)
+						} else {
+							require.Equal(t, promVector, newVector)
+						}
 					})
 
 					t.Run("range", func(t *testing.T) {
@@ -3425,7 +3431,12 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							testutil.Assert(t, len(expected) == 0)
 						}
 						testutil.Equals(t, len(expected), len(actual))
-						testutil.Equals(t, expected, actual)
+						if hasNaNs(res) {
+							t.Log("Applying comparison with NaN equality.")
+							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, expected, actual)
+						} else {
+							require.Equal(t, expected, actual)
+						}
 					})
 				})
 			}
