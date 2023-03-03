@@ -3252,6 +3252,14 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 
 }
 
+type histogramTestCase struct {
+	name                   string
+	query                  string
+	wantEmptyForMixedTypes bool
+}
+
+type histogramGeneratorFunc func(app storage.Appender, withMixedTypes bool) error
+
 func TestNativeHistograms(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
@@ -3260,11 +3268,7 @@ func TestNativeHistograms(t *testing.T) {
 		EnableAtModifier:     true,
 	}
 
-	cases := []struct {
-		name                   string
-		query                  string
-		wantEmptyForMixedTypes bool
-	}{
+	cases := []histogramTestCase{
 		{
 			name:  "plain selector",
 			query: "native_histogram_series",
@@ -3341,6 +3345,15 @@ func TestNativeHistograms(t *testing.T) {
 		},
 	}
 
+	t.Run("integer_histograms", func(t *testing.T) {
+		testNativeHistograms(t, cases, opts, generateNativeHistogramSeries)
+	})
+	t.Run("float_histograms", func(t *testing.T) {
+		testNativeHistograms(t, cases, opts, generateFloatHistogramSeries)
+	})
+}
+
+func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
 	mixedTypesOpts := []bool{false, true}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3351,7 +3364,7 @@ func TestNativeHistograms(t *testing.T) {
 					defer test.Close()
 
 					app := test.Storage().Appender(context.TODO())
-					err = createNativeHistogramSeries(app, withMixedTypes)
+					err = generateHistograms(app, withMixedTypes)
 					testutil.Ok(t, err)
 					testutil.Ok(t, app.Commit())
 					testutil.Ok(t, test.Run())
@@ -3366,28 +3379,31 @@ func TestNativeHistograms(t *testing.T) {
 					t.Run("instant", func(t *testing.T) {
 						qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
-						res := qry.Exec(test.Context())
-						testutil.Ok(t, res.Err)
-						newVector, err := res.Vector()
+						newResult := qry.Exec(test.Context())
+						testutil.Ok(t, newResult.Err)
+						newVector, err := newResult.Vector()
 						testutil.Ok(t, err)
 
 						promEngine := test.QueryEngine()
 						qry, err = promEngine.NewInstantQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
-						res = qry.Exec(test.Context())
-						testutil.Ok(t, res.Err)
-						oldVector, err := res.Vector()
+						promResult := qry.Exec(test.Context())
+						testutil.Ok(t, promResult.Err)
+						promVector, err := promResult.Vector()
 						testutil.Ok(t, err)
 
 						// Make sure we're not getting back empty results.
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
-							testutil.Assert(t, len(oldVector) == 0)
+							testutil.Assert(t, len(promVector) == 0)
 						}
-						testutil.Equals(t, oldVector, newVector)
+
+						sortByLabels(promResult)
+						sortByLabels(newResult)
+						testutil.Equals(t, promVector, newVector)
 					})
 
 					t.Run("range", func(t *testing.T) {
-						qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(60, 0), 30*time.Second)
+						qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
 						res := qry.Exec(test.Context())
 						testutil.Ok(t, res.Err)
@@ -3395,7 +3411,7 @@ func TestNativeHistograms(t *testing.T) {
 						testutil.Ok(t, err)
 
 						promEngine := test.QueryEngine()
-						qry, err = promEngine.NewRangeQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(60, 0), 30*time.Second)
+						qry, err = promEngine.NewRangeQuery(test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
 						res = qry.Exec(test.Context())
 						testutil.Ok(t, res.Err)
@@ -3415,7 +3431,7 @@ func TestNativeHistograms(t *testing.T) {
 	}
 }
 
-func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
+func generateNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
 	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	h1 := tsdb.GenerateTestHistograms(100)
 	h2 := tsdb.GenerateTestHistograms(100)
@@ -3452,6 +3468,30 @@ func createNativeHistogramSeries(app storage.Appender, withMixedTypes bool) erro
 			return err
 		}
 		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "2")...), ts, h2[i], nil); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func generateFloatHistogramSeries(app storage.Appender, withMixedTypes bool) error {
+	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+	h1 := tsdb.GenerateTestFloatHistograms(100)
+	h2 := tsdb.GenerateTestFloatHistograms(100)
+	for i := range h1 {
+		ts := time.Unix(int64(i*15), 0).UnixMilli()
+		if withMixedTypes {
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
+				return err
+			}
+			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
+				return err
+			}
+		}
+		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "1")...), ts, nil, h1[i]); err != nil {
+			return err
+		}
+		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "2")...), ts, nil, h2[i]); err != nil {
 			return err
 		}
 	}
