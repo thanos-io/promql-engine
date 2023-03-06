@@ -156,7 +156,7 @@ func (m DistributedExecutionOptimizer) makeSubQueries(expr *parser.Expr, engines
 	remoteQueries := make(RemoteExecutions, 0, len(engines))
 	for _, e := range engines {
 		// TODO(fpetkovski): Add pruning based on external labels.
-		if e.MaxT() < opts.Start.UnixMilli() {
+		if e.MaxT() < opts.Start.UnixMilli()-opts.LookbackDelta.Milliseconds() {
 			continue
 		}
 		if e.MinT() > opts.End.UnixMilli() {

@@ -59,7 +59,11 @@ func TestDistributedAggregations(t *testing.T) {
 		},
 	}
 
-	instantTS := time.Unix(75, 0)
+	instantTSs := []time.Time{
+		time.Unix(75, 0),
+		time.Unix(121, 0),
+		time.Unix(600, 0),
+	}
 	rangeStart := time.Unix(0, 0)
 	rangeEnd := time.Unix(120, 0)
 	rangeStep := time.Second * 30
@@ -186,28 +190,30 @@ func TestDistributedAggregations(t *testing.T) {
 							distOpts := localOpts
 							distOpts.DisableFallback = !query.expectFallback
 							distOpts.DebugWriter = os.Stdout
-							t.Run("instant", func(t *testing.T) {
-								distEngine := engine.NewDistributedEngine(distOpts,
-									api.NewStaticEndpoints(remoteEngines),
-								)
-								distQry, err := distEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
-								testutil.Ok(t, err)
+							for _, instantTS := range instantTSs {
+								t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
+									distEngine := engine.NewDistributedEngine(distOpts,
+										api.NewStaticEndpoints(remoteEngines),
+									)
+									distQry, err := distEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
+									testutil.Ok(t, err)
 
-								distResult := distQry.Exec(context.Background())
-								promEngine := promql.NewEngine(localOpts.EngineOpts)
-								promQry, err := promEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
-								testutil.Ok(t, err)
-								promResult := promQry.Exec(context.Background())
+									distResult := distQry.Exec(context.Background())
+									promEngine := promql.NewEngine(localOpts.EngineOpts)
+									promQry, err := promEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
+									testutil.Ok(t, err)
+									promResult := promQry.Exec(context.Background())
 
-								roundValues(promResult)
-								roundValues(distResult)
+									roundValues(promResult)
+									roundValues(distResult)
 
-								// Instant queries have no guarantees on result ordering.
-								sortByLabels(promResult)
-								sortByLabels(distResult)
+									// Instant queries have no guarantees on result ordering.
+									sortByLabels(promResult)
+									sortByLabels(distResult)
 
-								testutil.Equals(t, promResult, distResult)
-							})
+									testutil.Equals(t, promResult, distResult)
+								})
+							}
 
 							t.Run("range", func(t *testing.T) {
 								distEngine := engine.NewDistributedEngine(distOpts,

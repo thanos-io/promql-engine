@@ -180,9 +180,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	resultSort := newResultSort(expr)
 
 	lplan := logicalplan.New(expr, &logicalplan.Opts{
-		Start: ts,
-		End:   ts,
-		Step:  1,
+		Start:         ts,
+		End:           ts,
+		Step:          1,
+		LookbackDelta: e.lookbackDelta,
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
@@ -222,9 +223,10 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	lplan := logicalplan.New(expr, &logicalplan.Opts{
-		Start: start,
-		End:   end,
-		Step:  step,
+		Start:         start,
+		End:           end,
+		Step:          step,
+		LookbackDelta: e.lookbackDelta,
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 

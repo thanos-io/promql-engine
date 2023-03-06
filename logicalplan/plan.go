@@ -21,9 +21,10 @@ var DefaultOptimizers = []Optimizer{
 }
 
 type Opts struct {
-	Start time.Time
-	End   time.Time
-	Step  time.Duration
+	Start         time.Time
+	End           time.Time
+	Step          time.Duration
+	LookbackDelta time.Duration
 }
 
 type Plan interface {
