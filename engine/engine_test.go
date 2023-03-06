@@ -11,6 +11,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -3258,7 +3259,7 @@ type histogramTestCase struct {
 	wantEmptyForMixedTypes bool
 }
 
-type histogramGeneratorFunc func(app storage.Appender, withMixedTypes bool) error
+type histogramGeneratorFunc func(app storage.Appender, numSeries int, withMixedTypes bool) error
 
 func TestNativeHistograms(t *testing.T) {
 	opts := promql.EngineOpts{
@@ -3354,6 +3355,7 @@ func TestNativeHistograms(t *testing.T) {
 }
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
+	numHistograms := 100
 	mixedTypesOpts := []bool{false, true}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -3364,7 +3366,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					defer test.Close()
 
 					app := test.Storage().Appender(context.TODO())
-					err = generateHistograms(app, withMixedTypes)
+					err = generateHistograms(app, numHistograms, withMixedTypes)
 					testutil.Ok(t, err)
 					testutil.Ok(t, app.Commit())
 					testutil.Ok(t, test.Run())
@@ -3399,7 +3401,12 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 
 						sortByLabels(promResult)
 						sortByLabels(newResult)
-						testutil.Equals(t, promVector, newVector)
+						if hasNaNs(promResult) {
+							t.Log("Applying comparison with NaN equality.")
+							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, promVector, newVector)
+						} else {
+							testutil.Equals(t, promVector, newVector)
+						}
 					})
 
 					t.Run("range", func(t *testing.T) {
@@ -3423,7 +3430,12 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							testutil.Assert(t, len(expected) == 0)
 						}
 						testutil.Equals(t, len(expected), len(actual))
-						testutil.Equals(t, expected, actual)
+						if hasNaNs(res) {
+							t.Log("Applying comparison with NaN equality.")
+							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, expected, actual)
+						} else {
+							testutil.Equals(t, expected, actual)
+						}
 					})
 				})
 			}
@@ -3431,10 +3443,12 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 	}
 }
 
-func generateNativeHistogramSeries(app storage.Appender, withMixedTypes bool) error {
-	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
-	h1 := tsdb.GenerateTestHistograms(100)
-	h2 := tsdb.GenerateTestHistograms(100)
+func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixedTypes bool) error {
+	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
+	series := make([][]*histogram.Histogram, numSeries)
+	for i := range series {
+		series[i] = tsdb.GenerateTestHistograms(2000)
+	}
 	higherSchemaHist := &histogram.Histogram{
 		Schema: 3,
 		PositiveSpans: []histogram.Span{
@@ -3445,39 +3459,40 @@ func generateNativeHistogramSeries(app storage.Appender, withMixedTypes bool) er
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
 		Count:           13,
 	}
-	for i := range h1 {
-		ts := time.Unix(int64(i*15), 0).UnixMilli()
-		if i == 0 {
-			// Inject a histogram with a higher schema.
-			// Regression test for https://github.com/thanos-community/promql-engine/pull/182 and
-			// https://github.com/thanos-community/promql-engine/pull/183.
-			if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, higherSchemaHist, nil); err != nil {
+	for sid, histograms := range series {
+		lbls := append(commonLabels, "h", strconv.Itoa(sid))
+		for i := range histograms {
+			ts := time.Unix(int64(i*15), 0).UnixMilli()
+			if i == 0 {
+				// Inject a histogram with a higher schema.
+				// Regression test for:
+				// * https://github.com/thanos-community/promql-engine/pull/182
+				// * https://github.com/thanos-community/promql-engine/pull/183.
+				if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, higherSchemaHist, nil); err != nil {
+					return err
+				}
+			}
+			if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, histograms[i], nil); err != nil {
 				return err
 			}
-		}
-
-		if withMixedTypes {
-			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
-				return err
+			if withMixedTypes {
+				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
+					return err
+				}
+				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
+					return err
+				}
 			}
-			if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
-				return err
-			}
-		}
-		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "1")...), ts, h1[i], nil); err != nil {
-			return err
-		}
-		if _, err := app.AppendHistogram(0, labels.FromStrings(append(lbls, "h", "2")...), ts, h2[i], nil); err != nil {
-			return err
 		}
 	}
+
 	return nil
 }
 
-func generateFloatHistogramSeries(app storage.Appender, withMixedTypes bool) error {
+func generateFloatHistogramSeries(app storage.Appender, numSeries int, withMixedTypes bool) error {
 	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
-	h1 := tsdb.GenerateTestFloatHistograms(100)
-	h2 := tsdb.GenerateTestFloatHistograms(100)
+	h1 := tsdb.GenerateTestFloatHistograms(numSeries)
+	h2 := tsdb.GenerateTestFloatHistograms(numSeries)
 	for i := range h1 {
 		ts := time.Unix(int64(i*15), 0).UnixMilli()
 		if withMixedTypes {

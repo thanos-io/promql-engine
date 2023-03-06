@@ -205,11 +205,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			name:  "sort",
-			query: `sort(http_response_seconds_bucket)`,
+			query: `sort(http_requests_total)`,
 		},
 		{
 			name:  "sort_desc",
-			query: `sort_desc(http_response_seconds_bucket)`,
+			query: `sort_desc(http_requests_total)`,
 		},
 	}
 
@@ -242,6 +242,95 @@ func BenchmarkRangeQuery(b *testing.B) {
 
 				for i := 0; i < b.N; i++ {
 					newResult := executeRangeQuery(b, tc.query, test, start, end, step)
+					testutil.Ok(b, newResult.Err)
+				}
+			})
+		})
+	}
+}
+
+func BenchmarkNativeHistograms(b *testing.B) {
+	test, err := promql.NewTest(b, "")
+	testutil.Ok(b, err)
+	defer test.Close()
+
+	app := test.Storage().Appender(context.TODO())
+	testutil.Ok(b, generateNativeHistogramSeries(app, 3000, false))
+	testutil.Ok(b, app.Commit())
+	testutil.Ok(b, test.Run())
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "selector",
+			query: "native_histogram_series",
+		},
+		{
+			name:  "sum",
+			query: "sum(native_histogram_series)",
+		},
+		{
+			name:  "rate",
+			query: "rate(native_histogram_series[1m])",
+		},
+		{
+			name:  "sum rate",
+			query: "sum(rate(native_histogram_series[1m]))",
+		},
+		{
+			name:  "histogram_sum",
+			query: "histogram_sum(native_histogram_series)",
+		},
+		{
+			name:  "histogram_count",
+			query: "histogram_count(native_histogram_series)",
+		},
+		{
+			name:  "histogram_quantile",
+			query: "histogram_quantile(0.9, sum(native_histogram_series))",
+		},
+	}
+
+	opts := promql.EngineOpts{
+		Logger:               nil,
+		Reg:                  nil,
+		MaxSamples:           50000000,
+		Timeout:              100 * time.Second,
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
+	}
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("old_engine", func(b *testing.B) {
+				engine := promql.NewEngine(opts)
+
+				b.ResetTimer()
+				b.ReportAllocs()
+				for i := 0; i < b.N; i++ {
+					qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
+					testutil.Ok(b, err)
+
+					oldResult := qry.Exec(test.Context())
+					testutil.Ok(b, oldResult.Err)
+				}
+			})
+			b.Run("new_engine", func(b *testing.B) {
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					ng := engine.New(engine.Opts{EngineOpts: opts})
+
+					qry, err := ng.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
+					testutil.Ok(b, err)
+
+					newResult := qry.Exec(context.Background())
 					testutil.Ok(b, newResult.Err)
 				}
 			})

@@ -129,10 +129,10 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 
 func histogramSum(histograms []*histogram.FloatHistogram) *histogram.FloatHistogram {
 	if len(histograms) == 1 {
-		return histograms[0]
+		return histograms[0].Copy()
 	}
 
-	histSum := histograms[0]
+	histSum := histograms[0].Copy()
 	for i := 1; i < len(histograms); i++ {
 		if histograms[i].Schema >= histSum.Schema {
 			histSum = histSum.Add(histograms[i])
