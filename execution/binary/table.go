@@ -209,3 +209,12 @@ func btof(b bool) float64 {
 	}
 	return 0
 }
+
+func shouldDropMetricName(op parser.ItemType, returnBool bool) bool {
+	switch op.String() {
+	case "+", "-", "*", "/", "%", "^":
+		return true
+	}
+
+	return op.IsComparisonOperator() && returnBool
+}
