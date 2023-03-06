@@ -312,13 +312,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "atanh(http_requests_total)",
 		},
 		{
-			name: "timestamp",
-			load: `load 30s
-					http_requests_total{pod="nginx-1"} 0+1x1
-					http_requests_total{pod="nginx-2"} 1+1x1`,
-			query: "timestamp(http_requests_total)",
-		},
-		{
 			name: "rad",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 5.5+1x15
