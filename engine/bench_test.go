@@ -205,11 +205,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			name:  "sort",
-			query: `sort(http_response_seconds_bucket)`,
+			query: `sort(http_requests_total)`,
 		},
 		{
 			name:  "sort_desc",
-			query: `sort_desc(http_response_seconds_bucket)`,
+			query: `sort_desc(http_requests_total)`,
 		},
 	}
 

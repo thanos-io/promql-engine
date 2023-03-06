@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
@@ -3406,7 +3405,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							t.Log("Applying comparison with NaN equality.")
 							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, promVector, newVector)
 						} else {
-							require.Equal(t, promVector, newVector)
+							testutil.Equals(t, promVector, newVector)
 						}
 					})
 
@@ -3435,7 +3434,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							t.Log("Applying comparison with NaN equality.")
 							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, expected, actual)
 						} else {
-							require.Equal(t, expected, actual)
+							testutil.Equals(t, expected, actual)
 						}
 					})
 				})
