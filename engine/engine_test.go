@@ -314,8 +314,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		{
 			name: "timestamp",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 0
-					http_requests_total{pod="nginx-2"} 1`,
+					http_requests_total{pod="nginx-1"} 0+1x1
+					http_requests_total{pod="nginx-2"} 1+1x1`,
 			query: "timestamp(http_requests_total)",
 		},
 		{
