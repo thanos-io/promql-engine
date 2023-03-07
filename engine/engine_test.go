@@ -1434,6 +1434,17 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
+			name: "topk wrapped by another aggregate",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "max(topk by (series) (2, http_requests_total))",
+			end:   time.Unix(3000, 0),
+		},
+		{
 			name: "topk on empty result",
 			load: `load 30s
 				metric_a 1+1x2`,
