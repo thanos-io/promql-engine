@@ -179,8 +179,8 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, Sampl
 		}
 	}
 
+	s := a.vectorPool.GetStepVector(t)
 	for _, h := range a.heaps {
-		s := a.vectorPool.GetStepVector(t)
 		// The heap keeps the lowest value on top, so reverse it.
 		if len(h.entries) > 1 {
 			sort.Sort(sort.Reverse(h))
@@ -189,9 +189,9 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, Sampl
 		for _, e := range h.entries {
 			s.AppendSample(a.vectorPool, e.sId, e.total)
 		}
-		*result = append(*result, s)
 		h.entries = h.entries[:0]
 	}
+	*result = append(*result, s)
 }
 
 type entry struct {
