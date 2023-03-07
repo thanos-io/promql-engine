@@ -1539,7 +1539,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 
 	disableOptimizerOpts := []bool{true, false}
-	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
 		for _, tc := range cases {
@@ -1547,7 +1547,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				test, err := promql.NewTest(t, tc.load)
 				testutil.Ok(t, err)
 				defer test.Close()
-
 				testutil.Ok(t, test.Run())
 
 				if tc.start.Equal(time.Time{}) {
@@ -1563,7 +1562,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					t.Run(fmt.Sprintf("disableOptimizers=%v", disableOptimizers), func(t *testing.T) {
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-
 								optimizers := logicalplan.AllOptimizers
 								if disableOptimizers {
 									optimizers = logicalplan.NoOptimizers
@@ -1576,15 +1574,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
 								testutil.Ok(t, err)
 								defer q1.Close()
-
 								newResult := q1.Exec(context.Background())
 
 								oldEngine := promql.NewEngine(opts)
 								q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
 								testutil.Ok(t, err)
 								defer q2.Close()
-
 								oldResult := q2.Exec(context.Background())
+
 								if oldResult.Err != nil {
 									testutil.NotOk(t, newResult.Err)
 									return
@@ -2442,7 +2439,7 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	disableOptimizerOpts := []bool{true, false}
-	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, disableOptimizers := range disableOptimizerOpts {
 		t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
 			for _, lookbackDelta := range lookbackDeltas {

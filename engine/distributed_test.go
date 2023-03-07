@@ -170,89 +170,103 @@ func TestDistributedAggregations(t *testing.T) {
 		"all":     logicalplan.AllOptimizers,
 	}
 
+	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
+	allQueryOpts := []*promql.QueryOpts{nil}
+	for _, l := range lookbackDeltas {
+		allQueryOpts = append(allQueryOpts, &promql.QueryOpts{
+			LookbackDelta: l,
+		})
+	}
+
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			var allSeries []*mockSeries
-			remoteEngines := make([]api.RemoteEngine, 0, len(test.seriesSets)+1)
-			for _, s := range test.seriesSets {
-				remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-					localOpts,
-					storageWithMockSeries(s.series...),
-					s.mint(),
-					s.maxt(),
-					s.extLset,
-				))
-				allSeries = append(allSeries, s.series...)
-			}
-			if len(test.timeOverlap.series) > 0 {
-				remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-					localOpts,
-					storageWithMockSeries(test.timeOverlap.series...),
-					test.timeOverlap.mint(),
-					test.timeOverlap.maxt(),
-					test.timeOverlap.extLset,
-				))
-				allSeries = append(allSeries, test.timeOverlap.series...)
-			}
-			completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
+		for _, lookbackDelta := range lookbackDeltas {
+			localOpts.LookbackDelta = lookbackDelta
+			for _, queryOpts := range allQueryOpts {
+				t.Run(test.name, func(t *testing.T) {
+					var allSeries []*mockSeries
+					remoteEngines := make([]api.RemoteEngine, 0, len(test.seriesSets)+1)
+					for _, s := range test.seriesSets {
+						remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
+							localOpts,
+							storageWithMockSeries(s.series...),
+							s.mint(),
+							s.maxt(),
+							s.extLset,
+						))
+						allSeries = append(allSeries, s.series...)
+					}
+					if len(test.timeOverlap.series) > 0 {
+						remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
+							localOpts,
+							storageWithMockSeries(test.timeOverlap.series...),
+							test.timeOverlap.mint(),
+							test.timeOverlap.maxt(),
+							test.timeOverlap.extLset,
+						))
+						allSeries = append(allSeries, test.timeOverlap.series...)
+					}
+					completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
 
-			for _, query := range queries {
-				t.Run(query.name, func(t *testing.T) {
-					for o, optimizers := range optimizersOpts {
-						t.Run(fmt.Sprintf("withOptimizers=%s", o), func(t *testing.T) {
-							localOpts.LogicalOptimizers = optimizers
-							distOpts := localOpts
-							distOpts.DisableFallback = !query.expectFallback
-							distOpts.DebugWriter = os.Stdout
-							for _, instantTS := range instantTSs {
-								t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
-									distEngine := engine.NewDistributedEngine(distOpts,
-										api.NewStaticEndpoints(remoteEngines),
-									)
-									distQry, err := distEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
-									testutil.Ok(t, err)
+					for _, query := range queries {
+						t.Run(query.name, func(t *testing.T) {
+							for o, optimizers := range optimizersOpts {
+								t.Run(fmt.Sprintf("withOptimizers=%s", o), func(t *testing.T) {
+									localOpts.LogicalOptimizers = optimizers
+									distOpts := localOpts
 
-									distResult := distQry.Exec(context.Background())
-									promEngine := promql.NewEngine(localOpts.EngineOpts)
-									promQry, err := promEngine.NewInstantQuery(completeSeriesSet, nil, query.query, instantTS)
-									testutil.Ok(t, err)
-									promResult := promQry.Exec(context.Background())
+									distOpts.DisableFallback = !query.expectFallback
+									distOpts.DebugWriter = os.Stdout
+									for _, instantTS := range instantTSs {
+										t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
+											distEngine := engine.NewDistributedEngine(distOpts,
+												api.NewStaticEndpoints(remoteEngines),
+											)
+											distQry, err := distEngine.NewInstantQuery(completeSeriesSet, queryOpts, query.query, instantTS)
+											testutil.Ok(t, err)
 
-									roundValues(promResult)
-									roundValues(distResult)
+											distResult := distQry.Exec(context.Background())
+											promEngine := promql.NewEngine(localOpts.EngineOpts)
+											promQry, err := promEngine.NewInstantQuery(completeSeriesSet, queryOpts, query.query, instantTS)
+											testutil.Ok(t, err)
+											promResult := promQry.Exec(context.Background())
 
-									// Instant queries have no guarantees on result ordering.
-									sortByLabels(promResult)
-									sortByLabels(distResult)
+											roundValues(promResult)
+											roundValues(distResult)
 
-									testutil.Equals(t, promResult, distResult)
+											// Instant queries have no guarantees on result ordering.
+											sortByLabels(promResult)
+											sortByLabels(distResult)
+
+											testutil.Equals(t, promResult, distResult)
+										})
+									}
+
+									t.Run("range", func(t *testing.T) {
+										if test.rangeEnd == (time.Time{}) {
+											test.rangeEnd = rangeEnd
+										}
+										distEngine := engine.NewDistributedEngine(distOpts,
+											api.NewStaticEndpoints(remoteEngines),
+										)
+										distQry, err := distEngine.NewRangeQuery(completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+										testutil.Ok(t, err)
+
+										distResult := distQry.Exec(context.Background())
+										promEngine := promql.NewEngine(localOpts.EngineOpts)
+										promQry, err := promEngine.NewRangeQuery(completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+										testutil.Ok(t, err)
+										promResult := promQry.Exec(context.Background())
+
+										roundValues(promResult)
+										roundValues(distResult)
+										testutil.Equals(t, promResult, distResult)
+									})
 								})
 							}
-
-							t.Run("range", func(t *testing.T) {
-								if test.rangeEnd == (time.Time{}) {
-									test.rangeEnd = rangeEnd
-								}
-								distEngine := engine.NewDistributedEngine(distOpts,
-									api.NewStaticEndpoints(remoteEngines),
-								)
-								distQry, err := distEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, test.rangeEnd, rangeStep)
-								testutil.Ok(t, err)
-
-								distResult := distQry.Exec(context.Background())
-								promEngine := promql.NewEngine(localOpts.EngineOpts)
-								promQry, err := promEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, test.rangeEnd, rangeStep)
-								testutil.Ok(t, err)
-								promResult := promQry.Exec(context.Background())
-
-								roundValues(promResult)
-								roundValues(distResult)
-								testutil.Equals(t, promResult, distResult)
-							})
 						})
 					}
 				})
 			}
-		})
+		}
 	}
 }

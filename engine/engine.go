@@ -174,6 +174,16 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	if err != nil {
 		return nil, err
 	}
+
+	if opts == nil {
+		opts = &promql.QueryOpts{}
+	}
+
+	lookbackDelta := opts.LookbackDelta
+	if lookbackDelta <= 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
 	// determine sorting order before optimizers run, we do this by looking for "sort"
 	// and "sort_desc" and optimize them away afterwards since they are only needed at
 	// the presentation layer and not when computing the results.
@@ -183,11 +193,11 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		Start:         ts,
 		End:           ts,
 		Step:          1,
-		LookbackDelta: e.lookbackDelta,
+		LookbackDelta: lookbackDelta,
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, lookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
@@ -222,15 +232,24 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 		return nil, errors.Newf("invalid expression type %q for range Query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
+	if opts == nil {
+		opts = &promql.QueryOpts{}
+	}
+
+	lookbackDelta := opts.LookbackDelta
+	if lookbackDelta <= 0 {
+		lookbackDelta = e.lookbackDelta
+	}
+
 	lplan := logicalplan.New(expr, &logicalplan.Opts{
 		Start:         start,
 		End:           end,
 		Step:          step,
-		LookbackDelta: e.lookbackDelta,
+		LookbackDelta: lookbackDelta,
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, start, end, step, lookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)

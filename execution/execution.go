@@ -256,7 +256,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case logicalplan.RemoteExecution:
 		// Create a new remote query scoped to the calculated start time.
-		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{}, e.Query, e.QueryRangeStart, opts.End, opts.Step)
+		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{LookbackDelta: opts.LookbackDelta}, e.Query, e.QueryRangeStart, opts.End, opts.Step)
 		if err != nil {
 			return nil, err
 		}
