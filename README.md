@@ -79,7 +79,7 @@ The current implementation creates a physical plan directly from the PromQL abst
 
 ## Distributed execution mode
 
-The supports a distributed mode where aggregations can be delegated to multiple remote engines, each responsible for an independent dataset. This mode is currently implemented through an optimizer which rewrites a query as a combination of multiple remote and one local aggregation. For example, when two remote engines are available, a query like:
+The engine supports a distributed mode where aggregations can be delegated to multiple remote engines, each responsible for an independent dataset. This mode is currently implemented through an optimizer which rewrites a query as a combination of multiple remote and one local aggregation. For example, when two remote engines are available, a query like:
 
 ```
 sum(rate(http_request_total[4m]))
