@@ -266,7 +266,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
 		selectorOpts := *opts
 		selectorOpts.LookbackDelta = 0
-		remoteExec := remote.NewExecution(qry, model.NewVectorPool(stepsBatch), opts)
+		remoteExec := remote.NewExecution(qry, model.NewVectorPool(stepsBatch), &selectorOpts)
 		return exchange.NewConcurrent(remoteExec, 2), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
