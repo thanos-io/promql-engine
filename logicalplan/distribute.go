@@ -99,7 +99,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) pa
 			}
 
 			remoteAggregation := newRemoteAggregation(aggr, engines)
-			subQueries := m.makeSubQueries(&remoteAggregation, engines, opts)
+			subQueries := m.distributeQuery(&remoteAggregation, engines, opts)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -116,7 +116,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) pa
 			return false
 		}
 
-		*current = m.makeSubQueries(current, engines, opts)
+		*current = m.distributeQuery(current, engines, opts)
 		return true
 	})
 
@@ -152,10 +152,13 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 	return &remoteAggregation
 }
 
-func (m DistributedExecutionOptimizer) makeSubQueries(expr *parser.Expr, engines []api.RemoteEngine, opts *Opts) Deduplicate {
+// distributeQuery takes a PromQL expression in the form of *parser.Expr and a set of remote engines.
+// For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
+// All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
+// TODO(fpetkovski): Prune remote engines based on external labels.
+func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *Opts) Deduplicate {
 	remoteQueries := make(RemoteExecutions, 0, len(engines))
 	for _, e := range engines {
-		// TODO(fpetkovski): Add pruning based on external labels.
 		if e.MaxT() < opts.Start.UnixMilli()-opts.LookbackDelta.Milliseconds() {
 			continue
 		}

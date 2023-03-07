@@ -14,7 +14,7 @@ import (
 type TrimSortFunctions struct {
 }
 
-func (TrimSortFunctions) Optimize(expr parser.Expr, opts *Opts) parser.Expr {
+func (TrimSortFunctions) Optimize(expr parser.Expr, _ *Opts) parser.Expr {
 	traverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
 		if current == nil || parent == nil {
 			return true

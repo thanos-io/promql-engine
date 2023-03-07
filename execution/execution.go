@@ -262,7 +262,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 		// The selector uses the original query time to make sure that steps from different
-		// have the same timestamps.
+		// operators have the same timestamps.
 		// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
 		selectorOpts := *opts
 		selectorOpts.LookbackDelta = 0
