@@ -185,8 +185,8 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					if !hasValue {
 						value = v
-					} else {
-						value = math.Max(value, v)
+					} else if value < v || math.IsNaN(value) {
+						value = v
 					}
 					hasValue = true
 				},

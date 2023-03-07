@@ -1976,6 +1976,20 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum by (pod) (http_requests_total)",
 		},
 		{
+			name: "sum with NaN",
+			load: `load 30s
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} NaN`,
+			query: "sum(http_requests_total)",
+		},
+		{
+			name: "sum by with NaN",
+			load: `load 30s
+						http_requests_total{pod="nginx-1"} 1+1x4
+						http_requests_total{pod="nginx-2"} NaN`,
+			query: "sum by (pod) (http_requests_total)",
+		},
+		{
 			name: "count",
 			load: `load 30s
 						http_requests_total{pod="nginx-1"} 1+1x15
@@ -2062,6 +2076,21 @@ func TestInstantQuery(t *testing.T) {
 			query: "max(http_requests_total) by (pod)",
 		},
 		{
+			name: "max with NaN",
+			load: `load 5m
+						http_requests_total{pod="nginx-1"} NaN
+						http_requests_total{pod="nginx-2"} 1`,
+			query: "max(http_requests)",
+		},
+		{
+			name: "max by with NaN",
+			load: `load 5m
+						http_requests_total{pod="nginx-1", group="prod"} NaN
+						http_requests_total{pod="nginx-1", group="canary"} NaN
+						http_requests_total{pod="nginx-2", group="canary"} 1`,
+			query: "max by (group) (http_requests)",
+		},
+		{
 			name: "min",
 			load: `load 30s
 						http_requests_total{pod="nginx-1"} 1+1x15
@@ -2074,6 +2103,21 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-1"} -1
 						http_requests_total{pod="nginx-2"} 1`,
 			query: "min(http_requests_total) by (pod)",
+		},
+		{
+			name: "min with NaN",
+			load: `load 5m
+						http_requests_total{pod="nginx-1"} NaN
+						http_requests_total{pod="nginx-2"} 1`,
+			query: "min(http_requests)",
+		},
+		{
+			name: "min by with NaN",
+			load: `load 5m
+						http_requests_total{pod="nginx-1", group="prod"} NaN
+						http_requests_total{pod="nginx-1", group="canary"} NaN
+						http_requests_total{pod="nginx-2", group="canary"} 1`,
+			query: "min by (group) (http_requests)",
 		},
 		{
 			name: "rate",
