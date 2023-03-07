@@ -76,6 +76,7 @@ func TestDistributedAggregations(t *testing.T) {
 		name        string
 		seriesSets  []partition
 		timeOverlap partition
+		rangeEnd    time.Time
 	}{
 		{
 			name: "base case",
@@ -130,6 +131,17 @@ func TestDistributedAggregations(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "verify double lookback is not applied",
+			seriesSets: []partition{
+				{
+					series: []*mockSeries{
+						newMockSeries(makeSeries("east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
+					},
+				},
+			},
+			rangeEnd: time.Unix(15000, 0),
+		},
 	}
 
 	queries := []struct {
@@ -172,14 +184,16 @@ func TestDistributedAggregations(t *testing.T) {
 				))
 				allSeries = append(allSeries, s.series...)
 			}
-			remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-				localOpts,
-				storageWithMockSeries(test.timeOverlap.series...),
-				test.timeOverlap.mint(),
-				test.timeOverlap.maxt(),
-				test.timeOverlap.extLset,
-			))
-			allSeries = append(allSeries, test.timeOverlap.series...)
+			if len(test.timeOverlap.series) > 0 {
+				remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
+					localOpts,
+					storageWithMockSeries(test.timeOverlap.series...),
+					test.timeOverlap.mint(),
+					test.timeOverlap.maxt(),
+					test.timeOverlap.extLset,
+				))
+				allSeries = append(allSeries, test.timeOverlap.series...)
+			}
 			completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
 
 			for _, query := range queries {
@@ -216,15 +230,18 @@ func TestDistributedAggregations(t *testing.T) {
 							}
 
 							t.Run("range", func(t *testing.T) {
+								if test.rangeEnd == (time.Time{}) {
+									test.rangeEnd = rangeEnd
+								}
 								distEngine := engine.NewDistributedEngine(distOpts,
 									api.NewStaticEndpoints(remoteEngines),
 								)
-								distQry, err := distEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, rangeEnd, rangeStep)
+								distQry, err := distEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 
 								distResult := distQry.Exec(context.Background())
 								promEngine := promql.NewEngine(localOpts.EngineOpts)
-								promQry, err := promEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, rangeEnd, rangeStep)
+								promQry, err := promEngine.NewRangeQuery(completeSeriesSet, nil, query.query, rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(context.Background())
 
