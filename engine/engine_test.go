@@ -1840,6 +1840,13 @@ func TestInstantQuery(t *testing.T) {
 		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
 	}{
 		{
+			name: "duplicate label set",
+			load: `load 5m
+  testmetric1{src="a",dst="b"} 0
+  testmetric2{src="a",dst="b"} 1`,
+			query: "changes({__name__=~'testmetric1|testmetric2'}[5m])",
+		},
+		{
 			name:      "scalar",
 			load:      ``,
 			queryTime: time.Unix(160, 0),
@@ -2579,7 +2586,6 @@ func TestInstantQuery(t *testing.T) {
 								defer q1.Close()
 
 								newResult := q1.Exec(context.Background())
-								testutil.Ok(t, newResult.Err)
 
 								oldEngine := promql.NewEngine(opts)
 								q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
@@ -2587,7 +2593,6 @@ func TestInstantQuery(t *testing.T) {
 								defer q2.Close()
 
 								oldResult := q2.Exec(context.Background())
-								testutil.Ok(t, oldResult.Err)
 
 								if tc.sortByLabels {
 									sortByLabels(oldResult)
@@ -2597,6 +2602,8 @@ func TestInstantQuery(t *testing.T) {
 								if hasNaNs(oldResult) {
 									t.Log("Applying comparison with NaN equality.")
 									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+								} else if oldResult.Err != nil {
+									testutil.Equals(t, oldResult.Err.Error(), newResult.Err.Error())
 								} else {
 									testutil.Equals(t, oldResult, newResult)
 								}
