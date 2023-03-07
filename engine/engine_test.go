@@ -101,6 +101,10 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name:  "nested unary negation",
+			query: "1/(-(2*2))",
+		},
+		{
 			name: "stddev with NaN 1",
 			load: `load 30s
 				       http_requests_total{pod="nginx-1", route="/"} NaN
