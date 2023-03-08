@@ -158,6 +158,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
 		// TODO(fpetkovski): This query fails because the range selector is longer than the
 		// retention of one engine. Uncomment the test once the issue is fixed.
+		// https://github.com/thanos-community/promql-engine/issues/195
 		// {name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
 		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
