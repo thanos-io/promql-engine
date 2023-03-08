@@ -732,11 +732,25 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `foo < 10`,
 		},
 		{
+			name: "vector binary op with name < scalar and bool modifier",
+			load: `load 30s
+				foo{method="get", code="500"} 1+1x40
+				bar{method="get", code="500"} 1+1.1x30`,
+			query: `foo < bool 10`,
+		},
+		{
 			name: "vector binary op > scalar",
 			load: `load 30s
 				foo{method="get", code="500"} 1+2x40
 				bar{method="get", code="404"} 1+1x30`,
 			query: `sum(foo) by (method) > 10`,
+		},
+		{
+			name: "vector binary op > scalar and bool modifier",
+			load: `load 30s
+				foo{method="get", code="500"} 1+2x40
+				bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) > bool 10`,
 		},
 		{
 			name: "scalar < vector binary op",

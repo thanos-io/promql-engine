@@ -165,7 +165,7 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 	for i := range vectorSeries {
 		if vectorSeries[i] != nil {
 			lbls := vectorSeries[i]
-			if !o.opType.IsComparisonOperator() {
+			if shouldDropMetricName(o.opType, o.returnBool) {
 				lbls, _ = function.DropMetricName(lbls.Copy())
 			}
 			series[i] = lbls

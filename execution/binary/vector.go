@@ -125,7 +125,7 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 		includeLabels = o.matching.Include
 	}
 	keepLabels := o.matching.Card != parser.CardOneToOne
-	keepName := o.opType.IsComparisonOperator()
+	keepName := !shouldDropMetricName(o.opType, o.returnBool)
 	highCardHashes, highCardInputMap := o.hashSeries(highCardSide, keepLabels, keepName, buf)
 	lowCardHashes, lowCardInputMap := o.hashSeries(lowCardSide, keepLabels, keepName, buf)
 	output, highCardOutputIndex, lowCardOutputIndex := o.join(highCardHashes, highCardInputMap, lowCardHashes, lowCardInputMap, includeLabels)
