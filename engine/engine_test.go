@@ -570,6 +570,20 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "vector(24)",
 		},
 		{
+			name: "binary operation atan2",
+			load: `load 30s
+         foo{} 10
+         bar{} 2`,
+			query: "foo atan2 bar",
+		},
+		{
+			name: "binary operation atan2 with NaN",
+			load: `load 30s
+         foo{} 10
+         bar{} NaN`,
+			query: "foo atan2 bar",
+		},
+		{
 			name: "binary operation with one-to-one matching",
 			load: `load 30s
 				foo{method="get", code="500"} 1+1x1
