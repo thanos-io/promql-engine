@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1678258161665,
+  "lastUpdate": 1678330329347,
   "repoUrl": "https://github.com/thanos-community/promql-engine",
   "entries": {
     "Go Benchmark": [
@@ -39071,6 +39071,990 @@ window.BENCHMARK_DATA = {
             "name": "BenchmarkNativeHistograms/histogram_quantile",
             "value": 209618743,
             "unit": "ns/op\t936016833 B/op\t11090221 allocs/op",
+            "extra": "5 times\n16 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "charleskorn@users.noreply.github.com",
+            "name": "Charles Korn",
+            "username": "charleskorn"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a456b2174cb59c0a959c402d66c8e4bc5393c57f",
+          "message": "Fix capitalisation in error message that differs from Prometheus' error message. (#213)",
+          "timestamp": "2023-03-08T18:47:53-08:00",
+          "tree_id": "6f95b9166f7b3acd010523a85255e8453450327d",
+          "url": "https://github.com/thanos-community/promql-engine/commit/a456b2174cb59c0a959c402d66c8e4bc5393c57f"
+        },
+        "date": 1678330328715,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkRangeQuery/vector_selector",
+            "value": 22797223,
+            "unit": "ns/op\t39211986 B/op\t  116339 allocs/op",
+            "extra": "44 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_selector",
+            "value": 22902034,
+            "unit": "ns/op\t39224630 B/op\t  116339 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_selector",
+            "value": 23037864,
+            "unit": "ns/op\t39220741 B/op\t  116337 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_selector",
+            "value": 23199649,
+            "unit": "ns/op\t39202370 B/op\t  116317 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_selector",
+            "value": 23430258,
+            "unit": "ns/op\t39206953 B/op\t  116316 allocs/op",
+            "extra": "50 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum",
+            "value": 12240276,
+            "unit": "ns/op\t11097553 B/op\t  110894 allocs/op",
+            "extra": "94 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum",
+            "value": 12267154,
+            "unit": "ns/op\t11113597 B/op\t  110903 allocs/op",
+            "extra": "92 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum",
+            "value": 12375099,
+            "unit": "ns/op\t11130835 B/op\t  110919 allocs/op",
+            "extra": "96 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum",
+            "value": 12402598,
+            "unit": "ns/op\t11147454 B/op\t  110941 allocs/op",
+            "extra": "92 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum",
+            "value": 12348397,
+            "unit": "ns/op\t11140859 B/op\t  110930 allocs/op",
+            "extra": "94 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_pod",
+            "value": 18136765,
+            "unit": "ns/op\t24790876 B/op\t  206672 allocs/op",
+            "extra": "69 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_pod",
+            "value": 18283104,
+            "unit": "ns/op\t24792399 B/op\t  206647 allocs/op",
+            "extra": "67 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_pod",
+            "value": 18117884,
+            "unit": "ns/op\t24789373 B/op\t  206684 allocs/op",
+            "extra": "66 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_pod",
+            "value": 18092063,
+            "unit": "ns/op\t24797188 B/op\t  206665 allocs/op",
+            "extra": "66 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_pod",
+            "value": 18080836,
+            "unit": "ns/op\t24798148 B/op\t  206674 allocs/op",
+            "extra": "69 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/topk",
+            "value": 12965692,
+            "unit": "ns/op\t12576256 B/op\t  118092 allocs/op",
+            "extra": "92 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/topk",
+            "value": 12954996,
+            "unit": "ns/op\t12523694 B/op\t  118065 allocs/op",
+            "extra": "87 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/topk",
+            "value": 12876038,
+            "unit": "ns/op\t12523104 B/op\t  118052 allocs/op",
+            "extra": "88 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/topk",
+            "value": 12908131,
+            "unit": "ns/op\t12541403 B/op\t  118068 allocs/op",
+            "extra": "88 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/topk",
+            "value": 12890975,
+            "unit": "ns/op\t12485120 B/op\t  118028 allocs/op",
+            "extra": "86 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/bottomk",
+            "value": 12855227,
+            "unit": "ns/op\t12469582 B/op\t  114802 allocs/op",
+            "extra": "91 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/bottomk",
+            "value": 12837019,
+            "unit": "ns/op\t12465542 B/op\t  114810 allocs/op",
+            "extra": "92 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/bottomk",
+            "value": 12929059,
+            "unit": "ns/op\t12479617 B/op\t  114819 allocs/op",
+            "extra": "88 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/bottomk",
+            "value": 12916026,
+            "unit": "ns/op\t12508770 B/op\t  114855 allocs/op",
+            "extra": "90 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/bottomk",
+            "value": 12914518,
+            "unit": "ns/op\t12443840 B/op\t  114801 allocs/op",
+            "extra": "90 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/rate",
+            "value": 28961948,
+            "unit": "ns/op\t42001691 B/op\t  140179 allocs/op",
+            "extra": "43 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/rate",
+            "value": 29080752,
+            "unit": "ns/op\t41968499 B/op\t  140151 allocs/op",
+            "extra": "42 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/rate",
+            "value": 29087853,
+            "unit": "ns/op\t41990929 B/op\t  140163 allocs/op",
+            "extra": "42 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/rate",
+            "value": 29009566,
+            "unit": "ns/op\t42008335 B/op\t  140183 allocs/op",
+            "extra": "42 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/rate",
+            "value": 29053626,
+            "unit": "ns/op\t41999545 B/op\t  140171 allocs/op",
+            "extra": "42 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_rate",
+            "value": 24817960,
+            "unit": "ns/op\t13751647 B/op\t  134680 allocs/op",
+            "extra": "48 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_rate",
+            "value": 25040586,
+            "unit": "ns/op\t13693968 B/op\t  134629 allocs/op",
+            "extra": "45 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_rate",
+            "value": 24682119,
+            "unit": "ns/op\t13795101 B/op\t  134709 allocs/op",
+            "extra": "46 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_rate",
+            "value": 24783474,
+            "unit": "ns/op\t13706445 B/op\t  134646 allocs/op",
+            "extra": "46 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_rate",
+            "value": 24833594,
+            "unit": "ns/op\t13751407 B/op\t  134670 allocs/op",
+            "extra": "66 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_rate",
+            "value": 28558249,
+            "unit": "ns/op\t26578580 B/op\t  230020 allocs/op",
+            "extra": "42 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_rate",
+            "value": 28607791,
+            "unit": "ns/op\t26581143 B/op\t  230009 allocs/op",
+            "extra": "40 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_rate",
+            "value": 28647887,
+            "unit": "ns/op\t26546320 B/op\t  229981 allocs/op",
+            "extra": "40 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_rate",
+            "value": 28608574,
+            "unit": "ns/op\t26592444 B/op\t  230040 allocs/op",
+            "extra": "40 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sum_by_rate",
+            "value": 28488444,
+            "unit": "ns/op\t26595387 B/op\t  230028 allocs/op",
+            "extra": "42 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/quantile_with_variable_parameter",
+            "value": 27286394,
+            "unit": "ns/op\t42529830 B/op\t  588974 allocs/op",
+            "extra": "44 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/quantile_with_variable_parameter",
+            "value": 27231470,
+            "unit": "ns/op\t42514735 B/op\t  588995 allocs/op",
+            "extra": "45 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/quantile_with_variable_parameter",
+            "value": 27007976,
+            "unit": "ns/op\t42472745 B/op\t  588976 allocs/op",
+            "extra": "45 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/quantile_with_variable_parameter",
+            "value": 27113248,
+            "unit": "ns/op\t42546944 B/op\t  589031 allocs/op",
+            "extra": "46 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/quantile_with_variable_parameter",
+            "value": 27002635,
+            "unit": "ns/op\t42521761 B/op\t  589032 allocs/op",
+            "extra": "45 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_one_to_one",
+            "value": 20192229,
+            "unit": "ns/op\t23192244 B/op\t   98697 allocs/op",
+            "extra": "62 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_one_to_one",
+            "value": 20065777,
+            "unit": "ns/op\t23205940 B/op\t   98720 allocs/op",
+            "extra": "61 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_one_to_one",
+            "value": 19941454,
+            "unit": "ns/op\t23193793 B/op\t   98689 allocs/op",
+            "extra": "61 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_one_to_one",
+            "value": 20141617,
+            "unit": "ns/op\t23190035 B/op\t   98690 allocs/op",
+            "extra": "62 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_one_to_one",
+            "value": 20189205,
+            "unit": "ns/op\t23203602 B/op\t   98716 allocs/op",
+            "extra": "62 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_many_to_one",
+            "value": 44363564,
+            "unit": "ns/op\t57915666 B/op\t  182526 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_many_to_one",
+            "value": 44581050,
+            "unit": "ns/op\t57864561 B/op\t  182441 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_many_to_one",
+            "value": 44062076,
+            "unit": "ns/op\t57923636 B/op\t  182509 allocs/op",
+            "extra": "28 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_many_to_one",
+            "value": 43715845,
+            "unit": "ns/op\t57945096 B/op\t  182543 allocs/op",
+            "extra": "28 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_many_to_one",
+            "value": 44469751,
+            "unit": "ns/op\t57948107 B/op\t  182554 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_vector_and_scalar",
+            "value": 35653714,
+            "unit": "ns/op\t42780540 B/op\t  120668 allocs/op",
+            "extra": "33 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_vector_and_scalar",
+            "value": 35399899,
+            "unit": "ns/op\t42615006 B/op\t  120574 allocs/op",
+            "extra": "34 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_vector_and_scalar",
+            "value": 35364435,
+            "unit": "ns/op\t42613500 B/op\t  120575 allocs/op",
+            "extra": "34 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_vector_and_scalar",
+            "value": 35721303,
+            "unit": "ns/op\t42625205 B/op\t  120582 allocs/op",
+            "extra": "34 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/binary_operation_with_vector_and_scalar",
+            "value": 35741355,
+            "unit": "ns/op\t42682369 B/op\t  120610 allocs/op",
+            "extra": "33 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/unary_negation",
+            "value": 24481415,
+            "unit": "ns/op\t40481799 B/op\t  128276 allocs/op",
+            "extra": "49 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/unary_negation",
+            "value": 24669647,
+            "unit": "ns/op\t40525828 B/op\t  128326 allocs/op",
+            "extra": "49 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/unary_negation",
+            "value": 24463919,
+            "unit": "ns/op\t40532390 B/op\t  128325 allocs/op",
+            "extra": "52 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/unary_negation",
+            "value": 24424440,
+            "unit": "ns/op\t40533649 B/op\t  128337 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/unary_negation",
+            "value": 24301805,
+            "unit": "ns/op\t40517648 B/op\t  128318 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_and_scalar_comparison",
+            "value": 36005458,
+            "unit": "ns/op\t42273477 B/op\t  117584 allocs/op",
+            "extra": "34 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_and_scalar_comparison",
+            "value": 35313983,
+            "unit": "ns/op\t42203319 B/op\t  117541 allocs/op",
+            "extra": "34 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_and_scalar_comparison",
+            "value": 35886361,
+            "unit": "ns/op\t42186847 B/op\t  117535 allocs/op",
+            "extra": "34 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_and_scalar_comparison",
+            "value": 35969739,
+            "unit": "ns/op\t42236323 B/op\t  117556 allocs/op",
+            "extra": "33 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/vector_and_scalar_comparison",
+            "value": 35330129,
+            "unit": "ns/op\t42106920 B/op\t  117484 allocs/op",
+            "extra": "36 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/positive_offset_vector",
+            "value": 22817568,
+            "unit": "ns/op\t37713260 B/op\t   90446 allocs/op",
+            "extra": "55 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/positive_offset_vector",
+            "value": 22814668,
+            "unit": "ns/op\t37710604 B/op\t   90430 allocs/op",
+            "extra": "55 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/positive_offset_vector",
+            "value": 22577136,
+            "unit": "ns/op\t37727842 B/op\t   90455 allocs/op",
+            "extra": "54 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/positive_offset_vector",
+            "value": 22542139,
+            "unit": "ns/op\t37699124 B/op\t   90430 allocs/op",
+            "extra": "57 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/positive_offset_vector",
+            "value": 22467729,
+            "unit": "ns/op\t37719835 B/op\t   90451 allocs/op",
+            "extra": "55 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_",
+            "value": 16943183,
+            "unit": "ns/op\t33209606 B/op\t   62746 allocs/op",
+            "extra": "79 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_",
+            "value": 17205196,
+            "unit": "ns/op\t33210072 B/op\t   62747 allocs/op",
+            "extra": "82 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_",
+            "value": 17207431,
+            "unit": "ns/op\t33212070 B/op\t   62748 allocs/op",
+            "extra": "64 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_",
+            "value": 16974332,
+            "unit": "ns/op\t33208861 B/op\t   62746 allocs/op",
+            "extra": "84 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_",
+            "value": 17666003,
+            "unit": "ns/op\t33213736 B/op\t   62749 allocs/op",
+            "extra": "67 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_with_positive_offset_vector",
+            "value": 17048475,
+            "unit": "ns/op\t33040908 B/op\t   56753 allocs/op",
+            "extra": "82 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_with_positive_offset_vector",
+            "value": 16499450,
+            "unit": "ns/op\t33036232 B/op\t   56750 allocs/op",
+            "extra": "82 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_with_positive_offset_vector",
+            "value": 16679592,
+            "unit": "ns/op\t33030603 B/op\t   56749 allocs/op",
+            "extra": "75 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_with_positive_offset_vector",
+            "value": 16934839,
+            "unit": "ns/op\t33031791 B/op\t   56750 allocs/op",
+            "extra": "78 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/at_modifier_with_positive_offset_vector",
+            "value": 16851290,
+            "unit": "ns/op\t33026436 B/op\t   56748 allocs/op",
+            "extra": "84 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp",
+            "value": 44542572,
+            "unit": "ns/op\t39539333 B/op\t  120043 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp",
+            "value": 44606269,
+            "unit": "ns/op\t39527968 B/op\t  120037 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp",
+            "value": 44801465,
+            "unit": "ns/op\t39498152 B/op\t  119999 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp",
+            "value": 44779771,
+            "unit": "ns/op\t39518593 B/op\t  120021 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp",
+            "value": 44472203,
+            "unit": "ns/op\t39540021 B/op\t  120058 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp_min",
+            "value": 41869295,
+            "unit": "ns/op\t39488341 B/op\t  119624 allocs/op",
+            "extra": "30 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp_min",
+            "value": 41352023,
+            "unit": "ns/op\t39513565 B/op\t  119653 allocs/op",
+            "extra": "31 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp_min",
+            "value": 41569712,
+            "unit": "ns/op\t39504920 B/op\t  119643 allocs/op",
+            "extra": "30 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp_min",
+            "value": 40964280,
+            "unit": "ns/op\t39510342 B/op\t  119658 allocs/op",
+            "extra": "28 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/clamp_min",
+            "value": 41271061,
+            "unit": "ns/op\t39477709 B/op\t  119612 allocs/op",
+            "extra": "28 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/complex_func_query",
+            "value": 57061254,
+            "unit": "ns/op\t42924190 B/op\t  124486 allocs/op",
+            "extra": "21 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/complex_func_query",
+            "value": 57351185,
+            "unit": "ns/op\t42886273 B/op\t  124455 allocs/op",
+            "extra": "21 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/complex_func_query",
+            "value": 56928609,
+            "unit": "ns/op\t42800369 B/op\t  124400 allocs/op",
+            "extra": "21 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/complex_func_query",
+            "value": 56730860,
+            "unit": "ns/op\t42898647 B/op\t  124481 allocs/op",
+            "extra": "21 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/complex_func_query",
+            "value": 57035895,
+            "unit": "ns/op\t42874347 B/op\t  124446 allocs/op",
+            "extra": "21 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/func_within_func_query",
+            "value": 46155044,
+            "unit": "ns/op\t42024206 B/op\t  140960 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/func_within_func_query",
+            "value": 45581215,
+            "unit": "ns/op\t42020959 B/op\t  140957 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/func_within_func_query",
+            "value": 46014562,
+            "unit": "ns/op\t42006619 B/op\t  140931 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/func_within_func_query",
+            "value": 46228517,
+            "unit": "ns/op\t42005861 B/op\t  140945 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/func_within_func_query",
+            "value": 46038125,
+            "unit": "ns/op\t42026941 B/op\t  140974 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/aggr_within_func_query",
+            "value": 45667256,
+            "unit": "ns/op\t41964866 B/op\t  140884 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/aggr_within_func_query",
+            "value": 45721518,
+            "unit": "ns/op\t41960542 B/op\t  140887 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/aggr_within_func_query",
+            "value": 46006422,
+            "unit": "ns/op\t42018834 B/op\t  140960 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/aggr_within_func_query",
+            "value": 46074393,
+            "unit": "ns/op\t41958667 B/op\t  140859 allocs/op",
+            "extra": "26 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/aggr_within_func_query",
+            "value": 45815921,
+            "unit": "ns/op\t42015159 B/op\t  140954 allocs/op",
+            "extra": "27 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/histogram_quantile",
+            "value": 117488754,
+            "unit": "ns/op\t61095718 B/op\t  660359 allocs/op",
+            "extra": "9 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/histogram_quantile",
+            "value": 117800708,
+            "unit": "ns/op\t61391759 B/op\t  660501 allocs/op",
+            "extra": "9 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/histogram_quantile",
+            "value": 117243873,
+            "unit": "ns/op\t61344235 B/op\t  660462 allocs/op",
+            "extra": "9 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/histogram_quantile",
+            "value": 117651575,
+            "unit": "ns/op\t61280247 B/op\t  660457 allocs/op",
+            "extra": "9 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/histogram_quantile",
+            "value": 119582458,
+            "unit": "ns/op\t61429554 B/op\t  660510 allocs/op",
+            "extra": "9 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort",
+            "value": 24250459,
+            "unit": "ns/op\t39195125 B/op\t  116324 allocs/op",
+            "extra": "49 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort",
+            "value": 23717154,
+            "unit": "ns/op\t39185309 B/op\t  116318 allocs/op",
+            "extra": "54 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort",
+            "value": 23786361,
+            "unit": "ns/op\t39185276 B/op\t  116310 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort",
+            "value": 23704483,
+            "unit": "ns/op\t39156276 B/op\t  116282 allocs/op",
+            "extra": "52 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort",
+            "value": 23866591,
+            "unit": "ns/op\t39187261 B/op\t  116314 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort_desc",
+            "value": 23841862,
+            "unit": "ns/op\t39162397 B/op\t  116288 allocs/op",
+            "extra": "54 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort_desc",
+            "value": 23676362,
+            "unit": "ns/op\t39196204 B/op\t  116322 allocs/op",
+            "extra": "54 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort_desc",
+            "value": 24146118,
+            "unit": "ns/op\t39222932 B/op\t  116350 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort_desc",
+            "value": 24106351,
+            "unit": "ns/op\t39203151 B/op\t  116337 allocs/op",
+            "extra": "50 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkRangeQuery/sort_desc",
+            "value": 23741407,
+            "unit": "ns/op\t39147899 B/op\t  116269 allocs/op",
+            "extra": "51 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 157801186,
+            "unit": "ns/op\t776391194 B/op\t 9645945 allocs/op",
+            "extra": "7 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 153219213,
+            "unit": "ns/op\t776533546 B/op\t 9646033 allocs/op",
+            "extra": "7 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 154718042,
+            "unit": "ns/op\t776462790 B/op\t 9645988 allocs/op",
+            "extra": "7 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 155230699,
+            "unit": "ns/op\t776495377 B/op\t 9645998 allocs/op",
+            "extra": "7 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 154395661,
+            "unit": "ns/op\t776424834 B/op\t 9645940 allocs/op",
+            "extra": "7 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 195051754,
+            "unit": "ns/op\t935477898 B/op\t11088323 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 195275698,
+            "unit": "ns/op\t935353142 B/op\t11088158 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 196289619,
+            "unit": "ns/op\t935411030 B/op\t11088288 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 195046587,
+            "unit": "ns/op\t935456138 B/op\t11088293 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 197131879,
+            "unit": "ns/op\t935331765 B/op\t11088274 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 868398596,
+            "unit": "ns/op\t2879245680 B/op\t34153760 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 890639843,
+            "unit": "ns/op\t2879487900 B/op\t34153858 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 915712829,
+            "unit": "ns/op\t2879288000 B/op\t34153842 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 906384816,
+            "unit": "ns/op\t2879403344 B/op\t34153938 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 904546790,
+            "unit": "ns/op\t2879283056 B/op\t34153835 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 910477152,
+            "unit": "ns/op\t3038845348 B/op\t35590377 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 903834014,
+            "unit": "ns/op\t3038617420 B/op\t35590278 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 912759602,
+            "unit": "ns/op\t3038800764 B/op\t35590409 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 891705212,
+            "unit": "ns/op\t3038778784 B/op\t35590324 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 916412278,
+            "unit": "ns/op\t3038358560 B/op\t35590223 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 338047526,
+            "unit": "ns/op\t777721237 B/op\t 9649423 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 339533678,
+            "unit": "ns/op\t777846421 B/op\t 9649474 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 341259134,
+            "unit": "ns/op\t777865640 B/op\t 9649377 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 338216879,
+            "unit": "ns/op\t777880741 B/op\t 9649424 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 335836929,
+            "unit": "ns/op\t778022672 B/op\t 9649523 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 338027897,
+            "unit": "ns/op\t777857184 B/op\t 9649507 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 337723242,
+            "unit": "ns/op\t777791714 B/op\t 9649336 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 339969107,
+            "unit": "ns/op\t777751440 B/op\t 9649459 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 337590348,
+            "unit": "ns/op\t777794429 B/op\t 9649402 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 336167478,
+            "unit": "ns/op\t778032365 B/op\t 9649537 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 196958619,
+            "unit": "ns/op\t935825961 B/op\t11090181 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 195902743,
+            "unit": "ns/op\t935664064 B/op\t11090244 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 195295899,
+            "unit": "ns/op\t935737002 B/op\t11090195 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 208341020,
+            "unit": "ns/op\t935657574 B/op\t11090092 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 210347268,
+            "unit": "ns/op\t935648446 B/op\t11090219 allocs/op",
             "extra": "5 times\n16 procs"
           }
         ]
