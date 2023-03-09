@@ -189,9 +189,8 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		opts = &promql.QueryOpts{}
 	}
 
-	lookbackDelta := opts.LookbackDelta
-	if lookbackDelta <= 0 {
-		lookbackDelta = e.lookbackDelta
+	if opts.LookbackDelta <= 0 {
+		opts.LookbackDelta = e.lookbackDelta
 	}
 
 	// determine sorting order before optimizers run, we do this by looking for "sort"
@@ -203,11 +202,11 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 		Start:         ts,
 		End:           ts,
 		Step:          1,
-		LookbackDelta: lookbackDelta,
+		LookbackDelta: opts.LookbackDelta,
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
@@ -246,20 +245,19 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 		opts = &promql.QueryOpts{}
 	}
 
-	lookbackDelta := opts.LookbackDelta
-	if lookbackDelta <= 0 {
-		lookbackDelta = e.lookbackDelta
+	if opts.LookbackDelta <= 0 {
+		opts.LookbackDelta = e.lookbackDelta
 	}
 
 	lplan := logicalplan.New(expr, &logicalplan.Opts{
 		Start:         start,
 		End:           end,
 		Step:          step,
-		LookbackDelta: lookbackDelta,
+		LookbackDelta: opts.LookbackDelta,
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, start, end, step, lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, start, end, step, opts.LookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
