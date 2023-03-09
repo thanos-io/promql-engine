@@ -1462,6 +1462,74 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
+			name: "topk with float64 parameter",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(3.5, http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "topk with float64 parameter that gets truncated to 0",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(0.5, http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "topk with float64 parameter that does not fit int64",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(1e120, http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "topk with NaN",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+				http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: "topk(NaN, http_requests_total)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name:  "topk with NaN and no matching series",
+			query: "topk(NaN, not_there)",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "nested topk error that should not be skipped",
+			load: `load 30s
+				X 1+1x50`,
+			query: "topk (0, topk (NaN, X))",
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
 			name: "topk wrapped by another aggregate",
 			load: `load 30s
 				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40

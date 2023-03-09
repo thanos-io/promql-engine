@@ -82,25 +82,28 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	if err != nil {
 		return nil, err
 	}
-	if in == nil {
-		return nil, nil
-	}
-
-	defer a.next.GetPool().PutVectors(in)
-
 	args, err := a.paramOp.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
-	for i := range a.params {
-		a.params[i] = math.NaN()
-		if i < len(args) {
-			a.params[i] = args[i].Samples[0]
-			a.paramOp.GetPool().PutStepVector(args[i])
+
+	for i := range args {
+		a.params[i] = args[i].Samples[0]
+		a.paramOp.GetPool().PutStepVector(args[i])
+
+		val := a.params[i]
+		if val > math.MaxInt64 || val < math.MinInt64 || math.IsNaN(val) {
+			return nil, errors.Newf("scalar value %v overflows int64", val)
+		}
+		if int(val) == 0 {
+			return nil, nil
 		}
 	}
 	a.paramOp.GetPool().PutVectors(args)
 
+	if in == nil {
+		return nil, nil
+	}
 	if len(args) < len(in) {
 		return nil, errors.New("scalar argument not found")
 	}
@@ -115,6 +118,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		a.aggregate(vector.T, &result, int(a.params[i]), vector.SampleIDs, vector.Samples)
 		a.next.GetPool().PutStepVector(vector)
 	}
+	a.next.GetPool().PutVectors(in)
 
 	return result, nil
 }
