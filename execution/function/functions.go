@@ -354,6 +354,51 @@ var Funcs = map[string]FunctionCall{
 			},
 		}
 	},
+	"xrate": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
+			return InvalidSample
+		}
+		// TODO - use extended rate
+		v, h := extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange, f.Offset)
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: v,
+				H: h,
+			},
+		}
+	},
+	"xdelta": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
+			return InvalidSample
+		}
+		// TODO - use extended rate
+		v, h := extrapolatedRate(f.Points, false, false, f.StepTime, f.SelectRange, f.Offset)
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: v,
+				H: h,
+			},
+		}
+	},
+	"xincrease": func(f FunctionArgs) promql.Sample {
+		if len(f.Points) < 2 {
+			return InvalidSample
+		}
+		// TODO - use extended rate
+		v, h := extrapolatedRate(f.Points, true, false, f.StepTime, f.SelectRange, f.Offset)
+		return promql.Sample{
+			Metric: f.Labels,
+			Point: promql.Point{
+				T: f.StepTime,
+				V: v,
+				H: h,
+			},
+		}
+	},
 	"clamp": func(f FunctionArgs) promql.Sample {
 		if len(f.Points) == 0 || len(f.ScalarPoints) < 2 {
 			return InvalidSample
@@ -846,4 +891,9 @@ func dateWrapper(fa FunctionArgs, f func(time.Time) float64) promql.Sample {
 		Metric: lbls,
 		Point:  promql.Point{V: f(t)},
 	}
+}
+
+// IsExtFunction is a convenience function to determine whether extended range calculations are required.
+func IsExtFunction(functionName string) bool {
+	return functionName == "xincrease" || functionName == "xrate" || functionName == "xdelta"
 }

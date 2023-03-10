@@ -50,6 +50,9 @@ type matrixSelector struct {
 
 	shard     int
 	numShards int
+
+	// Lookback delta for extended range functions.
+	extLookbackDelta int64
 }
 
 // NewMatrixSelector creates operator which selects vector of series over time.
@@ -61,6 +64,7 @@ func NewMatrixSelector(
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	shard, numShard int,
+	extLookbackDelta time.Duration,
 ) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
@@ -80,6 +84,8 @@ func NewMatrixSelector(
 
 		shard:     shard,
 		numShards: numShard,
+
+		extLookbackDelta: extLookbackDelta.Milliseconds(),
 	}
 }
 
@@ -131,7 +137,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
-			rangePoints, err := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
+			rangePoints, err := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints, o.funcExpr.Func.Name, o.extLookbackDelta)
 			if err != nil {
 				return nil, err
 			}
@@ -201,12 +207,18 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				lbls, _ = function.DropMetricName(lbls.Copy())
 			}
 
+			// If we are dealing with an extended range function we need to search further in the past for valid series.
+			var selectRange = o.selectRange
+			if function.IsExtFunction(o.funcExpr.Func.Name) {
+				selectRange += o.extLookbackDelta
+			}
+
 			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{
 				labels:    lbls,
 				signature: s.Signature,
-				samples:   storage.NewBufferIterator(s.Iterator(nil), o.selectRange),
+				samples:   storage.NewBufferIterator(s.Iterator(nil), selectRange),
 			}
 			o.series[i] = lbls
 		}
@@ -224,7 +236,13 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point) ([]promql.Point, error) {
+func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point, functionName string, extLookbackDelta int64) ([]promql.Point, error) {
+	extRange := function.IsExtFunction(functionName) // TODO - base this on function name
+	var extMint int64
+	if extRange {
+		extMint = mint - extLookbackDelta
+	}
+
 	if len(out) > 0 && out[len(out)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
@@ -232,12 +250,27 @@ func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []pr
 		//   (b) the number of samples is relatively small.
 		// so a linear search will be as fast as a binary search.
 		var drop int
-		for drop = 0; out[drop].T < mint; drop++ {
+		if !extRange {
+			for drop = 0; out[drop].T < mint; drop++ {
+			}
+			// Only append points with timestamps after the last timestamp we have.
+			mint = out[len(out)-1].T + 1
+		} else {
+			// This is an argument to an extended range function, first go past mint.
+			for drop = 0; drop < len(out) && out[drop].T <= mint; drop++ {
+
+			}
+			// Then, go back one sample if within lookbackDelta of mint.
+			if drop > 0 && out[drop-1].T >= extMint {
+				drop--
+			}
+			if out[len(out)-1].T >= mint {
+				// Only append points with timestamps after the last timestamp we have.
+				mint = out[len(out)-1].T + 1
+			}
 		}
 		copy(out, out[drop:])
 		out = out[:len(out)-drop]
-		// Only append points with timestamps after the last timestamp we have.
-		mint = out[len(out)-1].T + 1
 	} else {
 		out = out[:0]
 	}
@@ -249,6 +282,7 @@ func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []pr
 		}
 	}
 
+	appendedPointBeforeMint := len(out) > 0
 	buf := it.Buffer()
 loop:
 	for {
@@ -265,10 +299,23 @@ loop:
 			if value.IsStaleNaN(v) {
 				continue loop
 			}
-			// Values in the buffer are guaranteed to be smaller than maxt.
-			if t >= mint {
-				out = append(out, promql.Point{T: t, V: v})
+			if !extRange {
+				// Values in the buffer are guaranteed to be smaller than maxt.
+				if t >= mint {
+					out = append(out, promql.Point{T: t, V: v})
+				}
+			} else {
+				// This is the argument to an extended range function: if any point
+				// exists at or before range start, add it and then keep replacing
+				// it with later points while not yet (strictly) inside the range.
+				if t > mint || !appendedPointBeforeMint {
+					out = append(out, promql.Point{T: t, V: v})
+					appendedPointBeforeMint = true
+				} else {
+					out[len(out)-1] = promql.Point{T: t, V: v}
+				}
 			}
+
 		}
 	}
 

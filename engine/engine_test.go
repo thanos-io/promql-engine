@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
-
+	"github.com/stretchr/testify/assert"
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
 	"github.com/thanos-community/promql-engine/logicalplan"
@@ -1849,6 +1849,123 @@ func TestBinopEdgeCases(t *testing.T) {
 	testutil.Equals(t, oldResult, newResult)
 }
 
+func TestXIncreaseXRate(t *testing.T) {
+	defaultQueryTime := time.Unix(50, 0)
+	fmt.Println(defaultQueryTime.String())
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x4`
+
+	cases := []struct {
+		name         string
+		load         string
+		query        string
+		queryTime    time.Time
+		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		expected     []promql.Sample
+		rangeQuery   bool
+		startTime    time.Time
+		endTime      time.Time
+	}{
+		{
+			name:  "eval instant at 50s xincrease",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[50s])",
+			expected: []promql.Sample{
+				createSample(50000, 100, labels.FromStrings("path", "/foo")),
+				createSample(50000, 90, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 5s xincrease",
+			load:      defaultLoad,
+			query:     "xincrease(http_requests[5s])",
+			queryTime: time.Unix(5, 0),
+			expected: []promql.Sample{
+				createSample(5000, 10, labels.FromStrings("path", "/foo")),
+				createSample(5000, 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// TODO - this test still needs some work, I don't agree with the result.
+		{
+			name:      "eval instant at 3 xincrease",
+			load:      defaultLoad,
+			query:     "xincrease(http_requests[3s])",
+			queryTime: time.Unix(3, 0),
+			expected: []promql.Sample{
+				createSample(3000, 10, labels.FromStrings("path", "/foo")),
+				createSample(3000, 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		test, err := promql.NewTest(t, tc.load)
+		testutil.Ok(t, err)
+		defer test.Close()
+
+		testutil.Ok(t, test.Run())
+		var queryTime time.Time = defaultQueryTime
+		if tc.queryTime != (time.Time{}) {
+			queryTime = tc.queryTime
+		}
+
+		optimizers := logicalplan.AllOptimizers
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true, // TODO have another look
+			LogicalOptimizers: optimizers,
+		})
+		query, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+		testutil.Ok(t, err)
+		defer query.Close()
+
+		engineResult := query.Exec(context.Background())
+		testutil.Ok(t, engineResult.Err)
+		expectedResult := createVectorResult(tc.expected)
+
+		testutil.Equals(t, expectedResult.Err, engineResult.Err)
+
+		exR := expectedResult.Value.(promql.Vector)
+		erR := engineResult.Value.(promql.Vector)
+
+		// Use elements match as Vector list doesn't implement slice fully.
+		assert.ElementsMatch(t, exR, erR)
+	}
+}
+
+func createSample(t int64, v float64, metric labels.Labels) promql.Sample {
+	return promql.Sample{
+		Point: promql.Point{
+			T: t,
+			V: v,
+			H: nil,
+		},
+		Metric: metric,
+	}
+}
+
+func createVectorResult(samples []promql.Sample) *promql.Result {
+	vector := promql.Vector{}
+	vector = samples
+
+	return &promql.Result{
+		Err:      nil,
+		Value:    vector,
+		Warnings: nil,
+	}
+}
+
 func TestInstantQuery(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 	// Negative offset and at modifier are enabled by default
@@ -3353,20 +3470,20 @@ func TestNativeHistograms(t *testing.T) {
 		},
 		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
 		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		//{
+		// {
 		//	name:  "max",
 		//	query: "max (native_histogram_series)",
-		//},
+		// },
 		{
 			name:  "max by (foo)",
 			query: "max by (foo) (native_histogram_series)",
 		},
 		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
 		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		//{
+		// {
 		//	name:  "min",
 		//	query: "min (native_histogram_series)",
-		//},
+		// },
 		{
 			name:  "min by (foo)",
 			query: "min by (foo) (native_histogram_series)",

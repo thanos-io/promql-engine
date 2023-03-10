@@ -54,6 +54,10 @@ type Opts struct {
 	// If nil, nothing will be printed.
 	// NOTE: Users will not check the errors, debug writing is best effort.
 	DebugWriter io.Writer
+
+	// ExtLookbackDelta specifies what time range to use to determine valid previous time seris for extended range functions.
+	// Defaults to 1 day if not specified.
+	ExtLookbackDelta time.Duration
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
@@ -128,6 +132,14 @@ func New(opts Opts) *compatibilityEngine {
 		opts.LookbackDelta = 5 * time.Minute
 		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
+	if opts.ExtLookbackDelta == 0 {
+		opts.ExtLookbackDelta = 1 * 24 * time.Hour
+	}
+
+	// Set the parser functions for extended functions appropriately as they are not present in prometheus
+	parser.Functions["xdelta"] = parse.Functions["xdelta"]
+	parser.Functions["xincrease"] = parse.Functions["xincrease"]
+	parser.Functions["xrate"] = parse.Functions["xrate"]
 
 	return &compatibilityEngine{
 		prom: promql.NewEngine(opts.EngineOpts),
@@ -143,6 +155,7 @@ func New(opts Opts) *compatibilityEngine {
 		lookbackDelta:     opts.LookbackDelta,
 		logicalOptimizers: opts.getLogicalOptimizers(),
 		timeout:           opts.Timeout,
+		extLookbackDelta:  opts.ExtLookbackDelta,
 	}
 }
 
@@ -157,6 +170,8 @@ type compatibilityEngine struct {
 	lookbackDelta     time.Duration
 	logicalOptimizers []logicalplan.Optimizer
 	timeout           time.Duration
+
+	extLookbackDelta time.Duration
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -176,7 +191,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	lplan := logicalplan.New(expr, ts, ts)
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta, e.extLookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
@@ -214,7 +229,7 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	lplan := logicalplan.New(expr, start, end)
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta, e.extLookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)

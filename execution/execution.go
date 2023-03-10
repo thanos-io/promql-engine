@@ -50,7 +50,7 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta time.Duration) (model.VectorOperator, error) {
+func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Start:         mint,
 		End:           maxt,
@@ -65,10 +65,10 @@ func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, st
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
 		Step: step.Milliseconds(),
 	}
-	return newOperator(expr, selectorPool, opts, hints)
+	return newOperator(expr, selectorPool, opts, hints, extLookbackDelta)
 }
 
-func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints, extLookbackDelta time.Duration) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
@@ -95,7 +95,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		if e.Func.Name == "histogram_quantile" {
 			nextOperators := make([]model.VectorOperator, len(e.Args))
 			for i := range e.Args {
-				next, err := newOperator(e.Args[i], storage, opts, hints)
+				next, err := newOperator(e.Args[i], storage, opts, hints, extLookbackDelta)
 				if err != nil {
 					return nil, err
 				}
@@ -126,10 +126,15 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 					return nil, err
 				}
 
-				start, end := getTimeRangesForVectorSelector(vs, opts, t.Range)
+				milliSecondRange := t.Range.Milliseconds()
+				if function.IsExtFunction(hints.Func) {
+					milliSecondRange += extLookbackDelta.Milliseconds()
+				}
+
+				start, end := getTimeRangesForVectorSelector(vs, opts, milliSecondRange)
 				hints.Start = start
 				hints.End = end
-				hints.Range = t.Range.Milliseconds()
+				hints.Range = milliSecondRange
 				filter := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), vs.LabelMatchers, filters, hints)
 
 				numShards := runtime.GOMAXPROCS(0) / 2
@@ -140,7 +145,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 				operators := make([]model.VectorOperator, 0, numShards)
 				for i := 0; i < numShards; i++ {
 					operator := exchange.NewConcurrent(
-						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, e, opts, t.Range, vs.Offset, i, numShards),
+						scan.NewMatrixSelector(model.NewVectorPool(stepsBatch), filter, call, e, opts, t.Range, vs.Offset, i, numShards, extLookbackDelta),
 						2,
 					)
 					operators = append(operators, operator)
@@ -153,7 +158,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// Does not have matrix arg so create functionOperator normally.
 		nextOperators := make([]model.VectorOperator, len(e.Args))
 		for i := range e.Args {
-			next, err := newOperator(e.Args[i], storage, opts, hints)
+			next, err := newOperator(e.Args[i], storage, opts, hints, extLookbackDelta)
 			if err != nil {
 				return nil, err
 			}
@@ -168,13 +173,13 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		hints.By = !e.Without
 		var paramOp model.VectorOperator
 
-		next, err := newOperator(e.Expr, storage, opts, hints)
+		next, err := newOperator(e.Expr, storage, opts, hints, extLookbackDelta)
 		if err != nil {
 			return nil, err
 		}
 
 		if e.Param != nil {
-			paramOp, err = newOperator(e.Param, storage, opts, hints)
+			paramOp, err = newOperator(e.Param, storage, opts, hints, extLookbackDelta)
 			if err != nil {
 				return nil, err
 			}
@@ -194,20 +199,20 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			return newScalarBinaryOperator(e, storage, opts, hints)
+			return newScalarBinaryOperator(e, storage, opts, hints, extLookbackDelta)
 		}
 
-		return newVectorBinaryOperator(e, storage, opts, hints)
+		return newVectorBinaryOperator(e, storage, opts, hints, extLookbackDelta)
 
 	case *parser.ParenExpr:
-		return newOperator(e.Expr, storage, opts, hints)
+		return newOperator(e.Expr, storage, opts, hints, extLookbackDelta)
 
 	case *parser.StringLiteral:
 		// TODO(saswatamcode): This requires separate model with strings.
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e)
 
 	case *parser.UnaryExpr:
-		next, err := newOperator(e.Expr, storage, opts, hints)
+		next, err := newOperator(e.Expr, storage, opts, hints, extLookbackDelta)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +232,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		case *parser.NumberLiteral:
 			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val), nil
 		}
-		next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
+		next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints, extLookbackDelta)
 		if err != nil {
 			return nil, err
 		}
@@ -244,7 +249,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 		operators := make([]model.VectorOperator, len(e.Expressions))
 		for i, expr := range e.Expressions {
-			operator, err := newOperator(expr, storage, opts, hints)
+			operator, err := newOperator(expr, storage, opts, hints, extLookbackDelta)
 			if err != nil {
 				return nil, err
 			}
@@ -294,24 +299,24 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
 }
 
-func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	leftOperator, err := newOperator(e.LHS, selectorPool, opts, hints)
+func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints, extLookbackDelta time.Duration) (model.VectorOperator, error) {
+	leftOperator, err := newOperator(e.LHS, selectorPool, opts, hints, extLookbackDelta)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newOperator(e.RHS, selectorPool, opts, hints)
+	rightOperator, err := newOperator(e.RHS, selectorPool, opts, hints, extLookbackDelta)
 	if err != nil {
 		return nil, err
 	}
 	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	lhs, err := newOperator(e.LHS, selectorPool, opts, hints)
+func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints, extLookbackDelta time.Duration) (model.VectorOperator, error) {
+	lhs, err := newOperator(e.LHS, selectorPool, opts, hints, extLookbackDelta)
 	if err != nil {
 		return nil, err
 	}
-	rhs, err := newOperator(e.RHS, selectorPool, opts, hints)
+	rhs, err := newOperator(e.RHS, selectorPool, opts, hints, extLookbackDelta)
 	if err != nil {
 		return nil, err
 	}
@@ -328,7 +333,7 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
-func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Options, evalRange time.Duration) (int64, int64) {
+func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Options, evalRange int64) (int64, int64) {
 	start := opts.Start.UnixMilli()
 	end := opts.End.UnixMilli()
 	if n.Timestamp != nil {
@@ -338,7 +343,7 @@ func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Option
 	if evalRange == 0 {
 		start -= opts.LookbackDelta.Milliseconds()
 	} else {
-		start -= evalRange.Milliseconds()
+		start -= evalRange
 	}
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset
