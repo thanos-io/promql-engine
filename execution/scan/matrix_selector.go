@@ -237,7 +237,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
 func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point, functionName string, extLookbackDelta int64) ([]promql.Point, error) {
-	extRange := function.IsExtFunction(functionName) // TODO - base this on function name
+	extRange := function.IsExtFunction(functionName)
 	var extMint int64
 	if extRange {
 		extMint = mint - extLookbackDelta
