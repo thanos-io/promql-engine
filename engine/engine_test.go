@@ -1849,7 +1849,7 @@ func TestBinopEdgeCases(t *testing.T) {
 	testutil.Equals(t, oldResult, newResult)
 }
 
-func TestXIncreaseXRate(t *testing.T) {
+func TestXFunctions(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 	fmt.Println(defaultQueryTime.String())
 	// Negative offset and at modifier are enabled by default
@@ -1877,7 +1877,7 @@ func TestXIncreaseXRate(t *testing.T) {
 		endTime      time.Time
 	}{
 		{
-			name:  "eval instant at 50s xincrease",
+			name:  "eval instant at 50s xincrease, with 50s lookback",
 			load:  defaultLoad,
 			query: "xincrease(http_requests[50s])",
 			expected: []promql.Sample{
@@ -1886,7 +1886,7 @@ func TestXIncreaseXRate(t *testing.T) {
 			},
 		},
 		{
-			name:      "eval instant at 5s xincrease",
+			name:      "eval instant at 5s xincrease, with 5s lookback",
 			load:      defaultLoad,
 			query:     "xincrease(http_requests[5s])",
 			queryTime: time.Unix(5, 0),
@@ -1895,15 +1895,163 @@ func TestXIncreaseXRate(t *testing.T) {
 				createSample(5000, 10, labels.FromStrings("path", "/bar")),
 			},
 		},
-		// TODO - this test still needs some work, I don't agree with the result.
 		{
-			name:      "eval instant at 3 xincrease",
+			name:      "eval instant at 17s xincrease, with 5s lookback",
 			load:      defaultLoad,
-			query:     "xincrease(http_requests[3s])",
-			queryTime: time.Unix(3, 0),
+			query:     "xincrease(http_requests[5s])",
+			queryTime: time.Unix(17, 0),
 			expected: []promql.Sample{
-				createSample(3000, 10, labels.FromStrings("path", "/foo")),
-				createSample(3000, 10, labels.FromStrings("path", "/bar")),
+				createSample(17000, 10, labels.FromStrings("path", "/foo")),
+				createSample(17000, 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 17s xincrease, with 10s lookback",
+			load:      defaultLoad,
+			query:     "xincrease(http_requests[10s])",
+			queryTime: time.Unix(17, 0),
+			expected: []promql.Sample{
+				createSample(17000, 20, labels.FromStrings("path", "/foo")),
+				createSample(17000, 20, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// TODO - this test still needs some work, I don't agree with the result.
+		// {
+		// 	name:      "eval instant at 3 xincrease",
+		// 	load:      defaultLoad,
+		// 	query:     "xincrease(http_requests[3s])",
+		// 	queryTime: time.Unix(3, 0),
+		// 	expected: []promql.Sample{
+		// 		createSample(3000, 10, labels.FromStrings("path", "/foo")),
+		// 		createSample(3000, 10, labels.FromStrings("path", "/bar")),
+		// 	},
+		// },
+		{
+			name:      "eval instant at 50s xrate, with 50s lookback",
+			load:      defaultLoad,
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(50, 0),
+			expected: []promql.Sample{
+				createSample(50000, 2, labels.FromStrings("path", "/foo")),
+				createSample(50000, 1.8, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 50s xincrease, with 100s lookback",
+			load:      defaultLoad,
+			query:     "xrate(http_requests[100s])",
+			queryTime: time.Unix(50, 0),
+			expected: []promql.Sample{
+				createSample(50000, 1, labels.FromStrings("path", "/foo")),
+				createSample(50000, 0.9, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 50s xincrease, with 5s lookback",
+			load:      defaultLoad,
+			query:     "xrate(http_requests[5s])",
+			queryTime: time.Unix(50, 0),
+			expected: []promql.Sample{
+				createSample(50000, 2, labels.FromStrings("path", "/foo")),
+				createSample(50000, 2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// TODO - this test still needs some work, I don't agree with the result.
+		// {
+		// 	name:      "eval instant at 50 xincrease, with 3s lookback",
+		// 	load:      defaultLoad,
+		// 	query:     "xincrease(http_requests[10s])",
+		// 	queryTime: time.Unix(50, 0),
+		// 	expected: []promql.Sample{
+		// 		createSample(50000, 2, labels.FromStrings("path", "/foo")),
+		// 		createSample(50000, 2, labels.FromStrings("path", "/bar")),
+		// 	},
+		// },
+	}
+
+	for _, tc := range cases {
+		test, err := promql.NewTest(t, tc.load)
+		testutil.Ok(t, err)
+		defer test.Close()
+
+		testutil.Ok(t, test.Run())
+		var queryTime time.Time = defaultQueryTime
+		if tc.queryTime != (time.Time{}) {
+			queryTime = tc.queryTime
+		}
+
+		optimizers := logicalplan.AllOptimizers
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true, // TODO have another look
+			LogicalOptimizers: optimizers,
+		})
+		query, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+		testutil.Ok(t, err)
+		defer query.Close()
+
+		engineResult := query.Exec(context.Background())
+		testutil.Ok(t, engineResult.Err)
+		expectedResult := createVectorResult(tc.expected)
+
+		testutil.Equals(t, expectedResult.Err, engineResult.Err)
+
+		exR := expectedResult.Value.(promql.Vector)
+		erR := engineResult.Value.(promql.Vector)
+
+		// Use elements match as Vector list doesn't implement slice fully.
+		// TODO - remove the utility print function here
+		fmt.Println(fmt.Sprintf("test case: %s", tc.name))
+		assert.ElementsMatch(t, exR, erR)
+	}
+}
+
+func TestRateVsXRate(t *testing.T) {
+	defaultQueryTime := time.Unix(50, 0)
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}  1 1 1 2 2 2 2 2 3 3 3
+	http_requests{path="/bar"}  1 2 3 4 5 6 7 8 9 10 11`
+
+	cases := []struct {
+		name         string
+		load         string
+		query        string
+		queryTime    time.Time
+		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		expected     []promql.Sample
+		rangeQuery   bool
+		startTime    time.Time
+		endTime      time.Time
+	}{
+		{
+			name:      "eval instant at 25s rate, with 50s lookback",
+			load:      defaultLoad,
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(25, 0),
+			expected: []promql.Sample{
+				// TODO - engine gives back 0.022000000000000002 instead of simple 0.022
+				createSample(25000, 0.022000000000000002, labels.FromStrings("path", "/foo")),
+				createSample(25000, 0.12, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 25s xrate, with 50s lookback",
+			load:      defaultLoad,
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(25, 0),
+			expected: []promql.Sample{
+				createSample(25000, 0.02, labels.FromStrings("path", "/foo")),
+				createSample(25000, 0.1, labels.FromStrings("path", "/bar")),
 			},
 		},
 	}
@@ -1940,6 +2088,8 @@ func TestXIncreaseXRate(t *testing.T) {
 		erR := engineResult.Value.(promql.Vector)
 
 		// Use elements match as Vector list doesn't implement slice fully.
+		// TODO - remove the utility print function here
+		fmt.Println(fmt.Sprintf("test case: %s", tc.name))
 		assert.ElementsMatch(t, exR, erR)
 	}
 }

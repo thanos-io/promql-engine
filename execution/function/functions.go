@@ -355,11 +355,10 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"xrate": func(f FunctionArgs) promql.Sample {
-		if len(f.Points) < 2 {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
-		// TODO - use extended rate
-		v, h := extrapolatedRate(f.Points, true, true, f.StepTime, f.SelectRange, f.Offset)
+		v, h := extendedRate(f.Points, true, true, f.StepTime, f.SelectRange, f.Offset)
 		return promql.Sample{
 			Metric: f.Labels,
 			Point: promql.Point{
@@ -370,11 +369,10 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"xdelta": func(f FunctionArgs) promql.Sample {
-		if len(f.Points) < 2 {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
-		// TODO - use extended rate
-		v, h := extrapolatedRate(f.Points, false, false, f.StepTime, f.SelectRange, f.Offset)
+		v, h := extendedRate(f.Points, false, false, f.StepTime, f.SelectRange, f.Offset)
 		return promql.Sample{
 			Metric: f.Labels,
 			Point: promql.Point{
@@ -385,11 +383,10 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"xincrease": func(f FunctionArgs) promql.Sample {
-		if len(f.Points) < 2 {
+		if len(f.Points) == 0 {
 			return InvalidSample
 		}
-		// TODO - use extended rate
-		v, h := extrapolatedRate(f.Points, true, false, f.StepTime, f.SelectRange, f.Offset)
+		v, h := extendedRate(f.Points, true, false, f.StepTime, f.SelectRange, f.Offset)
 		return promql.Sample{
 			Metric: f.Labels,
 			Point: promql.Point{
@@ -620,6 +617,95 @@ func extrapolatedRate(samples []promql.Point, isCounter, isRate bool, stepTime i
 	}
 
 	return resultValue, resultHistogram
+}
+
+// extendedRate is a utility function for xrate/xincrease/xdelta.
+// It calculates the rate (allowing for counter resets if isCounter is true),
+// taking into account the last sample before the range start, and returns
+// the result as either per-second (if isRate is true) or overall.
+func extendedRate(samples []promql.Point, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram) {
+	var (
+		rangeStart      = stepTime - (selectRange + offset)
+		rangeEnd        = stepTime - offset
+		resultValue     float64
+		resultHistogram *histogram.FloatHistogram
+	)
+
+	if samples[0].H != nil {
+		// TODO - support extended rate for histograms
+		resultHistogram = histogramRate(samples, isCounter)
+		return resultValue, resultHistogram
+	}
+
+	// TODO - understand what this is doing.
+	// sameVals := true
+	// for i := range samples {
+	// 	if i > 0 && samples[i-1].V != samples[i].V {
+	// 		sameVals = false
+	// 		break
+	// 	}
+	// }
+
+	// until := enh.metricAppeared + durationMilliseconds(ms.Range)
+	// if isCounter && !isRate && sameVals && enh.metricAppeared != -1 {
+	// 	if enh.Ts-durationMilliseconds(vs.Offset) <= until || (vs.Timestamp != nil && *vs.Timestamp <= until) {
+	// 		return append(enh.Out, Sample{
+	// 			Point: Point{V: points[0].V},
+	// 		})
+	// 	}
+	// }
+
+	sampledInterval := float64(samples[len(samples)-1].T-samples[0].T) / 1000
+	averageDurationBetweenSamples := sampledInterval / float64(len(samples)-1)
+
+	firstPoint := 0
+	// Only do this for not xincrease
+	if !(isCounter && !isRate) {
+		// If the point before the range is too far from rangeStart, drop it.
+		if float64(rangeStart-samples[0].T) > averageDurationBetweenSamples {
+			// TODO - revisit this
+			if len(samples) < 3 {
+				return resultValue, nil
+			}
+			firstPoint = 1
+			sampledInterval = float64(samples[len(samples)-1].T - samples[1].T)
+			averageDurationBetweenSamples = sampledInterval / float64(len(samples)-2)
+		}
+	}
+
+	var (
+		counterCorrection float64
+		lastValue         float64
+	)
+	if isCounter {
+		for i := firstPoint; i < len(samples); i++ {
+			sample := samples[i]
+			if sample.V < lastValue {
+				counterCorrection += lastValue
+			}
+			lastValue = sample.V
+		}
+	}
+	resultValue = samples[len(samples)-1].V - samples[firstPoint].V + counterCorrection
+
+	// Duration between last sample and boundary of range.
+	durationToEnd := float64(rangeEnd - samples[len(samples)-1].T)
+	// If the points cover the whole range (i.e. they start just before the
+	// range start and end just before the range end) adjust the value from
+	// the sampled range to the requested range.
+	// Only do this for not xincrease.
+	if !(isCounter && !isRate) {
+		if samples[firstPoint].T <= rangeStart && durationToEnd < averageDurationBetweenSamples {
+			adjustToRange := float64(selectRange)
+			resultValue = resultValue * (adjustToRange / sampledInterval)
+		}
+	}
+
+	if isRate {
+		resultValue = resultValue / float64(selectRange/1000)
+	}
+
+	return resultValue, nil
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
