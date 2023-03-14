@@ -38,7 +38,6 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			return
 		}
 
-
 		load := fmt.Sprintf(`load 30s
 			http_requests_total{pod="nginx-1"} %.2f+%.2fx15
 			http_requests_total{pod="nginx-2"} %2.f+%.2fx21`, initialVal1, inc1, initialVal2, inc2)
