@@ -637,25 +637,24 @@ func extendedRate(samples []promql.Point, isCounter, isRate bool, stepTime int64
 		return resultValue, resultHistogram
 	}
 
-	// TODO - understand what this is doing.
-	// sameVals := true
-	// for i := range samples {
-	// 	if i > 0 && samples[i-1].V != samples[i].V {
-	// 		sameVals = false
-	// 		break
-	// 	}
-	// }
+	sameVals := true
+	for i := range samples {
+		if i > 0 && samples[i-1].V != samples[i].V {
+			sameVals = false
+			break
+		}
+	}
 
-	// until := enh.metricAppeared + durationMilliseconds(ms.Range)
-	// if isCounter && !isRate && sameVals && enh.metricAppeared != -1 {
-	// 	if enh.Ts-durationMilliseconds(vs.Offset) <= until || (vs.Timestamp != nil && *vs.Timestamp <= until) {
-	// 		return append(enh.Out, Sample{
-	// 			Point: Point{V: points[0].V},
-	// 		})
-	// 	}
-	// }
+	// This effectively injects a "zero" series for xincrease if we only have one sample.
+	until := selectRange
+	if isCounter && !isRate && sameVals {
+		// Make sure we are not at the end of the range
+		if stepTime-offset <= until {
+			return samples[0].V, nil
+		}
+	}
 
-	sampledInterval := float64(samples[len(samples)-1].T-samples[0].T) / 1000
+	sampledInterval := float64(samples[len(samples)-1].T - samples[0].T)
 	averageDurationBetweenSamples := sampledInterval / float64(len(samples)-1)
 
 	firstPoint := 0
@@ -663,7 +662,6 @@ func extendedRate(samples []promql.Point, isCounter, isRate bool, stepTime int64
 	if !(isCounter && !isRate) {
 		// If the point before the range is too far from rangeStart, drop it.
 		if float64(rangeStart-samples[0].T) > averageDurationBetweenSamples {
-			// TODO - revisit this
 			if len(samples) < 3 {
 				return resultValue, nil
 			}
@@ -696,8 +694,8 @@ func extendedRate(samples []promql.Point, isCounter, isRate bool, stepTime int64
 	// Only do this for not xincrease.
 	if !(isCounter && !isRate) {
 		if samples[firstPoint].T <= rangeStart && durationToEnd < averageDurationBetweenSamples {
-			adjustToRange := float64(selectRange)
-			resultValue = resultValue * (adjustToRange / sampledInterval)
+			adjustToRange := float64(selectRange / 1000)
+			resultValue = resultValue * (adjustToRange / (sampledInterval / 1000))
 		}
 	}
 

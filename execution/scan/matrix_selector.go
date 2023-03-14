@@ -137,7 +137,16 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
-			rangePoints, err := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints, o.funcExpr.Func.Name, o.extLookbackDelta)
+
+			var rangePoints []promql.Point
+			var err error
+
+			if function.IsExtFunction(o.funcExpr.Func.Name) {
+				rangePoints, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousPoints, o.funcExpr.Func.Name, o.extLookbackDelta)
+			} else {
+				rangePoints, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
+			}
+
 			if err != nil {
 				return nil, err
 			}
@@ -236,7 +245,81 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point, functionName string, extLookbackDelta int64) ([]promql.Point, error) {
+func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point) ([]promql.Point, error) {
+	if len(out) > 0 && out[len(out)-1].T >= mint {
+		// There is an overlap between previous and current ranges, retain common
+		// points. In most such cases:
+		//   (a) the overlap is significantly larger than the eval step; and/or
+		//   (b) the number of samples is relatively small.
+		// so a linear search will be as fast as a binary search.
+		var drop int
+		for drop = 0; out[drop].T < mint; drop++ {
+		}
+		copy(out, out[drop:])
+		out = out[:len(out)-drop]
+		// Only append points with timestamps after the last timestamp we have.
+		mint = out[len(out)-1].T + 1
+	} else {
+		out = out[:0]
+	}
+
+	soughtValueType := it.Seek(maxt)
+	if soughtValueType == chunkenc.ValNone {
+		if it.Err() != nil {
+			return nil, it.Err()
+		}
+	}
+
+	buf := it.Buffer()
+loop:
+	for {
+		switch buf.Next() {
+		case chunkenc.ValNone:
+			break loop
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			t, h := buf.AtFloatHistogram()
+			if t >= mint {
+				out = append(out, promql.Point{T: t, H: h})
+			}
+		case chunkenc.ValFloat:
+			t, v := buf.At()
+			if value.IsStaleNaN(v) {
+				continue loop
+			}
+			// Values in the buffer are guaranteed to be smaller than maxt.
+			if t >= mint {
+				out = append(out, promql.Point{T: t, V: v})
+			}
+		}
+	}
+
+	// The sought sample might also be in the range.
+	switch soughtValueType {
+	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		t, h := it.AtFloatHistogram()
+		if t == maxt {
+			out = append(out, promql.Point{T: t, H: h})
+		}
+	case chunkenc.ValFloat:
+		t, v := it.At()
+		if t == maxt && !value.IsStaleNaN(v) {
+			out = append(out, promql.Point{T: t, V: v})
+		}
+	}
+
+	return out, nil
+}
+
+// matrixIterSlice populates a matrix vector covering the requested range for a
+// single time series, with points retrieved from an iterator.
+//
+// As an optimization, the matrix vector may already contain points of the same
+// time series from the evaluation of an earlier step (with lower mint and maxt
+// values). Any such points falling before mint are discarded; points that fall
+// into the [mint, maxt] range are retained; only points with later timestamps
+// are populated from the iterator.
+// TODO(fpetkovski): Add max samples limit.
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point, functionName string, extLookbackDelta int64) ([]promql.Point, error) {
 	extRange := function.IsExtFunction(functionName)
 	var extMint int64
 	if extRange {
