@@ -64,7 +64,6 @@ func NewMatrixSelector(
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	shard, numShard int,
-	extLookbackDelta time.Duration,
 ) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
 	return &matrixSelector{
@@ -85,7 +84,7 @@ func NewMatrixSelector(
 		shard:     shard,
 		numShards: numShard,
 
-		extLookbackDelta: extLookbackDelta.Milliseconds(),
+		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
 }
 

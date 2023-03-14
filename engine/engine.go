@@ -55,7 +55,7 @@ type Opts struct {
 	// NOTE: Users will not check the errors, debug writing is best effort.
 	DebugWriter io.Writer
 
-	// ExtLookbackDelta specifies what time range to use to determine valid previous time seris for extended range functions.
+	// ExtLookbackDelta specifies what time range to use to determine valid previous sample for extended range functions.
 	// Defaults to 1 day if not specified.
 	ExtLookbackDelta time.Duration
 }
@@ -150,6 +150,7 @@ func New(opts Opts) *compatibilityEngine {
 	}
 	if opts.ExtLookbackDelta == 0 {
 		opts.ExtLookbackDelta = 1 * 24 * time.Hour
+		level.Debug(opts.Logger).Log("msg", " externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
 
 	// Set the parser functions for extended functions appropriately as they are not present in prometheus
