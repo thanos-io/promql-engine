@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
+
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
 	"github.com/thanos-community/promql-engine/logicalplan"
@@ -2085,7 +2086,7 @@ func TestRateVsXRate(t *testing.T) {
 		query        string
 		queryTime    time.Time
 		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
-		expected     []promql.Sample
+		expected     promql.Vector
 		rangeQuery   bool
 		startTime    time.Time
 		endTime      time.Time
@@ -2409,10 +2410,7 @@ func createSample(t int64, v float64, metric labels.Labels) promql.Sample {
 	}
 }
 
-func createVectorResult(samples []promql.Sample) *promql.Result {
-	vector := promql.Vector{}
-	vector = samples
-
+func createVectorResult(vector promql.Vector) *promql.Result {
 	return &promql.Result{
 		Err:      nil,
 		Value:    vector,
