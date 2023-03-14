@@ -18,7 +18,6 @@ import (
 
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
 	"github.com/thanos-community/promql-engine/logicalplan"
 
@@ -1579,7 +1578,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	}
 
 	disableOptimizerOpts := []bool{true, false}
-	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
 		for _, tc := range cases {
@@ -1587,7 +1586,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				test, err := promql.NewTest(t, tc.load)
 				testutil.Ok(t, err)
 				defer test.Close()
-
 				testutil.Ok(t, test.Run())
 
 				if tc.start.Equal(time.Time{}) {
@@ -1603,7 +1601,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 					t.Run(fmt.Sprintf("disableOptimizers=%v", disableOptimizers), func(t *testing.T) {
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-
 								optimizers := logicalplan.AllOptimizers
 								if disableOptimizers {
 									optimizers = logicalplan.NoOptimizers
@@ -1616,15 +1613,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								q1, err := newEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
 								testutil.Ok(t, err)
 								defer q1.Close()
-
 								newResult := q1.Exec(context.Background())
 
 								oldEngine := promql.NewEngine(opts)
 								q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, tc.query, tc.start, tc.end, tc.step)
 								testutil.Ok(t, err)
 								defer q2.Close()
-
 								oldResult := q2.Exec(context.Background())
+
 								if oldResult.Err != nil {
 									testutil.NotOk(t, newResult.Err)
 									return
@@ -1671,136 +1667,46 @@ func hasNaNs(result *promql.Result) bool {
 	return false
 }
 
-func TestDistributedAggregations(t *testing.T) {
-	localOpts := engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-		},
-	}
-
-	instantTS := time.Unix(75, 0)
-	rangeStart := time.Unix(0, 0)
-	rangeEnd := time.Unix(120, 0)
-	rangeStep := time.Second * 30
-
-	makeSeries := func(region, pod string) []string {
-		return []string{labels.MetricName, "bar", "region", region, "pod", pod}
-	}
-
-	regionEast := []storage.Series{
-		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{2, 3, 4, 5}),
-		newMockSeries(makeSeries("east", "nginx-2"), []int64{30000, 60000, 90000, 120000}, []float64{3, 4, 5, 6}),
-	}
-	regionWest := []storage.Series{
-		newMockSeries(makeSeries("west-1", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{4, 5, 6, 7}),
-		newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30000, 60000, 90000, 120000}, []float64{5, 6, 7, 8}),
-		newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30000, 60000, 90000, 120000}, []float64{6, 7, 8, 9}),
-	}
-	timeBasedOverlap := []storage.Series{
-		newMockSeries(makeSeries("east", "nginx-1"), []int64{30000, 60000}, []float64{2, 3}),
-		newMockSeries(makeSeries("west-2", "nginx-1"), []int64{30000, 60000}, []float64{5, 6}),
-		newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30000, 60000}, []float64{6, 7}),
-	}
-
-	engineEast := engine.NewRemoteEngine(
-		localOpts, storageWithSeries(regionEast...),
-		120000,
-		[]labels.Labels{labels.FromStrings("region", "east")},
-	)
-	engineWest := engine.NewRemoteEngine(
-		localOpts,
-		storageWithSeries(regionWest...),
-		120000,
-		[]labels.Labels{labels.FromStrings("region", "west")},
-	)
-	engineOverlap := engine.NewRemoteEngine(
-		localOpts,
-		storageWithSeries(timeBasedOverlap...),
-		60000,
-		[]labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "west")},
-	)
-
-	queries := []struct {
-		name           string
-		query          string
-		expectFallback bool
-	}{
-		{name: "sum", query: `sum by (pod) (bar)`},
-		{name: "avg", query: `avg by (pod) (bar)`},
-		{name: "count", query: `count by (pod) (bar)`},
-		{name: "group", query: `group by (pod) (bar)`},
-		{name: "topk", query: `topk by (pod) (1, bar)`},
-		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
-		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
-		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
-		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
-		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
-		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
-	}
-
-	seriesUnion := storageWithSeries(append(regionEast, regionWest...)...)
-	optimizersOpts := map[string][]logicalplan.Optimizer{
-		"none":    logicalplan.NoOptimizers,
-		"default": logicalplan.DefaultOptimizers,
-		"all":     logicalplan.AllOptimizers,
-	}
-	for _, tcase := range queries {
-		t.Run(tcase.name, func(t *testing.T) {
-			for o, optimizers := range optimizersOpts {
-				t.Run(fmt.Sprintf("withOptimizers=%s", o), func(t *testing.T) {
-					localOpts.LogicalOptimizers = optimizers
-					t.Run("instant", func(t *testing.T) {
-						distOpts := localOpts
-						distOpts.DisableFallback = !tcase.expectFallback
-						distOpts.DebugWriter = os.Stdout
-						distEngine := engine.NewDistributedEngine(distOpts,
-							api.NewStaticEndpoints([]api.RemoteEngine{engineEast, engineWest, engineOverlap}),
-						)
-						distQry, err := distEngine.NewInstantQuery(seriesUnion, nil, tcase.query, instantTS)
-						testutil.Ok(t, err)
-
-						distResult := distQry.Exec(context.Background())
-						promEngine := promql.NewEngine(localOpts.EngineOpts)
-						promQry, err := promEngine.NewInstantQuery(seriesUnion, nil, tcase.query, instantTS)
-						testutil.Ok(t, err)
-						promResult := promQry.Exec(context.Background())
-
-						roundValues(promResult)
-						roundValues(distResult)
-
-						// Instant queries have no guarantees on result ordering.
-						sortByLabels(promResult)
-						sortByLabels(distResult)
-
-						testutil.Equals(t, promResult, distResult)
-					})
-
-					t.Run("range", func(t *testing.T) {
-						distOpts := localOpts
-						distOpts.DisableFallback = !tcase.expectFallback
-						distEngine := engine.NewDistributedEngine(distOpts,
-							api.NewStaticEndpoints([]api.RemoteEngine{engineEast, engineWest, engineOverlap}),
-						)
-						distQry, err := distEngine.NewRangeQuery(seriesUnion, nil, tcase.query, rangeStart, rangeEnd, rangeStep)
-						testutil.Ok(t, err)
-
-						distResult := distQry.Exec(context.Background())
-						promEngine := promql.NewEngine(localOpts.EngineOpts)
-						promQry, err := promEngine.NewRangeQuery(seriesUnion, nil, tcase.query, rangeStart, rangeEnd, rangeStep)
-						testutil.Ok(t, err)
-						promResult := promQry.Exec(context.Background())
-
-						roundValues(promResult)
-						roundValues(distResult)
-						testutil.Equals(t, promResult, distResult)
-					})
-				})
+// mergeWithSampleDedup merges samples from series with the same labels,
+// removing samples with identical timestamps.
+func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
+	index := make(map[uint64]*mockSeries)
+	for _, s := range series {
+		hash := s.Labels().Hash()
+		existing, ok := index[hash]
+		if !ok {
+			// Make a copy to avoid modifying the original series
+			// when merging samples.
+			index[hash] = &mockSeries{
+				labels:     s.labels,
+				timestamps: s.timestamps,
+				values:     s.values,
 			}
-		})
+			continue
+		}
+		existing.timestamps = append(existing.timestamps, s.timestamps...)
+		existing.values = append(existing.values, s.values...)
 	}
+
+	for _, s := range index {
+		sort.Sort(byTimestamps(*s))
+		// Remove exact timestamp duplicates.
+		i := 1
+		for i < len(s.timestamps) {
+			if s.timestamps[i] == s.timestamps[i-1] {
+				s.timestamps = append(s.timestamps[:i], s.timestamps[i+1:]...)
+				s.values = append(s.values[:i], s.values[i+1:]...)
+			} else {
+				i++
+			}
+		}
+	}
+
+	sset := make([]storage.Series, 0, len(index))
+	for _, s := range index {
+		sset = append(sset, s)
+	}
+	return sset
 }
 
 func TestBinopEdgeCases(t *testing.T) {
@@ -1814,17 +1720,17 @@ func TestBinopEdgeCases(t *testing.T) {
 	series := []storage.Series{
 		newMockSeries(
 			[]string{labels.MetricName, "foo"},
-			[]int64{0, 30000, 60000, 1200000, 1500000, 1800000},
+			[]int64{0, 30, 60, 1200, 1500, 1800},
 			[]float64{1, 2, 3, 4, 5, 6},
 		),
 		newMockSeries(
 			[]string{labels.MetricName, "bar", "id", "1"},
-			[]int64{0, 30000},
+			[]int64{0, 30},
 			[]float64{1, 2},
 		),
 		newMockSeries(
 			[]string{labels.MetricName, "bar", "id", "2"},
-			[]int64{1200000, 1500000},
+			[]int64{1200, 1500},
 			[]float64{3, 4},
 		),
 	}
@@ -2579,7 +2485,7 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	disableOptimizerOpts := []bool{true, false}
-	lookbackDeltas := []time.Duration{30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, disableOptimizers := range disableOptimizerOpts {
 		t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
 			for _, lookbackDelta := range lookbackDeltas {
@@ -3114,6 +3020,14 @@ func TestQueryStats(t *testing.T) {
 	stats.NewQueryStats(q.Stats())
 }
 
+func storageWithMockSeries(mockSeries ...*mockSeries) *storage.MockQueryable {
+	series := make([]storage.Series, 0, len(mockSeries))
+	for _, mock := range mockSeries {
+		series = append(series, storage.Series(mock))
+	}
+	return storageWithSeries(series...)
+}
+
 func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 	return &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{
@@ -3136,6 +3050,21 @@ func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 	}
 }
 
+type byTimestamps mockSeries
+
+func (b byTimestamps) Len() int {
+	return len(b.timestamps)
+}
+
+func (b byTimestamps) Less(i, j int) bool {
+	return b.timestamps[i] < b.timestamps[j]
+}
+
+func (b byTimestamps) Swap(i, j int) {
+	b.timestamps[i], b.timestamps[j] = b.timestamps[j], b.timestamps[i]
+	b.values[i], b.values[j] = b.values[j], b.values[i]
+}
+
 type mockSeries struct {
 	labels     []string
 	timestamps []int64
@@ -3143,6 +3072,9 @@ type mockSeries struct {
 }
 
 func newMockSeries(labels []string, timestamps []int64, values []float64) *mockSeries {
+	for i := range timestamps {
+		timestamps[i] = timestamps[i] * 1000
+	}
 	return &mockSeries{labels: labels, timestamps: timestamps, values: values}
 }
 
@@ -3174,6 +3106,12 @@ func (m *mockIterator) Next() chunkenc.ValueType {
 }
 
 func (m *mockIterator) Seek(t int64) chunkenc.ValueType {
+	if m.i > -1 && m.i < len(m.timestamps) {
+		currentTS := m.timestamps[m.i]
+		if currentTS > t {
+			return chunkenc.ValFloat
+		}
+	}
 	for {
 		next := m.Next()
 		if next == chunkenc.ValNone {

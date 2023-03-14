@@ -161,7 +161,7 @@ histogram_quantile(0.5, sum by (le) (dedup(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, time.Unix(0, 0), time.Unix(0, 0))
+			plan := New(expr, &Opts{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 			optimizedPlan := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
@@ -171,12 +171,17 @@ histogram_quantile(0.5, sum by (le) (dedup(
 
 type engineMock struct {
 	api.RemoteEngine
+	minT      int64
 	maxT      int64
 	labelSets []labels.Labels
 }
 
 func (e engineMock) MaxT() int64 {
 	return e.maxT
+}
+
+func (e engineMock) MinT() int64 {
+	return e.minT
 }
 
 func (e engineMock) LabelSets() []labels.Labels {
