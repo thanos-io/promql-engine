@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/stretchr/testify/assert"
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
 	"github.com/thanos-community/promql-engine/logicalplan"
@@ -2053,8 +2052,15 @@ func TestXFunctions(t *testing.T) {
 		exR := expectedResult.Value.(promql.Vector)
 		erR := engineResult.Value.(promql.Vector)
 
-		// Use elements match as Vector list doesn't implement slice fully.
-		assert.ElementsMatch(t, exR, erR)
+		sort.Slice(exR, func(i, j int) bool {
+			return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
+		})
+
+		sort.Slice(erR, func(i, j int) bool {
+			return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
+		})
+
+		testutil.Equals(t, exR, erR)
 	}
 }
 
@@ -2380,8 +2386,15 @@ func TestRateVsXRate(t *testing.T) {
 		exR := expectedResult.Value.(promql.Vector)
 		erR := engineResult.Value.(promql.Vector)
 
-		// Use elements match as Vector list doesn't implement slice fully.
-		assert.ElementsMatch(t, exR, erR)
+		sort.Slice(exR, func(i, j int) bool {
+			return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
+		})
+
+		sort.Slice(erR, func(i, j int) bool {
+			return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
+		})
+
+		testutil.Equals(t, exR, erR)
 	}
 }
 
