@@ -2054,9 +2054,6 @@ func TestXFunctions(t *testing.T) {
 		erR := engineResult.Value.(promql.Vector)
 
 		// Use elements match as Vector list doesn't implement slice fully.
-		// TODO - remove the utility print function here
-		fmt.Println(fmt.Sprintf("test case: %s", tc.name))
-		// testutil.Equals(t, exR, erR)
 		assert.ElementsMatch(t, exR, erR)
 	}
 }
@@ -2384,8 +2381,6 @@ func TestRateVsXRate(t *testing.T) {
 		erR := engineResult.Value.(promql.Vector)
 
 		// Use elements match as Vector list doesn't implement slice fully.
-		// TODO - remove the utility print function here
-		fmt.Println(fmt.Sprintf("test case: %s", tc.name))
 		assert.ElementsMatch(t, exR, erR)
 	}
 }
