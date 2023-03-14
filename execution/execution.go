@@ -260,13 +260,19 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return exchange.NewConcurrent(dedup, 2), nil
 
 	case logicalplan.RemoteExecution:
-		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{}, e.Query, opts.Start, opts.End, opts.Step)
+		// Create a new remote query scoped to the calculated start time.
+		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{LookbackDelta: opts.LookbackDelta}, e.Query, e.QueryRangeStart, opts.End, opts.Step)
 		if err != nil {
 			return nil, err
 		}
 
-		return exchange.NewConcurrent(remote.NewExecution(qry, model.NewVectorPool(stepsBatch), opts), 2), nil
-
+		// The selector uses the original query time to make sure that steps from different
+		// operators have the same timestamps.
+		// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
+		selectorOpts := *opts
+		selectorOpts.LookbackDelta = 0
+		remoteExec := remote.NewExecution(qry, model.NewVectorPool(stepsBatch), &selectorOpts)
+		return exchange.NewConcurrent(remoteExec, 2), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}

@@ -18,8 +18,6 @@ The following table shows operations which are currently supported by the engine
 | Aggregations over time | Full support except for `absent_over_time` and `quantile_over_time`       | Medium   |
 | Functions              | Partial support (`clamp_min`, `clamp_max`, `changes` and `rate` variants) | Medium   |
 
-In addition to implementing multi-threading, we would ultimately like to end up with a distributed execution model.
-
 ## Design
 
 At the beginning of a PromQL query execution, the query engine computes a physical plan consisting of multiple independent operators, each responsible for calculating one part of the query expression.
@@ -78,6 +76,33 @@ The current implementation uses goroutines very liberally which means the query 
 ### Plan optimization
 
 The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
+
+## Distributed execution mode
+
+The engine supports a distributed mode where aggregations can be delegated to multiple remote engines, each responsible for an independent dataset. This mode is currently implemented through an optimizer which rewrites a query as a combination of multiple remote and one local aggregation. For example, when two remote engines are available, a query like:
+
+```
+sum(rate(http_request_total[4m]))
+```
+
+would be rewritten as
+
+```
+sum(
+  coalesce(
+    sum(rate(http_request_total[4m])) # remote engine 1
+    sum(rate(http_request_total[4m])) # remote engine 2
+  )
+)
+```
+
+The inner aggregations are forwarded to remote engines and the global result is completed in memory.
+
+An engine using the distributed mode can be created through the `NewDistributedEngine` function. The user is expected to pass an implementation of `RemoteEndpoints` which has a single `Engines()` method. When invoked, `Engines()` should return all remote engines that can be used for a single query. The `Engines()` method is called separately for each individual query which allows the `RemoteEndpoints` implementation to do continuous service discovery and inject engines as they become available.
+
+The interfaces used for remote execution can be found in [api](https://pkg.go.dev/github.com/thanos-community/promql-engine/api) package. Note that the `RemoteEngine` interface has a `NewRangeQuery` method, similar to the one in the Prometheus [v1.QueryEngine](https://pkg.go.dev/github.com/prometheus/prometheus@v0.42.0/web/api/v1#QueryEngine) interface. It is up to the user of the library to implement this method as they see fit. An example implementation could be to forward the query to an HTTP `/api/v1/query_range` endpoint of a Prometheus instance. In Thanos, this method is implemented as a gRPC call to a Thanos Querier.
+
+For more details on the overall design, please refer to the [proposal](https://github.com/thanos-io/thanos/blob/main/docs/proposals-accepted/202301-distributed-query-execution.md) in the Thanos project.
 
 ## Continuous benchmark
 

@@ -75,19 +75,25 @@ type remoteEngine struct {
 	engine    *compatibilityEngine
 	labelSets []labels.Labels
 	maxt      int64
+	mint      int64
 }
 
-func NewRemoteEngine(opts Opts, q storage.Queryable, maxt int64, labelSets []labels.Labels) *remoteEngine {
+func NewRemoteEngine(opts Opts, q storage.Queryable, mint, maxt int64, labelSets []labels.Labels) *remoteEngine {
 	return &remoteEngine{
 		q:         q,
 		labelSets: labelSets,
 		maxt:      maxt,
+		mint:      mint,
 		engine:    New(opts),
 	}
 }
 
 func (l remoteEngine) MaxT() int64 {
 	return l.maxt
+}
+
+func (l remoteEngine) MinT() int64 {
+	return l.mint
 }
 
 func (l remoteEngine) LabelSets() []labels.Labels {
@@ -117,10 +123,20 @@ func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngi
 func (l distributedEngine) SetQueryLogger(log promql.QueryLogger) {}
 
 func (l distributedEngine) NewInstantQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	ts = ts.Truncate(time.Second)
+
 	return l.remoteEngine.NewInstantQuery(q, opts, qs, ts)
 }
 
 func (l distributedEngine) NewRangeQuery(q storage.Queryable, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	start = start.Truncate(time.Second)
+	end = end.Truncate(time.Second)
+	interval = interval.Truncate(time.Second)
+
 	return l.remoteEngine.NewRangeQuery(q, opts, qs, start, end, interval)
 }
 
@@ -183,15 +199,29 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	if err != nil {
 		return nil, err
 	}
+
+	if opts == nil {
+		opts = &promql.QueryOpts{}
+	}
+
+	if opts.LookbackDelta <= 0 {
+		opts.LookbackDelta = e.lookbackDelta
+	}
+
 	// determine sorting order before optimizers run, we do this by looking for "sort"
 	// and "sort_desc" and optimize them away afterwards since they are only needed at
 	// the presentation layer and not when computing the results.
 	resultSort := newResultSort(expr)
 
-	lplan := logicalplan.New(expr, ts, ts)
+	lplan := logicalplan.New(expr, &logicalplan.Opts{
+		Start:         ts,
+		End:           ts,
+		Step:          1,
+		LookbackDelta: opts.LookbackDelta,
+	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta, e.extLookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
@@ -226,10 +256,23 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 
-	lplan := logicalplan.New(expr, start, end)
+	if opts == nil {
+		opts = &promql.QueryOpts{}
+	}
+
+	if opts.LookbackDelta <= 0 {
+		opts.LookbackDelta = e.lookbackDelta
+	}
+
+	lplan := logicalplan.New(expr, &logicalplan.Opts{
+		Start:         start,
+		End:           end,
+		Step:          step,
+		LookbackDelta: opts.LookbackDelta,
+	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta, e.extLookbackDelta)
+	exec, err := execution.New(lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta)
 	if e.triggerFallback(err) {
 		e.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
