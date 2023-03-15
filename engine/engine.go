@@ -35,6 +35,10 @@ import (
 
 type QueryType int
 
+type engineMetrics struct {
+	currentQueries prometheus.Gauge
+}
+
 const (
 	InstantQuery QueryType = 1
 	RangeQuery   QueryType = 2
@@ -129,6 +133,19 @@ func New(opts Opts) *compatibilityEngine {
 		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
 
+	metrics := &engineMetrics{
+		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
+			Namespace: "thanos",
+			Subsystem: "engine",
+			Name:      "queries",
+			Help:      "The current number of queries being executed or waiting.",
+		}),
+	}
+
+	if opts.EngineOpts.Reg != nil {
+		opts.EngineOpts.Reg.MustRegister(metrics.currentQueries)
+	}
+
 	return &compatibilityEngine{
 		prom: promql.NewEngine(opts.EngineOpts),
 		queries: promauto.With(opts.Reg).NewCounterVec(
@@ -143,6 +160,7 @@ func New(opts Opts) *compatibilityEngine {
 		lookbackDelta:     opts.LookbackDelta,
 		logicalOptimizers: opts.getLogicalOptimizers(),
 		timeout:           opts.Timeout,
+		metrics:           metrics,
 	}
 }
 
@@ -157,6 +175,7 @@ type compatibilityEngine struct {
 	lookbackDelta     time.Duration
 	logicalOptimizers []logicalplan.Optimizer
 	timeout           time.Duration
+	metrics           *engineMetrics
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -363,6 +382,9 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 		Value: promql.Vector{},
 	}
 	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
+
+	q.engine.metrics.currentQueries.Inc()
+	defer q.engine.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, q.engine.timeout)
 	defer cancel()
