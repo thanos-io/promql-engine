@@ -40,6 +40,8 @@ type engineMetrics struct {
 }
 
 const (
+	namespace    string    = "thanos"
+	subsystem    string    = "engine"
 	InstantQuery QueryType = 1
 	RangeQuery   QueryType = 2
 )
@@ -134,16 +136,14 @@ func New(opts Opts) *compatibilityEngine {
 	}
 
 	metrics := &engineMetrics{
-		currentQueries: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: "thanos",
-			Subsystem: "engine",
-			Name:      "queries",
-			Help:      "The current number of queries being executed or waiting.",
-		}),
-	}
-
-	if opts.EngineOpts.Reg != nil {
-		opts.EngineOpts.Reg.MustRegister(metrics.currentQueries)
+		currentQueries: promauto.With(opts.Reg).NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "queries",
+				Help:      "The current number of queries being executed or waiting.",
+			},
+		),
 	}
 
 	return &compatibilityEngine{
