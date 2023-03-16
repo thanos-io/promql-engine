@@ -37,6 +37,7 @@ type QueryType int
 
 type engineMetrics struct {
 	currentQueries prometheus.Gauge
+	queries        *prometheus.CounterVec
 }
 
 const (
@@ -144,16 +145,17 @@ func New(opts Opts) *compatibilityEngine {
 				Help:      "The current number of queries being executed or waiting.",
 			},
 		),
-	}
-
-	return &compatibilityEngine{
-		prom: promql.NewEngine(opts.EngineOpts),
 		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
 				Name: "promql_engine_queries_total",
 				Help: "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
+	}
+
+	return &compatibilityEngine{
+		prom: promql.NewEngine(opts.EngineOpts),
+
 		debugWriter:       opts.DebugWriter,
 		disableFallback:   opts.DisableFallback,
 		logger:            opts.Logger,
@@ -165,8 +167,7 @@ func New(opts Opts) *compatibilityEngine {
 }
 
 type compatibilityEngine struct {
-	prom    *promql.Engine
-	queries *prometheus.CounterVec
+	prom *promql.Engine
 
 	debugWriter io.Writer
 
@@ -197,10 +198,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, e.lookbackDelta)
 	if e.triggerFallback(err) {
-		e.queries.WithLabelValues("true").Inc()
+		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
 	}
-	e.queries.WithLabelValues("false").Inc()
+	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -235,10 +236,10 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, e.lookbackDelta)
 	if e.triggerFallback(err) {
-		e.queries.WithLabelValues("true").Inc()
+		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
 	}
-	e.queries.WithLabelValues("false").Inc()
+	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
