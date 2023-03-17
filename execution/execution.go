@@ -23,6 +23,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 
+	"github.com/thanos-community/promql-engine/execution/noop"
 	"github.com/thanos-community/promql-engine/execution/remote"
 
 	"github.com/efficientgo/core/errors"
@@ -268,6 +269,8 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		selectorOpts.LookbackDelta = 0
 		remoteExec := remote.NewExecution(qry, model.NewVectorPool(stepsBatch), &selectorOpts)
 		return exchange.NewConcurrent(remoteExec, 2), nil
+	case logicalplan.Noop:
+		return noop.NewOperator(), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}

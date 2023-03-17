@@ -22,6 +22,16 @@ func TestDistributedExecution(t *testing.T) {
 		expected string
 	}{
 		{
+			name:     "selector",
+			expr:     `http_requests_total`,
+			expected: `dedup(remote(http_requests_total), remote(http_requests_total))`,
+		},
+		{
+			name:     "rate",
+			expr:     `rate(http_requests_total[5m])`,
+			expected: `dedup(remote(rate(http_requests_total[5m])), remote(rate(http_requests_total[5m])))`,
+		},
+		{
 			name: "sum-rate",
 			expr: `sum by (pod) (rate(http_requests_total[5m]))`,
 			expected: `
@@ -147,11 +157,37 @@ histogram_quantile(0.5, sum by (le) (dedup(
 			name:     "absent",
 			expr:     `absent(foo)`,
 			expected: `remote(absent(foo)) * remote(absent(foo))`,
+		}, {
+			name: "binary expression with constant",
+			expr: `sum by (pod) (rate(http_requests_total[2m]) * 60)`,
+			expected: `sum by (pod) (dedup(
+remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60)), 
+remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
+		},
+		{
+			name:     "label based pruning matches one engine",
+			expr:     `sum by (pod) (rate(http_requests_total{region="west"}[2m]))`,
+			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="west"}[2m])))))`,
+		},
+		{
+			name:     "label based pruning matches no engines",
+			expr:     `http_requests_total{region="north"}`,
+			expected: `noop`,
+		},
+		{
+			name:     "label based pruning with grouping matches no engines",
+			expr:     `sum by (pod) (rate(http_requests_total{region="north"}[2m]))`,
+			expected: `sum by (pod) (noop)`,
+		},
+		{
+			name:     "label based pruning with grouping matches no engines",
+			expr:     `sum by (pod) (rate(http_requests_total{region="south"}[2m]))`,
+			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="south"}[2m])))))`,
 		},
 	}
 
 	engines := []api.RemoteEngine{
-		newEngineMock(1, []labels.Labels{labels.FromStrings("region", "east")}),
+		newEngineMock(1, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
 		newEngineMock(2, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
 	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}

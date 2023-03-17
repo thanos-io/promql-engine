@@ -121,6 +121,7 @@ func TestDistributedAggregations(t *testing.T) {
 			name: "series with different ranges in a newer engine",
 			seriesSets: []partition{
 				{
+					extLset: []labels.Labels{labels.FromStrings("zone", "east-1")},
 					series: []*mockSeries{
 						newMockSeries(makeSeries("east-1", "nginx-1"), []int64{60, 90, 120}, []float64{3, 4, 5}),
 						newMockSeries(makeSeries("east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
@@ -128,6 +129,7 @@ func TestDistributedAggregations(t *testing.T) {
 				},
 			},
 			timeOverlap: partition{
+				extLset: []labels.Labels{labels.FromStrings("zone", "east-1"), labels.FromStrings("zone", "west-1")},
 				series: []*mockSeries{
 					newMockSeries(makeSeries("east-1", "nginx-1"), []int64{30, 60}, []float64{2, 3}),
 					newMockSeries(makeSeries("east-2", "nginx-1"), []int64{30, 60}, []float64{3, 4}),
@@ -138,6 +140,7 @@ func TestDistributedAggregations(t *testing.T) {
 			name: "verify double lookback is not applied",
 			seriesSets: []partition{
 				{
+					extLset: []labels.Labels{labels.FromStrings("zone", "east-2")},
 					series: []*mockSeries{
 						newMockSeries(makeSeries("east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
 					},
@@ -175,11 +178,14 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "group", query: `group by (pod) (bar)`},
 		{name: "topk", query: `topk by (pod) (1, bar)`},
 		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
+		{name: "label based pruning with no match", query: `sum by (pod) (bar{zone="north-2"})`},
+		{name: "label based pruning with one match", query: `sum by (pod) (bar{zone="east-1"})`},
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
 		// TODO(fpetkovski): This query fails because the range selector is longer than the
 		// retention of one engine. Uncomment the test once the issue is fixed.
 		// https://github.com/thanos-community/promql-engine/issues/195
 		// {name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
+		{name: "binary expression with constant operand", query: `sum by (region) (bar * 60)`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
 		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
 		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
