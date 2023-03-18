@@ -147,8 +147,10 @@ func New(opts Opts) *compatibilityEngine {
 		),
 		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "promql_engine_queries_total",
-				Help: "Number of PromQL queries.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "queries_total",
+				Help:      "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
 	}
