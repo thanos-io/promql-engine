@@ -143,6 +143,11 @@ histogram_quantile(0.5, sum by (le) (dedup(
 			expr:     `max(foo) - 1`,
 			expected: `max(dedup(remote(max by (region) (foo)), remote(max by (region) (foo)))) - 1`,
 		},
+		{
+			name:     "absent",
+			expr:     `absent(foo)`,
+			expected: `remote(absent(foo)) * remote(absent(foo))`,
+		},
 	}
 
 	engines := []api.RemoteEngine{

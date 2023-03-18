@@ -3040,16 +3040,15 @@ func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 				result := make([]storage.Series, 0)
+			loopSeries:
 				for _, s := range series {
-				loopMatchers:
 					for _, m := range matchers {
-						for _, l := range s.Labels() {
-							if m.Name == l.Name && m.Matches(l.Value) {
-								result = append(result, s)
-								break loopMatchers
-							}
+						lbl := s.Labels().Get(m.Name)
+						if lbl != "" && !m.Matches(lbl) {
+							continue loopSeries
 						}
 					}
+					result = append(result, s)
 				}
 				return newTestSeriesSet(result...)
 			},

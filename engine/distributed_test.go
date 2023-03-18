@@ -183,6 +183,10 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
 		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
 		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
+		{name: "absent_over_time for non-existing metric", query: `absent_over_time(foo[2m])`},
+		{name: "absent_over_time for existing metric", query: `absent_over_time(bar{pod="nginx-1"}[2m])`},
+		{name: "absent for non-existing metric", query: `absent(foo)`},
+		{name: "absent for existing metric", query: `absent(bar{pod="nginx-1"})`},
 	}
 
 	optimizersOpts := map[string][]logicalplan.Optimizer{
