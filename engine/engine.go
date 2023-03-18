@@ -540,7 +540,7 @@ func containsDuplicateLabelSet(series []labels.Labels) bool {
 	seen := make(map[uint64]struct{}, len(series))
 	for i := range series {
 		buf = buf[:0]
-		h = xxhash.Sum64(series[i].BytesWithoutLabels(buf))
+		h = xxhash.Sum64(series[i].Bytes(buf))
 		if _, ok := seen[h]; ok {
 			return true
 		}
