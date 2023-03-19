@@ -35,7 +35,14 @@ import (
 
 type QueryType int
 
+type engineMetrics struct {
+	currentQueries prometheus.Gauge
+	queries        *prometheus.CounterVec
+}
+
 const (
+	namespace    string    = "thanos"
+	subsystem    string    = "engine"
 	InstantQuery QueryType = 1
 	RangeQuery   QueryType = 2
 )
@@ -145,26 +152,40 @@ func New(opts Opts) *compatibilityEngine {
 		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
 
-	return &compatibilityEngine{
-		prom: promql.NewEngine(opts.EngineOpts),
+	metrics := &engineMetrics{
+		currentQueries: promauto.With(opts.Reg).NewGauge(
+			prometheus.GaugeOpts{
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "queries",
+				Help:      "The current number of queries being executed or waiting.",
+			},
+		),
 		queries: promauto.With(opts.Reg).NewCounterVec(
 			prometheus.CounterOpts{
-				Name: "promql_engine_queries_total",
-				Help: "Number of PromQL queries.",
+				Namespace: namespace,
+				Subsystem: subsystem,
+				Name:      "queries_total",
+				Help:      "Number of PromQL queries.",
 			}, []string{"fallback"},
 		),
+	}
+
+	return &compatibilityEngine{
+		prom: promql.NewEngine(opts.EngineOpts),
+
 		debugWriter:       opts.DebugWriter,
 		disableFallback:   opts.DisableFallback,
 		logger:            opts.Logger,
 		lookbackDelta:     opts.LookbackDelta,
 		logicalOptimizers: opts.getLogicalOptimizers(),
 		timeout:           opts.Timeout,
+		metrics:           metrics,
 	}
 }
 
 type compatibilityEngine struct {
-	prom    *promql.Engine
-	queries *prometheus.CounterVec
+	prom *promql.Engine
 
 	debugWriter io.Writer
 
@@ -173,6 +194,7 @@ type compatibilityEngine struct {
 	lookbackDelta     time.Duration
 	logicalOptimizers []logicalplan.Optimizer
 	timeout           time.Duration
+	metrics           *engineMetrics
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -208,10 +230,10 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 
 	exec, err := execution.New(lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta)
 	if e.triggerFallback(err) {
-		e.queries.WithLabelValues("true").Inc()
+		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(q, opts, qs, ts)
 	}
-	e.queries.WithLabelValues("false").Inc()
+	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -259,10 +281,10 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 
 	exec, err := execution.New(lplan.Expr(), q, start, end, step, opts.LookbackDelta)
 	if e.triggerFallback(err) {
-		e.queries.WithLabelValues("true").Inc()
+		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(q, opts, qs, start, end, step)
 	}
-	e.queries.WithLabelValues("false").Inc()
+	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +428,9 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 		Value: promql.Vector{},
 	}
 	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
+
+	q.engine.metrics.currentQueries.Inc()
+	defer q.engine.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, q.engine.timeout)
 	defer cancel()
