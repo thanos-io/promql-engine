@@ -285,6 +285,9 @@ func isDistributive(expr *parser.Expr) bool {
 // matchesExternalLabels returns false if given matchers are not matching external labels.
 // If true, matchesExternalLabels also returns Prometheus matchers without those matching external labels.
 func matchesExternalLabelSet(expr parser.Expr, externalLabelSet []labels.Labels) bool {
+	if len(externalLabelSet) == 0 {
+		return true
+	}
 	selectorSet := parser.ExtractSelectors(expr)
 	for _, selectors := range selectorSet {
 		hasMatch := false
