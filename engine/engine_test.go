@@ -1575,6 +1575,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
 			query: "sort_desc(http_requests_total)",
 		},
+		{
+			name: "count by __name__ label",
+			load: `load 30s
+				foo 1+1x5
+				bar 2+2x5`,
+			query: `count by (__name__) ({__name__=~".+"})`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -3602,16 +3609,15 @@ func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 				result := make([]storage.Series, 0)
+			loopSeries:
 				for _, s := range series {
-				loopMatchers:
 					for _, m := range matchers {
-						for _, l := range s.Labels() {
-							if m.Name == l.Name && m.Matches(l.Value) {
-								result = append(result, s)
-								break loopMatchers
-							}
+						lbl := s.Labels().Get(m.Name)
+						if lbl != "" && !m.Matches(lbl) {
+							continue loopSeries
 						}
 					}
+					result = append(result, s)
 				}
 				return newTestSeriesSet(result...)
 			},

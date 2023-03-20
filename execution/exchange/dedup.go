@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -147,6 +148,6 @@ func (d *dedupOperator) loadSeries(ctx context.Context) error {
 
 func hashSeries(hashBuf []byte, inputSeries labels.Labels) uint64 {
 	hashBuf = hashBuf[:0]
-	hash, _ := inputSeries.HashWithoutLabels(hashBuf)
+	hash := xxhash.Sum64(inputSeries.Bytes(hashBuf))
 	return hash
 }
