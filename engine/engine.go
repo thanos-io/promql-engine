@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
@@ -564,7 +565,7 @@ func containsDuplicateLabelSet(series []labels.Labels) bool {
 	seen := make(map[uint64]struct{}, len(series))
 	for i := range series {
 		buf = buf[:0]
-		h, buf = series[i].HashWithoutLabels(buf)
+		h = xxhash.Sum64(series[i].Bytes(buf))
 		if _, ok := seen[h]; ok {
 			return true
 		}

@@ -1575,6 +1575,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
 			query: "sort_desc(http_requests_total)",
 		},
+		{
+			name: "count by __name__ label",
+			load: `load 30s
+				foo 1+1x5
+				bar 2+2x5`,
+			query: `count by (__name__) ({__name__=~".+"})`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}

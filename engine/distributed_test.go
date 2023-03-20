@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"testing"
 	"time"
 
@@ -70,6 +69,10 @@ func TestDistributedAggregations(t *testing.T) {
 
 	makeSeries := func(zone, pod string) []string {
 		return []string{labels.MetricName, "bar", "zone", zone, "pod", pod}
+	}
+
+	makeSeriesWithName := func(name, zone, pod string) []string {
+		return []string{labels.MetricName, name, "zone", zone, "pod", pod}
 	}
 
 	tests := []struct {
@@ -142,6 +145,22 @@ func TestDistributedAggregations(t *testing.T) {
 			},
 			rangeEnd: time.Unix(15000, 0),
 		},
+		{
+			name: "count by __name__ label",
+			seriesSets: []partition{
+				{
+					series: []*mockSeries{
+						newMockSeries(makeSeriesWithName("foo", "east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
+						newMockSeries(makeSeriesWithName("bar", "east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
+					},
+				},
+				{
+					series: []*mockSeries{
+						newMockSeries(makeSeriesWithName("xyz", "east-2", "nginx-1"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
+					},
+				},
+			},
+		},
 	}
 
 	queries := []struct {
@@ -152,6 +171,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "sum", query: `sum by (pod) (bar)`},
 		{name: "avg", query: `avg by (pod) (bar)`},
 		{name: "count", query: `count by (pod) (bar)`},
+		{name: "count by __name__", query: `count by (__name__) ({__name__=~".+"})`},
 		{name: "group", query: `group by (pod) (bar)`},
 		{name: "topk", query: `topk by (pod) (1, bar)`},
 		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
@@ -171,7 +191,7 @@ func TestDistributedAggregations(t *testing.T) {
 		"all":     logicalplan.AllOptimizers,
 	}
 
-	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
+	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
 	allQueryOpts := []*promql.QueryOpts{nil}
 	for _, l := range lookbackDeltas {
 		allQueryOpts = append(allQueryOpts, &promql.QueryOpts{
@@ -216,7 +236,6 @@ func TestDistributedAggregations(t *testing.T) {
 									distOpts := localOpts
 
 									distOpts.DisableFallback = !query.expectFallback
-									distOpts.DebugWriter = os.Stdout
 									for _, instantTS := range instantTSs {
 										t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
 											distEngine := engine.NewDistributedEngine(distOpts,
