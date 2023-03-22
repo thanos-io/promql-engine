@@ -191,7 +191,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 			return 0, 0, nil, false, nil
 		}
 	}
-	if value.IsStaleNaN(v) {
+	if value.IsStaleNaN(v) || (h != nil && value.IsStaleNaN(h.Sum)) {
 		return 0, 0, nil, false, nil
 	}
 

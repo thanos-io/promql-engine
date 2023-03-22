@@ -257,6 +257,9 @@ loop:
 			break loop
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t, h := buf.AtFloatHistogram()
+			if value.IsStaleNaN(h.Sum) {
+				continue loop
+			}
 			if t >= mint {
 				out = append(out, promql.Point{T: t, H: h})
 			}
@@ -276,7 +279,7 @@ loop:
 	switch soughtValueType {
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, h := it.AtFloatHistogram()
-		if t == maxt {
+		if t == maxt && !value.IsStaleNaN(h.Sum) {
 			out = append(out, promql.Point{T: t, H: h})
 		}
 	case chunkenc.ValFloat:
