@@ -28,8 +28,9 @@ import (
 
 	"github.com/efficientgo/core/errors"
 
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 
 	"github.com/prometheus/prometheus/model/labels"
 

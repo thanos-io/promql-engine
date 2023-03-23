@@ -6,7 +6,7 @@ package logicalplan
 import (
 	"sort"
 
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 )
 
 // SortMatchers sorts all matchers in a selector so that

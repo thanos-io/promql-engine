@@ -10,7 +10,8 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 )
 
 var spaces = regexp.MustCompile(`\s+`)

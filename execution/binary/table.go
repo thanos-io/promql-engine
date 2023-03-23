@@ -6,7 +6,7 @@ package binary
 import (
 	"math"
 
-	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 
 	"github.com/thanos-community/promql-engine/execution/model"
 	"github.com/thanos-community/promql-engine/execution/parse"
