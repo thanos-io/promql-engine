@@ -37,15 +37,15 @@ func (c *concurrencyOperator) Explain() (me string, next []model.VectorOperator)
 	return fmt.Sprintf("[*concurrencyOperator(buff=%v)]", c.bufferSize), []model.VectorOperator{c.next}
 }
 
-func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, error) {
-	return c.next.Series(ctx)
+func (c *concurrencyOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
+	return c.next.Series(ctx, tracer)
 }
 
 func (c *concurrencyOperator) GetPool() *model.VectorPool {
 	return c.next.GetPool()
 }
 
-func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (c *concurrencyOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -53,7 +53,7 @@ func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, err
 	}
 
 	c.once.Do(func() {
-		go c.pull(ctx)
+		go c.pull(ctx, tracer)
 		go c.drainBufferOnCancel(ctx)
 	})
 
@@ -68,7 +68,7 @@ func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, err
 	return r.stepVector, nil
 }
 
-func (c *concurrencyOperator) pull(ctx context.Context) {
+func (c *concurrencyOperator) pull(ctx context.Context, tracer *model.OperatorTracer) {
 	defer close(c.buffer)
 
 	for {
@@ -77,7 +77,7 @@ func (c *concurrencyOperator) pull(ctx context.Context) {
 			c.buffer <- maybeStepVector{err: ctx.Err()}
 			return
 		default:
-			r, err := c.next.Next(ctx)
+			r, err := c.next.Next(ctx, tracer)
 			if err != nil {
 				c.buffer <- maybeStepVector{err: err}
 				return

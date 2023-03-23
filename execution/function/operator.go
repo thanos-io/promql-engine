@@ -51,7 +51,7 @@ func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperato
 	return fmt.Sprintf("[*noArgFunctionOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{}
 }
 
-func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {
+func (o *noArgFunctionOperator) Series(_ context.Context, _ *model.OperatorTracer) ([]labels.Labels, error) {
 	return o.series, nil
 }
 
@@ -59,7 +59,7 @@ func (o *noArgFunctionOperator) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, error) {
+func (o *noArgFunctionOperator) Next(_ context.Context, _ *model.OperatorTracer) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
@@ -144,8 +144,8 @@ func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*functionOperator] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
 }
 
-func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
-	if err := o.loadSeries(ctx); err != nil {
+func (o *functionOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
+	if err := o.loadSeries(ctx, tracer); err != nil {
 		return nil, err
 	}
 
@@ -156,20 +156,20 @@ func (o *functionOperator) GetPool() *model.VectorPool {
 	return o.nextOps[o.vectorIndex].GetPool()
 }
 
-func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *functionOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
 
-	if err := o.loadSeries(ctx); err != nil {
+	if err := o.loadSeries(ctx, tracer); err != nil {
 		return nil, err
 	}
 
 	// Process non-variadic single/multi-arg instant vector and scalar input functions.
 	// Call next on vector input.
-	vectors, err := o.nextOps[o.vectorIndex].Next(ctx)
+	vectors, err := o.nextOps[o.vectorIndex].Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			continue
 		}
 
-		scalarVectors, err := o.nextOps[i].Next(ctx)
+		scalarVectors, err := o.nextOps[i].Next(ctx, tracer)
 		if err != nil {
 			return nil, err
 		}
@@ -265,7 +265,7 @@ func (o *functionOperator) newFunctionArgs(vector model.StepVector, batchIndex i
 	}
 }
 
-func (o *functionOperator) loadSeries(ctx context.Context) error {
+func (o *functionOperator) loadSeries(ctx context.Context, tracer *model.OperatorTracer) error {
 	var err error
 	o.once.Do(func() {
 		if o.funcExpr.Func.Name == "vector" {
@@ -278,7 +278,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 			return
 		}
 
-		series, loadErr := o.nextOps[o.vectorIndex].Series(ctx)
+		series, loadErr := o.nextOps[o.vectorIndex].Series(ctx, tracer)
 		if loadErr != nil {
 			err = loadErr
 			return

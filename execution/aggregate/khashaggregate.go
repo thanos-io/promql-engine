@@ -77,12 +77,12 @@ func NewKHashAggregate(
 	return a, nil
 }
 
-func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
-	in, err := a.next.Next(ctx)
+func (a *kAggregate) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
+	in, err := a.next.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
-	args, err := a.paramOp.Next(ctx)
+	args, err := a.paramOp.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +108,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, errors.New("scalar argument not found")
 	}
 
-	a.once.Do(func() { err = a.init(ctx) })
+	a.once.Do(func() { err = a.init(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -123,9 +123,9 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	return result, nil
 }
 
-func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
+func (a *kAggregate) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	a.once.Do(func() { err = a.init(ctx) })
+	a.once.Do(func() { err = a.init(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +144,8 @@ func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*kaggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
 }
 
-func (a *kAggregate) init(ctx context.Context) error {
-	series, err := a.next.Series(ctx)
+func (a *kAggregate) init(ctx context.Context, tracer *model.OperatorTracer) error {
+	series, err := a.next.Series(ctx, tracer)
 	if err != nil {
 		return err
 	}

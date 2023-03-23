@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -97,7 +98,7 @@ func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
 }
 
-func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *matrixSelector) Series(ctx context.Context, _ *model.OperatorTracer) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -108,7 +109,7 @@ func (o *matrixSelector) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *matrixSelector) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -125,6 +126,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	var currSamples int64 = 0
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -150,6 +152,8 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if err != nil {
 				return nil, err
 			}
+
+			currSamples += o.countSamples(rangePoints)
 
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
 			// Also, allow operator to exist independently without being nested
@@ -191,7 +195,23 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	o.currentStep += o.step * int64(o.numSteps)
 
+	atomic.AddInt64(&tracer.QuerySamples.TotalSamples, currSamples)
+
 	return vectors, nil
+}
+
+func (o *matrixSelector) countSamples(points []promql.Point) int64 {
+	var samples int64 = 0
+
+	for _, point := range points {
+		if point.H != nil {
+			samples += int64(len(point.H.NegativeBuckets) + len(point.H.PositiveBuckets))
+		} else {
+			samples += 1
+		}
+	}
+
+	return samples
 }
 
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
@@ -271,6 +291,7 @@ func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []pr
 	}
 
 	buf := it.Buffer()
+
 loop:
 	for {
 		switch buf.Next() {

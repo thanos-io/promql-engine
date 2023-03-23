@@ -34,18 +34,18 @@ func NewUnaryNegation(
 	return u, nil
 }
 
-func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
-	if err := u.loadSeries(ctx); err != nil {
+func (u *unaryNegation) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
+	if err := u.loadSeries(ctx, tracer); err != nil {
 		return nil, err
 	}
 	return u.series, nil
 }
 
-func (u *unaryNegation) loadSeries(ctx context.Context) error {
+func (u *unaryNegation) loadSeries(ctx context.Context, tracer *model.OperatorTracer) error {
 	var err error
 	u.once.Do(func() {
 		var series []labels.Labels
-		series, err = u.next.Series(ctx)
+		series, err = u.next.Series(ctx, tracer)
 		if err != nil {
 			return
 		}
@@ -62,14 +62,14 @@ func (u *unaryNegation) GetPool() *model.VectorPool {
 	return u.next.GetPool()
 }
 
-func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
+func (u *unaryNegation) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
 
-	in, err := u.next.Next(ctx)
+	in, err := u.next.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}

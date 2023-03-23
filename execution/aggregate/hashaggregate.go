@@ -87,9 +87,9 @@ func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), ops
 }
 
-func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
+func (a *aggregate) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	a.once.Do(func() { err = a.initializeTables(ctx) })
+	a.once.Do(func() { err = a.initializeTables(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -101,14 +101,14 @@ func (a *aggregate) GetPool() *model.VectorPool {
 	return a.vectorPool
 }
 
-func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
+func (a *aggregate) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
 
-	in, err := a.next.Next(ctx)
+	in, err := a.next.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -117,13 +117,13 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	defer a.next.GetPool().PutVectors(in)
 
-	a.once.Do(func() { err = a.initializeTables(ctx) })
+	a.once.Do(func() { err = a.initializeTables(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
 
 	if a.paramOp != nil {
-		args, err := a.paramOp.Next(ctx)
+		args, err := a.paramOp.Next(ctx, tracer)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +156,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	return result, nil
 }
 
-func (a *aggregate) initializeTables(ctx context.Context) error {
+func (a *aggregate) initializeTables(ctx context.Context, tracer *model.OperatorTracer) error {
 	var (
 		tables []aggregateTable
 		series []labels.Labels
@@ -164,9 +164,9 @@ func (a *aggregate) initializeTables(ctx context.Context) error {
 	)
 
 	if a.by && len(a.labels) == 0 {
-		tables, series, err = a.initializeVectorizedTables(ctx)
+		tables, series, err = a.initializeVectorizedTables(ctx, tracer)
 	} else {
-		tables, series, err = a.initializeScalarTables(ctx)
+		tables, series, err = a.initializeScalarTables(ctx, tracer)
 	}
 	if err != nil {
 		return err
@@ -184,10 +184,10 @@ func (a *aggregate) workerTask(workerID int, arg float64, vector model.StepVecto
 	return table.toVector(a.vectorPool)
 }
 
-func (a *aggregate) initializeVectorizedTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
+func (a *aggregate) initializeVectorizedTables(ctx context.Context, tracer *model.OperatorTracer) ([]aggregateTable, []labels.Labels, error) {
 	tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
 	if errors.Is(err, parse.ErrNotSupportedExpr) {
-		return a.initializeScalarTables(ctx)
+		return a.initializeScalarTables(ctx, tracer)
 	}
 
 	if err != nil {
@@ -197,8 +197,8 @@ func (a *aggregate) initializeVectorizedTables(ctx context.Context) ([]aggregate
 	return tables, []labels.Labels{{}}, nil
 }
 
-func (a *aggregate) initializeScalarTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
-	series, err := a.next.Series(ctx)
+func (a *aggregate) initializeScalarTables(ctx context.Context, tracer *model.OperatorTracer) ([]aggregateTable, []labels.Labels, error) {
+	series, err := a.next.Series(ctx, tracer)
 	if err != nil {
 		return nil, nil, err
 	}

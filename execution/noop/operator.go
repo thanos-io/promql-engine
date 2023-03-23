@@ -15,9 +15,13 @@ type operator struct{}
 
 func NewOperator() model.VectorOperator { return &operator{} }
 
-func (o operator) Next(ctx context.Context) ([]model.StepVector, error) { return nil, nil }
+func (o operator) Next(_ context.Context, _ *model.OperatorTracer) ([]model.StepVector, error) {
+	return nil, nil
+}
 
-func (o operator) Series(ctx context.Context) ([]labels.Labels, error) { return nil, nil }
+func (o operator) Series(_ context.Context, _ *model.OperatorTracer) ([]labels.Labels, error) {
+	return nil, nil
+}
 
 func (o operator) GetPool() *model.VectorPool { return nil }
 

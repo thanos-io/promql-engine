@@ -34,12 +34,12 @@ func NewExecution(query promql.Query, pool *model.VectorPool, opts *query.Option
 	}
 }
 
-func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
-	return e.vectorSelector.Series(ctx)
+func (e *Execution) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
+	return e.vectorSelector.Series(ctx, tracer)
 }
 
-func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
-	next, err := e.vectorSelector.Next(ctx)
+func (e *Execution) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
+	next, err := e.vectorSelector.Next(ctx, tracer)
 	if next == nil {
 		// Closing the storage prematurely can lead to results from the query
 		// engine to be recycled. Because of this, we close the storage only

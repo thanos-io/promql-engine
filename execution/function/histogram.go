@@ -63,9 +63,9 @@ func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
 }
 
-func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *histogramOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	o.once.Do(func() { err = o.loadSeries(ctx) })
+	o.once.Do(func() { err = o.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +77,7 @@ func (o *histogramOperator) GetPool() *model.VectorPool {
 	return o.pool
 }
 
-func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *histogramOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -85,12 +85,12 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 	}
 
 	var err error
-	o.once.Do(func() { err = o.loadSeries(ctx) })
+	o.once.Do(func() { err = o.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
 
-	scalars, err := o.scalarOp.Next(ctx)
+	scalars, err := o.scalarOp.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 		return nil, nil
 	}
 
-	vectors, err := o.vectorOp.Next(ctx)
+	vectors, err := o.vectorOp.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -174,8 +174,8 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 	return out, nil
 }
 
-func (o *histogramOperator) loadSeries(ctx context.Context) error {
-	series, err := o.vectorOp.Series(ctx)
+func (o *histogramOperator) loadSeries(ctx context.Context, tracer *model.OperatorTracer) error {
+	series, err := o.vectorOp.Series(ctx, tracer)
 	if err != nil {
 		return err
 	}

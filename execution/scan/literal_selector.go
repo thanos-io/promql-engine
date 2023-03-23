@@ -45,7 +45,7 @@ func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperato
 	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
 }
 
-func (o *numberLiteralSelector) Series(context.Context) ([]labels.Labels, error) {
+func (o *numberLiteralSelector) Series(_ context.Context, _ *model.OperatorTracer) ([]labels.Labels, error) {
 	o.loadSeries()
 	return o.series, nil
 }
@@ -54,7 +54,7 @@ func (o *numberLiteralSelector) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *numberLiteralSelector) Next(ctx context.Context, _ *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
