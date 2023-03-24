@@ -6,6 +6,12 @@ package engine
 import (
 	"context"
 
+	promparser "github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/stats"
+
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
+
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -24,9 +30,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/thanos-community/promql-engine/execution"
 	"github.com/thanos-community/promql-engine/execution/model"
@@ -508,7 +511,7 @@ loop:
 		return ret
 	}
 
-	var result parser.Value
+	var result promparser.Value
 	switch q.expr.Type() {
 	case parser.ValueTypeMatrix:
 		result = promql.Matrix(series)
@@ -574,7 +577,7 @@ func containsDuplicateLabelSet(series []labels.Labels) bool {
 	return false
 }
 
-func (q *compatibilityQuery) Statement() parser.Statement { return nil }
+func (q *compatibilityQuery) Statement() promparser.Statement { return nil }
 
 // Stats always returns empty query stats for now to avoid panic.
 func (q *compatibilityQuery) Stats() *stats.Statistics {

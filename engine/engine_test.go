@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	promparser "github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/thanos-community/promql-engine/engine"
@@ -27,7 +29,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -3502,11 +3503,11 @@ func generateFloatHistogramSeries(app storage.Appender, numSeries int, withMixed
 
 func sortByLabels(r *promql.Result) {
 	switch r.Value.Type() {
-	case parser.ValueTypeVector:
+	case promparser.ValueTypeVector:
 		m, _ := r.Vector()
 		sort.Sort(samplesByLabels(m))
 		r.Value = m
-	case parser.ValueTypeMatrix:
+	case promparser.ValueTypeMatrix:
 		m, _ := r.Matrix()
 		sort.Sort(seriesByLabels(m))
 		r.Value = m

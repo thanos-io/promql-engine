@@ -6,6 +6,7 @@ MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
+LINT_DIRS = $(shell go list ./... | grep -v "internal/prometheus")
 
 define require_clean_work_tree
 	@git update-index -q --ignore-submodules --refresh
@@ -70,12 +71,12 @@ lint: format deps $(GOLANGCI_LINT) $(FAILLINT) $(COPYRIGHT) docs
 	@$(FAILLINT) -paths "errors=github.com/efficientgo/core/errors,\
 fmt.{Errorf}=github.com/efficientgo/core/errors.{Wrap,Wrapf},\
 github.com/prometheus/prometheus/pkg/testutils=github.com/efficientgo/core/testutil,\
-github.com/stretchr/testify=github.com/efficientgo/core/testutil" ./...
-	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests ./...
+github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(LINT_DIRS)
+	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests $(LINT_DIRS)
 	@echo ">> linting all of the Go files GOGC=${GOGC}"
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"
-	@$(COPYRIGHT) $(shell go list -f "{{.Dir}}" ./... | xargs -i find "{}" -name "*.go")
+	@$(COPYRIGHT) $(shell echo $LINT_DIRS | xargs -i find "{}" -name "*.go")
 	$(call require_clean_work_tree,'detected files without copyright, run make lint and commit changes')
 
 .PHONY: white-noise-cleanup
@@ -102,3 +103,16 @@ bench-new: benchmarks
 .PHONY: benchmark
 benchmark: bench-old bench-new
 	@benchstat benchmarks/old.out benchmarks/new.out
+
+.PHONY: sync-parser
+sync-parser:
+	@echo "Cleaning existing directories"
+	@rm -rf internal/prometheus/parser
+	@mkdir -p tmp
+	@rm -rf tmp/prometheus
+	@echo "Cloning prometheus"
+	@git clone git@github.com:prometheus/prometheus.git tmp/prometheus
+	@echo "Copying parser"
+	cp -r tmp/prometheus/promql/parser internal/prometheus
+	@echo "Cleaning up"
+	@rm -rf tmp
