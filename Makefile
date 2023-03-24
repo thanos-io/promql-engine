@@ -6,6 +6,7 @@ MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
+LINT_DIRS = $(shell go list ./... | grep -v "internal/prometheus")
 
 define require_clean_work_tree
 	@git update-index -q --ignore-submodules --refresh
@@ -70,8 +71,8 @@ lint: format deps $(GOLANGCI_LINT) $(FAILLINT) $(COPYRIGHT) docs
 	@$(FAILLINT) -paths "errors=github.com/efficientgo/core/errors,\
 fmt.{Errorf}=github.com/efficientgo/core/errors.{Wrap,Wrapf},\
 github.com/prometheus/prometheus/pkg/testutils=github.com/efficientgo/core/testutil,\
-github.com/stretchr/testify=github.com/efficientgo/core/testutil" ./...
-	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests ./...
+github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(LINT_DIRS)
+	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests $(LINT_DIRS)
 	@echo ">> linting all of the Go files GOGC=${GOGC}"
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"
