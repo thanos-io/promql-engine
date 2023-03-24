@@ -7,7 +7,8 @@ import (
 	"testing"
 
 	"github.com/efficientgo/core/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 )
 
 func TestTrimSorts(t *testing.T) {

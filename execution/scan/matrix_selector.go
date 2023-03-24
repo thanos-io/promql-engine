@@ -13,9 +13,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 
 	"github.com/thanos-community/promql-engine/execution/function"
 	"github.com/thanos-community/promql-engine/execution/model"
@@ -277,6 +278,9 @@ loop:
 			break loop
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			t, h := buf.AtFloatHistogram()
+			if value.IsStaleNaN(h.Sum) {
+				continue loop
+			}
 			if t >= mint {
 				out = append(out, promql.Point{T: t, H: h})
 			}
@@ -296,7 +300,7 @@ loop:
 	switch soughtValueType {
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, h := it.AtFloatHistogram()
-		if t == maxt {
+		if t == maxt && !value.IsStaleNaN(h.Sum) {
 			out = append(out, promql.Point{T: t, H: h})
 		}
 	case chunkenc.ValFloat:

@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	promparser "github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/thanos-community/promql-engine/engine"
@@ -27,10 +29,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
-	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/tsdb/tsdbutil"
 	"github.com/prometheus/prometheus/util/stats"
 	"go.uber.org/goleak"
 )
@@ -4003,7 +4004,7 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 	commonLabels := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
 	series := make([][]*histogram.Histogram, numSeries)
 	for i := range series {
-		series[i] = tsdb.GenerateTestHistograms(2000)
+		series[i] = tsdbutil.GenerateTestHistograms(2000)
 	}
 	higherSchemaHist := &histogram.Histogram{
 		Schema: 3,
@@ -4047,8 +4048,8 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 
 func generateFloatHistogramSeries(app storage.Appender, numSeries int, withMixedTypes bool) error {
 	lbls := []string{labels.MetricName, "native_histogram_series", "foo", "bar"}
-	h1 := tsdb.GenerateTestFloatHistograms(numSeries)
-	h2 := tsdb.GenerateTestFloatHistograms(numSeries)
+	h1 := tsdbutil.GenerateTestFloatHistograms(numSeries)
+	h2 := tsdbutil.GenerateTestFloatHistograms(numSeries)
 	for i := range h1 {
 		ts := time.Unix(int64(i*15), 0).UnixMilli()
 		if withMixedTypes {
@@ -4071,11 +4072,11 @@ func generateFloatHistogramSeries(app storage.Appender, numSeries int, withMixed
 
 func sortByLabels(r *promql.Result) {
 	switch r.Value.Type() {
-	case parser.ValueTypeVector:
+	case promparser.ValueTypeVector:
 		m, _ := r.Vector()
 		sort.Sort(samplesByLabels(m))
 		r.Value = m
-	case parser.ValueTypeMatrix:
+	case promparser.ValueTypeMatrix:
 		m, _ := r.Matrix()
 		sort.Sort(seriesByLabels(m))
 		r.Value = m

@@ -4,10 +4,13 @@
 package logicalplan
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 )
 
 var (
@@ -42,7 +45,7 @@ type plan struct {
 }
 
 func New(expr parser.Expr, opts *Opts) Plan {
-	expr = promql.PreprocessExpr(expr, opts.Start, opts.End)
+	expr = preprocessExpr(expr, opts.Start, opts.End)
 	setOffsetForAtModifier(opts.Start.UnixMilli(), expr)
 
 	return &plan{
@@ -129,6 +132,114 @@ func traverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	}
 
 	return true
+}
+
+// preprocessExpr wraps all possible step invariant parts of the given expression with
+// StepInvariantExpr. It also resolves the preprocessors.
+// Copied from Prometheus and adjusted to work with the vendored parser:
+// https://github.com/prometheus/prometheus/blob/3ac49d4ae210869043e6c33e3a82f13f2f849361/promql/engine.go#L2676-L2684
+func preprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
+	isStepInvariant := preprocessExprHelper(expr, start, end)
+	if isStepInvariant {
+		return newStepInvariantExpr(expr)
+	}
+	return expr
+}
+
+// preprocessExprHelper wraps the child nodes of the expression
+// with a StepInvariantExpr wherever it's step invariant. The returned boolean is true if the
+// passed expression qualifies to be wrapped by StepInvariantExpr.
+// It also resolves the preprocessors.
+func preprocessExprHelper(expr parser.Expr, start, end time.Time) bool {
+	switch n := expr.(type) {
+	case *parser.VectorSelector:
+		if n.StartOrEnd == parser.START {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
+		} else if n.StartOrEnd == parser.END {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
+		}
+		return n.Timestamp != nil
+
+	case *parser.AggregateExpr:
+		return preprocessExprHelper(n.Expr, start, end)
+
+	case *parser.BinaryExpr:
+		isInvariant1, isInvariant2 := preprocessExprHelper(n.LHS, start, end), preprocessExprHelper(n.RHS, start, end)
+		if isInvariant1 && isInvariant2 {
+			return true
+		}
+
+		if isInvariant1 {
+			n.LHS = newStepInvariantExpr(n.LHS)
+		}
+		if isInvariant2 {
+			n.RHS = newStepInvariantExpr(n.RHS)
+		}
+
+		return false
+
+	case *parser.Call:
+		_, ok := promql.AtModifierUnsafeFunctions[n.Func.Name]
+		isStepInvariant := !ok
+		isStepInvariantSlice := make([]bool, len(n.Args))
+		for i := range n.Args {
+			isStepInvariantSlice[i] = preprocessExprHelper(n.Args[i], start, end)
+			isStepInvariant = isStepInvariant && isStepInvariantSlice[i]
+		}
+
+		if isStepInvariant {
+			// The function and all arguments are step invariant.
+			return true
+		}
+
+		for i, isi := range isStepInvariantSlice {
+			if isi {
+				n.Args[i] = newStepInvariantExpr(n.Args[i])
+			}
+		}
+		return false
+
+	case *parser.MatrixSelector:
+		return preprocessExprHelper(n.VectorSelector, start, end)
+
+	case *parser.SubqueryExpr:
+		// Since we adjust offset for the @ modifier evaluation,
+		// it gets tricky to adjust it for every subquery step.
+		// Hence we wrap the inside of subquery irrespective of
+		// @ on subquery (given it is also step invariant) so that
+		// it is evaluated only once w.r.t. the start time of subquery.
+		isInvariant := preprocessExprHelper(n.Expr, start, end)
+		if isInvariant {
+			n.Expr = newStepInvariantExpr(n.Expr)
+		}
+		if n.StartOrEnd == parser.START {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(start))
+		} else if n.StartOrEnd == parser.END {
+			n.Timestamp = makeInt64Pointer(timestamp.FromTime(end))
+		}
+		return n.Timestamp != nil
+
+	case *parser.ParenExpr:
+		return preprocessExprHelper(n.Expr, start, end)
+
+	case *parser.UnaryExpr:
+		return preprocessExprHelper(n.Expr, start, end)
+
+	case *parser.StringLiteral, *parser.NumberLiteral:
+		return true
+	}
+
+	panic(fmt.Sprintf("found unexpected node %#v", expr))
+}
+
+func makeInt64Pointer(val int64) *int64 {
+	valp := new(int64)
+	*valp = val
+	return valp
+}
+
+func newStepInvariantExpr(expr parser.Expr) parser.Expr {
+	return &parser.StepInvariantExpr{Expr: expr}
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L2658.
