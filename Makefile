@@ -76,7 +76,7 @@ github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(LINT_DIRS)
 	@echo ">> linting all of the Go files GOGC=${GOGC}"
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"
-	@$(COPYRIGHT) $(shell go list -f "{{.Dir}}" ./... | xargs -i find "{}" -name "*.go")
+	@$(COPYRIGHT) $(shell echo $LINT_DIRS | xargs -i find "{}" -name "*.go")
 	$(call require_clean_work_tree,'detected files without copyright, run make lint and commit changes')
 
 .PHONY: white-noise-cleanup
