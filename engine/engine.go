@@ -164,11 +164,6 @@ func New(opts Opts) *compatibilityEngine {
 		level.Debug(opts.Logger).Log("msg", " externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
 
-	// Set the parser functions for extended functions appropriately as they are not present in prometheus
-	parser.Functions["xdelta"] = parse.Functions["xdelta"]
-	parser.Functions["xincrease"] = parse.Functions["xincrease"]
-	parser.Functions["xrate"] = parse.Functions["xrate"]
-
 	metrics := &engineMetrics{
 		currentQueries: promauto.With(opts.Reg).NewGauge(
 			prometheus.GaugeOpts{
