@@ -102,3 +102,16 @@ bench-new: benchmarks
 .PHONY: benchmark
 benchmark: bench-old bench-new
 	@benchstat benchmarks/old.out benchmarks/new.out
+
+.PHONY: sync-parser
+sync-parser:
+	@echo "Cleaning existing directories"
+	@rm -rf internal/prometheus/parser
+	@mkdir -p tmp
+	@rm -rf tmp/prometheus
+	@echo "Cloning prometheus"
+	@git clone git@github.com:prometheus/prometheus.git tmp/prometheus
+	@echo "Copying parser"
+	cp -r tmp/prometheus/promql/parser internal/prometheus
+	@echo "Cleaning up"
+	@rm -rf tmp

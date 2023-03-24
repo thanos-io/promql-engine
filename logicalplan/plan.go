@@ -5,9 +5,10 @@ package logicalplan
 
 import (
 	"fmt"
+	"time"
+
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"time"
 
 	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 )
@@ -135,6 +136,8 @@ func traverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 
 // preprocessExpr wraps all possible step invariant parts of the given expression with
 // StepInvariantExpr. It also resolves the preprocessors.
+// Copied from Prometheus and adjusted to work with the vendored parser:
+// https://github.com/prometheus/prometheus/blob/3ac49d4ae210869043e6c33e3a82f13f2f849361/promql/engine.go#L2676-L2684
 func preprocessExpr(expr parser.Expr, start, end time.Time) parser.Expr {
 	isStepInvariant := preprocessExprHelper(expr, start, end)
 	if isStepInvariant {

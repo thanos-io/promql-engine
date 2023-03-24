@@ -6,7 +6,7 @@
 /.idea
 /*.iml
 
-tmp/bin
+tmp/
 examples/tmp/
 
 # Ignore the MacOS Trash (DS-Store)
