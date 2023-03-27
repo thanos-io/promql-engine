@@ -256,13 +256,21 @@ loop:
 		switch buf.Next() {
 		case chunkenc.ValNone:
 			break loop
-		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t, h := buf.AtFloatHistogram()
+		case chunkenc.ValHistogram:
+			t, h := buf.AtHistogram()
 			if value.IsStaleNaN(h.Sum) {
 				continue loop
 			}
 			if t >= mint {
-				out = append(out, promql.Point{T: t, H: h})
+				out = append(out, promql.Point{T: t, H: h.ToFloat()})
+			}
+		case chunkenc.ValFloatHistogram:
+			t, fh := buf.AtFloatHistogram()
+			if value.IsStaleNaN(fh.Sum) {
+				continue loop
+			}
+			if t >= mint {
+				out = append(out, promql.Point{T: t, H: fh})
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -278,10 +286,16 @@ loop:
 
 	// The sought sample might also be in the range.
 	switch soughtValueType {
-	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-		t, h := it.AtFloatHistogram()
+	case chunkenc.ValHistogram:
+		t, h := it.AtHistogram()
 		if t == maxt && !value.IsStaleNaN(h.Sum) {
-			out = append(out, promql.Point{T: t, H: h})
+			out = append(out, promql.Point{T: t, H: h.ToFloat()})
+		}
+
+	case chunkenc.ValFloatHistogram:
+		t, fh := it.AtFloatHistogram()
+		if t == maxt && !value.IsStaleNaN(fh.Sum) {
+			out = append(out, promql.Point{T: t, H: fh})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()

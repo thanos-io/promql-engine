@@ -3340,6 +3340,42 @@ func TestNativeHistograms(t *testing.T) {
 	t.Run("float_histograms", func(t *testing.T) {
 		testNativeHistograms(t, cases, opts, generateFloatHistogramSeries)
 	})
+	t.Run("mixed_histograms", func(t *testing.T) {
+		testMixedNativeHistogramTypes(t, opts)
+	})
+}
+
+func testMixedNativeHistogramTypes(t *testing.T, opts promql.EngineOpts) {
+	test, err := promql.NewTest(t, "")
+	testutil.Ok(t, err)
+	defer test.Close()
+
+	var samples []tsdbutil.Sample
+
+	histograms := tsdbutil.GenerateTestHistograms(2)
+
+	samples = append(samples, sample{t: 0, fh: histograms[0].ToFloat()})
+	samples = append(samples, sample{t: 30_000, h: histograms[1]})
+
+	series := storage.NewListSeries(labels.Labels{{Name: "__name__", Value: "native_histogram_series"}}, samples)
+
+	engine := engine.New(engine.Opts{
+		EngineOpts:        opts,
+		DisableFallback:   true,
+		LogicalOptimizers: logicalplan.AllOptimizers,
+	})
+
+	qry, err := engine.NewRangeQuery(storageWithSeries(series), nil, "rate(native_histogram_series[1m])", time.Unix(0, 0), time.Unix(60, 0), 60*time.Second)
+	testutil.Ok(t, err)
+	res := qry.Exec(context.Background())
+	testutil.Ok(t, res.Err)
+	actual, err := res.Matrix()
+	testutil.Ok(t, err)
+
+	testutil.Equals(t, len(actual), 1, "expected 1 series")
+	testutil.Equals(t, len(actual[0].Points), 1, "expected 1 point")
+	expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Scale(1 / float64(30))
+	testutil.Equals(t, actual[0].Points[0].H, expected)
 }
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
@@ -3553,5 +3589,39 @@ func emptyLabelsToNil(result *promql.Result) {
 				result.Value.(promql.Matrix)[i].Metric = nil
 			}
 		}
+	}
+}
+
+type sample struct {
+	t  int64
+	v  float64
+	h  *histogram.Histogram
+	fh *histogram.FloatHistogram
+}
+
+func (s sample) T() int64 {
+	return s.t
+}
+
+func (s sample) V() float64 {
+	return s.v
+}
+
+func (s sample) H() *histogram.Histogram {
+	return s.h
+}
+
+func (s sample) FH() *histogram.FloatHistogram {
+	return s.fh
+}
+
+func (s sample) Type() chunkenc.ValueType {
+	switch {
+	case s.h != nil:
+		return chunkenc.ValHistogram
+	case s.fh != nil:
+		return chunkenc.ValFloatHistogram
+	default:
+		return chunkenc.ValFloat
 	}
 }
