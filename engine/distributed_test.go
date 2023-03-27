@@ -40,7 +40,7 @@ func (p partition) mint() int64 {
 	mint := p.series[0].timestamps[0]
 	for _, s := range p.series {
 		ts := s.timestamps[0]
-		if ts > mint {
+		if ts < mint {
 			mint = ts
 		}
 	}
