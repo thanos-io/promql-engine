@@ -161,7 +161,7 @@ func New(opts Opts) *compatibilityEngine {
 	}
 	if opts.ExtLookbackDelta == 0 {
 		opts.ExtLookbackDelta = 1 * 24 * time.Hour
-		level.Debug(opts.Logger).Log("msg", " externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
+		level.Debug(opts.Logger).Log("msg", "externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
 
 	metrics := &engineMetrics{

@@ -1765,7 +1765,7 @@ func TestBinopEdgeCases(t *testing.T) {
 
 func TestXFunctions(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
-	fmt.Println(defaultQueryTime.String())
+	t.Log(defaultQueryTime.String())
 	// Negative offset and at modifier are enabled by default
 	// since Prometheus v2.33.0, so we also enable them.
 	opts := promql.EngineOpts{
