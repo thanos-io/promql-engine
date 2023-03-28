@@ -17,9 +17,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
+	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
 	"github.com/thanos-community/promql-engine/execution/parse"
 )
@@ -106,9 +108,9 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 }
 
 func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
-	f.Add(uint32(0), 0, math.NaN(), 1.0, 1.0, 2.0)
+	f.Add(uint32(0), 1.0, 1.0, 1.0, 2.0)
 
-	f.Fuzz(func(t *testing.T, ts uint32, groupingHash int, initialVal1, initialVal2, inc1, inc2 float64) {
+	f.Fuzz(func(t *testing.T, ts uint32, initialVal1, initialVal2, inc1, inc2 float64) {
 		if inc1 < 0 || inc2 < 0 {
 			return
 		}
@@ -164,6 +166,213 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 
 		oldEngine := promql.NewEngine(opts)
 		q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, query, queryTime)
+		testutil.Ok(t, err)
+
+		oldResult := q2.Exec(context.Background())
+		testutil.Ok(t, oldResult.Err)
+
+		emptyLabelsToNil(newResult)
+		emptyLabelsToNil(oldResult)
+		testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, query)
+	})
+}
+
+func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
+	f.Add(uint32(0), uint32(120), uint32(30), 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 30)
+
+	f.Fuzz(func(t *testing.T, startTS, endTS, intervalSeconds uint32, initialVal1, initialVal2, initialVal3, initialVal4, inc1, inc2 float64, stepRange int) {
+		if math.IsNaN(initialVal1) || math.IsNaN(initialVal2) || math.IsNaN(inc1) || math.IsNaN(inc2) {
+			return
+		}
+		if math.IsInf(initialVal1, 0) || math.IsInf(initialVal2, 0) || math.IsInf(inc1, 0) || math.IsInf(inc2, 0) {
+			return
+		}
+		if inc1 < 0 || inc2 < 0 || stepRange <= 0 || intervalSeconds <= 0 || endTS < startTS {
+			return
+		}
+		load := fmt.Sprintf(`load 30s
+			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx4
+			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx4`, initialVal1, inc1, initialVal2, inc2)
+		load2 := fmt.Sprintf(`load 30s
+			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx4
+			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx4`, initialVal3, inc1, initialVal4, inc2)
+
+		opts := promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+		}
+		engineOpts := engine.Opts{EngineOpts: opts, DisableFallback: true}
+
+		queryables := []*promql.Test{}
+		test, err := promql.NewTest(t, load)
+		testutil.Ok(t, err)
+		defer test.Close()
+		testutil.Ok(t, test.Run())
+		queryables = append(queryables, test)
+
+		test2, err := promql.NewTest(t, load2)
+		testutil.Ok(t, err)
+		defer test2.Close()
+		testutil.Ok(t, test2.Run())
+		queryables = append(queryables, test2)
+
+		start := time.Unix(int64(startTS), 0)
+		end := time.Unix(int64(endTS), 0)
+		interval := time.Duration(intervalSeconds) * time.Second
+
+		partitionLabels := [][]labels.Labels{
+			{labels.FromStrings("zone", "west-1")},
+			{labels.FromStrings("zone", "west-2")},
+		}
+		remoteEngines := make([]api.RemoteEngine, 0, 2)
+		for i := 0; i < 2; i++ {
+			e := engine.NewRemoteEngine(
+				engineOpts,
+				queryables[i].Storage(),
+				queryables[i].TSDB().Head().MinTime(),
+				queryables[i].TSDB().Head().MaxTime(),
+				partitionLabels[i],
+			)
+			remoteEngines = append(remoteEngines, e)
+		}
+		distEngine := engine.NewDistributedEngine(engineOpts, api.NewStaticEndpoints(remoteEngines))
+
+		mergeStore := storage.NewFanout(nil, test.Storage(), test2.Storage())
+		seriesSet, err := getSeries(context.Background(), mergeStore)
+		require.NoError(t, err)
+		rnd := rand.New(rand.NewSource(time.Now().Unix()))
+		psOpts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(true),
+			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithEnabledAggrs([]parser.ItemType{parser.SUM, parser.MIN, parser.MAX, parser.GROUP, parser.COUNT, parser.BOTTOMK, parser.TOPK}),
+		}
+		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
+
+		var (
+			q1    promql.Query
+			query string
+		)
+		// Since we disabled fallback, keep trying until we find a query
+		// that can be natively execute by the engine.
+		for {
+			expr := ps.WalkRangeQuery()
+			query = expr.Pretty(0)
+			q1, err = distEngine.NewRangeQuery(mergeStore, nil, query, start, end, interval)
+			if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
+				continue
+			} else {
+				break
+			}
+		}
+
+		testutil.Ok(t, err)
+		t.Log(query)
+		newResult := q1.Exec(context.Background())
+		testutil.Ok(t, newResult.Err)
+
+		oldEngine := promql.NewEngine(opts)
+		q2, err := oldEngine.NewRangeQuery(mergeStore, nil, query, start, end, interval)
+		testutil.Ok(t, err)
+
+		oldResult := q2.Exec(context.Background())
+		testutil.Ok(t, oldResult.Err)
+
+		emptyLabelsToNil(newResult)
+		emptyLabelsToNil(oldResult)
+		testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, query)
+	})
+}
+
+func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
+	f.Add(uint32(0), 1.0, 1.0, 1.0, 1.0, 1.0, 2.0)
+
+	f.Fuzz(func(t *testing.T, ts uint32, initialVal1, initialVal2, initialVal3, initialVal4, inc1, inc2 float64) {
+		if inc1 < 0 || inc2 < 0 {
+			return
+		}
+		load := fmt.Sprintf(`load 30s
+			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx4
+			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx4`, initialVal1, inc1, initialVal2, inc2)
+		load2 := fmt.Sprintf(`load 30s
+			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx4
+			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx4`, initialVal3, inc1, initialVal4, inc2)
+
+		opts := promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+		}
+		engineOpts := engine.Opts{EngineOpts: opts, DisableFallback: true}
+
+		queryables := []*promql.Test{}
+		test, err := promql.NewTest(t, load)
+		testutil.Ok(t, err)
+		defer test.Close()
+		testutil.Ok(t, test.Run())
+		queryables = append(queryables, test)
+
+		test2, err := promql.NewTest(t, load2)
+		testutil.Ok(t, err)
+		defer test2.Close()
+		testutil.Ok(t, test2.Run())
+		queryables = append(queryables, test2)
+
+		partitionLabels := [][]labels.Labels{
+			{labels.FromStrings("zone", "west-1")},
+			{labels.FromStrings("zone", "west-2")},
+		}
+		queryTime := time.Unix(int64(ts), 0)
+		remoteEngines := make([]api.RemoteEngine, 0, 2)
+		for i := 0; i < 2; i++ {
+			e := engine.NewRemoteEngine(
+				engineOpts,
+				queryables[i].Storage(),
+				queryables[i].TSDB().Head().MinTime(),
+				queryables[i].TSDB().Head().MaxTime(),
+				partitionLabels[i],
+			)
+			remoteEngines = append(remoteEngines, e)
+		}
+		distEngine := engine.NewDistributedEngine(engineOpts, api.NewStaticEndpoints(remoteEngines))
+
+		mergeStore := storage.NewFanout(nil, test.Storage(), test2.Storage())
+		seriesSet, err := getSeries(context.Background(), mergeStore)
+		require.NoError(t, err)
+		rnd := rand.New(rand.NewSource(time.Now().Unix()))
+		psOpts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(true),
+			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithEnabledAggrs([]parser.ItemType{parser.SUM, parser.MIN, parser.MAX, parser.GROUP, parser.COUNT, parser.BOTTOMK, parser.TOPK}),
+		}
+		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
+
+		var (
+			q1    promql.Query
+			query string
+		)
+		// Since we disabled fallback, keep trying until we find a query
+		// that can be natively execute by the engine.
+		for {
+			expr := ps.Walk(parser.ValueTypeVector, parser.ValueTypeMatrix)
+			query = expr.Pretty(0)
+			q1, err = distEngine.NewInstantQuery(mergeStore, nil, query, queryTime)
+			if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
+				continue
+			} else {
+				break
+			}
+		}
+
+		testutil.Ok(t, err)
+		t.Log(query)
+		newResult := q1.Exec(context.Background())
+		testutil.Ok(t, newResult.Err)
+
+		oldEngine := promql.NewEngine(opts)
+		q2, err := oldEngine.NewInstantQuery(mergeStore, nil, query, queryTime)
 		testutil.Ok(t, err)
 
 		oldResult := q2.Exec(context.Background())
