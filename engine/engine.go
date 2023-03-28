@@ -69,6 +69,10 @@ type Opts struct {
 	// ExtLookbackDelta specifies what time range to use to determine valid previous sample for extended range functions.
 	// Defaults to 1 hour if not specified.
 	ExtLookbackDelta time.Duration
+
+	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
+	// This will default to false.
+	EnableXFunctions bool
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
@@ -162,6 +166,12 @@ func New(opts Opts) *compatibilityEngine {
 	if opts.ExtLookbackDelta == 0 {
 		opts.ExtLookbackDelta = 1 * time.Hour
 		level.Debug(opts.Logger).Log("msg", "externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
+	}
+
+	if opts.EnableXFunctions {
+		parser.Functions["xdelta"] = parse.Functions["xdelta"]
+		parser.Functions["xincrease"] = parse.Functions["xincrease"]
+		parser.Functions["xrate"] = parse.Functions["xrate"]
 	}
 
 	metrics := &engineMetrics{

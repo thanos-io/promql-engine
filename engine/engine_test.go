@@ -1763,9 +1763,55 @@ func TestBinopEdgeCases(t *testing.T) {
 	testutil.Equals(t, oldResult, newResult)
 }
 
+func TestDisabledXFunction(t *testing.T) {
+	queryTime := time.Unix(50, 0)
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x4`
+
+	cases := []struct {
+		name     string
+		load     string
+		query    string
+		expected []promql.Sample
+	}{
+		{
+			name:  "xfunctions disable",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[50s])",
+			expected: []promql.Sample{
+				createSample(queryTime.UnixMilli(), 100, labels.FromStrings("path", "/foo")),
+				createSample(queryTime.UnixMilli(), 90, labels.FromStrings("path", "/bar")),
+			},
+		},
+	}
+	for _, tc := range cases {
+		test, err := promql.NewTest(t, tc.load)
+		testutil.Ok(t, err)
+		defer test.Close()
+
+		testutil.Ok(t, test.Run())
+		optimizers := logicalplan.AllOptimizers
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true,
+			LogicalOptimizers: optimizers,
+		})
+		_, err = newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+		testutil.NotOk(t, err)
+	}
+}
+
 func TestXFunctions(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
-	t.Log(defaultQueryTime.String())
 	// Negative offset and at modifier are enabled by default
 	// since Prometheus v2.33.0, so we also enable them.
 	opts := promql.EngineOpts{
@@ -1953,6 +1999,7 @@ func TestXFunctions(t *testing.T) {
 			EngineOpts:        opts,
 			DisableFallback:   true,
 			LogicalOptimizers: optimizers,
+			EnableXFunctions:  true,
 		})
 		query, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 		testutil.Ok(t, err)
@@ -2012,8 +2059,7 @@ func TestRateVsXRate(t *testing.T) {
 			query:     "rate(http_requests[50s])",
 			queryTime: time.Unix(25, 0),
 			expected: []promql.Sample{
-				// TODO - engine gives back 0.022000000000000002 instead of simple 0.022
-				createSample(defaultQueryTime.UnixMilli(), 0.022000000000000002, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 0.022, labels.FromStrings("path", "/foo")),
 				createSample(defaultQueryTime.UnixMilli(), 0.12, labels.FromStrings("path", "/bar")),
 			},
 		},
@@ -2036,8 +2082,7 @@ func TestRateVsXRate(t *testing.T) {
 			queryTime: time.Unix(24, 0),
 			expected: []promql.Sample{
 				createSample(24000, 0.0265, labels.FromStrings("path", "/foo")),
-				// TODO - engine gives back 0.11599999999999999 instead of simple 0.116
-				createSample(24000, 0.11599999999999999, labels.FromStrings("path", "/bar")),
+				createSample(24000, 0.116, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
@@ -2058,8 +2103,7 @@ func TestRateVsXRate(t *testing.T) {
 			query:     "rate(http_requests[50s])",
 			queryTime: time.Unix(26, 0),
 			expected: []promql.Sample{
-				// TODO - engine gives back 0.022799999999999997 instead of simple .0228
-				createSample(26000, 0.022799999999999997, labels.FromStrings("path", "/foo")),
+				createSample(26000, 0.02279999999, labels.FromStrings("path", "/foo")),
 				createSample(26000, 0.124, labels.FromStrings("path", "/bar")),
 			},
 		},
@@ -2079,10 +2123,8 @@ func TestRateVsXRate(t *testing.T) {
 			query:     "rate(http_requests[50s])",
 			queryTime: time.Unix(75, 0),
 			expected: []promql.Sample{
-				// TODO - engine gives back 0.022000000000000002 instead of simple .22
-				createSample(75000, 0.022000000000000002, labels.FromStrings("path", "/foo")),
-				// TODO - engine gives back 0.11000000000000001 instead of simple .11
-				createSample(75000, 0.11000000000000001, labels.FromStrings("path", "/bar")),
+				createSample(75000, 0.022, labels.FromStrings("path", "/foo")),
+				createSample(75000, 0.11, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
@@ -2103,10 +2145,8 @@ func TestRateVsXRate(t *testing.T) {
 			query:     "rate(http_requests[50s])",
 			queryTime: time.Unix(74, 0),
 			expected: []promql.Sample{
-				// TODO - engine gives back 0.022799999999999997 instead of simple .0228
-				createSample(74000, 0.022799999999999997, labels.FromStrings("path", "/foo")),
-				// TODO - engine gives back 0.11399999999999999 instead of simple .114
-				createSample(74000, 0.11399999999999999, labels.FromStrings("path", "/bar")),
+				createSample(74000, 0.02279999999, labels.FromStrings("path", "/foo")),
+				createSample(74000, 0.11399999999, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
@@ -2287,6 +2327,7 @@ func TestRateVsXRate(t *testing.T) {
 			EngineOpts:        opts,
 			DisableFallback:   true,
 			LogicalOptimizers: optimizers,
+			EnableXFunctions:  true,
 		})
 		query, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
 		testutil.Ok(t, err)
@@ -2294,6 +2335,8 @@ func TestRateVsXRate(t *testing.T) {
 
 		engineResult := query.Exec(context.Background())
 		testutil.Ok(t, engineResult.Err)
+		// Round engine result.
+		roundValues(engineResult)
 		expectedResult := createVectorResult(tc.expected)
 
 		testutil.Equals(t, expectedResult.Err, engineResult.Err)
