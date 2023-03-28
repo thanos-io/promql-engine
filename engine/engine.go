@@ -67,7 +67,7 @@ type Opts struct {
 	DebugWriter io.Writer
 
 	// ExtLookbackDelta specifies what time range to use to determine valid previous sample for extended range functions.
-	// Defaults to 1 day if not specified.
+	// Defaults to 1 hour if not specified.
 	ExtLookbackDelta time.Duration
 }
 
@@ -160,7 +160,7 @@ func New(opts Opts) *compatibilityEngine {
 		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
 	if opts.ExtLookbackDelta == 0 {
-		opts.ExtLookbackDelta = 1 * 24 * time.Hour
+		opts.ExtLookbackDelta = 1 * time.Hour
 		level.Debug(opts.Logger).Log("msg", "externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
 
