@@ -3264,7 +3264,7 @@ func TestNativeHistograms(t *testing.T) {
 		},
 		{
 			name:  "irate()",
-			query: "rate(native_histogram_series[1m])",
+			query: "irate(native_histogram_series[1m])",
 		},
 		{
 			name:  "rate()",
@@ -3346,14 +3346,9 @@ func TestNativeHistograms(t *testing.T) {
 }
 
 func testMixedNativeHistogramTypes(t *testing.T, opts promql.EngineOpts) {
-	test, err := promql.NewTest(t, "")
-	testutil.Ok(t, err)
-	defer test.Close()
-
-	var samples []tsdbutil.Sample
-
 	histograms := tsdbutil.GenerateTestHistograms(2)
 
+	var samples []tsdbutil.Sample
 	samples = append(samples, sample{t: 0, fh: histograms[0].ToFloat()})
 	samples = append(samples, sample{t: 30_000, h: histograms[1]})
 
@@ -3365,17 +3360,32 @@ func testMixedNativeHistogramTypes(t *testing.T, opts promql.EngineOpts) {
 		LogicalOptimizers: logicalplan.AllOptimizers,
 	})
 
-	qry, err := engine.NewRangeQuery(storageWithSeries(series), nil, "rate(native_histogram_series[1m])", time.Unix(0, 0), time.Unix(60, 0), 60*time.Second)
-	testutil.Ok(t, err)
-	res := qry.Exec(context.Background())
-	testutil.Ok(t, res.Err)
-	actual, err := res.Matrix()
-	testutil.Ok(t, err)
+	t.Run("vector_select", func(t *testing.T) {
+		qry, err := engine.NewInstantQuery(storageWithSeries(series), nil, "sum(native_histogram_series)", time.Unix(30, 0))
+		testutil.Ok(t, err)
+		res := qry.Exec(context.Background())
+		testutil.Ok(t, res.Err)
+		actual, err := res.Vector()
+		testutil.Ok(t, err)
 
-	testutil.Equals(t, len(actual), 1, "expected 1 series")
-	testutil.Equals(t, len(actual[0].Points), 1, "expected 1 point")
-	expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Scale(1 / float64(30))
-	testutil.Equals(t, actual[0].Points[0].H, expected)
+		testutil.Equals(t, 1, len(actual), "expected vector with 1 element")
+		expected := histograms[1].ToFloat()
+		testutil.Equals(t, expected, actual[0].H)
+	})
+
+	t.Run("matrix_select", func(t *testing.T) {
+		qry, err := engine.NewRangeQuery(storageWithSeries(series), nil, "rate(native_histogram_series[1m])", time.Unix(0, 0), time.Unix(60, 0), 60*time.Second)
+		testutil.Ok(t, err)
+		res := qry.Exec(context.Background())
+		testutil.Ok(t, res.Err)
+		actual, err := res.Matrix()
+		testutil.Ok(t, err)
+
+		testutil.Equals(t, 1, len(actual), "expected 1 series")
+		testutil.Equals(t, 1, len(actual[0].Points), "expected 1 point")
+		expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Scale(1 / float64(30))
+		testutil.Equals(t, expected, actual[0].Points[0].H)
+	})
 }
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
