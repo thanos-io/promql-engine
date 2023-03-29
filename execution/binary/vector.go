@@ -162,13 +162,24 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	default:
 	}
 
-	lhs, err := o.lhs.Next(ctx)
-	if err != nil {
-		return nil, err
+	var lhs []model.StepVector
+	var lerrChan = make(chan error, 1)
+	go func() {
+		var err error
+		lhs, err = o.lhs.Next(ctx)
+		if err != nil {
+			lerrChan <- err
+		}
+		close(lerrChan)
+	}()
+
+	rhs, rerr := o.rhs.Next(ctx)
+	lerr := <-lerrChan
+	if rerr != nil {
+		return nil, rerr
 	}
-	rhs, err := o.rhs.Next(ctx)
-	if err != nil {
-		return nil, err
+	if lerr != nil {
+		return nil, rerr
 	}
 
 	// TODO(fpetkovski): When one operator becomes empty,
@@ -178,6 +189,7 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, nil
 	}
 
+	var err error
 	o.once.Do(func() { err = o.initOutputs(ctx) })
 	if err != nil {
 		return nil, err
