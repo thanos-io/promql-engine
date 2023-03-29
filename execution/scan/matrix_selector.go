@@ -51,6 +51,9 @@ type matrixSelector struct {
 
 	shard     int
 	numShards int
+
+	// Lookback delta for extended range functions.
+	extLookbackDelta int64
 }
 
 // NewMatrixSelector creates operator which selects vector of series over time.
@@ -81,6 +84,8 @@ func NewMatrixSelector(
 
 		shard:     shard,
 		numShards: numShard,
+
+		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
 }
 
@@ -132,7 +137,16 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
-			rangePoints, err := selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
+
+			var rangePoints []promql.Point
+			var err error
+
+			if function.IsExtFunction(o.funcExpr.Func.Name) {
+				rangePoints, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousPoints, o.funcExpr.Func.Name, o.extLookbackDelta)
+			} else {
+				rangePoints, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
+			}
+
 			if err != nil {
 				return nil, err
 			}
@@ -202,12 +216,18 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				lbls, _ = function.DropMetricName(lbls.Copy())
 			}
 
+			// If we are dealing with an extended range function we need to search further in the past for valid series.
+			var selectRange = o.selectRange
+			if function.IsExtFunction(o.funcExpr.Func.Name) {
+				selectRange += o.extLookbackDelta
+			}
+
 			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{
 				labels:    lbls,
 				signature: s.Signature,
-				samples:   storage.NewBufferIterator(s.Iterator(nil), o.selectRange),
+				samples:   storage.NewBufferIterator(s.Iterator(nil), selectRange),
 			}
 			o.series[i] = lbls
 		}
@@ -292,6 +312,113 @@ loop:
 			out = append(out, promql.Point{T: t, H: h.ToFloat()})
 		}
 
+	case chunkenc.ValFloatHistogram:
+		t, fh := it.AtFloatHistogram()
+		if t == maxt && !value.IsStaleNaN(fh.Sum) {
+			out = append(out, promql.Point{T: t, H: fh})
+		}
+	case chunkenc.ValFloat:
+		t, v := it.At()
+		if t == maxt && !value.IsStaleNaN(v) {
+			out = append(out, promql.Point{T: t, V: v})
+		}
+	}
+
+	return out, nil
+}
+
+// matrixIterSlice populates a matrix vector covering the requested range for a
+// single time series, with points retrieved from an iterator.
+//
+// As an optimization, the matrix vector may already contain points of the same
+// time series from the evaluation of an earlier step (with lower mint and maxt
+// values). Any such points falling before mint are discarded; points that fall
+// into the [mint, maxt] range are retained; only points with later timestamps
+// are populated from the iterator.
+// TODO(fpetkovski): Add max samples limit.
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point, functionName string, extLookbackDelta int64) ([]promql.Point, error) {
+	extMint := mint - extLookbackDelta
+
+	if len(out) > 0 && out[len(out)-1].T >= mint {
+		// There is an overlap between previous and current ranges, retain common
+		// points. In most such cases:
+		//   (a) the overlap is significantly larger than the eval step; and/or
+		//   (b) the number of samples is relatively small.
+		// so a linear search will be as fast as a binary search.
+		var drop int
+
+		// This is an argument to an extended range function, first go past mint.
+		for drop = 0; drop < len(out) && out[drop].T <= mint; drop++ {
+
+		}
+		// Then, go back one sample if within lookbackDelta of mint.
+		if drop > 0 && out[drop-1].T >= extMint {
+			drop--
+		}
+		if out[len(out)-1].T >= mint {
+			// Only append points with timestamps after the last timestamp we have.
+			mint = out[len(out)-1].T + 1
+		}
+
+		copy(out, out[drop:])
+		out = out[:len(out)-drop]
+	} else {
+		out = out[:0]
+	}
+
+	soughtValueType := it.Seek(maxt)
+	if soughtValueType == chunkenc.ValNone {
+		if it.Err() != nil {
+			return nil, it.Err()
+		}
+	}
+
+	appendedPointBeforeMint := len(out) > 0
+	buf := it.Buffer()
+loop:
+	for {
+		switch buf.Next() {
+		case chunkenc.ValNone:
+			break loop
+		case chunkenc.ValHistogram:
+			t, h := buf.AtHistogram()
+			if t >= mint {
+				out = append(out, promql.Point{T: t, H: h.ToFloat()})
+			}
+		case chunkenc.ValFloatHistogram:
+			t, fh := buf.AtFloatHistogram()
+			if value.IsStaleNaN(fh.Sum) {
+				continue loop
+			}
+			if t >= mint {
+				out = append(out, promql.Point{T: t, H: fh})
+			}
+		case chunkenc.ValFloat:
+			t, v := buf.At()
+			if value.IsStaleNaN(v) {
+				continue loop
+			}
+
+			// This is the argument to an extended range function: if any point
+			// exists at or before range start, add it and then keep replacing
+			// it with later points while not yet (strictly) inside the range.
+			if t > mint || !appendedPointBeforeMint {
+				out = append(out, promql.Point{T: t, V: v})
+				appendedPointBeforeMint = true
+			} else {
+				out[len(out)-1] = promql.Point{T: t, V: v}
+			}
+
+		}
+	}
+
+	// The sought sample might also be in the range.
+	switch soughtValueType {
+	case chunkenc.ValHistogram:
+		t, h := it.AtHistogram()
+		if t == maxt {
+			out = append(out, promql.Point{T: t, H: h.ToFloat()})
+		}
 	case chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {

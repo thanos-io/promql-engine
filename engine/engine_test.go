@@ -1763,6 +1763,618 @@ func TestBinopEdgeCases(t *testing.T) {
 	testutil.Equals(t, oldResult, newResult)
 }
 
+func TestDisabledXFunction(t *testing.T) {
+	queryTime := time.Unix(50, 0)
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x4`
+
+	cases := []struct {
+		name     string
+		load     string
+		query    string
+		expected []promql.Sample
+	}{
+		{
+			name:  "xfunctions disable",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[50s])",
+			expected: []promql.Sample{
+				createSample(queryTime.UnixMilli(), 100, labels.FromStrings("path", "/foo")),
+				createSample(queryTime.UnixMilli(), 90, labels.FromStrings("path", "/bar")),
+			},
+		},
+	}
+	for _, tc := range cases {
+		test, err := promql.NewTest(t, tc.load)
+		testutil.Ok(t, err)
+		defer test.Close()
+
+		testutil.Ok(t, test.Run())
+		optimizers := logicalplan.AllOptimizers
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true,
+			LogicalOptimizers: optimizers,
+		})
+		_, err = newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+		testutil.NotOk(t, err)
+	}
+}
+
+func TestXFunctions(t *testing.T) {
+	defaultQueryTime := time.Unix(50, 0)
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x4`
+
+	xDeltaLoad := `load 5m
+	http_requests{path="/foo"}	0 50 300 150 200
+	http_requests{path="/bar"}	200 150 300 50 0`
+
+	cases := []struct {
+		name         string
+		load         string
+		query        string
+		queryTime    time.Time
+		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		expected     []promql.Sample
+		rangeQuery   bool
+		startTime    time.Time
+		endTime      time.Time
+	}{
+		// Tests for xIncrease
+		{
+			name:  "eval instant at 50s xincrease, with 50s lookback",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[50s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 100, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 90, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xincrease, with 5s lookback",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[5s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xincrease, with 3s lookback",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[3s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// Additional tests
+		{
+			name:      "eval instant at 17s xincrease, with 5s lookback",
+			load:      defaultLoad,
+			query:     "xincrease(http_requests[5s])",
+			queryTime: time.Unix(17, 0),
+			expected: []promql.Sample{
+				createSample(17000, 10, labels.FromStrings("path", "/foo")),
+				createSample(17000, 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 17s xincrease, with 10s lookback",
+			load:      defaultLoad,
+			query:     "xincrease(http_requests[10s])",
+			queryTime: time.Unix(17, 0),
+			expected: []promql.Sample{
+				createSample(17000, 20, labels.FromStrings("path", "/foo")),
+				createSample(17000, 20, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xrate, with 50s lookback",
+			load:  defaultLoad,
+			query: "xrate(http_requests[50s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 2, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 1.8, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xrate, with 100s lookback",
+			load:  defaultLoad,
+			query: "xrate(http_requests[100s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 1, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 0.9, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xrate, with 5s lookback",
+			load:  defaultLoad,
+			query: "xrate(http_requests[5s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 2, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xrate, with 3s lookback",
+			load:  defaultLoad,
+			query: "xrate(http_requests[3s])",
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 2, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// # Test for increase()/xincrease with counter reset.
+		// # When the counter is reset, it always starts at 0.
+		// # So the sequence 3 2 (decreasing counter = reset) is interpreted the same as 3 0 1 2.
+		// # Prometheus assumes it missed the intermediate values 0 and 1.
+		{
+			name: "eval instant at 30m increase(http_requests[30m])",
+			load: `load 5m
+			http_requests{path="/foo"}	0 1 2 3 2 3 4`,
+			query:     "increase(http_requests[30m])",
+			queryTime: time.Unix(1800, 0),
+			expected: []promql.Sample{
+				createSample(1800000, 7, labels.FromStrings("path", "/foo")),
+			},
+		},
+		{
+			name: "eval instant at 30m xincrease(http_requests[30m])",
+			load: `load 5m
+			http_requests{path="/foo"}	0 1 2 3 2 3 4`,
+			query:     "xincrease(http_requests[30m])",
+			queryTime: time.Unix(1800, 0),
+			expected: []promql.Sample{
+				createSample(1800000, 7, labels.FromStrings("path", "/foo")),
+			},
+		},
+		// Tests for xDelta
+		{
+			name:      "eval instant at 20m xdelta(http_requests[20m]), with 20m lookback",
+			load:      xDeltaLoad,
+			query:     "xdelta(http_requests[20m])",
+			queryTime: time.Unix(1200, 0),
+			expected: []promql.Sample{
+				createSample(1200000, 200, labels.FromStrings("path", "/foo")),
+				createSample(1200000, -200, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 20m xdelta(http_requests[19m]), with 19m lookback",
+			load:      xDeltaLoad,
+			query:     "xdelta(http_requests[19m])",
+			queryTime: time.Unix(1200, 0),
+			expected: []promql.Sample{
+				createSample(1200000, 190, labels.FromStrings("path", "/foo")),
+				createSample(1200000, -190, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 20m xdelta(http_requests[1m]), with 1m lookback",
+			load:      xDeltaLoad,
+			query:     "xdelta(http_requests[1m])",
+			queryTime: time.Unix(1200, 0),
+			expected: []promql.Sample{
+				createSample(1200000, 10, labels.FromStrings("path", "/foo")),
+				createSample(1200000, -10, labels.FromStrings("path", "/bar")),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		test, err := promql.NewTest(t, tc.load)
+		testutil.Ok(t, err)
+		defer test.Close()
+
+		testutil.Ok(t, test.Run())
+		queryTime := defaultQueryTime
+		if tc.queryTime != (time.Time{}) {
+			queryTime = tc.queryTime
+		}
+
+		optimizers := logicalplan.AllOptimizers
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true,
+			LogicalOptimizers: optimizers,
+			EnableXFunctions:  true,
+		})
+		query, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+		testutil.Ok(t, err)
+		defer query.Close()
+
+		engineResult := query.Exec(context.Background())
+		testutil.Ok(t, engineResult.Err)
+		expectedResult := createVectorResult(tc.expected)
+
+		testutil.Equals(t, expectedResult.Err, engineResult.Err)
+
+		exR := expectedResult.Value.(promql.Vector)
+		erR := engineResult.Value.(promql.Vector)
+
+		sort.Slice(exR, func(i, j int) bool {
+			return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
+		})
+
+		sort.Slice(erR, func(i, j int) bool {
+			return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
+		})
+
+		testutil.Equals(t, exR, erR)
+	}
+}
+
+func TestRateVsXRate(t *testing.T) {
+	defaultQueryTime := time.Unix(25, 0)
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}  1 1 1 2 2 2 2 2 3 3 3
+	http_requests{path="/bar"}  1 2 3 4 5 6 7 8 9 10 11`
+
+	cases := []struct {
+		name         string
+		load         string
+		query        string
+		queryTime    time.Time
+		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		expected     promql.Vector
+		rangeQuery   bool
+		startTime    time.Time
+		endTime      time.Time
+	}{
+		// ### Timeseries starts insice range, (presumably) goes on after range end. ###
+		// 1. Reference eval
+		{
+			name:      "eval instant at 25s rate, with 50s lookback",
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(25, 0),
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 0.022, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 0.12, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 25s xrate, with 50s lookback",
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(25, 0),
+			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 0.02, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 0.1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// 2. Eval 1 second earlier compared to (1).
+		// * path="/foo" rate should be same or fractionally higher ("shorter" sample, same actual increase);
+		// * path="/bar" rate should be same or fractionally lower (80% the increase, 80/96% range covered by sample).
+		// XXX Seeing ~20% jump for path="/foo"
+		{
+			name:      "eval instant at 24s rate(http_requests[50s]), with 50s lookback",
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(24, 0),
+			expected: []promql.Sample{
+				createSample(24000, 0.0265, labels.FromStrings("path", "/foo")),
+				createSample(24000, 0.116, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 24s xrate(http_requests[50s]), with 50s lookback",
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(24, 0),
+			expected: []promql.Sample{
+				createSample(24000, 0.02, labels.FromStrings("path", "/foo")),
+				createSample(24000, 0.08, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// 3. Eval 1 second later compared to (1)
+		// * path="/foo" rate should be same or fractionally lower ("longer" sample, same actual increase).
+		// * path="/bar" rate should be same or fractionally lower ("longer" sample, same actual increase).
+		// XXX Higher instead of lower for both.
+		{
+			name:      "eval instant at 26s rate(http_requests[50s]), with 50s lookback",
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(26, 0),
+			expected: []promql.Sample{
+				createSample(26000, 0.02279999999, labels.FromStrings("path", "/foo")),
+				createSample(26000, 0.124, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 26s xrate(http_requests[50s]), with 50s lookback",
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(26, 0),
+			expected: []promql.Sample{
+				createSample(26000, 0.02, labels.FromStrings("path", "/foo")),
+				createSample(26000, 0.1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// ### Timeseries starts before range, ends within range. ###
+		// 4. Reference eval
+		{
+			name:      "eval instant at 75s rate(http_requests[50s]), with 50s lookback",
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(75, 0),
+			expected: []promql.Sample{
+				createSample(75000, 0.022, labels.FromStrings("path", "/foo")),
+				createSample(75000, 0.11, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 75s xrate(http_requests[50s]), with 50s lookback",
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(75, 0),
+			expected: []promql.Sample{
+				createSample(75000, 0.02, labels.FromStrings("path", "/foo")),
+				createSample(75000, 0.1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// 5. Eval 1s earlier compared to (4)
+		// * path="/foo" rate should be same or fractionally lower ("longer" sample, same actual increase).
+		// * path="/bar" rate should be same or fractionally lower ("longer" sample, same actual increase).
+		// # XXX Higher instead of lower for both.
+		{
+			name:      "eval instant at 74s rate(http_requests[50s]), with 50s lookback",
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(74, 0),
+			expected: []promql.Sample{
+				createSample(74000, 0.02279999999, labels.FromStrings("path", "/foo")),
+				createSample(74000, 0.11399999999, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 74s xrate(http_requests[50s]), with 50s lookback",
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(74, 0),
+			expected: []promql.Sample{
+				createSample(74000, 0.02, labels.FromStrings("path", "/foo")),
+				createSample(74000, 0.12, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// 6. Eval 1s later compared to (4). Rate/increase (should be) fractionally smaller.
+		// * path="/foo" rate should be same or fractionally higher ("shorter" sample, same actual increase)
+		// * path="/bar" rate should be same or fractionally lower (80% the increase, 80/96% range covered by sample).
+		// XXX Seeing ~20% jump for path="/foo", decrease instead of increase for path="/bar".
+		{
+			name:      "eval instant at 76s rate(http_requests[50s]), with 50s lookback",
+			query:     "rate(http_requests[50s])",
+			queryTime: time.Unix(76, 0),
+			expected: []promql.Sample{
+				createSample(76000, 0.0265, labels.FromStrings("path", "/foo")),
+				createSample(76000, 0.106, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 76s xrate(http_requests[50s]), with 50s lookback",
+			query:     "xrate(http_requests[50s])",
+			queryTime: time.Unix(76, 0),
+			expected: []promql.Sample{
+				createSample(76000, 0.02, labels.FromStrings("path", "/foo")),
+				createSample(76000, 0.1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// Evaluation of 10 second rate every 10 seconds
+		{
+			name:      "eval instant at 9s rate(http_requests[10s]), with 10s lookback",
+			query:     "rate(http_requests[10s])",
+			queryTime: time.Unix(9, 0),
+			expected: []promql.Sample{
+				createSample(9000, 0, labels.FromStrings("path", "/foo")),
+				createSample(9000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 19s rate(http_requests[10s]), with 10s lookback",
+			query:     "rate(http_requests[10s])",
+			queryTime: time.Unix(19, 0),
+			expected: []promql.Sample{
+				createSample(19000, 0.2, labels.FromStrings("path", "/foo")),
+				createSample(19000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 29s rate(http_requests[10s]), with 10s lookback",
+			query:     "rate(http_requests[10s])",
+			queryTime: time.Unix(29, 0),
+			expected: []promql.Sample{
+				createSample(29000, 0, labels.FromStrings("path", "/foo")),
+				createSample(29000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 39s rate(http_requests[10s]), with 10s lookback",
+			query:     "rate(http_requests[10s])",
+			queryTime: time.Unix(39, 0),
+			expected: []promql.Sample{
+				createSample(39000, 0, labels.FromStrings("path", "/foo")),
+				createSample(39000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// XXX Missed an increase in path="/foo" between timestamps 35 and 40 (both in this eval and the one before).
+		{
+			name:      "eval instant at 49s rate(http_requests[10s]), with 10s lookback",
+			query:     "rate(http_requests[10s])",
+			queryTime: time.Unix(49, 0),
+			expected: []promql.Sample{
+				createSample(49000, 0, labels.FromStrings("path", "/foo")),
+				createSample(49000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 9s xrate(http_requests[50s]), with 10s lookback",
+			query:     "xrate(http_requests[10s])",
+			queryTime: time.Unix(9, 0),
+			expected: []promql.Sample{
+				createSample(9000, 0, labels.FromStrings("path", "/foo")),
+				createSample(9000, 0.1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 19s xrate(http_requests[50s]), with 10s lookback",
+			query:     "xrate(http_requests[10s])",
+			queryTime: time.Unix(19, 0),
+			expected: []promql.Sample{
+				createSample(19000, 0.1, labels.FromStrings("path", "/foo")),
+				createSample(19000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 29s xrate(http_requests[50s]), with 10s lookback",
+			query:     "xrate(http_requests[10s])",
+			queryTime: time.Unix(29, 0),
+			expected: []promql.Sample{
+				createSample(29000, 0, labels.FromStrings("path", "/foo")),
+				createSample(29000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 39s xrate(http_requests[50s]), with 10s lookback",
+			query:     "xrate(http_requests[10s])",
+			queryTime: time.Unix(39, 0),
+			expected: []promql.Sample{
+				createSample(39000, 0, labels.FromStrings("path", "/foo")),
+				createSample(39000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// Sees the increase in path="/foo" between timestamps 35 and 40.
+		{
+			name:      "eval instant at 49s xrate(http_requests[50s]), with 10s lookback",
+			query:     "xrate(http_requests[10s])",
+			queryTime: time.Unix(49, 0),
+			expected: []promql.Sample{
+				createSample(49000, 0.1, labels.FromStrings("path", "/foo")),
+				createSample(49000, 0.2, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// xincrease injects a zero if there is only one sample in the given timerange.
+		{
+			name:      "eval instant at 1s xincrease(http_requests[50s]), with 5s lookback",
+			query:     "xincrease(http_requests[5s])",
+			queryTime: time.Unix(1, 0),
+			expected: []promql.Sample{
+				createSample(1000, 1, labels.FromStrings("path", "/foo")),
+				createSample(1000, 1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// xincrease injects a zero if there is only one sample in the given timerange.
+		{
+			name:      "eval instant at 1s xincrease(http_requests[50s]), with 5s lookback",
+			query:     "xincrease(http_requests[5s])",
+			queryTime: time.Unix(1, 0),
+			expected: []promql.Sample{
+				createSample(1000, 1, labels.FromStrings("path", "/foo")),
+				createSample(1000, 1, labels.FromStrings("path", "/bar")),
+			},
+		},
+		// xincrease does not inject anything at the end of the given timerange if there are two or more samples.
+		{
+			name:      "eval instant at 55s xincrease(http_requests[10s]), with 10s lookback",
+			query:     "xincrease(http_requests[10s])",
+			queryTime: time.Unix(55, 0),
+			expected: []promql.Sample{
+				createSample(55000, 0, labels.FromStrings("path", "/foo")),
+				createSample(55000, 1, labels.FromStrings("path", "/bar")),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		load := defaultLoad
+		if tc.load != "" {
+			load = tc.load
+		}
+
+		test, err := promql.NewTest(t, load)
+		testutil.Ok(t, err)
+		defer test.Close()
+
+		testutil.Ok(t, test.Run())
+		queryTime := defaultQueryTime
+		if tc.queryTime != (time.Time{}) {
+			queryTime = tc.queryTime
+		}
+
+		optimizers := logicalplan.AllOptimizers
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true,
+			LogicalOptimizers: optimizers,
+			EnableXFunctions:  true,
+		})
+		query, err := newEngine.NewInstantQuery(test.Storage(), nil, tc.query, queryTime)
+		testutil.Ok(t, err)
+		defer query.Close()
+
+		engineResult := query.Exec(context.Background())
+		testutil.Ok(t, engineResult.Err)
+		// Round engine result.
+		roundValues(engineResult)
+		expectedResult := createVectorResult(tc.expected)
+
+		testutil.Equals(t, expectedResult.Err, engineResult.Err)
+
+		exR := expectedResult.Value.(promql.Vector)
+		erR := engineResult.Value.(promql.Vector)
+
+		sort.Slice(exR, func(i, j int) bool {
+			return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
+		})
+
+		sort.Slice(erR, func(i, j int) bool {
+			return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
+		})
+
+		testutil.Equals(t, exR, erR)
+	}
+}
+
+func createSample(t int64, v float64, metric labels.Labels) promql.Sample {
+	return promql.Sample{
+		Point: promql.Point{
+			T: t,
+			V: v,
+			H: nil,
+		},
+		Metric: metric,
+	}
+}
+
+func createVectorResult(vector promql.Vector) *promql.Result {
+	return &promql.Result{
+		Err:      nil,
+		Value:    vector,
+		Warnings: nil,
+	}
+}
+
 func TestInstantQuery(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 	// Negative offset and at modifier are enabled by default
@@ -3298,20 +3910,20 @@ func TestNativeHistograms(t *testing.T) {
 		},
 		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
 		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		//{
+		// {
 		//	name:  "max",
 		//	query: "max (native_histogram_series)",
-		//},
+		// },
 		{
 			name:  "max by (foo)",
 			query: "max by (foo) (native_histogram_series)",
 		},
 		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
 		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		//{
+		// {
 		//	name:  "min",
 		//	query: "min (native_histogram_series)",
-		//},
+		// },
 		{
 			name:  "min by (foo)",
 			query: "min by (foo) (native_histogram_series)",
