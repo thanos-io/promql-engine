@@ -338,7 +338,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}
 }
 
-func BenchmarkOldEngineInstant(b *testing.B) {
+func BenchmarkInstantQuery(b *testing.B) {
 	test := setupStorage(b, 1000, 3)
 	defer test.Close()
 
@@ -412,7 +412,7 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			b.Run("current_engine", func(b *testing.B) {
+			b.Run("old_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:               nil,
 					Reg:                  nil,
@@ -434,11 +434,16 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 				}
 			})
 			b.Run("new_engine", func(b *testing.B) {
+				ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 				b.ResetTimer()
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					executeInstantQuery(b, tc.query, test, queryTime)
+					qry, err := ng.NewInstantQuery(test.Queryable(), nil, tc.query, queryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
 				}
 			})
 		})
@@ -494,14 +499,6 @@ func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start 
 	testutil.Ok(b, err)
 
 	return qry.Exec(context.Background())
-}
-
-func executeInstantQuery(b *testing.B, q string, test *promql.Test, start time.Time) {
-	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
-	qry, err := ng.NewInstantQuery(test.Queryable(), nil, q, start)
-	testutil.Ok(b, err)
-
-	qry.Exec(context.Background())
 }
 
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int) *promql.Test {
