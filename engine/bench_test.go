@@ -21,7 +21,7 @@ import (
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
-	test := setupStorage(b, 1000, 3)
+	test := setupStorage(b, 1000, 3, 720)
 	defer test.Close()
 
 	start := time.Unix(0, 0)
@@ -83,7 +83,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 }
 
 func BenchmarkSingleQuery(b *testing.B) {
-	test := setupStorage(b, 5000, 3)
+	test := setupStorage(b, 5000, 3, 720)
 	defer test.Close()
 
 	start := time.Unix(0, 0)
@@ -100,8 +100,15 @@ func BenchmarkSingleQuery(b *testing.B) {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
-	test := setupStorage(b, 1000, 3)
-	defer test.Close()
+	samplesPerHour := 60 * 2
+	sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
+	defer sixHourDataset.Close()
+
+	largeSixHourDataset := setupStorage(b, 10000, 10, 6*samplesPerHour)
+	defer largeSixHourDataset.Close()
+
+	sevenDaysAndTwoHoursDataset := setupStorage(b, 1000, 3, (7*24+2)*samplesPerHour)
+	defer sevenDaysAndTwoHoursDataset.Close()
 
 	start := time.Unix(0, 0)
 	end := start.Add(2 * time.Hour)
@@ -110,106 +117,147 @@ func BenchmarkRangeQuery(b *testing.B) {
 	cases := []struct {
 		name  string
 		query string
+		test  *promql.Test
 	}{
 		{
 			name:  "vector selector",
 			query: "http_requests_total",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "sum",
 			query: "sum(http_requests_total)",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "sum by pod",
 			query: "sum by (pod) (http_requests_total)",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "topk",
 			query: "topk(2,http_requests_total)",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "bottomk",
 			query: "bottomk(2,http_requests_total)",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "rate",
 			query: "rate(http_requests_total[1m])",
+			test:  sixHourDataset,
+		},
+		{
+			name:  "rate with large range selection",
+			query: "rate(http_requests_total[7d])",
+			test:  sevenDaysAndTwoHoursDataset,
+		},
+		{
+			name:  "rate with large number of series, 1m range",
+			query: "rate(http_requests_total[1m])",
+			test:  largeSixHourDataset,
+		},
+		{
+			name:  "rate with large number of series, 5m range",
+			query: "rate(http_requests_total[5m])",
+			test:  largeSixHourDataset,
 		},
 		{
 			name:  "sum rate",
 			query: "sum(rate(http_requests_total[1m]))",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "sum by rate",
 			query: "sum by (pod) (rate(http_requests_total[1m]))",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "quantile with variable parameter",
 			query: "quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "binary operation with one to one",
 			query: `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "binary operation with many to one",
 			query: `http_requests_total / on (pod) group_left http_responses_total`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "binary operation with vector and scalar",
 			query: `http_requests_total * 10`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "unary negation",
 			query: `-http_requests_total`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "vector and scalar comparison",
 			query: `http_requests_total > 10`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "positive offset vector",
 			query: "http_requests_total offset 5m",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "at modifier ",
 			query: "http_requests_total @ 600",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "at modifier with positive offset vector",
 			query: "http_requests_total @ 600 offset 5m",
+			test:  sixHourDataset,
 		},
 		{
 			name:  "clamp",
 			query: `clamp(http_requests_total, 5, 10)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "clamp_min",
 			query: `clamp_min(http_requests_total, 10)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "complex func query",
 			query: `clamp(1 - http_requests_total, 10 - 5, 10)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "func within func query",
 			query: `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "aggr within func query",
 			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "histogram_quantile",
 			query: `histogram_quantile(0.9, http_response_seconds_bucket)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "sort",
 			query: `sort(http_requests_total)`,
+			test:  sixHourDataset,
 		},
 		{
 			name:  "sort_desc",
 			query: `sort_desc(http_requests_total)`,
+			test:  sixHourDataset,
 		},
 	}
 
@@ -229,10 +277,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := engine.NewRangeQuery(tc.test.Queryable(), nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
-					oldResult := qry.Exec(test.Context())
+					oldResult := qry.Exec(tc.test.Context())
 					testutil.Ok(b, oldResult.Err)
 				}
 			})
@@ -241,7 +289,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					newResult := executeRangeQuery(b, tc.query, test, start, end, step)
+					newResult := executeRangeQuery(b, tc.query, tc.test, start, end, step)
 					testutil.Ok(b, newResult.Err)
 				}
 			})
@@ -338,8 +386,8 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}
 }
 
-func BenchmarkOldEngineInstant(b *testing.B) {
-	test := setupStorage(b, 1000, 3)
+func BenchmarkInstantQuery(b *testing.B) {
+	test := setupStorage(b, 1000, 3, 720)
 	defer test.Close()
 
 	queryTime := time.Unix(50, 0)
@@ -412,7 +460,7 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
-			b.Run("current_engine", func(b *testing.B) {
+			b.Run("old_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:               nil,
 					Reg:                  nil,
@@ -434,11 +482,16 @@ func BenchmarkOldEngineInstant(b *testing.B) {
 				}
 			})
 			b.Run("new_engine", func(b *testing.B) {
+				ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 				b.ResetTimer()
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					executeInstantQuery(b, tc.query, test, queryTime)
+					qry, err := ng.NewInstantQuery(test.Queryable(), nil, tc.query, queryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
 				}
 			})
 		})
@@ -496,16 +549,8 @@ func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start 
 	return qry.Exec(context.Background())
 }
 
-func executeInstantQuery(b *testing.B, q string, test *promql.Test, start time.Time) {
-	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
-	qry, err := ng.NewInstantQuery(test.Queryable(), nil, q, start)
-	testutil.Ok(b, err)
-
-	qry.Exec(context.Background())
-}
-
-func setupStorage(b *testing.B, numLabelsA int, numLabelsB int) *promql.Test {
-	load := synthesizeLoad(numLabelsA, numLabelsB)
+func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *promql.Test {
+	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
 	test, err := promql.NewTest(b, load)
 	testutil.Ok(b, err)
 	testutil.Ok(b, test.Run())
@@ -539,20 +584,20 @@ func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *t
 	return db
 }
 
-func synthesizeLoad(numPods, numContainers int) string {
+func synthesizeLoad(numPods, numContainers, numSteps int) string {
 	load := "load 30s\n"
 	for i := 0; i < numPods; i++ {
 		for j := 0; j < numContainers; j++ {
-			load += fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"} %d+%dx720%s`, i, j, i, j, "\n")
+			load += fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n")
 		}
-		load += fmt.Sprintf(`http_responses_total{pod="p%d"} %dx720%s`, i, i, "\n")
+		load += fmt.Sprintf(`http_responses_total{pod="p%d"} %dx%d%s`, i, i, numSteps, "\n")
 	}
 
 	for i := 0; i < numPods; i++ {
 		for j := 0; j < 10; j++ {
-			load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="%d"} %d+%dx720%s`, i, j, i, j, "\n")
+			load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n")
 		}
-		load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="+Inf"} %d+%dx720%s`, i, i, i, "\n")
+		load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="+Inf"} %d+%dx%d%s`, i, i, i, numSteps, "\n")
 	}
 
 	return load
