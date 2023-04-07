@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1680505574583,
+  "lastUpdate": 1680845752071,
   "repoUrl": "https://github.com/thanos-community/promql-engine",
   "entries": {
     "Go Benchmark": [
@@ -55799,6 +55799,240 @@ window.BENCHMARK_DATA = {
             "name": "BenchmarkNativeHistograms/histogram_quantile",
             "value": 229835241,
             "unit": "ns/op\t1092964270 B/op\t14630226 allocs/op",
+            "extra": "5 times\n16 procs"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "benye@amazon.com",
+            "name": "Ben Ye",
+            "username": "yeya24"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c360ab439c0496d72d45530e602b92c5c4a4a893",
+          "message": "enable all optimizer in fuzz test (#232)\n\nSigned-off-by: Ben Ye <benye@amazon.com>",
+          "timestamp": "2023-04-07T07:30:15+02:00",
+          "tree_id": "843e65c3e900d8553a9d6d1ccf72f31f1bbecdf8",
+          "url": "https://github.com/thanos-community/promql-engine/commit/c360ab439c0496d72d45530e602b92c5c4a4a893"
+        },
+        "date": 1680845751326,
+        "tool": "go",
+        "benches": [
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 180618484,
+            "unit": "ns/op\t934063013 B/op\t13195101 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 179279378,
+            "unit": "ns/op\t934091153 B/op\t13195073 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 181226242,
+            "unit": "ns/op\t933921522 B/op\t13194877 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 181826159,
+            "unit": "ns/op\t934197253 B/op\t13195191 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/selector",
+            "value": 180292334,
+            "unit": "ns/op\t934124641 B/op\t13195133 allocs/op",
+            "extra": "6 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 214401890,
+            "unit": "ns/op\t1092876027 B/op\t14628474 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 217121873,
+            "unit": "ns/op\t1092814251 B/op\t14628465 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 215238463,
+            "unit": "ns/op\t1092747632 B/op\t14628342 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 215681618,
+            "unit": "ns/op\t1092748316 B/op\t14628351 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum",
+            "value": 215209897,
+            "unit": "ns/op\t1092809816 B/op\t14628390 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 772189772,
+            "unit": "ns/op\t2645707576 B/op\t29089734 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 832251948,
+            "unit": "ns/op\t2646034652 B/op\t29089849 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 892107466,
+            "unit": "ns/op\t2645783576 B/op\t29089740 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 873126380,
+            "unit": "ns/op\t2645971820 B/op\t29089943 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/rate",
+            "value": 869672184,
+            "unit": "ns/op\t2645889040 B/op\t29089829 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 882366436,
+            "unit": "ns/op\t2805264404 B/op\t30520320 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 882036606,
+            "unit": "ns/op\t2804754496 B/op\t30520141 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 872771700,
+            "unit": "ns/op\t2804900712 B/op\t30520226 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 896337947,
+            "unit": "ns/op\t2805096484 B/op\t30520437 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/sum_rate",
+            "value": 903694246,
+            "unit": "ns/op\t2805562752 B/op\t30520362 allocs/op",
+            "extra": "2 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 359762515,
+            "unit": "ns/op\t935494224 B/op\t13195704 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 359238906,
+            "unit": "ns/op\t935301498 B/op\t13195645 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 357807477,
+            "unit": "ns/op\t935345122 B/op\t13195656 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 358802528,
+            "unit": "ns/op\t935374904 B/op\t13195610 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_sum",
+            "value": 359061110,
+            "unit": "ns/op\t935337656 B/op\t13195612 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 355876944,
+            "unit": "ns/op\t935503266 B/op\t13195632 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 357513284,
+            "unit": "ns/op\t935333050 B/op\t13195610 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 358177387,
+            "unit": "ns/op\t935410629 B/op\t13195652 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 358457361,
+            "unit": "ns/op\t935307325 B/op\t13195514 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_count",
+            "value": 357045628,
+            "unit": "ns/op\t935203000 B/op\t13195475 allocs/op",
+            "extra": "3 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 215246681,
+            "unit": "ns/op\t1092876308 B/op\t14630235 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 230247477,
+            "unit": "ns/op\t1093151875 B/op\t14630242 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 230558639,
+            "unit": "ns/op\t1093020649 B/op\t14630277 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 230144505,
+            "unit": "ns/op\t1092945144 B/op\t14630288 allocs/op",
+            "extra": "5 times\n16 procs"
+          },
+          {
+            "name": "BenchmarkNativeHistograms/histogram_quantile",
+            "value": 231381451,
+            "unit": "ns/op\t1093059780 B/op\t14630265 allocs/op",
             "extra": "5 times\n16 procs"
           }
         ]
