@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/engine"
 	"github.com/thanos-community/promql-engine/execution/parse"
+	"github.com/thanos-community/promql-engine/logicalplan"
 )
 
 func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
@@ -131,7 +132,11 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		testutil.Ok(t, test.Run())
 
 		queryTime := time.Unix(int64(ts), 0)
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: true})
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true,
+			LogicalOptimizers: logicalplan.AllOptimizers,
+		})
 
 		seriesSet, err := getSeries(context.Background(), test.Storage())
 		require.NoError(t, err)
@@ -203,7 +208,11 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 			EnableNegativeOffset: true,
 			EnableAtModifier:     true,
 		}
-		engineOpts := engine.Opts{EngineOpts: opts, DisableFallback: true}
+		engineOpts := engine.Opts{
+			EngineOpts:        opts,
+			DisableFallback:   true,
+			LogicalOptimizers: logicalplan.AllOptimizers,
+		}
 
 		queryables := []*promql.Test{}
 		test, err := promql.NewTest(t, load)
