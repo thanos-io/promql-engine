@@ -73,6 +73,9 @@ type Opts struct {
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
+
+	// FallbackEngine
+	Engine v1.QueryEngine
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
@@ -193,8 +196,15 @@ func New(opts Opts) *compatibilityEngine {
 		),
 	}
 
+	var engine v1.QueryEngine
+	if opts.Engine == nil {
+		engine = promql.NewEngine(opts.EngineOpts)
+	} else {
+		engine = opts.Engine
+	}
+
 	return &compatibilityEngine{
-		prom: promql.NewEngine(opts.EngineOpts),
+		prom: engine,
 
 		debugWriter:       opts.DebugWriter,
 		disableFallback:   opts.DisableFallback,
@@ -208,7 +218,7 @@ func New(opts Opts) *compatibilityEngine {
 }
 
 type compatibilityEngine struct {
-	prom *promql.Engine
+	prom v1.QueryEngine
 
 	debugWriter io.Writer
 
