@@ -93,7 +93,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 		val := a.params[i]
 		if val > math.MaxInt64 || val < math.MinInt64 || math.IsNaN(val) {
-			return nil, errors.Newf("scalar value %v overflows int64", val)
+			return nil, errors.Newf("Scalar value %v overflows int64", val)
 		}
 		if int(val) == 0 {
 			return nil, nil
