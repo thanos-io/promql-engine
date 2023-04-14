@@ -131,10 +131,12 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 	}
 
 	// Check selector type.
-	// TODO(saswatamcode): Add support for string and matrix.
+	// TODO(saswatamcode): Add support for matrix.
 	switch funcExpr.Args[f.vectorIndex].Type() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
 		return f, nil
+	case parser.ValueTypeString:
+		return nil, errors.Newf("String literals can't be used as operators: %s", funcExpr.String())
 	default:
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
 	}

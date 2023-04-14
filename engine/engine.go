@@ -458,7 +458,10 @@ type compatibilityQuery struct {
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	// Handle case with strings early on as this does not need us to process samples.
-	// TODO(saswatamcode): Modify models.StepVector to support all types and check during executor creation.
+	switch e := q.expr.(type) {
+	case *parser.StringLiteral:
+		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
+	}
 	ret = &promql.Result{
 		Value: promql.Vector{},
 	}
