@@ -6,7 +6,6 @@ package engine_test
 import (
 	"context"
 	"fmt"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"math"
 	"math/rand"
 	"sort"
@@ -17,6 +16,7 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
