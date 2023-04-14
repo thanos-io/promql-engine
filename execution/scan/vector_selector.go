@@ -177,12 +177,8 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 		if it.Err() != nil {
 			return 0, 0, nil, false, it.Err()
 		}
-	case chunkenc.ValFloatHistogram:
+	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
 		t, fh = it.AtFloatHistogram()
-	case chunkenc.ValHistogram:
-		var h *histogram.Histogram
-		t, h = it.AtHistogram()
-		fh = h.ToFloat()
 	case chunkenc.ValFloat:
 		t, v = it.At()
 	default:
