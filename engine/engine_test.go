@@ -3905,7 +3905,7 @@ func (m *mockIterator) Next() chunkenc.ValueType {
 func (m *mockIterator) Seek(t int64) chunkenc.ValueType {
 	if m.i > -1 && m.i < len(m.timestamps) {
 		currentTS := m.timestamps[m.i]
-		if currentTS > t {
+		if currentTS >= t {
 			return chunkenc.ValFloat
 		}
 	}

@@ -5,6 +5,7 @@ package logicalplan
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -14,6 +15,48 @@ import (
 	"github.com/thanos-community/promql-engine/api"
 	"github.com/thanos-community/promql-engine/parser"
 )
+
+type timeRange struct {
+	start time.Time
+	end   time.Time
+}
+
+type timeRanges []timeRange
+
+// minOverlap returns the smallest overlap between consecutive time ranges.
+func (trs timeRanges) minOverlap() time.Duration {
+	var minEngineOverlap time.Duration = math.MaxInt64
+	if len(trs) == 1 {
+		return minEngineOverlap
+	}
+
+	for i := 1; i < len(trs); i++ {
+		overlap := trs[i-1].end.Sub(trs[i].start)
+		if overlap < minEngineOverlap {
+			minEngineOverlap = overlap
+		}
+	}
+	return minEngineOverlap
+}
+
+type labelSetRanges map[string]timeRanges
+
+func (lrs labelSetRanges) addRange(key string, tr timeRange) {
+	lrs[key] = append(lrs[key], tr)
+}
+
+// minOverlap returns the smallest overlap between all label set ranges.
+func (lrs labelSetRanges) minOverlap() time.Duration {
+	var minLabelsetOverlap time.Duration = math.MaxInt64
+	for _, lr := range lrs {
+		minRangeOverlap := lr.minOverlap()
+		if minRangeOverlap < minLabelsetOverlap {
+			minLabelsetOverlap = minRangeOverlap
+		}
+	}
+
+	return minLabelsetOverlap
+}
 
 type RemoteExecutions []RemoteExecution
 
@@ -37,7 +80,7 @@ func (r RemoteExecution) String() string {
 	if r.QueryRangeStart.UnixMilli() == 0 {
 		return fmt.Sprintf("remote(%s)", r.Query)
 	}
-	return fmt.Sprintf("remote(%s) [%s]", r.Query, r.QueryRangeStart.String())
+	return fmt.Sprintf("remote(%s) [%s]", r.Query, r.QueryRangeStart.UTC().String())
 }
 
 func (r RemoteExecution) Pretty(level int) string { return r.String() }
@@ -97,6 +140,22 @@ type DistributedExecutionOptimizer struct {
 
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) parser.Expr {
 	engines := m.Endpoints.Engines()
+	sort.Slice(engines, func(i, j int) bool {
+		return engines[i].MinT() < engines[j].MinT()
+	})
+
+	labelRanges := make(labelSetRanges)
+	for _, e := range engines {
+		for _, lset := range e.LabelSets() {
+			lsetKey := lset.String()
+			labelRanges.addRange(lsetKey, timeRange{
+				start: time.UnixMilli(e.MinT()),
+				end:   time.UnixMilli(e.MaxT()),
+			})
+		}
+	}
+	minEngineOverlap := labelRanges.minOverlap()
+
 	traverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current) {
@@ -112,7 +171,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) pa
 			}
 
 			remoteAggregation := newRemoteAggregation(aggr, engines)
-			subQueries := m.distributeQuery(&remoteAggregation, engines, opts)
+			subQueries := m.distributeQuery(&remoteAggregation, engines, opts, minEngineOverlap)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -129,7 +188,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) pa
 			return false
 		}
 
-		*current = m.distributeQuery(current, engines, opts)
+		*current = m.distributeQuery(current, engines, opts, minEngineOverlap)
 		return true
 	})
 
@@ -168,10 +227,21 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 // distributeQuery takes a PromQL expression in the form of *parser.Expr and a set of remote engines.
 // For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
-// TODO(fpetkovski): Prune remote engines based on external labels.
-func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *Opts) parser.Expr {
+func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *Opts, allowedStartOffset time.Duration) parser.Expr {
 	if isAbsent(*expr) {
 		return m.distributeAbsent(*expr, engines, opts)
+	}
+
+	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
+	if allowedStartOffset < maxDuration(opts.LookbackDelta, startOffset) {
+		return *expr
+	}
+
+	var globalMinT int64 = math.MaxInt64
+	for _, e := range engines {
+		if e.MinT() < globalMinT {
+			globalMinT = e.MinT()
+		}
 	}
 
 	remoteQueries := make(RemoteExecutions, 0, len(engines))
@@ -180,16 +250,9 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 			continue
 		}
 
-		if e.MaxT() < opts.Start.UnixMilli()-opts.LookbackDelta.Milliseconds() {
+		start, keep := getStartTimeForEngine(e, opts, startOffset, globalMinT)
+		if !keep {
 			continue
-		}
-		if e.MinT() > opts.End.UnixMilli() {
-			continue
-		}
-
-		start := opts.Start
-		if e.MinT() > start.UnixMilli() {
-			start = calculateStepAlignedStart(e, opts)
 		}
 
 		remoteQueries = append(remoteQueries, RemoteExecution{
@@ -239,18 +302,78 @@ func isAbsent(expr parser.Expr) bool {
 	return call.Func.Name == "absent" || call.Func.Name == "absent_over_time"
 }
 
+func getStartTimeForEngine(e api.RemoteEngine, opts *Opts, offset time.Duration, globalMinT int64) (time.Time, bool) {
+	if e.MinT() > opts.End.UnixMilli() {
+		return time.Time{}, false
+	}
+
+	// Do not adjust start time for oldest engine since there is no engine to backfill from.
+	if e.MinT() == globalMinT {
+		return opts.Start, true
+	}
+
+	// A remote engine needs to have sufficient scope to do a look-back from the start of the query range.
+	engineMinTime := time.UnixMilli(e.MinT())
+	requiredMinTime := opts.Start.Add(-offset)
+
+	// Do not adjust the start time for instant queries since it would lead to
+	// changing the user-provided timestamp and sending a result for a different time.
+	if opts.IsInstantQuery() {
+		keep := engineMinTime.Before(requiredMinTime)
+		return opts.Start, keep
+	}
+
+	// If an engine's min time is before the start time of the query,
+	// scope the query for this engine to the start of the range + the required offset.
+	if engineMinTime.After(requiredMinTime) {
+		engineMinTime = calculateStepAlignedStart(opts, engineMinTime.Add(offset))
+	}
+
+	return calculateStepAlignedStart(opts, maxTime(engineMinTime, opts.Start)), true
+}
+
 // calculateStepAlignedStart returns a start time for the query based on the
 // engine min time and the query step size.
 // The purpose of this alignment is to make sure that the steps for the remote query
 // have the same timestamps as the ones for the central query.
-func calculateStepAlignedStart(engine api.RemoteEngine, opts *Opts) time.Time {
+func calculateStepAlignedStart(opts *Opts, engineMinTime time.Time) time.Time {
 	originalSteps := numSteps(opts.Start, opts.End, opts.Step)
-	remoteQuerySteps := numSteps(time.UnixMilli(engine.MinT()), opts.End, opts.Step)
+	remoteQuerySteps := numSteps(engineMinTime, opts.End, opts.Step)
 
 	stepsToSkip := originalSteps - remoteQuerySteps
 	stepAlignedStartTime := opts.Start.UnixMilli() + stepsToSkip*opts.Step.Milliseconds()
 
 	return time.UnixMilli(stepAlignedStartTime)
+}
+
+// calculateStartOffset returns the offset that needs to be added to the start time
+// for each remote query. It is calculated by taking the maximum between
+// the range of a matrix selector (if present in a query) and the lookback configured
+// in the query engine.
+// Applying an offset is necessary to make sure that a remote engine has sufficient
+// scope to calculate results for the first several steps of a range.
+//
+// For example, for a query like sum_over_time(metric[1h]), an engine with a time range of
+// 6h can correctly evaluate only the last 5h of the range.
+// The first 1 hour of data cannot be correctly calculated since the range selector in the engine
+// will not be able to gather enough points.
+func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.Duration {
+	if expr == nil {
+		return lookbackDelta
+	}
+
+	var selectRange time.Duration
+	var offset time.Duration
+	parser.Inspect(*expr, func(node parser.Node, nodes []parser.Node) error {
+		if matrixSelector, ok := node.(*parser.MatrixSelector); ok {
+			selectRange = matrixSelector.Range
+		}
+		if vectorSelector, ok := node.(*parser.VectorSelector); ok {
+			offset = vectorSelector.Offset
+		}
+		return nil
+	})
+	return maxDuration(offset+selectRange, lookbackDelta)
 }
 
 func numSteps(start, end time.Time, step time.Duration) int64 {
@@ -261,6 +384,7 @@ func isDistributive(expr *parser.Expr) bool {
 	if expr == nil {
 		return false
 	}
+
 	switch aggr := (*expr).(type) {
 	case *parser.BinaryExpr:
 		// Binary expressions are joins and need to be done across the entire
@@ -327,4 +451,18 @@ func isNumberLiteral(expr parser.Expr) bool {
 	}
 
 	return isNumberLiteral(stepInvariant.Expr)
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if a.After(b) {
+		return a
+	}
+	return b
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a > b {
+		return a
+	}
+	return b
 }
