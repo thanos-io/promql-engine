@@ -214,9 +214,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.ParenExpr:
 		return newOperator(e.Expr, storage, opts, hints)
 
-	case *parser.StringLiteral:
-		return nil, errors.Newf("string literals don't support operators: %s", e)
-
 	case *parser.UnaryExpr:
 		next, err := newOperator(e.Expr, storage, opts, hints)
 		if err != nil {

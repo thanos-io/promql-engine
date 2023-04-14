@@ -7,9 +7,11 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
+	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
@@ -135,8 +137,6 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 	switch funcExpr.Args[f.vectorIndex].Type() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
 		return f, nil
-	case parser.ValueTypeString:
-		return nil, errors.Newf("String literals can't be used as operators: %s", funcExpr.String())
 	default:
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
 	}
@@ -178,6 +178,9 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 	if len(vectors) == 0 {
 		return nil, nil
+	}
+	if o.funcExpr.Func.Name == "label_join" {
+		return vectors, nil
 	}
 
 	scalarIndex := 0
@@ -287,10 +290,42 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 		}
 
 		o.series = make([]labels.Labels, len(series))
+
+		var labelJoinDst string
+		var labelJoinSep string
+		var labelJoinSrcLabels []string
+		if o.funcExpr.Func.Name == "label_join" {
+			l := len(o.funcExpr.Args)
+			labelJoinDst = o.funcExpr.Args[1].(*parser.StringLiteral).Val
+			if !prommodel.LabelName(labelJoinDst).IsValid() {
+				err = errors.Newf("invalid destination label name in label_join: %s", labelJoinDst)
+				return
+			}
+			labelJoinSep = o.funcExpr.Args[2].(*parser.StringLiteral).Val
+			for j := 3; j < l; j++ {
+				labelJoinSrcLabels = append(labelJoinSrcLabels, o.funcExpr.Args[j].(*parser.StringLiteral).Val)
+			}
+		}
 		for i, s := range series {
 			lbls := s
 			switch o.funcExpr.Func.Name {
 			case "last_over_time":
+			case "label_join":
+				srcVals := make([]string, len(labelJoinSrcLabels))
+
+				for j, src := range labelJoinSrcLabels {
+					srcVals[j] = lbls.Get(src)
+				}
+				lb := labels.NewBuilder(lbls)
+
+				strval := strings.Join(srcVals, labelJoinSep)
+				if strval == "" {
+					lb.Del(labelJoinDst)
+				} else {
+					lb.Set(labelJoinDst, strval)
+				}
+
+				lbls = lb.Labels()
 			default:
 				lbls, _ = DropMetricName(s.Copy())
 			}
