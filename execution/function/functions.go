@@ -46,6 +46,16 @@ func simpleFunc(f func(float64) float64) FunctionCall {
 
 }
 
+func extractFloatOnlySamples(samples []promql.Sample) []promql.Sample {
+	var res []promql.Sample
+	for _, sample := range samples {
+		if sample.H == nil {
+			res = append(res, sample)
+		}
+	}
+	return res
+}
+
 // The engine handles sort and sort_desc when presenting the results. They are not needed here.
 var Funcs = map[string]FunctionCall{
 	"abs":   simpleFunc(math.Abs),
@@ -234,10 +244,11 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"irate": func(f FunctionArgs) promql.Sample {
-		if len(f.Samples) < 2 {
+		validSamples := extractFloatOnlySamples(f.Samples)
+		if len(validSamples) < 2 {
 			return InvalidSample
 		}
-		val, ok := instantValue(f.Samples, true)
+		val, ok := instantValue(validSamples, true)
 		if !ok {
 			return InvalidSample
 		}
@@ -248,10 +259,11 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"idelta": func(f FunctionArgs) promql.Sample {
-		if len(f.Samples) < 2 {
+		validSamples := extractFloatOnlySamples(f.Samples)
+		if len(validSamples) < 2 {
 			return InvalidSample
 		}
-		val, ok := instantValue(f.Samples, false)
+		val, ok := instantValue(validSamples, false)
 		if !ok {
 			return InvalidSample
 		}
@@ -690,6 +702,7 @@ func histogramRate(points []promql.Sample, isCounter bool) *histogram.FloatHisto
 			prev = curr
 		}
 	}
+	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0)
 }
 

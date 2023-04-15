@@ -4238,7 +4238,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
 		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
 		expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Scale(1 / float64(30))
-		expected.CounterResetHint = histogram.UnknownCounterReset
+		expected.CounterResetHint = histogram.GaugeType
 		testutil.Equals(t, expected, actual[0].Histograms[0].H)
 	})
 }
