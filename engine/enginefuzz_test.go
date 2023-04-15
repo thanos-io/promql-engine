@@ -425,7 +425,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 			if vx[i].T != vy[i].T {
 				return false
 			}
-			if !compareFloats(vx[i].V, vy[i].V) {
+			if !compareFloats(vx[i].F, vy[i].F) {
 				return false
 			}
 		}
@@ -447,8 +447,8 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 				return false
 			}
 
-			xps := mxs.Points
-			yps := mys.Points
+			xps := mxs.Floats
+			yps := mys.Floats
 
 			if len(xps) != len(yps) {
 				return false
@@ -457,7 +457,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 				if xps[j].T != yps[j].T {
 					return false
 				}
-				if !compareFloats(xps[j].V, yps[j].V) {
+				if !compareFloats(xps[j].F, yps[j].F) {
 					return false
 				}
 			}

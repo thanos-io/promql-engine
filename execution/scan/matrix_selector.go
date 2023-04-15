@@ -25,10 +25,10 @@ import (
 )
 
 type matrixScanner struct {
-	labels         labels.Labels
-	signature      uint64
-	previousPoints []promql.Point
-	samples        *storage.BufferedSeriesIterator
+	labels          labels.Labels
+	signature       uint64
+	previousSamples []promql.Sample
+	samples         *storage.BufferedSeriesIterator
 }
 
 type matrixSelector struct {
@@ -138,13 +138,13 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			var rangePoints []promql.Point
+			var rangeSamples []promql.Sample
 			var err error
 
 			if function.IsExtFunction(o.funcExpr.Func.Name) {
-				rangePoints, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousPoints, o.funcExpr.Func.Name, o.extLookbackDelta)
+				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.funcExpr.Func.Name, o.extLookbackDelta)
 			} else {
-				rangePoints, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousPoints)
+				rangeSamples, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousSamples)
 			}
 
 			if err != nil {
@@ -157,22 +157,22 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// https://github.com/thanos-community/promql-engine/issues/39
 			result := o.call(function.FunctionArgs{
 				Labels:      series.labels,
-				Points:      rangePoints,
+				Samples:     rangeSamples,
 				StepTime:    seriesTs,
 				SelectRange: o.selectRange,
 				Offset:      o.offset,
 			})
 
-			if result.Point != function.InvalidSample.Point {
+			if result.T != function.InvalidSample.T {
 				vectors[currStep].T = result.T
 				if result.H != nil {
 					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, result.H)
 				} else {
-					vectors[currStep].AppendSample(o.vectorPool, series.signature, result.V)
+					vectors[currStep].AppendSample(o.vectorPool, series.signature, result.F)
 				}
 			}
 
-			o.scanners[i].previousPoints = rangePoints
+			o.scanners[i].previousSamples = rangeSamples
 
 			// Only buffer stepRange milliseconds from the second step on.
 			stepRange := o.selectRange
@@ -245,7 +245,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point) ([]promql.Point, error) {
+func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Sample) ([]promql.Sample, error) {
 	if len(out) > 0 && out[len(out)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
@@ -282,7 +282,7 @@ loop:
 				continue loop
 			}
 			if t >= mint {
-				out = append(out, promql.Point{T: t, H: h.ToFloat()})
+				out = append(out, promql.Sample{T: t, H: h.ToFloat()})
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh := buf.AtFloatHistogram()
@@ -290,7 +290,7 @@ loop:
 				continue loop
 			}
 			if t >= mint {
-				out = append(out, promql.Point{T: t, H: fh})
+				out = append(out, promql.Sample{T: t, H: fh})
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -299,7 +299,7 @@ loop:
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				out = append(out, promql.Point{T: t, V: v})
+				out = append(out, promql.Sample{T: t, F: v})
 			}
 		}
 	}
@@ -309,18 +309,18 @@ loop:
 	case chunkenc.ValHistogram:
 		t, h := it.AtHistogram()
 		if t == maxt && !value.IsStaleNaN(h.Sum) {
-			out = append(out, promql.Point{T: t, H: h.ToFloat()})
+			out = append(out, promql.Sample{T: t, H: h.ToFloat()})
 		}
 
 	case chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
-			out = append(out, promql.Point{T: t, H: fh})
+			out = append(out, promql.Sample{T: t, H: fh})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
-			out = append(out, promql.Point{T: t, V: v})
+			out = append(out, promql.Sample{T: t, F: v})
 		}
 	}
 
@@ -336,7 +336,7 @@ loop:
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Point, functionName string, extLookbackDelta int64) ([]promql.Point, error) {
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Sample, functionName string, extLookbackDelta int64) ([]promql.Sample, error) {
 	extMint := mint - extLookbackDelta
 
 	if len(out) > 0 && out[len(out)-1].T >= mint {
@@ -383,7 +383,7 @@ loop:
 		case chunkenc.ValHistogram:
 			t, h := buf.AtHistogram()
 			if t >= mint {
-				out = append(out, promql.Point{T: t, H: h.ToFloat()})
+				out = append(out, promql.Sample{T: t, H: h.ToFloat()})
 			}
 		case chunkenc.ValFloatHistogram:
 			t, fh := buf.AtFloatHistogram()
@@ -391,7 +391,7 @@ loop:
 				continue loop
 			}
 			if t >= mint {
-				out = append(out, promql.Point{T: t, H: fh})
+				out = append(out, promql.Sample{T: t, H: fh})
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -403,10 +403,10 @@ loop:
 			// exists at or before range start, add it and then keep replacing
 			// it with later points while not yet (strictly) inside the range.
 			if t > mint || !appendedPointBeforeMint {
-				out = append(out, promql.Point{T: t, V: v})
+				out = append(out, promql.Sample{T: t, F: v})
 				appendedPointBeforeMint = true
 			} else {
-				out[len(out)-1] = promql.Point{T: t, V: v}
+				out[len(out)-1] = promql.Sample{T: t, F: v}
 			}
 
 		}
@@ -417,17 +417,17 @@ loop:
 	case chunkenc.ValHistogram:
 		t, h := it.AtHistogram()
 		if t == maxt {
-			out = append(out, promql.Point{T: t, H: h.ToFloat()})
+			out = append(out, promql.Sample{T: t, H: h.ToFloat()})
 		}
 	case chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
-			out = append(out, promql.Point{T: t, H: fh})
+			out = append(out, promql.Sample{T: t, H: fh})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
-			out = append(out, promql.Point{T: t, V: v})
+			out = append(out, promql.Sample{T: t, F: v})
 		}
 	}
 

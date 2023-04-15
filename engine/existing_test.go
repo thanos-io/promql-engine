@@ -33,7 +33,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Points: []promql.Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -48,7 +48,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Points: []promql.Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}},
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -63,7 +63,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Points: []promql.Point{{V: 0, T: 0}, {V: 11, T: 60000}, {V: 1100, T: 120000}, {V: 110000, T: 180000}, {V: 11000000, T: 240000}},
+					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -78,7 +78,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
-					Points: []promql.Point{{V: 5, T: 0}, {V: 59, T: 60000}, {V: 9, T: 120000}, {V: 956, T: 180000}},
+					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
 					Metric: labels.Labels{},
 				},
 			},
@@ -93,7 +93,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "metric",
 			Result: promql.Matrix{
 				promql.Series{
-					Points: []promql.Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
 				},
 			},
@@ -108,7 +108,7 @@ func TestRangeQuery(t *testing.T) {
 			Query: "metric",
 			Result: promql.Matrix{
 				promql.Series{
-					Points: []promql.Point{{V: 1, T: 0}, {V: 3, T: 60000}, {V: 5, T: 120000}},
+					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
 					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
 				},
 			},

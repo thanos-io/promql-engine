@@ -1723,16 +1723,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 func hasNaNs(result *promql.Result) bool {
 	switch result := result.Value.(type) {
 	case promql.Matrix:
-		for _, vector := range result {
-			for _, point := range vector.Points {
-				if math.IsNaN(point.V) {
+		for _, series := range result {
+			for _, point := range series.Floats {
+				if math.IsNaN(point.F) {
 					return true
 				}
 			}
 		}
 	case promql.Vector:
-		for _, point := range result {
-			if math.IsNaN(point.V) {
+		for _, sample := range result {
+			if math.IsNaN(sample.F) {
 				return true
 			}
 		}
@@ -2426,11 +2426,9 @@ func TestRateVsXRate(t *testing.T) {
 
 func createSample(t int64, v float64, metric labels.Labels) promql.Sample {
 	return promql.Sample{
-		Point: promql.Point{
-			T: t,
-			V: v,
-			H: nil,
-		},
+		T:      t,
+		F:      v,
+		H:      nil,
 		Metric: metric,
 	}
 }
@@ -4238,10 +4236,10 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 		testutil.Ok(t, err)
 
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
-		testutil.Equals(t, 1, len(actual[0].Points), "expected 1 point")
+		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
 		expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Scale(1 / float64(30))
 		expected.CounterResetHint = histogram.UnknownCounterReset
-		testutil.Equals(t, expected, actual[0].Points[0].H)
+		testutil.Equals(t, expected, actual[0].Histograms[0].H)
 	})
 }
 
@@ -4277,13 +4275,13 @@ func roundValues(r *promql.Result) {
 	switch result := r.Value.(type) {
 	case promql.Matrix:
 		for i := range result {
-			for j := range result[i].Points {
-				result[i].Points[j].V = math.Floor(result[i].Points[j].V*1e10) / 1e10
+			for j := range result[i].Floats {
+				result[i].Floats[j].F = math.Floor(result[i].Floats[j].F*1e10) / 1e10
 			}
 		}
 	case promql.Vector:
 		for i := range result {
-			result[i].V = math.Floor(result[i].V*10e10) / 10e10
+			result[i].F = math.Floor(result[i].F*10e10) / 10e10
 		}
 	}
 }
