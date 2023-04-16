@@ -33,6 +33,7 @@ const testRuns = 100
 
 type testCase struct {
 	query          string
+	load           string
 	oldRes, newRes *promql.Result
 }
 
@@ -103,7 +104,6 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			}
 
 			testutil.Ok(t, err)
-			t.Logf(query)
 			newResult := q1.Exec(context.Background())
 
 			q2, err := oldEngine.NewRangeQuery(test.Storage(), nil, query, start, end, interval)
@@ -115,6 +115,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
+				load:   load,
 			}
 		}
 		validateTestCases(t, cases)
@@ -128,7 +129,10 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 		emptyLabelsToNil(c.oldRes)
 
 		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
-			t.Logf("case %d error mismatch.\n%s\nnew result: %s\nold result: %s\n", i, c.query, c.newRes.String(), c.oldRes.String())
+			t.Logf(c.load)
+			t.Logf(c.query)
+
+			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
 			failures++
 		}
 	}
@@ -197,7 +201,6 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			}
 
 			testutil.Ok(t, err)
-			t.Logf(query)
 			newResult := q1.Exec(context.Background())
 
 			q2, err := oldEngine.NewInstantQuery(test.Storage(), nil, query, queryTime)
@@ -209,6 +212,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
+				load:   load,
 			}
 		}
 		validateTestCases(t, cases)
@@ -313,7 +317,6 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 			}
 
 			testutil.Ok(t, err)
-			t.Logf(query)
 			newResult := q1.Exec(context.Background())
 
 			q2, err := oldEngine.NewRangeQuery(mergeStore, nil, query, start, end, interval)
@@ -325,6 +328,7 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
+				load:   load,
 			}
 		}
 		validateTestCases(t, cases)
@@ -416,7 +420,6 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 			}
 
 			testutil.Ok(t, err)
-			t.Logf(query)
 			newResult := q1.Exec(context.Background())
 
 			q2, err := oldEngine.NewInstantQuery(mergeStore, nil, query, queryTime)
@@ -428,6 +431,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
+				load:   load,
 			}
 		}
 		validateTestCases(t, cases)

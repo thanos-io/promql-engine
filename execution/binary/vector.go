@@ -179,7 +179,7 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, rerr
 	}
 	if lerr != nil {
-		return nil, rerr
+		return nil, lerr
 	}
 
 	// TODO(fpetkovski): When one operator becomes empty,
