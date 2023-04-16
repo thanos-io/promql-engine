@@ -457,9 +457,14 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 		if len(vx) != len(vy) {
 			return false
 		}
+		// Sort vector before comparing.
+		sort.Slice(vx, func(i, j int) bool {
+			return labels.Compare(vx[i].Metric, vx[j].Metric) < 0
+		})
+		sort.Slice(vy, func(i, j int) bool {
+			return labels.Compare(vy[i].Metric, vy[j].Metric) < 0
+		})
 		for i := 0; i < len(vx); i++ {
-			sort.Sort(vx[i].Metric)
-			sort.Sort(vy[i].Metric)
 			if !cmp.Equal(vx[i].Metric, vy[i].Metric) {
 				return false
 			}
@@ -480,6 +485,9 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 		if len(mx) != len(my) {
 			return false
 		}
+		// Sort matrix before comparing.
+		sort.Sort(mx)
+		sort.Sort(my)
 		for i := 0; i < len(mx); i++ {
 			mxs := mx[i]
 			mys := my[i]
