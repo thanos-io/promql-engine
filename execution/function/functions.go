@@ -46,14 +46,16 @@ func simpleFunc(f func(float64) float64) FunctionCall {
 
 }
 
-func extractFloatOnlySamples(samples []promql.Sample) []promql.Sample {
-	var res []promql.Sample
+func filterFloatOnlySamples(samples []promql.Sample) []promql.Sample {
+	i := 0
 	for _, sample := range samples {
 		if sample.H == nil {
-			res = append(res, sample)
+			samples[i] = sample
+			i++
 		}
 	}
-	return res
+	samples = samples[:i]
+	return samples
 }
 
 // The engine handles sort and sort_desc when presenting the results. They are not needed here.
@@ -244,11 +246,11 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"irate": func(f FunctionArgs) promql.Sample {
-		validSamples := extractFloatOnlySamples(f.Samples)
-		if len(validSamples) < 2 {
+		f.Samples = filterFloatOnlySamples(f.Samples)
+		if len(f.Samples) < 2 {
 			return InvalidSample
 		}
-		val, ok := instantValue(validSamples, true)
+		val, ok := instantValue(f.Samples, true)
 		if !ok {
 			return InvalidSample
 		}
@@ -259,11 +261,11 @@ var Funcs = map[string]FunctionCall{
 		}
 	},
 	"idelta": func(f FunctionArgs) promql.Sample {
-		validSamples := extractFloatOnlySamples(f.Samples)
-		if len(validSamples) < 2 {
+		f.Samples = filterFloatOnlySamples(f.Samples)
+		if len(f.Samples) < 2 {
 			return InvalidSample
 		}
-		val, ok := instantValue(validSamples, false)
+		val, ok := instantValue(f.Samples, false)
 		if !ok {
 			return InvalidSample
 		}
