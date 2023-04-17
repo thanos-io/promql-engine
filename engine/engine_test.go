@@ -2484,6 +2484,12 @@ func TestInstantQuery(t *testing.T) {
 			query:     "12 + 1",
 		},
 		{
+			name:      "string literal",
+			load:      ``,
+			queryTime: time.Unix(160, 0),
+			query:     "test-string-literal",
+		},
+		{
 			name: "increase plus offset",
 			load: `load 1s
 			http_requests_total{pod="nginx-1"} 1+1x180`,
@@ -2626,6 +2632,42 @@ func TestInstantQuery(t *testing.T) {
 						http_requests_total{pod="nginx-1"} 1+1x15
 						http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: "avg(http_requests_total)",
+		},
+		{
+			name: "label_join",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_join(http_requests_total{}, "label", "-", "pod", "series")`,
+		},
+		{
+			name: "label_join with non-existing src labels",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_join(http_requests_total{}, "label", "-", "test", "fake")`,
+		},
+		{
+			name: "label_join with overwrite dst label if exists",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1", label="test-1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2", label="test-2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3", label="test-3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_join(http_requests_total{}, "label", "-", "pod", "series")`,
+		},
+		{
+			name: "label_join with no src labels provided",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_join(http_requests_total{}, "label", "-")`,
 		},
 		{
 			name: "topk",

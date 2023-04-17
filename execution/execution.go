@@ -159,13 +159,17 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 		// Does not have matrix arg so create functionOperator normally.
-		nextOperators := make([]model.VectorOperator, len(e.Args))
+		nextOperators := make([]model.VectorOperator, 0, len(e.Args))
 		for i := range e.Args {
+			// Strings don't need an operator
+			if e.Args[i].Type() == parser.ValueTypeString {
+				continue
+			}
 			next, err := newOperator(e.Args[i], storage, opts, hints)
 			if err != nil {
 				return nil, err
 			}
-			nextOperators[i] = next
+			nextOperators = append(nextOperators, next)
 		}
 
 		return function.NewFunctionOperator(e, call, nextOperators, stepsBatch, opts)
@@ -181,7 +185,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return nil, err
 		}
 
-		if e.Param != nil {
+		if e.Param != nil && e.Param.Type() != parser.ValueTypeString {
 			paramOp, err = newOperator(e.Param, storage, opts, hints)
 			if err != nil {
 				return nil, err
@@ -209,10 +213,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case *parser.ParenExpr:
 		return newOperator(e.Expr, storage, opts, hints)
-
-	case *parser.StringLiteral:
-		// TODO(saswatamcode): This requires separate model with strings.
-		return nil, errors.Wrapf(parse.ErrNotImplemented, "got: %s", e)
 
 	case *parser.UnaryExpr:
 		next, err := newOperator(e.Expr, storage, opts, hints)
