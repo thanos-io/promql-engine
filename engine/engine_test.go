@@ -1651,6 +1651,17 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				bar 2+2x5`,
 			query: `count by (__name__) ({__name__=~".+"})`,
 		},
+		{
+			name: "scalar with bool",
+			load: `load 30s
+				http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				http_requests_total{pod="nginx-3", series="3"} 6+0.8x60
+				http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `scalar(avg_over_time({__name__="http_requests_total"}[3m])) > bool 0.9464749352949011`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1698,7 +1709,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								oldResult := q2.Exec(context.Background())
 
 								if oldResult.Err != nil {
-									testutil.NotOk(t, newResult.Err)
+									testutil.NotOk(t, newResult.Err, "expected error "+oldResult.Err.Error())
 									return
 								}
 

@@ -93,10 +93,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 		val := a.params[i]
 		if val > math.MaxInt64 || val < math.MinInt64 || math.IsNaN(val) {
-			return nil, errors.Newf("scalar value %v overflows int64", val)
-		}
-		if int(val) == 0 {
-			return nil, nil
+			return nil, errors.Newf("Scalar value %v overflows int64", val)
 		}
 	}
 	a.paramOp.GetPool().PutVectors(args)
@@ -115,6 +112,11 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
+		// Skip steps where the argument is less than or equal to 0.
+		if int(a.params[i]) <= 0 {
+			result = append(result, a.GetPool().GetStepVector(vector.T))
+			continue
+		}
 		a.aggregate(vector.T, &result, int(a.params[i]), vector.SampleIDs, vector.Samples)
 		a.next.GetPool().PutStepVector(vector)
 	}

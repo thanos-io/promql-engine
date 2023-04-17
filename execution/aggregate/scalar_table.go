@@ -55,28 +55,27 @@ func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, newAccumul
 
 func (t *scalarTable) aggregate(arg float64, vector model.StepVector) {
 	t.reset(arg)
+	t.timestamp = vector.T
 
 	for i := range vector.Samples {
-		t.addSample(vector.T, vector.SampleIDs[i], vector.Samples[i])
+		t.addSample(vector.SampleIDs[i], vector.Samples[i])
 	}
 	for i := range vector.Histograms {
-		t.addHistogram(vector.T, vector.HistogramIDs[i], vector.Histograms[i])
+		t.addHistogram(vector.HistogramIDs[i], vector.Histograms[i])
 	}
 }
 
-func (t *scalarTable) addSample(ts int64, sampleID uint64, sample float64) {
+func (t *scalarTable) addSample(sampleID uint64, sample float64) {
 	outputSampleID := t.inputs[sampleID]
 	output := t.outputs[outputSampleID]
 
-	t.timestamp = ts
 	t.accumulators[output.ID].AddFunc(sample, nil)
 }
 
-func (t *scalarTable) addHistogram(ts int64, sampleID uint64, h *histogram.FloatHistogram) {
+func (t *scalarTable) addHistogram(sampleID uint64, h *histogram.FloatHistogram) {
 	outputSampleID := t.inputs[sampleID]
 	output := t.outputs[outputSampleID]
 
-	t.timestamp = ts
 	t.accumulators[output.ID].AddFunc(0, h)
 }
 
@@ -184,10 +183,8 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 
 			return &accumulator{
 				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
-					if !hasValue {
+					if !hasValue || math.IsNaN(value) || value < v {
 						value = v
-					} else {
-						value = math.Max(value, v)
 					}
 					hasValue = true
 				},
@@ -208,10 +205,8 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 
 			return &accumulator{
 				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
-					if !hasValue {
+					if !hasValue || math.IsNaN(value) || value > v {
 						value = v
-					} else {
-						value = math.Min(value, v)
 					}
 					hasValue = true
 				},
@@ -318,21 +313,21 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 		return func() *accumulator {
 			var count float64
 			var mean, cMean float64
-			var aux, cAux float64
+			var value float64
 			var hasValue bool
 			return &accumulator{
 				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					count++
 					delta := v - (mean + cMean)
-					mean, cMean = function.KahanSumInc(delta/count, mean, cMean)
-					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
+					mean += delta / count
+					value = delta * (v - mean)
 				},
 				ValueFunc: func() (float64, *histogram.FloatHistogram) {
 					if count == 1 {
 						return 0, nil
 					}
-					return (aux + cAux) / count, nil
+					return value / count, nil
 				},
 				HasValue: func() bool { return hasValue },
 				Reset: func(_ float64) {
@@ -340,8 +335,7 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					count = 0
 					mean = 0
 					cMean = 0
-					aux = 0
-					cAux = 0
+					value = 0
 				},
 			}
 		}, nil
