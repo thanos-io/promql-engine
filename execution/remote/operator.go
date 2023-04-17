@@ -102,12 +102,12 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 		}
 	case promql.Vector:
 		s.series = make([]engstore.SignedSeries, len(val))
-		for i, point := range val {
+		for i, sample := range val {
 			s.series[i] = engstore.SignedSeries{
 				Signature: uint64(i),
 				Series: promql.NewStorageSeries(promql.Series{
-					Metric: point.Metric,
-					Points: []promql.Point{{T: point.T, V: point.V}},
+					Metric: sample.Metric,
+					Floats: []promql.FPoint{{T: sample.T, F: sample.F}},
 				}),
 			}
 		}

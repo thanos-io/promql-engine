@@ -51,7 +51,7 @@ func (u *unaryNegation) loadSeries(ctx context.Context) error {
 		}
 		u.series = make([]labels.Labels, len(series))
 		for i := range series {
-			lbls := labels.NewBuilder(series[i]).Del(labels.MetricName).Labels(nil)
+			lbls := labels.NewBuilder(series[i]).Del(labels.MetricName).Labels()
 			u.series[i] = lbls
 		}
 	})
