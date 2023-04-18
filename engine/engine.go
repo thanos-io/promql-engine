@@ -256,6 +256,7 @@ func (e *compatibilityEngine) NewInstantQuery(q storage.Queryable, opts *promql.
 	resultSort := newResultSort(expr)
 
 	lplan := logicalplan.New(expr, &logicalplan.Opts{
+		Query:         qs,
 		Start:         ts,
 		End:           ts,
 		Step:          1,
@@ -307,6 +308,7 @@ func (e *compatibilityEngine) NewRangeQuery(q storage.Queryable, opts *promql.Qu
 	}
 
 	lplan := logicalplan.New(expr, &logicalplan.Opts{
+		Query:         qs,
 		Start:         start,
 		End:           end,
 		Step:          step,

@@ -24,6 +24,7 @@ var DefaultOptimizers = []Optimizer{
 }
 
 type Opts struct {
+	Query         string
 	Start         time.Time
 	End           time.Time
 	Step          time.Duration

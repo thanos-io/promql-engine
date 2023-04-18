@@ -203,7 +203,7 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, &Opts{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
+			plan := New(expr, &Opts{Query: tcase.expr, Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 			optimizedPlan := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())

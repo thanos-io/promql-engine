@@ -10,8 +10,16 @@ import (
 	"github.com/prometheus/prometheus/promql"
 )
 
+type Opts struct {
+	Query         string
+	Start         time.Time
+	End           time.Time
+	Step          time.Duration
+	LookbackDelta time.Duration
+}
+
 type RemoteEndpoints interface {
-	Engines() []RemoteEngine
+	Engines(opts *Opts) []RemoteEngine
 }
 
 type RemoteEngine interface {
@@ -25,7 +33,7 @@ type staticEndpoints struct {
 	engines []RemoteEngine
 }
 
-func (m staticEndpoints) Engines() []RemoteEngine {
+func (m staticEndpoints) Engines(opts *Opts) []RemoteEngine {
 	return m.engines
 }
 
