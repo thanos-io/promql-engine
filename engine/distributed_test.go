@@ -251,14 +251,15 @@ func TestDistributedAggregations(t *testing.T) {
 											distEngine := engine.NewDistributedEngine(distOpts,
 												api.NewStaticEndpoints(remoteEngines),
 											)
-											distQry, err := distEngine.NewInstantQuery(completeSeriesSet, queryOpts, query.query, instantTS)
+											ctx := context.Background()
+											distQry, err := distEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
 											testutil.Ok(t, err)
 
 											distResult := distQry.Exec(context.Background())
 											promEngine := promql.NewEngine(localOpts.EngineOpts)
-											promQry, err := promEngine.NewInstantQuery(completeSeriesSet, queryOpts, query.query, instantTS)
+											promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
 											testutil.Ok(t, err)
-											promResult := promQry.Exec(context.Background())
+											promResult := promQry.Exec(ctx)
 
 											roundValues(promResult)
 											roundValues(distResult)
@@ -278,14 +279,15 @@ func TestDistributedAggregations(t *testing.T) {
 										distEngine := engine.NewDistributedEngine(distOpts,
 											api.NewStaticEndpoints(remoteEngines),
 										)
-										distQry, err := distEngine.NewRangeQuery(completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+										ctx := context.Background()
+										distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
 										testutil.Ok(t, err)
 
 										distResult := distQry.Exec(context.Background())
 										promEngine := promql.NewEngine(localOpts.EngineOpts)
-										promQry, err := promEngine.NewRangeQuery(completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+										promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
 										testutil.Ok(t, err)
-										promResult := promQry.Exec(context.Background())
+										promResult := promQry.Exec(ctx)
 
 										roundValues(promResult)
 										roundValues(distResult)
