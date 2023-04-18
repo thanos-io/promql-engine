@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -29,6 +30,7 @@ func (rs RemoteExecutions) String() string {
 // RemoteExecution is a logical plan that describes a
 // remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
+	Ctx             context.Context
 	Engine          api.RemoteEngine
 	Query           string
 	QueryRangeStart time.Time
@@ -98,6 +100,7 @@ type DistributedExecutionOptimizer struct {
 
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *Opts) parser.Expr {
 	engines := m.Endpoints.Engines(&api.Opts{
+		Ctx:           opts.Ctx,
 		Query:         opts.Query,
 		Start:         opts.Start,
 		End:           opts.End,
@@ -200,6 +203,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 		}
 
 		remoteQueries = append(remoteQueries, RemoteExecution{
+			Ctx:             opts.Ctx,
 			Engine:          e,
 			Query:           (*expr).String(),
 			QueryRangeStart: start,
@@ -219,6 +223,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 	queries := make(RemoteExecutions, 0, len(engines))
 	for i := range engines {
 		queries = append(queries, RemoteExecution{
+			Ctx:             opts.Ctx,
 			Engine:          engines[i],
 			Query:           expr.String(),
 			QueryRangeStart: opts.Start,

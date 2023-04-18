@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -24,6 +25,7 @@ var DefaultOptimizers = []Optimizer{
 }
 
 type Opts struct {
+	Ctx           context.Context
 	Query         string
 	Start         time.Time
 	End           time.Time
