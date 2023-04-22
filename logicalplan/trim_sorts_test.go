@@ -4,11 +4,10 @@
 package logicalplan
 
 import (
+	"github.com/thanos-community/promql-engine/parser"
 	"testing"
 
 	"github.com/efficientgo/core/testutil"
-
-	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
 )
 
 func TestTrimSorts(t *testing.T) {
