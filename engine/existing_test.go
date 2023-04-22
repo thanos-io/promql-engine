@@ -131,7 +131,7 @@ func TestRangeQuery(t *testing.T) {
 
 			err = test.Run()
 			testutil.Ok(t, err)
-			qry, err := ng.NewRangeQuery(test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			qry, err := ng.NewRangeQuery(test.Context(), test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
 			testutil.Ok(t, err)
 
 			res := qry.Exec(test.Context())
