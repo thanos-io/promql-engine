@@ -6,7 +6,7 @@ MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
-LINT_DIRS = $(shell go list ./... | grep -v "parser")
+LINT_DIRS = $(shell go list ./... | grep -v "^parser")
 
 define require_clean_work_tree
 	@git update-index -q --ignore-submodules --refresh

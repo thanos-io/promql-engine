@@ -4,13 +4,14 @@
 package logicalplan
 
 import (
-	"github.com/thanos-community/promql-engine/parser"
 	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/efficientgo/core/testutil"
+
+	"github.com/thanos-community/promql-engine/parser"
 )
 
 var spaces = regexp.MustCompile(`\s+`)
