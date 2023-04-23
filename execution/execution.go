@@ -17,6 +17,7 @@
 package execution
 
 import (
+	"context"
 	"runtime"
 	"sort"
 	"time"
@@ -52,8 +53,9 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
+func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
 	opts := &query.Options{
+		Context:          ctx,
 		Start:            mint,
 		End:              maxt,
 		Step:             step,
@@ -264,7 +266,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 	case logicalplan.RemoteExecution:
 		// Create a new remote query scoped to the calculated start time.
-		qry, err := e.Engine.NewRangeQuery(&promql.QueryOpts{LookbackDelta: opts.LookbackDelta}, e.Query, e.QueryRangeStart, opts.End, opts.Step)
+		qry, err := e.Engine.NewRangeQuery(opts.Context, &promql.QueryOpts{LookbackDelta: opts.LookbackDelta}, e.Query, e.QueryRangeStart, opts.End, opts.Step)
 		if err != nil {
 			return nil, err
 		}

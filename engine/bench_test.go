@@ -277,7 +277,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(tc.test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := engine.NewRangeQuery(tc.test.Context(), tc.test.Queryable(), nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
 					oldResult := qry.Exec(tc.test.Context())
@@ -361,7 +361,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := engine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
 					oldResult := qry.Exec(test.Context())
@@ -375,7 +375,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					ng := engine.New(engine.Opts{EngineOpts: opts})
 
-					qry, err := ng.NewRangeQuery(test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := ng.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
 					newResult := qry.Exec(context.Background())
@@ -474,7 +474,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewInstantQuery(test.Queryable(), nil, tc.query, queryTime)
+					qry, err := engine.NewInstantQuery(test.Context(), test.Queryable(), nil, tc.query, queryTime)
 					testutil.Ok(b, err)
 
 					res := qry.Exec(test.Context())
@@ -487,7 +487,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					qry, err := ng.NewInstantQuery(test.Queryable(), nil, tc.query, queryTime)
+					qry, err := ng.NewInstantQuery(test.Context(), test.Queryable(), nil, tc.query, queryTime)
 					testutil.Ok(b, err)
 
 					res := qry.Exec(context.Background())
@@ -515,10 +515,11 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 				EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
 			}
 			ng := engine.New(opts)
-			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
+			ctx := context.Background()
+			qry, err := ng.NewRangeQuery(ctx, db, nil, query, start, end, step)
 			testutil.Ok(b, err)
 
-			res := qry.Exec(context.Background())
+			res := qry.Exec(ctx)
 			testutil.Ok(b, res.Err)
 		}
 	})
@@ -527,10 +528,11 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
-			qry, err := ng.NewRangeQuery(db, nil, query, start, end, step)
+			ctx := context.Background()
+			qry, err := ng.NewRangeQuery(ctx, db, nil, query, start, end, step)
 			testutil.Ok(b, err)
 
-			res := qry.Exec(context.Background())
+			res := qry.Exec(ctx)
 			testutil.Ok(b, res.Err)
 		}
 	})
@@ -543,10 +545,11 @@ func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Tim
 
 func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
 	ng := engine.New(opts)
-	qry, err := ng.NewRangeQuery(test.Queryable(), nil, q, start, end, step)
+	ctx := context.Background()
+	qry, err := ng.NewRangeQuery(ctx, test.Queryable(), nil, q, start, end, step)
 	testutil.Ok(b, err)
 
-	return qry.Exec(context.Background())
+	return qry.Exec(ctx)
 }
 
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *promql.Test {
