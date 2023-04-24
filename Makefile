@@ -6,7 +6,7 @@ MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
-LINT_DIRS = $(shell go list ./... | grep -v "internal/prometheus")
+LINT_DIRS = $(shell go list ./... | grep -v "$(go list -m)/parser")
 
 define require_clean_work_tree
 	@git update-index -q --ignore-submodules --refresh
@@ -107,12 +107,12 @@ benchmark: bench-old bench-new
 .PHONY: sync-parser
 sync-parser:
 	@echo "Cleaning existing directories"
-	@rm -rf internal/prometheus/parser
+	@rm -rf parser
 	@mkdir -p tmp
 	@rm -rf tmp/prometheus
 	@echo "Cloning prometheus"
 	@git clone git@github.com:prometheus/prometheus.git tmp/prometheus
 	@echo "Copying parser"
-	cp -r tmp/prometheus/promql/parser internal/prometheus
+	cp -r tmp/prometheus/promql/parser .
 	@echo "Cleaning up"
 	@rm -rf tmp

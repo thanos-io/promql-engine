@@ -16,7 +16,7 @@ run:
   #     vendor$, third_party$, testdata$, examples$, Godeps$, builtin$
   skip-dirs:
   - vendor
-  - internal/prometheus
+  - parser
 
 # output configuration options
 output:

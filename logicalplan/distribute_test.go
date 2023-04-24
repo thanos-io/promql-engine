@@ -11,9 +11,8 @@ import (
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/internal/prometheus/parser"
-
 	"github.com/thanos-community/promql-engine/api"
+	"github.com/thanos-community/promql-engine/parser"
 )
 
 func TestDistributedExecution(t *testing.T) {
