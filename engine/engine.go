@@ -331,6 +331,15 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	}, nil
 }
 
+type ExplainableQuery interface {
+	promql.Query
+
+	Explain() string
+	Profile()
+}
+
+var _ ExplainableQuery = &compatibilityQuery{}
+
 type Query struct {
 	exec model.VectorOperator
 	opts *promql.QueryOpts
