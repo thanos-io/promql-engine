@@ -334,8 +334,13 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 type ExplainableQuery interface {
 	promql.Query
 
-	Explain() string
+	Explain() *ExplainOutputNode
 	Profile()
+}
+
+type ExplainOutputNode struct {
+	OperatorName string
+	Children     []ExplainOutputNode
 }
 
 var _ ExplainableQuery = &compatibilityQuery{}
@@ -346,13 +351,27 @@ type Query struct {
 }
 
 // Explain returns human-readable explanation of the created executor.
-func (q *Query) Explain() string {
+func (q *Query) Explain() *ExplainOutputNode {
 	// TODO(bwplotka): Explain plan and steps.
-	return "not implemented"
+	return explainVector(q.exec)
 }
 
 func (q *Query) Profile() {
 	// TODO(bwplotka): Return profile.
+}
+
+func explainVector(v model.VectorOperator) *ExplainOutputNode {
+	name, vectors := v.Explain()
+
+	var childs []ExplainOutputNode
+	for _, vector := range vectors {
+		childs = append(childs, *explainVector(vector))
+	}
+
+	return &ExplainOutputNode{
+		OperatorName: name,
+		Children:     childs,
+	}
 }
 
 type sortOrder bool
