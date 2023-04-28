@@ -1663,6 +1663,24 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
 			query: `scalar(avg_over_time({__name__="http_requests_total"}[3m])) > bool 0.9464749352949011`,
 		},
+		{
+			name: "repro https://github.com/thanos-community/promql-engine/issues/239",
+			load: `load 30s
+				storage_used{storage_index="1010"} 65x20
+				storage_used{storage_index="1011"} 125x20
+				storage_used{storage_index="1012"} 0x20
+				storage_used{storage_index="20"} 2290380x20
+				storage_used{storage_index="30"} 397304x20
+				storage_used{storage_index="40"} 5590832x20
+				storage_used{storage_index="41"} 65559832x20
+				storage_used{storage_index="42"} 3516400x20
+				storage_info{storage_info="Config", storage_index="40"} 1x20
+				storage_info{storage_info="Log", storage_index="41"} 1x20
+				storage_info{storage_info="Mem", storage_index="20"} 1x20
+				storage_info{storage_info="Root", storage_index="42"} 1x20
+				storage_info{storage_info="Swap", storage_index="30"} 1x20`,
+			query: `avg by (storage_info) (storage_used * on (instance, storage_index) group_left(storage_info) (sum by (instance, storage_index, storage_info) (storage_info)))`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
