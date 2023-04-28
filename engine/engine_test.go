@@ -4385,8 +4385,8 @@ func roundValues(r *promql.Result) {
 func emptyLabelsToNil(result *promql.Result) {
 	if value, ok := result.Value.(promql.Matrix); ok {
 		for i, s := range value {
-			if len(s.Metric) == 0 {
-				result.Value.(promql.Matrix)[i].Metric = nil
+			if s.Metric.IsEmpty() {
+				result.Value.(promql.Matrix)[i].Metric = labels.EmptyLabels()
 			}
 		}
 	}
