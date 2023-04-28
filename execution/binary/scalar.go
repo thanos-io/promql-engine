@@ -169,6 +169,8 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 				lbls, _ = function.DropMetricName(lbls.Copy())
 			}
 			series[i] = lbls
+		} else {
+			series[i] = vectorSeries[i]
 		}
 	}
 

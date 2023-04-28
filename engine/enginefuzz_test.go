@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -467,7 +468,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 			return labels.Compare(vy[i].Metric, vy[j].Metric) < 0
 		})
 		for i := 0; i < len(vx); i++ {
-			if !cmp.Equal(vx[i].Metric, vy[i].Metric) {
+			if !equal(vx[i].Metric, vy[i].Metric) {
 				return false
 			}
 			if vx[i].T != vy[i].T {
@@ -494,7 +495,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 			mxs := mx[i]
 			mys := my[i]
 
-			if !cmp.Equal(mxs.Metric, mys.Metric) {
+			if !equal(mxs.Metric, mys.Metric) {
 				return false
 			}
 
@@ -542,4 +543,12 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 		return nil, err
 	}
 	return res, nil
+}
+
+func equal(oldResult, newResult interface{}) bool {
+	if reflect.TypeOf(labels.Labels{}).Kind() == reflect.Struct {
+		return cmp.Equal(oldResult, newResult, cmp.AllowUnexported(labels.Labels{}))
+	} else {
+		return cmp.Equal(oldResult, newResult)
+	}
 }
