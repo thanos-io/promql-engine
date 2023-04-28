@@ -341,24 +341,22 @@ func DropMetricName(l labels.Labels) (labels.Labels, labels.Label) {
 
 // dropLabel removes the label with name from l and returns the dropped label.
 func dropLabel(l labels.Labels, name string) (labels.Labels, labels.Label) {
-	if len(l) == 0 {
+	var ret labels.Label
+
+	if l.IsEmpty() {
 		return l, labels.Label{}
 	}
 
-	if len(l) == 1 {
-		if l[0].Name == name {
-			return l[:0], l[0]
+	b := labels.NewScratchBuilder(l.Len())
 
+	l.Range(func(l labels.Label) {
+		if l.Name == name {
+			ret = l
+			return
 		}
-		return l, labels.Label{}
-	}
 
-	for i := range l {
-		if l[i].Name == name {
-			lbl := l[i]
-			return append(l[:i], l[i+1:]...), lbl
-		}
-	}
+		b.Add(l.Name, l.Value)
+	})
 
-	return l, labels.Label{}
+	return b.Labels(), ret
 }
