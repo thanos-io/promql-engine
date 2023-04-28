@@ -6,7 +6,6 @@ package scan
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -222,8 +221,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			if function.IsExtFunction(o.funcExpr.Func.Name) {
 				selectRange += o.extLookbackDelta
 			}
-
-			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{
 				labels:    lbls,
