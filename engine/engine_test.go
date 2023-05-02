@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/go-cmp/cmp"
 	promparser "github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -26,6 +25,7 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"

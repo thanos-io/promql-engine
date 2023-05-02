@@ -31,8 +31,7 @@ help: ## Displays help.
 
 .PHONY: test
 test: ## Runs all Go unit tests.
-export GOCACHE=/tmp/cache
-test:
+	@export GOCACHE=/tmp/cache
 	@echo ">> running unit tests (without cache)"
 	@rm -rf $(GOCACHE)
 	@go test -v -race -timeout=10m $(shell go list ./...);
@@ -40,8 +39,7 @@ test:
 
 .PHONY: test-stringlabels
 test-stringlabels: ## Runs all Go unit tests with stringlabels flag.
-export GOCACHE=/tmp/cache
-test-stringlabels:
+	@export GOCACHE=/tmp/cache
 	@echo ">> stringlabels: running unit tests (without cache)"
 	@rm -rf $(GOCACHE)
 	@go test -v -race --tags=stringlabels -timeout=10m $(shell go list ./...);
