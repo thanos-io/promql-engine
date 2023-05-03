@@ -46,14 +46,14 @@ func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator) model.V
 	}
 }
 
-func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (d *dedupOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	var err error
-	d.once.Do(func() { err = d.loadSeries(ctx) })
+	d.once.Do(func() { err = d.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
 
-	in, err := d.next.Next(ctx)
+	in, err := d.next.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +95,9 @@ func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	return result, nil
 }
 
-func (d *dedupOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (d *dedupOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	d.once.Do(func() { err = d.loadSeries(ctx) })
+	d.once.Do(func() { err = d.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +112,8 @@ func (d *dedupOperator) Explain() (me string, next []model.VectorOperator) {
 	return "[*dedup]", []model.VectorOperator{d.next}
 }
 
-func (d *dedupOperator) loadSeries(ctx context.Context) error {
-	series, err := d.next.Series(ctx)
+func (d *dedupOperator) loadSeries(ctx context.Context, tracer *model.OperatorTracer) error {
+	series, err := d.next.Series(ctx, tracer)
 	if err != nil {
 		return err
 	}

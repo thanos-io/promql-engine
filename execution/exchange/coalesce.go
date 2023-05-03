@@ -61,16 +61,16 @@ func (c *coalesce) GetPool() *model.VectorPool {
 	return c.pool
 }
 
-func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
+func (c *coalesce) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	c.once.Do(func() { err = c.loadSeries(ctx) })
+	c.once.Do(func() { err = c.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
 	return c.series, nil
 }
 
-func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
+func (c *coalesce) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -78,7 +78,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	var err error
-	c.once.Do(func() { err = c.loadSeries(ctx) })
+	c.once.Do(func() { err = c.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +89,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 		go func(opIdx int, o model.VectorOperator) {
 			defer c.wg.Done()
 
-			in, err := o.Next(ctx)
+			in, err := o.Next(ctx, tracer)
 			if err != nil {
 				errChan <- err
 				return
@@ -139,7 +139,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 	return out, nil
 }
 
-func (c *coalesce) loadSeries(ctx context.Context) error {
+func (c *coalesce) loadSeries(ctx context.Context, tracer *model.OperatorTracer) error {
 	var wg sync.WaitGroup
 	var numSeries uint64
 	allSeries := make([][]labels.Labels, len(c.operators))
@@ -160,7 +160,7 @@ func (c *coalesce) loadSeries(ctx context.Context) error {
 				}
 
 			}()
-			series, err := c.operators[i].Series(ctx)
+			series, err := c.operators[i].Series(ctx, tracer)
 			if err != nil {
 				errChan <- err
 				return

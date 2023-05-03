@@ -68,10 +68,10 @@ func NewStepInvariantOperator(
 	return u, nil
 }
 
-func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (u *stepInvariantOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
 	u.seriesOnce.Do(func() {
-		u.series, err = u.next.Series(ctx)
+		u.series, err = u.next.Series(ctx, tracer)
 	})
 	if err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ func (u *stepInvariantOperator) GetPool() *model.VectorPool {
 	return u.vectorPool
 }
 
-func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (u *stepInvariantOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	if u.currentStep > u.maxt {
 		return nil, nil
 	}
@@ -95,10 +95,10 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 	}
 
 	if !u.cacheResult {
-		return u.next.Next(ctx)
+		return u.next.Next(ctx, tracer)
 	}
 
-	if err := u.cacheInputVector(ctx); err != nil {
+	if err := u.cacheInputVector(ctx, tracer); err != nil {
 		return nil, err
 	}
 
@@ -118,11 +118,11 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 	return result, nil
 }
 
-func (u *stepInvariantOperator) cacheInputVector(ctx context.Context) error {
+func (u *stepInvariantOperator) cacheInputVector(ctx context.Context, tracer *model.OperatorTracer) error {
 	var err error
 	var in []model.StepVector
 	u.cacheVectorOnce.Do(func() {
-		in, err = u.next.Next(ctx)
+		in, err = u.next.Next(ctx, tracer)
 		if err != nil {
 			return
 		}

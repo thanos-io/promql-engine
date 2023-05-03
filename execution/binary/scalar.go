@@ -82,35 +82,35 @@ func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
 }
 
-func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *scalarOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	o.seriesOnce.Do(func() { err = o.loadSeries(ctx) })
+	o.seriesOnce.Do(func() { err = o.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
 	return o.series, nil
 }
 
-func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *scalarOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
 
-	in, err := o.next.Next(ctx)
+	in, err := o.next.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
 	if in == nil {
 		return nil, nil
 	}
-	o.seriesOnce.Do(func() { err = o.loadSeries(ctx) })
+	o.seriesOnce.Do(func() { err = o.loadSeries(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
 
-	scalarIn, err := o.scalar.Next(ctx)
+	scalarIn, err := o.scalar.Next(ctx, tracer)
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +156,8 @@ func (o *scalarOperator) GetPool() *model.VectorPool {
 	return o.pool
 }
 
-func (o *scalarOperator) loadSeries(ctx context.Context) error {
-	vectorSeries, err := o.next.Series(ctx)
+func (o *scalarOperator) loadSeries(ctx context.Context, tracer *model.OperatorTracer) error {
+	vectorSeries, err := o.next.Series(ctx, tracer)
 	if err != nil {
 		return err
 	}

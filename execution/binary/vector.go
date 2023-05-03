@@ -83,9 +83,9 @@ func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 }
 
-func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *vectorOperator) Series(ctx context.Context, tracer *model.OperatorTracer) ([]labels.Labels, error) {
 	var err error
-	o.once.Do(func() { err = o.initOutputs(ctx) })
+	o.once.Do(func() { err = o.initOutputs(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}
@@ -93,19 +93,19 @@ func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	return o.series, nil
 }
 
-func (o *vectorOperator) initOutputs(ctx context.Context) error {
+func (o *vectorOperator) initOutputs(ctx context.Context, tracer *model.OperatorTracer) error {
 	var highCardSide []labels.Labels
 	var errChan = make(chan error, 1)
 	go func() {
 		var err error
-		highCardSide, err = o.lhs.Series(ctx)
+		highCardSide, err = o.lhs.Series(ctx, tracer)
 		if err != nil {
 			errChan <- err
 		}
 		close(errChan)
 	}()
 
-	lowCardSide, err := o.rhs.Series(ctx)
+	lowCardSide, err := o.rhs.Series(ctx, tracer)
 	if err != nil {
 		return err
 	}
@@ -155,7 +155,7 @@ func (o *vectorOperator) initOutputs(ctx context.Context) error {
 	return nil
 }
 
-func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *vectorOperator) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -166,14 +166,14 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	var lerrChan = make(chan error, 1)
 	go func() {
 		var err error
-		lhs, err = o.lhs.Next(ctx)
+		lhs, err = o.lhs.Next(ctx, tracer)
 		if err != nil {
 			lerrChan <- err
 		}
 		close(lerrChan)
 	}()
 
-	rhs, rerr := o.rhs.Next(ctx)
+	rhs, rerr := o.rhs.Next(ctx, tracer)
 	lerr := <-lerrChan
 	if rerr != nil {
 		return nil, rerr
@@ -190,7 +190,7 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	var err error
-	o.once.Do(func() { err = o.initOutputs(ctx) })
+	o.once.Do(func() { err = o.initOutputs(ctx, tracer) })
 	if err != nil {
 		return nil, err
 	}

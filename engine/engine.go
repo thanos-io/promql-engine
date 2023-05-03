@@ -459,6 +459,8 @@ type compatibilityQuery struct {
 	t          QueryType
 	resultSort resultSorter
 
+	querySamples *stats.QuerySamples
+
 	cancel context.CancelFunc
 }
 
@@ -480,7 +482,9 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	defer cancel()
 	q.cancel = cancel
 
-	resultSeries, err := q.Query.exec.Series(ctx)
+	tracer := newOperatorTracer(q.opts.EnablePerStepStats)
+	q.querySamples = tracer.QuerySamples
+	resultSeries, err := q.Query.exec.Series(ctx, tracer)
 	if err != nil {
 		return newErrResult(ret, err)
 	}
@@ -498,7 +502,7 @@ loop:
 		case <-ctx.Done():
 			return newErrResult(ret, ctx.Err())
 		default:
-			r, err := q.Query.exec.Next(ctx)
+			r, err := q.Query.exec.Next(ctx, tracer)
 			if err != nil {
 				return newErrResult(ret, err)
 			}
@@ -626,11 +630,7 @@ func (q *compatibilityQuery) Statement() promparser.Statement { return nil }
 
 // Stats always returns empty query stats for now to avoid panic.
 func (q *compatibilityQuery) Stats() *stats.Statistics {
-	var enablePerStepStats bool
-	if q.opts != nil {
-		enablePerStepStats = q.opts.EnablePerStepStats
-	}
-	return &stats.Statistics{Timers: stats.NewQueryTimers(), Samples: stats.NewQuerySamples(enablePerStepStats)}
+	return &stats.Statistics{Timers: stats.NewQueryTimers(), Samples: q.querySamples}
 }
 
 func (q *compatibilityQuery) Close() { q.Cancel() }
@@ -691,5 +691,11 @@ func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
 		} else {
 			explain(w, n, indentNext+"├──", indentNext+"│  ")
 		}
+	}
+}
+
+func newOperatorTracer(enablePerStepStats bool) *model.OperatorTracer {
+	return &model.OperatorTracer{
+		QuerySamples: stats.NewQuerySamples(enablePerStepStats),
 	}
 }

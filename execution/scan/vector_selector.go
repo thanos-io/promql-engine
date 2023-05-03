@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -78,7 +79,7 @@ func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards), nil
 }
 
-func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *vectorSelector) Series(ctx context.Context, _ *model.OperatorTracer) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -89,7 +90,7 @@ func (o *vectorSelector) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *vectorSelector) Next(ctx context.Context, tracer *model.OperatorTracer) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -106,6 +107,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	var currentSamples int64 = 0
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -122,8 +124,10 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			if ok {
 				if h != nil {
+					currentSamples += int64(len(h.PositiveBuckets) + len(h.NegativeBuckets))
 					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, h)
 				} else {
+					currentSamples += 1
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, v)
 				}
 			}
@@ -136,6 +140,8 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
+
+	atomic.AddInt64(&tracer.QuerySamples.TotalSamples, currentSamples)
 
 	return vectors, nil
 }
