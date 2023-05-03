@@ -187,15 +187,15 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 
 	o.series = make([]labels.Labels, 0)
 	o.outputIndex = make([]*histogramSeries, len(series))
-
+	b := labels.NewScratchBuilder(ExpectedLabelsSize)
 	for i, s := range series {
 		hasBucketValue := true
-		lbls, bucketLabel := dropLabel(s.Copy(), "le")
+		lbls, bucketLabel := dropLabel(s.Copy(), "le", b)
 		value, err := strconv.ParseFloat(bucketLabel.Value, 64)
 		if err != nil {
 			hasBucketValue = false
 		}
-		lbls, _ = DropMetricName(lbls)
+		lbls, _ = DropMetricName(lbls, b)
 
 		hasher.Reset()
 		hashBuf = lbls.Bytes(hashBuf)

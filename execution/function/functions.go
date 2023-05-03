@@ -938,7 +938,7 @@ func dateWrapper(fa FunctionArgs, f func(time.Time) float64) promql.Sample {
 		}
 	}
 	t := time.Unix(int64(fa.Samples[0].F), 0).UTC()
-	lbls, _ := DropMetricName(fa.Labels)
+	lbls, _ := DropMetricName(fa.Labels, labels.NewScratchBuilder(fa.Labels.Len()))
 	return promql.Sample{
 		Metric: lbls,
 		F:      f(t),

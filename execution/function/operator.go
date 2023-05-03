@@ -21,6 +21,11 @@ import (
 	"github.com/thanos-community/promql-engine/query"
 )
 
+const (
+	// ExpectedLabelsSize Expected number of labels on a timeseries used as initial value when creating a new labels.ScratchBuilder.
+	ExpectedLabelsSize = 10
+)
+
 // functionOperator returns []model.StepVector after processing input with desired function.
 type functionOperator struct {
 	funcExpr *parser.Call
@@ -305,6 +310,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 				labelJoinSrcLabels = append(labelJoinSrcLabels, o.funcExpr.Args[j].(*parser.StringLiteral).Val)
 			}
 		}
+		b := labels.NewScratchBuilder(ExpectedLabelsSize)
 		for i, s := range series {
 			lbls := s
 			switch o.funcExpr.Func.Name {
@@ -326,7 +332,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 
 				lbls = lb.Labels()
 			default:
-				lbls, _ = DropMetricName(s.Copy())
+				lbls, _ = DropMetricName(s.Copy(), b)
 			}
 			o.series[i] = lbls
 		}
@@ -335,19 +341,19 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func DropMetricName(l labels.Labels) (labels.Labels, labels.Label) {
-	return dropLabel(l, labels.MetricName)
+func DropMetricName(l labels.Labels, b labels.ScratchBuilder) (labels.Labels, labels.Label) {
+	return dropLabel(l, labels.MetricName, b)
 }
 
 // dropLabel removes the label with name from l and returns the dropped label.
-func dropLabel(l labels.Labels, name string) (labels.Labels, labels.Label) {
+func dropLabel(l labels.Labels, name string, b labels.ScratchBuilder) (labels.Labels, labels.Label) {
 	var ret labels.Label
 
 	if l.IsEmpty() {
 		return l, labels.Label{}
 	}
 
-	b := labels.NewScratchBuilder(l.Len())
+	b.Reset()
 
 	l.Range(func(l labels.Label) {
 		if l.Name == name {
