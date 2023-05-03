@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -588,20 +589,21 @@ func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *t
 }
 
 func synthesizeLoad(numPods, numContainers, numSteps int) string {
-	load := "load 30s\n"
+	var sb strings.Builder
+	sb.WriteString("load 30s\n")
 	for i := 0; i < numPods; i++ {
 		for j := 0; j < numContainers; j++ {
-			load += fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n")
+			sb.WriteString(fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n"))
 		}
-		load += fmt.Sprintf(`http_responses_total{pod="p%d"} %dx%d%s`, i, i, numSteps, "\n")
+		sb.WriteString(fmt.Sprintf(`http_responses_total{pod="p%d"} %dx%d%s`, i, i, numSteps, "\n"))
 	}
 
 	for i := 0; i < numPods; i++ {
 		for j := 0; j < 10; j++ {
-			load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n")
+			sb.WriteString(fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n"))
 		}
-		load += fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="+Inf"} %d+%dx%d%s`, i, i, i, numSteps, "\n")
+		sb.WriteString(fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="+Inf"} %d+%dx%d%s`, i, i, i, numSteps, "\n"))
 	}
 
-	return load
+	return sb.String()
 }
