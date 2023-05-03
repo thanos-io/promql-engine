@@ -124,6 +124,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	lblBuilder := labels.NewScratchBuilder(function.ExpectedLabelsSize)
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -161,6 +162,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
 				MetricAppearedTs: o.scanners[i].metricAppearedTs,
+				LabelsBuilder:    lblBuilder,
 			})
 
 			if result.T != function.InvalidSample.T {

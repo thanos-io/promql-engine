@@ -209,7 +209,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		o.nextOps[i].GetPool().PutVectors(scalarVectors)
 		scalarIndex++
 	}
-
+	lblsBuilder := labels.NewScratchBuilder(ExpectedLabelsSize)
 	for batchIndex, vector := range vectors {
 		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
 		// So need to handle this separately here, instead of going via call which is per point.
@@ -239,6 +239,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			fa.Samples = o.sampleBuf
 			fa.StepTime = vector.T
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
+			fa.LabelsBuilder = lblsBuilder
 			result := o.call(fa)
 
 			if result.T != InvalidSample.T {
@@ -258,6 +259,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			fa.Samples = o.sampleBuf
 			fa.StepTime = vector.T
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
+			fa.LabelsBuilder = lblsBuilder
 			result := o.call(fa)
 
 			// This operator modifies samples directly in the input vector to avoid allocations.
@@ -272,6 +274,16 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	}
 
 	return vectors, nil
+}
+
+func (o *functionOperator) newFunctionArgs(vector model.StepVector, batchIndex int, b labels.ScratchBuilder) FunctionArgs {
+	return FunctionArgs{
+		Labels:        o.series[0],
+		Samples:       o.sampleBuf,
+		StepTime:      vector.T,
+		ScalarPoints:  o.scalarPoints[batchIndex],
+		LabelsBuilder: b,
+	}
 }
 
 func (o *functionOperator) loadSeries(ctx context.Context) error {
