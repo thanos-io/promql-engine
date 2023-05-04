@@ -405,11 +405,17 @@ loop:
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
+			if *metricAppearedTs == nil {
+				*metricAppearedTs = &t
+			}
 			out = append(out, promql.Sample{T: t, H: fh})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
+			if *metricAppearedTs == nil {
+				*metricAppearedTs = &t
+			}
 			out = append(out, promql.Sample{T: t, F: v})
 		}
 	}
