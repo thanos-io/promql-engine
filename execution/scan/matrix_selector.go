@@ -368,13 +368,6 @@ loop:
 		case chunkenc.ValNone:
 			break loop
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t, h := buf.AtHistogram()
-			if *metricAppearedTs == nil {
-				*metricAppearedTs = &t
-			}
-			if t >= mint {
-				out = append(out, promql.Sample{T: t, H: h.ToFloat()})
-			}
 			t, fh := buf.AtFloatHistogram()
 			if value.IsStaleNaN(fh.Sum) {
 				continue loop
