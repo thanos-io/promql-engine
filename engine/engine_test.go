@@ -2006,6 +2006,17 @@ func TestXFunctions(t *testing.T) {
 				createSample(defaultQueryTime.UnixMilli(), 0.9, labels.FromStrings("path", "/bar")),
 			},
 		},
+		// Test zero series injection.
+		{
+			name: "eval instant xincrease with only one point",
+			load: `load 5m
+			http_requests{path="/foo"}	stale stale stale 5`,
+			query:     "xincrease(http_requests[1h15m])",
+			queryTime: time.Unix(1*60*60+15*60, 0),
+			expected: []promql.Sample{
+				createSample(time.Unix(1*60*60+15*60, 0).UnixMilli(), 5, labels.FromStrings("path", "/foo")),
+			},
+		},
 		{
 			name:  "eval instant at 50s xrate, with 5s lookback",
 			load:  defaultLoad,
@@ -2082,47 +2093,49 @@ func TestXFunctions(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		test, err := promql.NewTest(t, tc.load)
-		testutil.Ok(t, err)
-		defer test.Close()
+		t.Run(tc.name, func(t *testing.T) {
+			test, err := promql.NewTest(t, tc.load)
+			testutil.Ok(t, err)
+			defer test.Close()
 
-		testutil.Ok(t, test.Run())
-		queryTime := defaultQueryTime
-		if tc.queryTime != (time.Time{}) {
-			queryTime = tc.queryTime
-		}
+			testutil.Ok(t, test.Run())
+			queryTime := defaultQueryTime
+			if tc.queryTime != (time.Time{}) {
+				queryTime = tc.queryTime
+			}
 
-		optimizers := logicalplan.AllOptimizers
+			optimizers := logicalplan.AllOptimizers
 
-		ctx := test.Context()
-		newEngine := engine.New(engine.Opts{
-			EngineOpts:        opts,
-			DisableFallback:   true,
-			LogicalOptimizers: optimizers,
-			EnableXFunctions:  true,
+			ctx := test.Context()
+			newEngine := engine.New(engine.Opts{
+				EngineOpts:        opts,
+				DisableFallback:   true,
+				LogicalOptimizers: optimizers,
+				EnableXFunctions:  true,
+			})
+			query, err := newEngine.NewInstantQuery(ctx, test.Storage(), nil, tc.query, queryTime)
+			testutil.Ok(t, err)
+			defer query.Close()
+
+			engineResult := query.Exec(ctx)
+			testutil.Ok(t, engineResult.Err)
+			expectedResult := createVectorResult(tc.expected)
+
+			testutil.Equals(t, expectedResult.Err, engineResult.Err)
+
+			exR := expectedResult.Value.(promql.Vector)
+			erR := engineResult.Value.(promql.Vector)
+
+			sort.Slice(exR, func(i, j int) bool {
+				return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
+			})
+
+			sort.Slice(erR, func(i, j int) bool {
+				return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
+			})
+
+			testutil.Equals(t, exR, erR)
 		})
-		query, err := newEngine.NewInstantQuery(ctx, test.Storage(), nil, tc.query, queryTime)
-		testutil.Ok(t, err)
-		defer query.Close()
-
-		engineResult := query.Exec(ctx)
-		testutil.Ok(t, engineResult.Err)
-		expectedResult := createVectorResult(tc.expected)
-
-		testutil.Equals(t, expectedResult.Err, engineResult.Err)
-
-		exR := expectedResult.Value.(promql.Vector)
-		erR := engineResult.Value.(promql.Vector)
-
-		sort.Slice(exR, func(i, j int) bool {
-			return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
-		})
-
-		sort.Slice(erR, func(i, j int) bool {
-			return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
-		})
-
-		testutil.Equals(t, exR, erR)
 	}
 }
 
@@ -2433,7 +2446,7 @@ func TestRateVsXRate(t *testing.T) {
 		testutil.Ok(t, err)
 		defer query.Close()
 
-		engineResult := query.Exec(context.Background())
+		engineResult := query.Exec(test.Context())
 		testutil.Ok(t, engineResult.Err)
 		// Round engine result.
 		roundValues(engineResult)
@@ -3336,7 +3349,7 @@ func TestQueryCancellation(t *testing.T) {
 		},
 	}
 
-	ctx := context.Background()
+	ctx := test.Context()
 	newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
 	q1, err := newEngine.NewRangeQuery(ctx, querier, nil, query, start, end, step)
 	testutil.Ok(t, err)
