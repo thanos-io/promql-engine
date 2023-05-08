@@ -339,8 +339,8 @@ type ExplainableQuery interface {
 }
 
 type ExplainOutputNode struct {
-	OperatorName string
-	Children     []ExplainOutputNode
+	OperatorName string              `json:"name,omitempty"`
+	Children     []ExplainOutputNode `json:"children,omitempty"`
 }
 
 var _ ExplainableQuery = &compatibilityQuery{}
@@ -363,14 +363,14 @@ func (q *Query) Profile() {
 func explainVector(v model.VectorOperator) *ExplainOutputNode {
 	name, vectors := v.Explain()
 
-	var childs []ExplainOutputNode
+	var children []ExplainOutputNode
 	for _, vector := range vectors {
-		childs = append(childs, *explainVector(vector))
+		children = append(children, *explainVector(vector))
 	}
 
 	return &ExplainOutputNode{
 		OperatorName: name,
-		Children:     childs,
+		Children:     children,
 	}
 }
 
