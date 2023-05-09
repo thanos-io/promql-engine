@@ -40,6 +40,102 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m)
 }
 
+func TestQueryExplain(t *testing.T) {
+	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	series := storage.MockSeries(
+		[]int64{240, 270, 300, 600, 630, 660},
+		[]float64{1, 2, 3, 4, 5, 6},
+		[]string{labels.MetricName, "foo"},
+	)
+
+	start := time.Unix(0, 0)
+	end := time.Unix(1000, 0)
+
+	for _, tc := range []struct {
+		query    string
+		expected *engine.ExplainOutputNode
+	}{
+		{
+			query:    "time()",
+			expected: &engine.ExplainOutputNode{OperatorName: "[*noArgFunctionOperator] time()"},
+		},
+		{
+			query: "foo",
+			expected: &engine.ExplainOutputNode{OperatorName: "[*coalesce]", Children: []engine.ExplainOutputNode{
+				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 0 mod 4"},
+				},
+				},
+				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 1 mod 4"},
+				},
+				},
+				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 2 mod 4"},
+				},
+				},
+				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 3 mod 4"},
+				},
+				},
+			},
+			},
+		},
+		{
+			query: "sum(foo) by (job)",
+			expected: &engine.ExplainOutputNode{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+				{OperatorName: "[*aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
+					{OperatorName: "[*coalesce]", Children: []engine.ExplainOutputNode{
+						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 0 mod 4"},
+						},
+						},
+						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 1 mod 4"},
+						},
+						},
+						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 2 mod 4"},
+						},
+						},
+						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 3 mod 4"},
+						},
+						},
+					},
+					},
+				},
+				},
+			},
+			},
+		},
+	} {
+		{
+			t.Run(tc.query, func(t *testing.T) {
+				ng := engine.New(engine.Opts{EngineOpts: opts})
+				ctx := context.Background()
+
+				var (
+					query promql.Query
+					err   error
+				)
+
+				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
+				testutil.Ok(t, err)
+
+				explainableQuery := query.(engine.ExplainableQuery)
+				testutil.Equals(t, tc.expected, explainableQuery.Explain())
+
+				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
+				testutil.Ok(t, err)
+
+				explainableQuery = query.(engine.ExplainableQuery)
+				testutil.Equals(t, tc.expected, explainableQuery.Explain())
+			})
+		}
+	}
+}
+
 func TestVectorSelectorWithGaps(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
