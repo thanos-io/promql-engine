@@ -6,7 +6,6 @@ package binary
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
@@ -344,15 +343,12 @@ func signature(metric labels.Labels, without bool, grouping []string, keepOrigin
 }
 
 func buildOutputSeries(seriesID uint64, highCardSeries, lowCardSeries model.Series, includeLabels []string) model.Series {
-	metric := highCardSeries.Metric
+	metricBuilder := labels.NewBuilder(highCardSeries.Metric)
 	if len(includeLabels) > 0 {
-		lowCardLabels := labels.NewBuilder(lowCardSeries.Metric).
+		labels.NewBuilder(lowCardSeries.Metric).
 			Keep(includeLabels...).
-			Labels()
-		metric = append(metric, lowCardLabels...)
-		sort.Slice(metric, func(i, j int) bool {
-			return metric[i].Name < metric[j].Name
-		})
+			Labels().
+			Range(func(l labels.Label) { metricBuilder.Set(l.Name, l.Value) })
 	}
-	return model.Series{ID: seriesID, Metric: metric}
+	return model.Series{ID: seriesID, Metric: metricBuilder.Labels()}
 }

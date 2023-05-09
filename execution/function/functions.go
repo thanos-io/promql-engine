@@ -27,6 +27,7 @@ type FunctionArgs struct {
 	ScalarPoints     []float64
 	Offset           int64
 	MetricAppearedTs *int64
+	LabelsBuilder    labels.ScratchBuilder
 }
 
 // FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
@@ -938,7 +939,7 @@ func dateWrapper(fa FunctionArgs, f func(time.Time) float64) promql.Sample {
 		}
 	}
 	t := time.Unix(int64(fa.Samples[0].F), 0).UTC()
-	lbls, _ := DropMetricName(fa.Labels)
+	lbls, _ := DropMetricName(fa.Labels, fa.LabelsBuilder)
 	return promql.Sample{
 		Metric: lbls,
 		F:      f(t),

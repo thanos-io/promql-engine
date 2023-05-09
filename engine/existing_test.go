@@ -94,7 +94,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: promql.Matrix{
 				promql.Series{
 					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.New(labels.Label{Name: "__name__", Value: "metric"}),
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -109,7 +109,7 @@ func TestRangeQuery(t *testing.T) {
 			Result: promql.Matrix{
 				promql.Series{
 					Floats: []promql.FPoint{{F: 1, T: 0}, {F: 3, T: 60000}, {F: 5, T: 120000}},
-					Metric: labels.Labels{labels.Label{Name: "__name__", Value: "metric"}},
+					Metric: labels.New(labels.Label{Name: "__name__", Value: "metric"}),
 				},
 			},
 			Start:    time.Unix(0, 0),

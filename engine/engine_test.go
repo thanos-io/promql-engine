@@ -25,6 +25,7 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -1736,7 +1737,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								testutil.Ok(t, newResult.Err)
 								if hasNaNs(oldResult) {
 									t.Log("Applying comparison with NaN equality.")
-									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+									equalsWithNaNs(t, oldResult, newResult)
 								} else {
 									emptyLabelsToNil(oldResult)
 									emptyLabelsToNil(newResult)
@@ -1748,6 +1749,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func equalsWithNaNs(t *testing.T, oldResult, newResult interface{}) {
+	if reflect.TypeOf(labels.Labels{}).Kind() == reflect.Struct {
+		testutil.WithGoCmp(cmpopts.EquateNaNs(), cmp.AllowUnexported(labels.Labels{})).Equals(t, oldResult, newResult)
+	} else {
+		testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
 	}
 }
 
@@ -3309,7 +3318,7 @@ func TestInstantQuery(t *testing.T) {
 
 								if hasNaNs(oldResult) {
 									t.Log("Applying comparison with NaN equality.")
-									testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
+									equalsWithNaNs(t, oldResult, newResult)
 								} else if oldResult.Err != nil {
 									testutil.Equals(t, oldResult.Err.Error(), newResult.Err.Error())
 								} else {
@@ -4163,7 +4172,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						sortByLabels(newResult)
 						if hasNaNs(promResult) {
 							t.Log("Applying comparison with NaN equality.")
-							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, promVector, newVector)
+							equalsWithNaNs(t, promVector, newVector)
 						} else {
 							testutil.Equals(t, promVector, newVector)
 						}
@@ -4192,7 +4201,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						testutil.Equals(t, len(expected), len(actual))
 						if hasNaNs(res) {
 							t.Log("Applying comparison with NaN equality.")
-							testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, expected, actual)
+							equalsWithNaNs(t, expected, actual)
 						} else {
 							testutil.Equals(t, expected, actual)
 						}
@@ -4385,8 +4394,8 @@ func roundValues(r *promql.Result) {
 func emptyLabelsToNil(result *promql.Result) {
 	if value, ok := result.Value.(promql.Matrix); ok {
 		for i, s := range value {
-			if len(s.Metric) == 0 {
-				result.Value.(promql.Matrix)[i].Metric = nil
+			if s.Metric.IsEmpty() {
+				result.Value.(promql.Matrix)[i].Metric = labels.EmptyLabels()
 			}
 		}
 	}

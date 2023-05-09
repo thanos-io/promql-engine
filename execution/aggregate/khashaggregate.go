@@ -101,7 +101,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, nil
 	}
 	if len(args) < len(in) {
-		return nil, errors.New("scalar argument not found")
+		return nil, errors.New("Scalar value NaN overflows int64")
 	}
 
 	a.once.Do(func() { err = a.init(ctx) })

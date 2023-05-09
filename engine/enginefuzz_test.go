@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"reflect"
 	"sort"
 	"testing"
 	"time"
@@ -149,8 +150,8 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			return
 		}
 		load := fmt.Sprintf(`load 30s
-			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx4
-			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx4`, initialVal1, inc1, initialVal2, inc2)
+			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx40
+			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx40`, initialVal1, inc1, initialVal2, inc2)
 
 		opts := promql.EngineOpts{
 			Timeout:              1 * time.Hour,
@@ -178,6 +179,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		psOpts := []promqlsmith.Option{
 			promqlsmith.WithEnableOffset(true),
 			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithAtModifierMaxTimestamp(180 * 1000),
 		}
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
@@ -293,6 +295,7 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 		psOpts := []promqlsmith.Option{
 			promqlsmith.WithEnableOffset(true),
 			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithAtModifierMaxTimestamp(180 * 1000),
 			promqlsmith.WithEnabledAggrs([]parser.ItemType{parser.SUM, parser.MIN, parser.MAX, parser.GROUP, parser.COUNT, parser.BOTTOMK, parser.TOPK}),
 		}
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
@@ -397,6 +400,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 		psOpts := []promqlsmith.Option{
 			promqlsmith.WithEnableOffset(true),
 			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithAtModifierMaxTimestamp(180 * 1000),
 			promqlsmith.WithEnabledAggrs([]parser.ItemType{parser.SUM, parser.MIN, parser.MAX, parser.GROUP, parser.COUNT, parser.BOTTOMK, parser.TOPK}),
 		}
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
@@ -467,7 +471,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 			return labels.Compare(vy[i].Metric, vy[j].Metric) < 0
 		})
 		for i := 0; i < len(vx); i++ {
-			if !cmp.Equal(vx[i].Metric, vy[i].Metric) {
+			if !equal(vx[i].Metric, vy[i].Metric) {
 				return false
 			}
 			if vx[i].T != vy[i].T {
@@ -494,7 +498,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 			mxs := mx[i]
 			mys := my[i]
 
-			if !cmp.Equal(mxs.Metric, mys.Metric) {
+			if !equal(mxs.Metric, mys.Metric) {
 				return false
 			}
 
@@ -542,4 +546,12 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 		return nil, err
 	}
 	return res, nil
+}
+
+func equal(oldResult, newResult interface{}) bool {
+	if reflect.TypeOf(labels.Labels{}).Kind() == reflect.Struct {
+		return cmp.Equal(oldResult, newResult, cmp.AllowUnexported(labels.Labels{}))
+	} else {
+		return cmp.Equal(oldResult, newResult)
+	}
 }

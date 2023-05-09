@@ -6,7 +6,6 @@ package scan
 import (
 	"context"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -125,6 +124,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	lblBuilder := labels.ScratchBuilder{}
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -162,6 +162,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
 				MetricAppearedTs: o.scanners[i].metricAppearedTs,
+				LabelsBuilder:    lblBuilder,
 			})
 
 			if result.T != function.InvalidSample.T {
@@ -206,6 +207,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
+		b := labels.ScratchBuilder{}
 		for i, s := range series {
 			lbls := s.Labels()
 			if o.funcExpr.Func.Name != "last_over_time" {
@@ -214,7 +216,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// we have to copy it here.
 				// TODO(GiedriusS): could we identify somehow whether labels.Labels
 				// is reused between Select() calls?
-				lbls, _ = function.DropMetricName(lbls.Copy())
+				lbls, _ = function.DropMetricName(lbls, b)
 			}
 
 			// If we are dealing with an extended range function we need to search further in the past for valid series.
@@ -222,8 +224,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			if function.IsExtFunction(o.funcExpr.Func.Name) {
 				selectRange += o.extLookbackDelta
 			}
-
-			sort.Sort(lbls)
 
 			o.scanners[i] = matrixScanner{
 				labels:    lbls,

@@ -144,13 +144,13 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 
 	for _, engine := range engines {
 		for _, lbls := range engine.LabelSets() {
-			for _, lbl := range lbls {
+			lbls.Range(func(lbl labels.Label) {
 				if rootAggregation.Without {
 					delete(groupingSet, lbl.Name)
 				} else {
 					groupingSet[lbl.Name] = struct{}{}
 				}
-			}
+			})
 		}
 	}
 
@@ -303,7 +303,7 @@ func matchesExternalLabelSet(expr parser.Expr, externalLabelSet []labels.Labels)
 
 // matchesExternalLabels returns false if given matchers are not matching external labels.
 func matchesExternalLabels(ms []*labels.Matcher, externalLabels labels.Labels) bool {
-	if len(externalLabels) == 0 {
+	if externalLabels.Len() == 0 {
 		return true
 	}
 

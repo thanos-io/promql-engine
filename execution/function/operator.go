@@ -204,7 +204,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		o.nextOps[i].GetPool().PutVectors(scalarVectors)
 		scalarIndex++
 	}
-
+	lblsBuilder := labels.ScratchBuilder{}
 	for batchIndex, vector := range vectors {
 		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
 		// So need to handle this separately here, instead of going via call which is per point.
@@ -234,6 +234,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			fa.Samples = o.sampleBuf
 			fa.StepTime = vector.T
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
+			fa.LabelsBuilder = lblsBuilder
 			result := o.call(fa)
 
 			if result.T != InvalidSample.T {
@@ -253,6 +254,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			fa.Samples = o.sampleBuf
 			fa.StepTime = vector.T
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
+			fa.LabelsBuilder = lblsBuilder
 			result := o.call(fa)
 
 			// This operator modifies samples directly in the input vector to avoid allocations.
@@ -305,6 +307,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 				labelJoinSrcLabels = append(labelJoinSrcLabels, o.funcExpr.Args[j].(*parser.StringLiteral).Val)
 			}
 		}
+		b := labels.ScratchBuilder{}
 		for i, s := range series {
 			lbls := s
 			switch o.funcExpr.Func.Name {
@@ -326,7 +329,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 
 				lbls = lb.Labels()
 			default:
-				lbls, _ = DropMetricName(s.Copy())
+				lbls, _ = DropMetricName(s, b)
 			}
 			o.series[i] = lbls
 		}
@@ -335,30 +338,28 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func DropMetricName(l labels.Labels) (labels.Labels, labels.Label) {
-	return dropLabel(l, labels.MetricName)
+func DropMetricName(l labels.Labels, b labels.ScratchBuilder) (labels.Labels, labels.Label) {
+	return dropLabel(l, labels.MetricName, b)
 }
 
 // dropLabel removes the label with name from l and returns the dropped label.
-func dropLabel(l labels.Labels, name string) (labels.Labels, labels.Label) {
-	if len(l) == 0 {
+func dropLabel(l labels.Labels, name string, b labels.ScratchBuilder) (labels.Labels, labels.Label) {
+	var ret labels.Label
+
+	if l.IsEmpty() {
 		return l, labels.Label{}
 	}
 
-	if len(l) == 1 {
-		if l[0].Name == name {
-			return l[:0], l[0]
+	b.Reset()
 
+	l.Range(func(l labels.Label) {
+		if l.Name == name {
+			ret = l
+			return
 		}
-		return l, labels.Label{}
-	}
 
-	for i := range l {
-		if l[i].Name == name {
-			lbl := l[i]
-			return append(l[:i], l[i+1:]...), lbl
-		}
-	}
+		b.Add(l.Name, l.Value)
+	})
 
-	return l, labels.Label{}
+	return b.Labels(), ret
 }
