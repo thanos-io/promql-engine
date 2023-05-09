@@ -216,7 +216,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// we have to copy it here.
 				// TODO(GiedriusS): could we identify somehow whether labels.Labels
 				// is reused between Select() calls?
-				lbls, _ = function.DropMetricName(lbls.Copy(), b)
+				lbls, _ = function.DropMetricName(lbls, b)
 			}
 
 			// If we are dealing with an extended range function we need to search further in the past for valid series.
