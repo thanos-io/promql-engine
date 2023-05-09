@@ -190,7 +190,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	b := labels.ScratchBuilder{}
 	for i, s := range series {
 		hasBucketValue := true
-		lbls, bucketLabel := dropLabel(s.Copy(), "le", b)
+		lbls, bucketLabel := dropLabel(s, "le", b)
 		value, err := strconv.ParseFloat(bucketLabel.Value, 64)
 		if err != nil {
 			hasBucketValue = false
