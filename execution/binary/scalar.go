@@ -167,7 +167,7 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 		if !vectorSeries[i].IsEmpty() {
 			lbls := vectorSeries[i]
 			if shouldDropMetricName(o.opType, o.returnBool) {
-				lbls, _ = function.DropMetricName(lbls.Copy(), b)
+				lbls, _ = function.DropMetricName(lbls, b)
 			}
 			series[i] = lbls
 		} else {
