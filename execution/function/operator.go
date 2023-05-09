@@ -329,7 +329,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 
 				lbls = lb.Labels()
 			default:
-				lbls, _ = DropMetricName(s.Copy(), b)
+				lbls, _ = DropMetricName(s, b)
 			}
 			o.series[i] = lbls
 		}
