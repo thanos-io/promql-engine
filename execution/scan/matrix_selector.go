@@ -124,7 +124,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
-	lblBuilder := labels.NewScratchBuilder(function.ExpectedLabelsSize)
+	lblBuilder := labels.ScratchBuilder{}
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -207,7 +207,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
-		b := labels.NewScratchBuilder(function.ExpectedLabelsSize)
+		b := labels.ScratchBuilder{}
 		for i, s := range series {
 			lbls := s.Labels()
 			if o.funcExpr.Func.Name != "last_over_time" {

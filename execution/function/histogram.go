@@ -187,7 +187,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 
 	o.series = make([]labels.Labels, 0)
 	o.outputIndex = make([]*histogramSeries, len(series))
-	b := labels.NewScratchBuilder(ExpectedLabelsSize)
+	b := labels.ScratchBuilder{}
 	for i, s := range series {
 		hasBucketValue := true
 		lbls, bucketLabel := dropLabel(s.Copy(), "le", b)

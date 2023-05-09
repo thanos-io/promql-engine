@@ -162,7 +162,7 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 		return err
 	}
 	series := make([]labels.Labels, len(vectorSeries))
-	b := labels.NewScratchBuilder(function.ExpectedLabelsSize)
+	b := labels.ScratchBuilder{}
 	for i := range vectorSeries {
 		if !vectorSeries[i].IsEmpty() {
 			lbls := vectorSeries[i]
