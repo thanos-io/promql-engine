@@ -51,6 +51,17 @@ func TestQueryExplain(t *testing.T) {
 	start := time.Unix(0, 0)
 	end := time.Unix(1000, 0)
 
+	// Calculate concurrencyOperators according to max available CPUs.
+	totalOperators := runtime.GOMAXPROCS(0) / 2
+	concurrencyOperators := []engine.ExplainOutputNode{}
+	for i := 0; i < totalOperators; i++ {
+		concurrencyOperators = append(concurrencyOperators, engine.ExplainOutputNode{
+			OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
+				{OperatorName: fmt.Sprintf("[*vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
+			},
+		})
+	}
+
 	for _, tc := range []struct {
 		query    string
 		expected *engine.ExplainOutputNode
@@ -60,50 +71,14 @@ func TestQueryExplain(t *testing.T) {
 			expected: &engine.ExplainOutputNode{OperatorName: "[*noArgFunctionOperator] time()"},
 		},
 		{
-			query: "foo",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*coalesce]", Children: []engine.ExplainOutputNode{
-				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 0 mod 4"},
-				},
-				},
-				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 1 mod 4"},
-				},
-				},
-				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 2 mod 4"},
-				},
-				},
-				{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 3 mod 4"},
-				},
-				},
-			},
-			},
+			query:    "foo",
+			expected: &engine.ExplainOutputNode{OperatorName: "[*coalesce]", Children: concurrencyOperators},
 		},
 		{
 			query: "sum(foo) by (job)",
 			expected: &engine.ExplainOutputNode{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
 				{OperatorName: "[*aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*coalesce]", Children: []engine.ExplainOutputNode{
-						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 0 mod 4"},
-						},
-						},
-						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 1 mod 4"},
-						},
-						},
-						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 2 mod 4"},
-						},
-						},
-						{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-							{OperatorName: "[*vectorSelector] {[__name__=\"foo\"]} 3 mod 4"},
-						},
-						},
-					},
-					},
+					{OperatorName: "[*coalesce]", Children: concurrencyOperators},
 				},
 				},
 			},
