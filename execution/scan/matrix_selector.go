@@ -142,7 +142,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			var err error
 
 			if function.IsExtFunction(o.funcExpr.Func.Name) {
-				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.funcExpr.Func.Name, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
+				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
 			} else {
 				rangeSamples, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousSamples)
 			}
@@ -181,7 +181,9 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if stepRange > o.step {
 				stepRange = o.step
 			}
-			series.samples.ReduceDelta(stepRange)
+			if !function.IsExtFunction(o.funcExpr.Func.Name) {
+				series.samples.ReduceDelta(stepRange)
+			}
 
 			seriesTs += o.step
 		}
@@ -323,7 +325,7 @@ loop:
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Sample, functionName string, extLookbackDelta int64, metricAppearedTs **int64) ([]promql.Sample, error) {
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]promql.Sample, error) {
 	extMint := mint - extLookbackDelta
 
 	if len(out) > 0 && out[len(out)-1].T >= mint {
@@ -390,7 +392,7 @@ loop:
 			// This is the argument to an extended range function: if any point
 			// exists at or before range start, add it and then keep replacing
 			// it with later points while not yet (strictly) inside the range.
-			if t > mint || !appendedPointBeforeMint {
+			if t >= mint || !appendedPointBeforeMint {
 				out = append(out, promql.Sample{T: t, F: v})
 				appendedPointBeforeMint = true
 			} else {
