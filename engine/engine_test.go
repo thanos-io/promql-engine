@@ -1963,8 +1963,8 @@ func TestXFunctions(t *testing.T) {
 			load:  defaultLoad,
 			query: "xincrease(http_requests[5s])",
 			expected: []promql.Sample{
-				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/foo")),
-				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/bar")),
+				createSample(defaultQueryTime.UnixMilli(), 20, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 20, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
@@ -2097,6 +2097,16 @@ func TestXFunctions(t *testing.T) {
 			expected: []promql.Sample{
 				createSample(1200000, 10, labels.FromStrings("path", "/foo")),
 				createSample(1200000, -10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name: "eval instant at 4m xincrease(http_requests[2m]), with 1m lookback",
+			load: `load 30s
+					http_requests	0 0 0 0 1 1 1 1`,
+			query:     "xincrease(http_requests[2m])",
+			queryTime: time.Unix(240, 0),
+			expected: []promql.Sample{
+				createSample(240000, 1, labels.Labels{}),
 			},
 		},
 	}
