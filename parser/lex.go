@@ -432,6 +432,12 @@ func lexStatements(l *Lexer) stateFn {
 		l.emit(LEFT_BRACE)
 		l.braceOpen = true
 		return lexInsideBraces
+		case r == '-':
+			l.accept("-")
+			if !l.acceptRun(decimalDigits){
+				return l.errorf("Invalid duration at position %d",l.pos)
+			}
+			return Duration,l.input[l.start:l.pos]
 	case r == '[':
 		if l.bracketOpen {
 			return l.errorf("unexpected left bracket %q", r)

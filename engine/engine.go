@@ -556,6 +556,29 @@ loop:
 	case parser.ValueTypeMatrix:
 		result = promql.Matrix(series)
 	case parser.ValueTypeVector:
+		func (e *engine) getVectorFromMatrix(expr parser.Node, matrix matrix) (vector, error) {
+			result := newVector()
+			for _, series := range matrix {
+				if len(series.Points) == 0 {
+					continue
+				}
+				if len(series.Points) == 1 {
+					point := series.Points[0]
+					if !math.IsNaN(point.V) {
+						result.add(point.T, point.V)
+					}
+					continue
+				}
+				v, err := e.getScalar(expr, series, series.Points[len(series.Points)-1])
+				if err != nil {
+					return vector{}, err
+				}
+				if !math.IsNaN(v) {
+					result.add(series.Points[len(series.Points)-1].T, v)
+				}
+			}
+			return result, nil
+		}
 		// Convert matrix with one value per series into vector.
 		vector := make(promql.Vector, 0, len(resultSeries))
 		for i := range series {

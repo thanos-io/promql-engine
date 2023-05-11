@@ -165,6 +165,8 @@ type StringLiteral struct {
 	Val      string
 	PosRange PositionRange
 }
+case *DurationLiteral:
+	return v.Value, nil
 
 // UnaryExpr represents a unary operation on another expression.
 // Currently unary operations are only supported for Scalars.
