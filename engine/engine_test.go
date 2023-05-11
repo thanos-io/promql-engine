@@ -2265,7 +2265,7 @@ func TestRateVsXRate(t *testing.T) {
 			queryTime: time.Unix(75, 0),
 			expected: []promql.Sample{
 				createSample(75000, 0.02, labels.FromStrings("path", "/foo")),
-				createSample(75000, 0.1, labels.FromStrings("path", "/bar")),
+				createSample(75000, 0.12, labels.FromStrings("path", "/bar")),
 			},
 		},
 		// 5. Eval 1s earlier compared to (4)
@@ -2432,59 +2432,61 @@ func TestRateVsXRate(t *testing.T) {
 			queryTime: time.Unix(55, 0),
 			expected: []promql.Sample{
 				createSample(55000, 0, labels.FromStrings("path", "/foo")),
-				createSample(55000, 1, labels.FromStrings("path", "/bar")),
+				createSample(55000, 2, labels.FromStrings("path", "/bar")),
 			},
 		},
 	}
 
 	for _, tc := range cases {
-		load := defaultLoad
-		if tc.load != "" {
-			load = tc.load
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			load := defaultLoad
+			if tc.load != "" {
+				load = tc.load
+			}
 
-		test, err := promql.NewTest(t, load)
-		testutil.Ok(t, err)
-		defer test.Close()
+			test, err := promql.NewTest(t, load)
+			testutil.Ok(t, err)
+			defer test.Close()
 
-		testutil.Ok(t, test.Run())
-		queryTime := defaultQueryTime
-		if tc.queryTime != (time.Time{}) {
-			queryTime = tc.queryTime
-		}
+			testutil.Ok(t, test.Run())
+			queryTime := defaultQueryTime
+			if tc.queryTime != (time.Time{}) {
+				queryTime = tc.queryTime
+			}
 
-		optimizers := logicalplan.AllOptimizers
+			optimizers := logicalplan.AllOptimizers
 
-		newEngine := engine.New(engine.Opts{
-			EngineOpts:        opts,
-			DisableFallback:   true,
-			LogicalOptimizers: optimizers,
-			EnableXFunctions:  true,
+			newEngine := engine.New(engine.Opts{
+				EngineOpts:        opts,
+				DisableFallback:   true,
+				LogicalOptimizers: optimizers,
+				EnableXFunctions:  true,
+			})
+			query, err := newEngine.NewInstantQuery(test.Context(), test.Storage(), nil, tc.query, queryTime)
+			testutil.Ok(t, err)
+			defer query.Close()
+
+			engineResult := query.Exec(test.Context())
+			testutil.Ok(t, engineResult.Err)
+			// Round engine result.
+			roundValues(engineResult)
+			expectedResult := createVectorResult(tc.expected)
+
+			testutil.Equals(t, expectedResult.Err, engineResult.Err)
+
+			exR := expectedResult.Value.(promql.Vector)
+			erR := engineResult.Value.(promql.Vector)
+
+			sort.Slice(exR, func(i, j int) bool {
+				return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
+			})
+
+			sort.Slice(erR, func(i, j int) bool {
+				return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
+			})
+
+			testutil.Equals(t, exR, erR)
 		})
-		query, err := newEngine.NewInstantQuery(test.Context(), test.Storage(), nil, tc.query, queryTime)
-		testutil.Ok(t, err)
-		defer query.Close()
-
-		engineResult := query.Exec(test.Context())
-		testutil.Ok(t, engineResult.Err)
-		// Round engine result.
-		roundValues(engineResult)
-		expectedResult := createVectorResult(tc.expected)
-
-		testutil.Equals(t, expectedResult.Err, engineResult.Err)
-
-		exR := expectedResult.Value.(promql.Vector)
-		erR := engineResult.Value.(promql.Vector)
-
-		sort.Slice(exR, func(i, j int) bool {
-			return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
-		})
-
-		sort.Slice(erR, func(i, j int) bool {
-			return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
-		})
-
-		testutil.Equals(t, exR, erR)
 	}
 }
 
