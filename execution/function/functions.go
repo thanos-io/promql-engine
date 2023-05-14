@@ -87,6 +87,13 @@ var Funcs = map[string]FunctionCall{
 	"deg": simpleFunc(func(v float64) float64 {
 		return v * 180 / math.Pi
 	}),
+	"absent_over_time": simpleFunc(func(v float64) float64 {
+		if v > 0 {
+			return 0
+		} else {
+			return 1
+		}
+	}),
 	"sgn": simpleFunc(func(v float64) float64 {
 		var sign float64
 		if v > 0 {
