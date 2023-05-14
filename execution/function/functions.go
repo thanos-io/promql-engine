@@ -61,6 +61,9 @@ func filterFloatOnlySamples(samples []promql.Sample) []promql.Sample {
 
 // The engine handles sort and sort_desc when presenting the results. They are not needed here.
 var Funcs = map[string]FunctionCall{
+	"absent": simpleFunc(func(v float64) float64 {
+		return v
+	}),
 	"abs":   simpleFunc(math.Abs),
 	"ceil":  simpleFunc(math.Ceil),
 	"exp":   simpleFunc(math.Exp),

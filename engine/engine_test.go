@@ -185,6 +185,11 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "abs(http_requests_total)",
 		},
 		{
+			"name": "absent",
+			"load": "load 30s\n  absent(http_requests_total{pod=\"nginx-1\"}) - 5 + 1 * 15\n  absent(http_requests_total{pod=\"nginx-2\"}) - 5 + 2 * 18",
+			"query": "absent(http_requests_total)"
+		},		  
+		{
 			name: "ceil",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} -5.5+1x15
