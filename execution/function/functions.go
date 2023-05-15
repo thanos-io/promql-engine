@@ -120,18 +120,6 @@ var Funcs = map[string]FunctionCall{
 			F: math.Pi,
 		}
 	},
-	"timestamp": func(f FunctionArgs) promql.Sample {
-		if len(f.Samples) == 0 {
-			return InvalidSample
-		}
-		result := promql.Sample{}
-		for _, sample := range f.Samples {
-			if sample.H == nil { // only consider float samples
-				result.Points = append(result.Points, promql.Point{T: sample.T, V: float64(sample.T) / 1000})
-			}
-		}
-		return result
-	},
 	"sum_over_time": func(f FunctionArgs) promql.Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample

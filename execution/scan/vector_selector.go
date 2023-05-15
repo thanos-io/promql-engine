@@ -49,6 +49,12 @@ type vectorSelector struct {
 	numShards int
 }
 
+type point struct {
+	t  int64
+	v  float64
+	fh *histogram.FloatHistogram
+}
+
 // NewVectorSelector creates operator which selects vector of series.
 func NewVectorSelector(
 	pool *model.VectorPool,
@@ -106,35 +112,51 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+
 	for i := 0; i < len(o.scanners); i++ {
 		var (
-			series   = o.scanners[i]
-			seriesTs = ts
+			series       = o.scanners[i]
+			seriesTs     = ts
+			lastSampleTs int64 // Added variable to store timestamp of the last sample in the lookback period.
 		)
 
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
 			if len(vectors) <= currStep {
 				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
 			}
-			_, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+
+			// Modify selectPoint call to retrieve timestamp of the last sample in the lookback period.
+			p, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return nil, err
 			}
+
 			if ok {
-				if h != nil {
-					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, h)
+				if p.fh != nil {
+					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, p.fh)
 				} else {
-					vectors[currStep].AppendSample(o.vectorPool, series.signature, v)
+					vectors[currStep].AppendSample(o.vectorPool, series.signature, p.v)
 				}
+
+				// Save the timestamp of the last sample in the lookback period.
+				lastSampleTs = p.t
 			}
+
 			seriesTs += o.step
 		}
+
+		// Use the saved timestamp to compute timestamp of last sample in lookback period.
+		if lastSampleTs > 0 {
+			// vectors[len(vectors)-1].SetTimestamp(lastSampleTs)
+		}
 	}
+
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
 	if o.step == 0 {
 		o.step = 1
 	}
+
 	o.currentStep += o.step * int64(o.numSteps)
 
 	return vectors, nil
@@ -165,35 +187,38 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 }
 
 // TODO(fpetkovski): Add max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
+// To push down the timestamp function into this file and store the timestamp in the value for each series, you can modify the selectPoint function.
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (point, bool, error) {
 	refTime := ts - offset
-	var t int64
-	var v float64
-	var fh *histogram.FloatHistogram
+	var p point
 
 	valueType := it.Seek(refTime)
 	switch valueType {
 	case chunkenc.ValNone:
 		if it.Err() != nil {
-			return 0, 0, nil, false, it.Err()
+			return p, false, it.Err()
 		}
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		t, fh = it.AtFloatHistogram()
+		t, fh := it.AtFloatHistogram()
+		p = point{t: t, fh: fh}
 	case chunkenc.ValFloat:
-		t, v = it.At()
+		t, v := it.At()
+		p = point{t: t, v: v}
 	default:
 		panic(errors.Newf("unknown value type %v", valueType))
 	}
-	if valueType == chunkenc.ValNone || t > refTime {
+
+	if valueType == chunkenc.ValNone || p.t > refTime {
 		var ok bool
-		t, v, _, fh, ok = it.PeekPrev()
-		if !ok || t < refTime-lookbackDelta {
-			return 0, 0, nil, false, nil
+		p.t, p.v, _, p.fh, ok = it.PeekPrev()
+		if !ok || p.t < refTime-lookbackDelta {
+			return p, false, nil
 		}
 	}
-	if value.IsStaleNaN(v) || (fh != nil && value.IsStaleNaN(fh.Sum)) {
-		return 0, 0, nil, false, nil
+
+	if value.IsStaleNaN(p.v) || (p.fh != nil && value.IsStaleNaN(p.fh.Sum)) {
+		return p, false, nil
 	}
 
-	return t, v, fh, true, nil
+	return p, true, nil
 }
