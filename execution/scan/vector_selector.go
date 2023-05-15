@@ -147,7 +147,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 		// Use the saved timestamp to compute timestamp of last sample in lookback period.
 		if lastSampleTs > 0 {
-			// vectors[len(vectors)-1].SetTimestamp(lastSampleTs)
+			vectors[len(vectors)-1].T = lastSampleTs
 		}
 	}
 
