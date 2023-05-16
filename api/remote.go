@@ -19,6 +19,7 @@ type RemoteEngine interface {
 	MaxT() int64
 	MinT() int64
 	LabelSets() []labels.Labels
+	NewInstantQuery(ctx context.Context, opts *promql.QueryOpts, qs string, ts time.Time) (promql.Query, error)
 	NewRangeQuery(ctx context.Context, opts *promql.QueryOpts, qs string, start, end time.Time, interval time.Duration) (promql.Query, error)
 }
 
