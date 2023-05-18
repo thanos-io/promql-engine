@@ -192,6 +192,8 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	refTime := ts - offset
 	var p point
 
+	returnTimestampAsValue := true // bool flag to indicate whether to return the timestamp as the point value.
+
 	valueType := it.Seek(refTime)
 	switch valueType {
 	case chunkenc.ValNone:
@@ -203,7 +205,13 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 		p = point{t: t, fh: fh}
 	case chunkenc.ValFloat:
 		t, v := it.At()
-		p = point{t: t, v: v}
+		if returnTimestampAsValue {
+			p = point{t: t, v: float64(t)}
+
+		} else {
+			p = point{t: t, v: v}
+		}
+
 	default:
 		panic(errors.Newf("unknown value type %v", valueType))
 	}
