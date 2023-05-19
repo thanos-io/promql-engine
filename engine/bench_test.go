@@ -17,8 +17,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
@@ -95,7 +95,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		result := executeRangeQuery(b, query, test, start, end, step)
+		result := executeRangeQuery(b, query, test, start, end, step, false)
 		testutil.Ok(b, result.Err)
 	}
 }
@@ -260,10 +260,21 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query: `sort_desc(http_requests_total)`,
 			test:  sixHourDataset,
 		},
+		{
+			name:  "absent and exists",
+			query: `absent(http_requests_total)`,
+			test:  sixHourDataset,
+		},
+		{
+			name:  "absent and doesnt exist",
+			query: `absent(nonexistent)`,
+			test:  sixHourDataset,
+		},
 	}
 
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
 			b.Run("old_engine", func(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:               nil,
@@ -290,7 +301,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					newResult := executeRangeQuery(b, tc.query, tc.test, start, end, step)
+					newResult := executeRangeQuery(b, tc.query, tc.test, start, end, step, false)
 					testutil.Ok(b, newResult.Err)
 				}
 			})
@@ -298,6 +309,61 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkRegexOptimizerRangeQuery(b *testing.B) {
+	samplesPerHour := 60 * 2
+	sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
+	defer sixHourDataset.Close()
+
+	largeSixHourDataset := setupStorage(b, 10000, 10, 6*samplesPerHour)
+	defer largeSixHourDataset.Close()
+
+	sevenDaysAndTwoHoursDataset := setupStorage(b, 1000, 3, (7*24+2)*samplesPerHour)
+	defer sevenDaysAndTwoHoursDataset.Close()
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+		test  *promql.Test
+	}{
+		{
+			name:  "vector selector",
+			query: `http_requests_total{pod=~"p0"}`,
+			test:  sixHourDataset,
+		},
+		{
+			name:  "sum",
+			query: `sum(http_requests_total{pod=~"p1"})`,
+			test:  sixHourDataset,
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run(fmt.Sprintf("without_regex_optimizer=>%s", tc.name), func(b *testing.B) {
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					newResult := executeRangeQuery(b, tc.query, tc.test, start, end, step, true)
+					testutil.Ok(b, newResult.Err)
+				}
+			})
+			b.Run(fmt.Sprintf("with_regex_optimizer_engine=>%s", tc.name), func(b *testing.B) {
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for i := 0; i < b.N; i++ {
+					newResult := executeRangeQuery(b, tc.query, tc.test, start, end, step, false)
+					testutil.Ok(b, newResult.Err)
+				}
+			})
+		})
+	}
+}
 func BenchmarkNativeHistograms(b *testing.B) {
 	test, err := promql.NewTest(b, "")
 	testutil.Ok(b, err)
@@ -343,6 +409,10 @@ func BenchmarkNativeHistograms(b *testing.B) {
 		{
 			name:  "histogram_quantile",
 			query: "histogram_quantile(0.9, sum(native_histogram_series))",
+		},
+		{
+			name:  "histogram scalar binop",
+			query: "sum(native_histogram_series * 60)",
 		},
 	}
 
@@ -540,12 +610,18 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 
 }
 
-func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) *promql.Result {
-	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{DisableFallback: true, EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
+func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, disableRegexOptz bool) *promql.Result {
+	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{DisableFallback: true, EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}}, disableRegexOptz)
 }
 
-func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
+func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts, disableRegexOptz bool) *promql.Result {
+	if disableRegexOptz {
+		opts.LogicalOptimizers = make([]logicalplan.Optimizer, 0)
+		opts.LogicalOptimizers = append(opts.LogicalOptimizers, logicalplan.SortMatchers{})
+		opts.LogicalOptimizers = append(opts.LogicalOptimizers, logicalplan.MergeSelectsOptimizer{})
+	}
 	ng := engine.New(opts)
+
 	ctx := context.Background()
 	qry, err := ng.NewRangeQuery(ctx, test.Queryable(), nil, q, start, end, step)
 	testutil.Ok(b, err)

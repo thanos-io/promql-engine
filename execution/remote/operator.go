@@ -7,30 +7,33 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/scan"
-	engstore "github.com/thanos-community/promql-engine/execution/storage"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/scan"
+	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type Execution struct {
-	storage        *storageAdapter
-	query          promql.Query
-	opts           *query.Options
-	vectorSelector model.VectorOperator
+	storage         *storageAdapter
+	query           promql.Query
+	opts            *query.Options
+	queryRangeStart time.Time
+	vectorSelector  model.VectorOperator
 }
 
-func NewExecution(query promql.Query, pool *model.VectorPool, opts *query.Options) *Execution {
+func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart time.Time, opts *query.Options) *Execution {
 	storage := newStorageFromQuery(query, opts)
 	return &Execution{
-		storage:        storage,
-		query:          query,
-		opts:           opts,
-		vectorSelector: scan.NewVectorSelector(pool, storage, opts, 0, 0, 1),
+		storage:         storage,
+		query:           query,
+		opts:            opts,
+		queryRangeStart: queryRangeStart,
+		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, 1),
 	}
 }
 
@@ -103,12 +106,15 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 	case promql.Vector:
 		s.series = make([]engstore.SignedSeries, len(val))
 		for i, sample := range val {
+			series := promql.Series{Metric: sample.Metric}
+			if sample.H == nil {
+				series.Floats = []promql.FPoint{{T: sample.T, F: sample.F}}
+			} else {
+				series.Histograms = []promql.HPoint{{T: sample.T, H: sample.H}}
+			}
 			s.series[i] = engstore.SignedSeries{
 				Signature: uint64(i),
-				Series: promql.NewStorageSeries(promql.Series{
-					Metric: sample.Metric,
-					Floats: []promql.FPoint{{T: sample.T, F: sample.F}},
-				}),
+				Series:    promql.NewStorageSeries(series),
 			}
 		}
 	}

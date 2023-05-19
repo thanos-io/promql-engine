@@ -11,7 +11,7 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 var spaces = regexp.MustCompile(`\s+`)
@@ -37,7 +37,7 @@ func TestDefaultOptimizers(t *testing.T) {
 		{
 			name:     "common selectors with different operators",
 			expr:     `sum(metric{a="b"}) / sum(metric{a=~"b"})`,
-			expected: `sum(metric{a="b"}) / sum(metric{a=~"b"})`,
+			expected: `sum(metric{a="b"}) / sum(metric{a="b"})`,
 		},
 		{
 			name:     "common selectors with regex",
@@ -62,7 +62,7 @@ func TestDefaultOptimizers(t *testing.T) {
 		{
 			name:     "different operator",
 			expr:     `sum(metric{a="b"}) / sum(metric{a=~"b"})`,
-			expected: `sum(metric{a="b"}) / sum(metric{a=~"b"})`,
+			expected: `sum(metric{a="b"}) / sum(metric{a="b"})`,
 		},
 		{
 			name:     "different metrics",

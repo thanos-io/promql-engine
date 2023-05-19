@@ -6,7 +6,7 @@ package logicalplan
 import (
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 // MergeSelectsOptimizer optimizes a binary expression where

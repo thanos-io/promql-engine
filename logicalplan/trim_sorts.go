@@ -4,7 +4,7 @@
 package logicalplan
 
 import (
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 // TrimSortFunctions trims sort functions. It can do that because for nested sort functions

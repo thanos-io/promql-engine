@@ -1,6 +1,6 @@
 package parse
 
-import "github.com/thanos-community/promql-engine/parser"
+import "github.com/thanos-io/promql-engine/parser"
 
 var Functions = map[string]*parser.Function{
 	"xdelta": {

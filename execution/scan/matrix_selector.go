@@ -11,21 +11,20 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-community/promql-engine/execution/function"
-	"github.com/thanos-community/promql-engine/execution/model"
-	engstore "github.com/thanos-community/promql-engine/execution/storage"
-	"github.com/thanos-community/promql-engine/parser"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/function"
+	"github.com/thanos-io/promql-engine/execution/model"
+	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type matrixScanner struct {
 	labels           labels.Labels
 	signature        uint64
-	previousSamples  []promql.Sample
+	previousSamples  []function.Sample
 	samples          *storage.BufferedSeriesIterator
 	metricAppearedTs *int64
 }
@@ -122,9 +121,15 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
-	lblBuilder := labels.ScratchBuilder{}
+	vectors := o.vectorPool.GetVectorBatch()
+	for currStep := 0; currStep < o.numSteps && ts <= o.maxt; currStep++ {
+		vectors = append(vectors, o.vectorPool.GetStepVector(ts))
+		ts += o.step
+	}
+
+	// Reset the current timestamp.
+	ts = o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -132,13 +137,10 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		)
 
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
-			if len(vectors) <= currStep {
-				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
-			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			var rangeSamples []promql.Sample
+			var rangeSamples []function.Sample
 			var err error
 
 			if function.IsExtFunction(o.funcExpr.Func.Name) {
@@ -154,15 +156,13 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
-			// https://github.com/thanos-community/promql-engine/issues/39
+			// https://github.com/thanos-io/promql-engine/issues/39
 			result := o.call(function.FunctionArgs{
-				Labels:           series.labels,
 				Samples:          rangeSamples,
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
 				MetricAppearedTs: o.scanners[i].metricAppearedTs,
-				LabelsBuilder:    lblBuilder,
 			})
 
 			if result.T != function.InvalidSample.T {
@@ -248,7 +248,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Sample) ([]promql.Sample, error) {
+func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []function.Sample) ([]function.Sample, error) {
 	if len(out) > 0 && out[len(out)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
@@ -285,7 +285,7 @@ loop:
 				continue loop
 			}
 			if t >= mint {
-				out = append(out, promql.Sample{T: t, H: fh})
+				out = append(out, function.Sample{T: t, H: fh})
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -294,7 +294,7 @@ loop:
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				out = append(out, promql.Sample{T: t, F: v})
+				out = append(out, function.Sample{T: t, F: v})
 			}
 		}
 	}
@@ -304,12 +304,12 @@ loop:
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
-			out = append(out, promql.Sample{T: t, H: fh})
+			out = append(out, function.Sample{T: t, H: fh})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
-			out = append(out, promql.Sample{T: t, F: v})
+			out = append(out, function.Sample{T: t, F: v})
 		}
 	}
 
@@ -325,7 +325,7 @@ loop:
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []promql.Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]promql.Sample, error) {
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []function.Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]function.Sample, error) {
 	extMint := mint - extLookbackDelta
 
 	if len(out) > 0 && out[len(out)-1].T >= mint {
@@ -378,7 +378,7 @@ loop:
 				*metricAppearedTs = &t
 			}
 			if t >= mint {
-				out = append(out, promql.Sample{T: t, H: fh})
+				out = append(out, function.Sample{T: t, H: fh})
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -393,10 +393,10 @@ loop:
 			// exists at or before range start, add it and then keep replacing
 			// it with later points while not yet (strictly) inside the range.
 			if t >= mint || !appendedPointBeforeMint {
-				out = append(out, promql.Sample{T: t, F: v})
+				out = append(out, function.Sample{T: t, F: v})
 				appendedPointBeforeMint = true
 			} else {
-				out[len(out)-1] = promql.Sample{T: t, F: v}
+				out[len(out)-1] = function.Sample{T: t, F: v}
 			}
 
 		}
@@ -410,7 +410,7 @@ loop:
 			if *metricAppearedTs == nil {
 				*metricAppearedTs = &t
 			}
-			out = append(out, promql.Sample{T: t, H: fh})
+			out = append(out, function.Sample{T: t, H: fh})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
@@ -418,7 +418,7 @@ loop:
 			if *metricAppearedTs == nil {
 				*metricAppearedTs = &t
 			}
-			out = append(out, promql.Sample{T: t, F: v})
+			out = append(out, function.Sample{T: t, F: v})
 		}
 	}
 

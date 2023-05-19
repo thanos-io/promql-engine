@@ -20,8 +20,8 @@ import (
 
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
@@ -176,6 +176,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		{
 			name:  "nested unary negation",
 			query: "1/(-(2*2))",
+		},
+		{
+			name: "stddev with large values",
+			load: `load 30s
+              http_requests_total{pod="nginx-1", route="/"} 1e+181
+              http_requests_total{pod="nginx-2", route="/"} 1e+80`,
+			query: `stddev(http_requests_total)`,
 		},
 		{
 			name: "stddev with NaN 1",
@@ -1602,6 +1609,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
+			name: "topk with NaN comparison",
+			load: `load 30s
+            http_requests_total{pod="nginx-1", route="/"} NaN
+            http_requests_total{pod="nginx-2", route="/"}  NaN`,
+			query: "topk by (route) (1, http_requests_total)",
+		},
+		{
 			name: "nested topk error that should not be skipped",
 			load: `load 30s
 				X 1+1x50`,
@@ -1744,7 +1758,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `scalar(avg_over_time({__name__="http_requests_total"}[3m])) > bool 0.9464749352949011`,
 		},
 		{
-			name: "repro https://github.com/thanos-community/promql-engine/issues/239",
+			name: "repro https://github.com/thanos-io/promql-engine/issues/239",
 			load: `load 30s
 				storage_used{storage_index="1010"} 65x20
 				storage_used{storage_index="1011"} 125x20
@@ -1760,6 +1774,17 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 				storage_info{storage_info="Root", storage_index="42"} 1x20
 				storage_info{storage_info="Swap", storage_index="30"} 1x20`,
 			query: `avg by (storage_info) (storage_used * on (instance, storage_index) group_left(storage_info) (sum by (instance, storage_index, storage_info) (storage_info)))`,
+		},
+		{
+			name: "absent with partial data in range",
+			load: `load 30s
+				existent{job="myjob"} 1 1 1`,
+			query: `absent(existent{job="myjob"})`,
+		},
+		{
+			name:  "absent with no data in range",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob"})`,
 		},
 	}
 
@@ -1904,50 +1929,76 @@ func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
 	return sset
 }
 
-func TestBinopEdgeCases(t *testing.T) {
+func TestEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name   string
+		series []storage.Series
+		query  string
+		start  time.Time
+		end    time.Time
+	}{
+		{
+			name: "binop edge case",
+			series: []storage.Series{
+				newMockSeries(
+					[]string{labels.MetricName, "foo"},
+					[]int64{0, 30, 60, 1200, 1500, 1800},
+					[]float64{1, 2, 3, 4, 5, 6},
+				),
+				newMockSeries(
+					[]string{labels.MetricName, "bar", "id", "1"},
+					[]int64{0, 30},
+					[]float64{1, 2},
+				),
+				newMockSeries(
+					[]string{labels.MetricName, "bar", "id", "2"},
+					[]int64{1200, 1500},
+					[]float64{3, 4},
+				),
+			},
+			query: `foo * on () group_left bar`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(30000, 0),
+		},
+		{
+			name: "absent with gaps in series",
+			series: []storage.Series{
+				newMockSeries(
+					[]string{labels.MetricName, "foo"},
+					[]int64{30, 300, 3000, 6000, 12000, 18000},
+					[]float64{1, 2, 3, 4, 5, 6},
+				),
+			},
+			query: `absent(foo)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(30000, 0),
+		},
+	}
+
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
 		EnableNegativeOffset: true,
 		EnableAtModifier:     true,
 	}
-
-	series := []storage.Series{
-		newMockSeries(
-			[]string{labels.MetricName, "foo"},
-			[]int64{0, 30, 60, 1200, 1500, 1800},
-			[]float64{1, 2, 3, 4, 5, 6},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "id", "1"},
-			[]int64{0, 30},
-			[]float64{1, 2},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "id", "2"},
-			[]int64{1200, 1500},
-			[]float64{3, 4},
-		),
-	}
-	query := `foo * on () group_left bar`
-
-	start := time.Unix(0, 0)
-	end := time.Unix(30000, 0)
 	step := time.Second * 30
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			oldEngine := promql.NewEngine(opts)
+			q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
+			testutil.Ok(t, err)
 
-	ctx := context.Background()
-	oldEngine := promql.NewEngine(opts)
-	q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(series...), nil, query, start, end, step)
-	testutil.Ok(t, err)
+			newEngine := engine.New(engine.Opts{EngineOpts: opts})
+			q2, err := newEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
+			testutil.Ok(t, err)
 
-	newEngine := engine.New(engine.Opts{EngineOpts: opts})
-	q2, err := newEngine.NewRangeQuery(ctx, storageWithSeries(series...), nil, query, start, end, step)
-	testutil.Ok(t, err)
+			oldResult := q1.Exec(ctx)
+			newResult := q2.Exec(ctx)
 
-	oldResult := q1.Exec(ctx)
-
-	newResult := q2.Exec(ctx)
-	testutil.Equals(t, oldResult, newResult)
+			testutil.Equals(t, oldResult, newResult)
+		})
+	}
 }
 
 func TestDisabledXFunction(t *testing.T) {
@@ -2804,6 +2855,33 @@ func TestInstantQuery(t *testing.T) {
 			query:     `label_join(http_requests_total{}, "label", "-")`,
 		},
 		{
+			name: "label_replace",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(http_requests_total, "foo", "$1", "series", ".*")`,
+		},
+		{
+			name: "label_replace with bad regular expression",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(http_requests_total, "foo", "$1", "series", "]]")`,
+		},
+		{
+			name: "label_replace non-existing src label",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(http_requests_total, "foo", "$1", "bar", ".*")`,
+		},
+		{
 			name: "topk",
 			load: `load 30s
 						http_requests_total{pod="nginx-1", series="1"} 1
@@ -3271,6 +3349,18 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 		{
+			name: "scalar with nested binary operator with step invariant",
+			load: `load 30s
+      http_requests_total{pod="nginx-1", route="/"} 53.33+56.00x40
+      http_requests_total{pod="nginx-2", route="/"} -26+2.00x40`,
+			query: `vector(scalar((http_requests_total @ end() offset 5m > http_requests_total)))
+      `,
+		},
+		{
+			name:  "scalar func with non existent metric in scalar comparison",
+			query: `scalar(non_existent_metric) < bool 0`,
+		},
+		{
 			name: "scalar func with NaN",
 			load: `load 30s
 		 	http_requests_total{pod="nginx-1"} 1+1x15
@@ -3354,6 +3444,38 @@ func TestInstantQuery(t *testing.T) {
 				http_requests_total{pod="nginx-2", series="1"} -10+1x50
 				http_requests_total{pod="nginx-3", series="1"} NaN`,
 			query: "sgn(http_requests_total)",
+		},
+		{
+			name:  "absent and series does not exist",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob"})`,
+		},
+		{
+			name: "absent and series exists",
+			load: `load 30s
+				existent{job="myjob"} 1`,
+			query: `absent(existent{job="myjob"})`,
+		},
+		{
+			name:  "absent and regex matcher",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob", instance=~".*"})`,
+		},
+		{
+			name:  "absent and duplicate matchers",
+			load:  `load 30s`,
+			query: `absent(nonexistent{job="myjob", job="yourjob", foo="bar"})`,
+		},
+		{
+			name:  "absent and nested function",
+			load:  `load 30s`,
+			query: `absent(sum(nonexistent{job="myjob"}))`,
+		},
+		{
+			name: "absent and nested absent with existing series",
+			load: `load 30s
+				existent{job="myjob"} 1`,
+			query: `absent(absent(existent{job="myjob"}))`,
 		},
 	}
 
@@ -3984,7 +4106,7 @@ func (m *mockIterator) Next() chunkenc.ValueType {
 func (m *mockIterator) Seek(t int64) chunkenc.ValueType {
 	if m.i > -1 && m.i < len(m.timestamps) {
 		currentTS := m.timestamps[m.i]
-		if currentTS > t {
+		if currentTS >= t {
 			return chunkenc.ValFloat
 		}
 	}
@@ -4123,7 +4245,7 @@ type histogramGeneratorFunc func(app storage.Appender, numSeries int, withMixedT
 func TestNativeHistograms(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
+		MaxSamples:           1e16,
 		EnableNegativeOffset: true,
 		EnableAtModifier:     true,
 	}
@@ -4188,6 +4310,10 @@ func TestNativeHistograms(t *testing.T) {
 			query: "min by (foo) (native_histogram_series)",
 		},
 		{
+			name:  "absent",
+			query: "absent(native_histogram_series)",
+		},
+		{
 			name:  "histogram_sum",
 			query: "histogram_sum(native_histogram_series)",
 		},
@@ -4202,6 +4328,18 @@ func TestNativeHistograms(t *testing.T) {
 		{
 			name:  "histogram_fraction",
 			query: "histogram_fraction(0, 0.2, native_histogram_series)",
+		},
+		{
+			name:  "lhs multiplication",
+			query: "native_histogram_series * 3",
+		},
+		{
+			name:  "rhs multiplication",
+			query: "3 * native_histogram_series",
+		},
+		{
+			name:  "lhs division",
+			query: "native_histogram_series / 2",
 		},
 	}
 
@@ -4230,8 +4368,8 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					testutil.Ok(t, app.Commit())
 					testutil.Ok(t, test.Run())
 
-					// New Engine
-					engine := engine.New(engine.Opts{
+					promEngine := promql.NewEngine(opts)
+					thanosEngine := engine.New(engine.Opts{
 						EngineOpts:        opts,
 						DisableFallback:   true,
 						LogicalOptimizers: logicalplan.AllOptimizers,
@@ -4239,14 +4377,13 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 
 					t.Run("instant", func(t *testing.T) {
 						ctx := test.Context()
-						qry, err := engine.NewInstantQuery(ctx, test.Queryable(), nil, tc.query, time.Unix(50, 0))
+						qry, err := thanosEngine.NewInstantQuery(ctx, test.Queryable(), nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
 						newResult := qry.Exec(test.Context())
 						testutil.Ok(t, newResult.Err)
 						newVector, err := newResult.Vector()
 						testutil.Ok(t, err)
 
-						promEngine := test.QueryEngine()
 						qry, err = promEngine.NewInstantQuery(ctx, test.Queryable(), nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
 						promResult := qry.Exec(test.Context())
@@ -4270,14 +4407,13 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					})
 
 					t.Run("range", func(t *testing.T) {
-						qry, err := engine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						qry, err := thanosEngine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
 						res := qry.Exec(test.Context())
 						testutil.Ok(t, res.Err)
 						actual, err := res.Matrix()
 						testutil.Ok(t, err)
 
-						promEngine := test.QueryEngine()
 						qry, err = promEngine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
 						res = qry.Exec(test.Context())
@@ -4326,8 +4462,8 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 			if i == 0 {
 				// Inject a histogram with a higher schema.
 				// Regression test for:
-				// * https://github.com/thanos-community/promql-engine/pull/182
-				// * https://github.com/thanos-community/promql-engine/pull/183.
+				// * https://github.com/thanos-io/promql-engine/pull/182
+				// * https://github.com/thanos-io/promql-engine/pull/183.
 				if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, higherSchemaHist, nil); err != nil {
 					return err
 				}
@@ -4431,13 +4567,16 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
 		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
-		expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Scale(1 / float64(30))
+		expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Mul(1 / float64(30))
 		expected.CounterResetHint = histogram.GaugeType
 		testutil.Equals(t, expected, actual[0].Histograms[0].H)
 	})
 }
 
 func sortByLabels(r *promql.Result) {
+	if r.Err != nil {
+		return
+	}
 	switch r.Value.Type() {
 	case promparser.ValueTypeVector:
 		m, _ := r.Vector()

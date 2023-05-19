@@ -12,9 +12,9 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	engstore "github.com/thanos-community/promql-engine/execution/storage"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/model"
+	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -104,8 +104,15 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	vectors := o.vectorPool.GetVectorBatch()
+	for currStep := 0; currStep < o.numSteps && ts <= o.maxt; currStep++ {
+		vectors = append(vectors, o.vectorPool.GetStepVector(ts))
+		ts += o.step
+	}
+
+	// Reset the current timestamp.
+	ts = o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
 		var (
 			series   = o.scanners[i]
@@ -113,9 +120,6 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		)
 
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
-			if len(vectors) <= currStep {
-				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
-			}
 			_, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return nil, err
@@ -186,7 +190,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
 		var ok bool
-		t, v, _, fh, ok = it.PeekPrev()
+		t, v, fh, ok = it.PeekPrev()
 		if !ok || t < refTime-lookbackDelta {
 			return 0, 0, nil, false, nil
 		}

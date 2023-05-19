@@ -10,9 +10,9 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/parser"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type stepInvariantOperator struct {
@@ -100,10 +100,6 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 
 	if err := u.cacheInputVector(ctx); err != nil {
 		return nil, err
-	}
-
-	if len(u.cachedVector.Samples) == 0 {
-		return nil, nil
 	}
 
 	result := u.vectorPool.GetVectorBatch()

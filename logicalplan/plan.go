@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 var (
@@ -21,6 +21,7 @@ var (
 var DefaultOptimizers = []Optimizer{
 	SortMatchers{},
 	MergeSelectsOptimizer{},
+	RegexMatchersFunctions{},
 }
 
 type Opts struct {
@@ -28,6 +29,10 @@ type Opts struct {
 	End           time.Time
 	Step          time.Duration
 	LookbackDelta time.Duration
+}
+
+func (o Opts) IsInstantQuery() bool {
+	return o.Start == o.End
 }
 
 type Plan interface {
@@ -103,7 +108,7 @@ func traverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	case *parser.VectorSelector:
 		return transform(parent, current)
 	case *parser.MatrixSelector:
-		return transform(parent, &node.VectorSelector)
+		return transform(current, &node.VectorSelector)
 	case *parser.AggregateExpr:
 		if stop := traverseBottomUp(current, &node.Expr, transform); stop {
 			return stop

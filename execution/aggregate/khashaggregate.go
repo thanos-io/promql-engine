@@ -15,8 +15,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 type kAggregate struct {
@@ -170,7 +170,7 @@ func (a *kAggregate) init(ctx context.Context) error {
 func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, SampleIDs []uint64, samples []float64) {
 	for i, sId := range SampleIDs {
 		h := a.inputToHeap[sId]
-		if h.Len() < k || h.compare(h.entries[0].total, samples[i]) || math.IsNaN(h.entries[0].total) {
+		if h.Len() < k || h.compare(h.entries[0].total, samples[i]) || (math.IsNaN(h.entries[0].total) && !math.IsNaN(samples[i])) {
 			if k == 1 && h.Len() == 1 {
 				h.entries[0].sId = sId
 				h.entries[0].total = samples[i]

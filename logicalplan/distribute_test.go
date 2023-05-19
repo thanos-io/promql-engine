@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"math"
 	"regexp"
 	"testing"
 	"time"
@@ -11,8 +12,8 @@ import (
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/api"
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 func TestDistributedExecution(t *testing.T) {
@@ -180,15 +181,15 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 			expected: `sum by (pod) (noop)`,
 		},
 		{
-			name:     "label based pruning with grouping matches no engines",
+			name:     "label based pruning with grouping matches single engine",
 			expr:     `sum by (pod) (rate(http_requests_total{region="south"}[2m]))`,
 			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="south"}[2m])))))`,
 		},
 	}
 
 	engines := []api.RemoteEngine{
-		newEngineMock(1, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
-		newEngineMock(2, []labels.Labels{labels.FromStrings("region", "west")}),
+		newEngineMock(math.MinInt64, math.MinInt64, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
+		newEngineMock(math.MinInt64, math.MinInt64, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
 	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 	replacements := map[string]*regexp.Regexp{
@@ -203,6 +204,109 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 			testutil.Ok(t, err)
 
 			plan := New(expr, &Opts{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
+			optimizedPlan := plan.Optimize(optimizers)
+			expectedPlan := cleanUp(replacements, tcase.expected)
+			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+		})
+	}
+}
+
+type engineOpts struct {
+	minTime time.Time
+	maxTime time.Time
+}
+
+func (o engineOpts) mint() int64 {
+	return o.minTime.UnixMilli()
+}
+
+func (o engineOpts) maxt() int64 {
+	return o.maxTime.UnixMilli()
+}
+
+func TestDistributedExecutionWithLongSelectorRanges(t *testing.T) {
+	replacements := map[string]*regexp.Regexp{
+		" ": spaces,
+		"(": openParenthesis,
+		")": closedParenthesis,
+	}
+
+	sixHours := 6 * time.Hour
+	eightHours := 8 * time.Hour
+	twelveHours := 12 * time.Hour
+
+	queryStart := time.Unix(0, 0)
+	queryEnd := time.Unix(0, 0).Add(twelveHours)
+	queryStep := time.Minute
+
+	cases := []struct {
+		name             string
+		expr             string
+		expected         string
+		firstEngineOpts  engineOpts
+		secondEngineOpts engineOpts
+	}{
+		{
+			name: "sum over 5m adds a 5 minute offset to latest engine",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr: `sum_over_time(metric[5m])`,
+			expected: `
+dedup(
+  remote(sum_over_time(metric[5m])),
+  remote(sum_over_time(metric[5m])) [1970-01-01 06:05:00 +0000 UTC]
+)`,
+		},
+		{
+			name: "sum over 2h adds a 2 hour offset to latest engine",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr: `sum_over_time(metric[2h])`,
+			expected: `
+dedup(
+  remote(sum_over_time(metric[2h])),
+  remote(sum_over_time(metric[2h])) [1970-01-01 08:00:00 +0000 UTC]
+)`,
+		},
+		{
+			name: "sum over 3h does not distribute the query due to insufficient engine overlap",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr:     `sum_over_time(metric[3h])`,
+			expected: `sum_over_time(metric[3h])`,
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			engines := []api.RemoteEngine{
+				newEngineMock(tcase.firstEngineOpts.mint(), tcase.firstEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
+				newEngineMock(tcase.secondEngineOpts.mint(), tcase.secondEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
+			}
+			optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
+
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			plan := New(expr, &Opts{Start: queryStart, End: queryEnd, Step: queryStep})
 			optimizedPlan := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
@@ -229,6 +333,6 @@ func (e engineMock) LabelSets() []labels.Labels {
 	return e.labelSets
 }
 
-func newEngineMock(maxT int64, labelSets []labels.Labels) *engineMock {
-	return &engineMock{maxT: maxT, labelSets: labelSets}
+func newEngineMock(mint, maxt int64, labelSets []labels.Labels) *engineMock {
+	return &engineMock{minT: mint, maxT: maxt, labelSets: labelSets}
 }

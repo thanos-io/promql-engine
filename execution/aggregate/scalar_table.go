@@ -12,10 +12,9 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/execution/function"
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 type aggregateTable interface {
@@ -279,45 +278,43 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 	case "stddev":
 		return func() *accumulator {
 			var count float64
-			var mean, cMean float64
-			var aux, cAux float64
-			var hasValue bool
-			return &accumulator{
-				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
-					hasValue = true
-					count++
-					delta := v - (mean + cMean)
-					mean, cMean = function.KahanSumInc(delta/count, mean, cMean)
-					aux, cAux = function.KahanSumInc(delta*(v-(mean+cMean)), aux, cAux)
-				},
-				ValueFunc: func() (float64, *histogram.FloatHistogram) {
-					if count == 1 {
-						return 0, nil
-					}
-					return math.Sqrt((aux + cAux) / count), nil
-				},
-				HasValue: func() bool { return hasValue },
-				Reset: func(_ float64) {
-					hasValue = false
-					count = 0
-					mean = 0
-					cMean = 0
-					aux = 0
-					cAux = 0
-				},
-			}
-		}, nil
-	case "stdvar":
-		return func() *accumulator {
-			var count float64
-			var mean, cMean float64
+			var mean float64
 			var value float64
 			var hasValue bool
 			return &accumulator{
 				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
 					hasValue = true
 					count++
-					delta := v - (mean + cMean)
+					delta := v - mean
+					mean += delta / count
+					value += delta * (v - mean)
+				},
+				ValueFunc: func() (float64, *histogram.FloatHistogram) {
+					if count == 1 {
+						return 0, nil
+					}
+					return math.Sqrt(value / count), nil
+				},
+				HasValue: func() bool { return hasValue },
+				Reset: func(_ float64) {
+					hasValue = false
+					count = 0
+					mean = 0
+					value = 0
+				},
+			}
+		}, nil
+	case "stdvar":
+		return func() *accumulator {
+			var count float64
+			var mean float64
+			var value float64
+			var hasValue bool
+			return &accumulator{
+				AddFunc: func(v float64, _ *histogram.FloatHistogram) {
+					hasValue = true
+					count++
+					delta := v - mean
 					mean += delta / count
 					value = delta * (v - mean)
 				},
@@ -332,7 +329,6 @@ func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
 					hasValue = false
 					count = 0
 					mean = 0
-					cMean = 0
 					value = 0
 				},
 			}

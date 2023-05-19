@@ -1,4 +1,4 @@
-module github.com/thanos-community/promql-engine
+module github.com/thanos-io/promql-engine
 
 go 1.19
 
@@ -8,9 +8,9 @@ require (
 	github.com/efficientgo/core v1.0.0-rc.2
 	github.com/go-kit/log v0.2.1
 	github.com/google/go-cmp v0.5.9
-	github.com/prometheus/client_golang v1.15.0
+	github.com/prometheus/client_golang v1.15.1
 	github.com/prometheus/common v0.42.0
-	github.com/prometheus/prometheus v0.43.1-0.20230422135559-7cd9f8a34030
+	github.com/prometheus/prometheus v0.44.1-0.20230522123707-905a0bd63a12
 	github.com/stretchr/testify v1.8.2
 	go.uber.org/goleak v1.2.1
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
