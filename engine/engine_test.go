@@ -3297,6 +3297,10 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 		{
+			name:  "scalar func with non existent metric in scalar comparison",
+			query: `scalar(non_existent_metric) < bool 0`,
+		},
+		{
 			name: "scalar func with NaN",
 			load: `load 30s
 		 	http_requests_total{pod="nginx-1"} 1+1x15
