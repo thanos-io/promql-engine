@@ -1609,6 +1609,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			step:  2 * time.Second,
 		},
 		{
+			name: "topk with NaN comparison",
+			load: `load 30s
+            http_requests_total{pod="nginx-1", route="/"} NaN
+            http_requests_total{pod="nginx-2", route="/"}  NaN`,
+			query: "topk by (route) (1, http_requests_total)",
+		},
+		{
 			name: "nested topk error that should not be skipped",
 			load: `load 30s
 				X 1+1x50`,
