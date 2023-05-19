@@ -277,6 +277,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "floor(http_requests_total)",
 		},
 		{
+			name: "floor with a filter",
+			load: `load 30s
+          http_requests_total{pod="nginx-1", route="/"} 1
+          http_requests_total{pod="nginx-2", route="/"} 2
+`,
+			query: `floor(http_requests_total{pod="nginx-2"})/http_requests_total`,
+		},
+		{
 			name: "sqrt",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 5.5+1x15

@@ -78,8 +78,8 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		transform(expr)
 		traverse(&node.Expr, transform)
 	case *parser.Call:
-		for _, n := range node.Args {
-			traverse(&n, transform)
+		for i := range node.Args {
+			traverse(&(node.Args[i]), transform)
 		}
 	case *parser.BinaryExpr:
 		transform(expr)
