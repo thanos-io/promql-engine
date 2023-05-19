@@ -452,7 +452,7 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 
 	if x.Err != nil && y.Err != nil {
 		return cmp.Equal(x.Err.Error(), y.Err.Error())
-	} else if x.Err != nil {
+	} else if x.Err != nil || y.Err != nil {
 		return false
 	}
 
