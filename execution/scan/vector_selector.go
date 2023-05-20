@@ -95,13 +95,12 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-
-	if o.currentStep > o.maxt {
-		return nil, nil
-	}
-
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
+	}
+
+	if o.currentStep > o.maxt || len(o.series) == 0 {
+		return nil, nil
 	}
 
 	vectors := o.vectorPool.GetVectorBatch()
