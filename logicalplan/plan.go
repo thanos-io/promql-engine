@@ -30,6 +30,10 @@ type Opts struct {
 	LookbackDelta time.Duration
 }
 
+func (o Opts) IsInstantQuery() bool {
+	return o.Start == o.End
+}
+
 type Plan interface {
 	Optimize([]Optimizer) Plan
 	Expr() parser.Expr
@@ -103,7 +107,7 @@ func traverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	case *parser.VectorSelector:
 		return transform(parent, current)
 	case *parser.MatrixSelector:
-		return transform(parent, &node.VectorSelector)
+		return transform(current, &node.VectorSelector)
 	case *parser.AggregateExpr:
 		if stop := traverseBottomUp(current, &node.Expr, transform); stop {
 			return stop

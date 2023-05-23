@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
@@ -18,19 +19,21 @@ import (
 )
 
 type Execution struct {
-	storage        *storageAdapter
-	query          promql.Query
-	opts           *query.Options
-	vectorSelector model.VectorOperator
+	storage         *storageAdapter
+	query           promql.Query
+	opts            *query.Options
+	queryRangeStart time.Time
+	vectorSelector  model.VectorOperator
 }
 
-func NewExecution(query promql.Query, pool *model.VectorPool, opts *query.Options) *Execution {
+func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart time.Time, opts *query.Options) *Execution {
 	storage := newStorageFromQuery(query, opts)
 	return &Execution{
-		storage:        storage,
-		query:          query,
-		opts:           opts,
-		vectorSelector: scan.NewVectorSelector(pool, storage, opts, 0, 0, 1),
+		storage:         storage,
+		query:           query,
+		opts:            opts,
+		queryRangeStart: queryRangeStart,
+		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, 1),
 	}
 }
 
