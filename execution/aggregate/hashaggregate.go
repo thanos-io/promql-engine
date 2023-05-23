@@ -13,10 +13,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/parser"
-	"github.com/thanos-community/promql-engine/worker"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/worker"
 )
 
 type aggregate struct {

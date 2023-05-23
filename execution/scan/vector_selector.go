@@ -12,9 +12,9 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	engstore "github.com/thanos-community/promql-engine/execution/storage"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/model"
+	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"

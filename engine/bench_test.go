@@ -17,8 +17,8 @@ import (
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {

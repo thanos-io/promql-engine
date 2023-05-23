@@ -15,8 +15,8 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 type kAggregate struct {

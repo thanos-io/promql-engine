@@ -24,12 +24,12 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
-	"github.com/thanos-community/promql-engine/api"
-	"github.com/thanos-community/promql-engine/execution"
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/logicalplan"
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/execution"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 type QueryType int

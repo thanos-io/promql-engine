@@ -59,7 +59,7 @@ linters-settings:
   goconst:
     min-occurrences: 5
   goimports:
-    local-prefixes: github.com/thanos-community/promql-engine
+    local-prefixes: github.com/thanos-io/promql-engine
 
 issues:
   exclude-rules:

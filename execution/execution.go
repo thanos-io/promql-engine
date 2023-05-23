@@ -24,8 +24,8 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/thanos-community/promql-engine/execution/noop"
-	"github.com/thanos-community/promql-engine/execution/remote"
+	"github.com/thanos-io/promql-engine/execution/noop"
+	"github.com/thanos-io/promql-engine/execution/remote"
 
 	"github.com/efficientgo/core/errors"
 
@@ -33,19 +33,19 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/execution/aggregate"
-	"github.com/thanos-community/promql-engine/execution/binary"
-	"github.com/thanos-community/promql-engine/execution/exchange"
-	"github.com/thanos-community/promql-engine/execution/function"
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/execution/scan"
-	"github.com/thanos-community/promql-engine/execution/step_invariant"
-	engstore "github.com/thanos-community/promql-engine/execution/storage"
-	"github.com/thanos-community/promql-engine/execution/unary"
-	"github.com/thanos-community/promql-engine/logicalplan"
-	"github.com/thanos-community/promql-engine/parser"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/aggregate"
+	"github.com/thanos-io/promql-engine/execution/binary"
+	"github.com/thanos-io/promql-engine/execution/exchange"
+	"github.com/thanos-io/promql-engine/execution/function"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/scan"
+	"github.com/thanos-io/promql-engine/execution/step_invariant"
+	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/execution/unary"
+	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 const stepsBatch = 10
@@ -109,7 +109,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return function.NewHistogramOperator(model.NewVectorPool(stepsBatch), e.Args, nextOperators, stepsBatch)
 		}
 
-		// TODO(saswatamcode): Tracked in https://github.com/thanos-community/promql-engine/issues/23
+		// TODO(saswatamcode): Tracked in https://github.com/thanos-io/promql-engine/issues/23
 		// Based on the category we can create an apt query plan.
 		call, err := function.NewFunctionCall(e.Func)
 		if err != nil {
@@ -117,7 +117,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 		// TODO(saswatamcode): Range vector result might need new operator
-		// before it can be non-nested. https://github.com/thanos-community/promql-engine/issues/39
+		// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 		for i := range e.Args {
 			switch t := e.Args[i].(type) {
 			case *parser.MatrixSelector:

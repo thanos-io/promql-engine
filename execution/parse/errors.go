@@ -8,7 +8,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 var ErrNotSupportedExpr = errors.New("unsupported expression")

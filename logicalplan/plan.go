@@ -10,7 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 var (

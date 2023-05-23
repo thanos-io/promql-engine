@@ -8,7 +8,7 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 func TestMergeSelects(t *testing.T) {
