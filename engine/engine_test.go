@@ -1904,50 +1904,76 @@ func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
 	return sset
 }
 
-func TestBinopEdgeCases(t *testing.T) {
+func TestEdgeCases(t *testing.T) {
+	testCases := []struct {
+		name   string
+		series []storage.Series
+		query  string
+		start  time.Time
+		end    time.Time
+	}{
+		{
+			name: "binop edge case",
+			series: []storage.Series{
+				newMockSeries(
+					[]string{labels.MetricName, "foo"},
+					[]int64{0, 30, 60, 1200, 1500, 1800},
+					[]float64{1, 2, 3, 4, 5, 6},
+				),
+				newMockSeries(
+					[]string{labels.MetricName, "bar", "id", "1"},
+					[]int64{0, 30},
+					[]float64{1, 2},
+				),
+				newMockSeries(
+					[]string{labels.MetricName, "bar", "id", "2"},
+					[]int64{1200, 1500},
+					[]float64{3, 4},
+				),
+			},
+			query: `foo * on () group_left bar`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(30000, 0),
+		},
+		{
+			name: "absent with gaps in series",
+			series: []storage.Series{
+				newMockSeries(
+					[]string{labels.MetricName, "foo"},
+					[]int64{30, 300, 3000, 6000, 12000, 18000},
+					[]float64{1, 2, 3, 4, 5, 6},
+				),
+			},
+			query: `absent(foo)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(30000, 0),
+		},
+	}
+
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
 		EnableNegativeOffset: true,
 		EnableAtModifier:     true,
 	}
-
-	series := []storage.Series{
-		newMockSeries(
-			[]string{labels.MetricName, "foo"},
-			[]int64{0, 30, 60, 1200, 1500, 1800},
-			[]float64{1, 2, 3, 4, 5, 6},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "id", "1"},
-			[]int64{0, 30},
-			[]float64{1, 2},
-		),
-		newMockSeries(
-			[]string{labels.MetricName, "bar", "id", "2"},
-			[]int64{1200, 1500},
-			[]float64{3, 4},
-		),
-	}
-	query := `foo * on () group_left bar`
-
-	start := time.Unix(0, 0)
-	end := time.Unix(30000, 0)
 	step := time.Second * 30
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			oldEngine := promql.NewEngine(opts)
+			q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
+			testutil.Ok(t, err)
 
-	ctx := context.Background()
-	oldEngine := promql.NewEngine(opts)
-	q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(series...), nil, query, start, end, step)
-	testutil.Ok(t, err)
+			newEngine := engine.New(engine.Opts{EngineOpts: opts})
+			q2, err := newEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
+			testutil.Ok(t, err)
 
-	newEngine := engine.New(engine.Opts{EngineOpts: opts})
-	q2, err := newEngine.NewRangeQuery(ctx, storageWithSeries(series...), nil, query, start, end, step)
-	testutil.Ok(t, err)
+			oldResult := q1.Exec(ctx)
+			newResult := q2.Exec(ctx)
 
-	oldResult := q1.Exec(ctx)
-
-	newResult := q2.Exec(ctx)
-	testutil.Equals(t, oldResult, newResult)
+			testutil.Equals(t, oldResult, newResult)
+		})
+	}
 }
 
 func TestDisabledXFunction(t *testing.T) {

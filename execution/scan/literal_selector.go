@@ -67,13 +67,12 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 
 	o.loadSeries()
 
-	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	vectors := o.vectorPool.GetVectorBatch()
 	for currStep := 0; currStep < o.numSteps && ts <= o.maxt; currStep++ {
-		if len(vectors) <= currStep {
-			vectors = append(vectors, o.vectorPool.GetStepVector(ts))
-		}
-		vectors[currStep].AppendSample(o.vectorPool, 0, o.val)
+		stepVector := o.vectorPool.GetStepVector(ts)
+		stepVector.AppendSample(o.vectorPool, 0, o.val)
+		vectors = append(vectors, stepVector)
 
 		ts += o.step
 	}

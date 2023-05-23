@@ -122,8 +122,15 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	vectors := o.vectorPool.GetVectorBatch()
 	ts := o.currentStep
+	vectors := o.vectorPool.GetVectorBatch()
+	for currStep := 0; currStep < o.numSteps && ts <= o.maxt; currStep++ {
+		vectors = append(vectors, o.vectorPool.GetStepVector(ts))
+		ts += o.step
+	}
+
+	// Reset the current timestamp.
+	ts = o.currentStep
 	lblBuilder := labels.ScratchBuilder{}
 	for i := 0; i < len(o.scanners); i++ {
 		var (
@@ -132,9 +139,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		)
 
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
-			if len(vectors) <= currStep {
-				vectors = append(vectors, o.vectorPool.GetStepVector(seriesTs))
-			}
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
