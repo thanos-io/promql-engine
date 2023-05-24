@@ -81,13 +81,22 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 }
 
 func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+	interval := opts.Step.Milliseconds()
+	// We set interval to be at least 1.
+	if interval == 0 {
+		interval = 1
+	}
+
+	switch funcExpr.Func.Name {
+	case "scalar":
+		return &scalarFunctionOperator{
+			next: nextOps[0],
+			pool: model.NewVectorPool(stepsBatch),
+		}, nil
+	}
+
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
 	if len(nextOps) == 0 {
-		interval := opts.Step.Milliseconds()
-		// We set interval to be at least 1.
-		if interval == 0 {
-			interval = 1
-		}
 
 		op := &noArgFunctionOperator{
 			currentStep: opts.Start.UnixMilli(),
@@ -101,7 +110,7 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 		}
 
 		switch funcExpr.Func.Name {
-		case "pi", "time", "scalar":
+		case "pi", "time":
 			op.sampleIDs = []uint64{0}
 		default:
 			// Other functions require non-nil labels.
@@ -206,25 +215,6 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	}
 	lblsBuilder := labels.ScratchBuilder{}
 	for batchIndex, vector := range vectors {
-		// scalar() depends on number of samples per vector and returns NaN if len(samples) != 1.
-		// So need to handle this separately here, instead of going via call which is per point.
-		// TODO(fpetkovski): make this decision once in the constructor and create a new operator.
-		if o.funcExpr.Func.Name == "scalar" {
-			if len(vector.Samples) == 0 {
-				vectors[batchIndex].SampleIDs = []uint64{0}
-				vectors[batchIndex].Samples = []float64{math.NaN()}
-				continue
-			}
-
-			vectors[batchIndex].SampleIDs = vector.SampleIDs[:1]
-			vectors[batchIndex].SampleIDs[0] = 0
-			if len(vector.Samples) > 1 {
-				vectors[batchIndex].Samples = vector.Samples[:1]
-				vectors[batchIndex].Samples[0] = math.NaN()
-			}
-			continue
-		}
-
 		i := 0
 		fa := FunctionArgs{}
 		for i < len(vectors[batchIndex].Samples) {
