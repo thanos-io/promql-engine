@@ -1,4 +1,4 @@
-module github.com/thanos-community/promql-engine
+module github.com/thanos-io/promql-engine
 
 go 1.19
 

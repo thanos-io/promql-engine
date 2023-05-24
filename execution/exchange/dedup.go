@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/model"
 )
 
 type dedupSample struct {

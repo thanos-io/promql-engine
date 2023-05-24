@@ -13,8 +13,8 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/parser"
 )
 
 type histogramSeries struct {

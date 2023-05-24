@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 )

@@ -14,9 +14,9 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/thanos-community/promql-engine/api"
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type partition struct {
@@ -116,7 +116,7 @@ func TestDistributedAggregations(t *testing.T) {
 			},
 		},
 		{
-			// Repro for https://github.com/thanos-community/promql-engine/issues/187.
+			// Repro for https://github.com/thanos-io/promql-engine/issues/187.
 			name: "series with different ranges in a newer engine",
 			seriesSets: []partition{{
 				extLset: []labels.Labels{labels.FromStrings("zone", "east-1"), labels.FromStrings("zone", "east-1")},

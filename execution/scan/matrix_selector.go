@@ -15,11 +15,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-community/promql-engine/execution/function"
-	"github.com/thanos-community/promql-engine/execution/model"
-	engstore "github.com/thanos-community/promql-engine/execution/storage"
-	"github.com/thanos-community/promql-engine/parser"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/function"
+	"github.com/thanos-io/promql-engine/execution/model"
+	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type matrixScanner struct {
@@ -158,7 +158,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
-			// https://github.com/thanos-community/promql-engine/issues/39
+			// https://github.com/thanos-io/promql-engine/issues/39
 			result := o.call(function.FunctionArgs{
 				Labels:           series.labels,
 				Samples:          rangeSamples,

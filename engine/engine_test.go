@@ -20,8 +20,8 @@ import (
 
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/go-kit/log"
@@ -1744,7 +1744,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `scalar(avg_over_time({__name__="http_requests_total"}[3m])) > bool 0.9464749352949011`,
 		},
 		{
-			name: "repro https://github.com/thanos-community/promql-engine/issues/239",
+			name: "repro https://github.com/thanos-io/promql-engine/issues/239",
 			load: `load 30s
 				storage_used{storage_index="1010"} 65x20
 				storage_used{storage_index="1011"} 125x20
@@ -4352,8 +4352,8 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 			if i == 0 {
 				// Inject a histogram with a higher schema.
 				// Regression test for:
-				// * https://github.com/thanos-community/promql-engine/pull/182
-				// * https://github.com/thanos-community/promql-engine/pull/183.
+				// * https://github.com/thanos-io/promql-engine/pull/182
+				// * https://github.com/thanos-io/promql-engine/pull/183.
 				if _, err := app.AppendHistogram(0, labels.FromStrings(lbls...), ts, higherSchemaHist, nil); err != nil {
 					return err
 				}

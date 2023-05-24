@@ -15,10 +15,10 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
-	"github.com/thanos-community/promql-engine/execution/model"
-	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/parser"
-	"github.com/thanos-community/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 // functionOperator returns []model.StepVector after processing input with desired function.

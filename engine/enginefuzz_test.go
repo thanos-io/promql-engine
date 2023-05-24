@@ -24,10 +24,10 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 
-	"github.com/thanos-community/promql-engine/api"
-	"github.com/thanos-community/promql-engine/engine"
-	"github.com/thanos-community/promql-engine/execution/parse"
-	"github.com/thanos-community/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 const testRuns = 100

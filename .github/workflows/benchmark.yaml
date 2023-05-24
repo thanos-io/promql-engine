@@ -38,4 +38,4 @@ jobs:
           alert-threshold: '200%'
           comment-on-alert: true
           fail-on-alert: false
-          gh-repository: 'github.com/thanos-community/promql-engine'
+          gh-repository: 'github.com/thanos-io/promql-engine'
