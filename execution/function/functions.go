@@ -579,7 +579,7 @@ func extrapolatedRate(samples []promql.Sample, isCounter, isRate bool, stepTime 
 	if resultHistogram == nil {
 		resultValue *= factor
 	} else {
-		resultHistogram.Scale(factor)
+		resultHistogram.Mul(factor)
 
 	}
 
