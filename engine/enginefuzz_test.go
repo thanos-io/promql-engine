@@ -210,6 +210,9 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 
 			oldResult := q2.Exec(context.Background())
 
+			sortByLabels(newResult)
+			sortByLabels(oldResult)
+
 			cases[i] = &testCase{
 				query:  query,
 				newRes: newResult,
