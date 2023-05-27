@@ -4468,6 +4468,9 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 }
 
 func sortByLabels(r *promql.Result) {
+	if r.Err != nil {
+		return
+	}
 	switch r.Value.Type() {
 	case promparser.ValueTypeVector:
 		m, _ := r.Vector()
