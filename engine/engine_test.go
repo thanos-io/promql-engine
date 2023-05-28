@@ -178,6 +178,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "1/(-(2*2))",
 		},
 		{
+			name: "stddev with large values",
+			load: `load 30s
+              http_requests_total{pod="nginx-1", route="/"} 1e+181
+              http_requests_total{pod="nginx-2", route="/"} 1e+80`,
+			query: `stddev(http_requests_total)`,
+		},
+		{
 			name: "stddev with NaN 1",
 			load: `load 30s
 				       http_requests_total{pod="nginx-1", route="/"} NaN
