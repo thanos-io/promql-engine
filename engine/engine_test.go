@@ -46,6 +46,7 @@ func TestMain(m *testing.M) {
 
 func TestPromqlAcceptance(t *testing.T) {
 	engine := engine.New(engine.Opts{
+		EnableSubqueries: true,
 		EngineOpts: promql.EngineOpts{
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
@@ -2775,10 +2776,11 @@ func TestInstantQuery(t *testing.T) {
 	// Negative offset and at modifier are enabled by default
 	// since Prometheus v2.33.0, so we also enable them.
 	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+		Timeout:                  1 * time.Hour,
+		MaxSamples:               1e10,
+		EnableNegativeOffset:     true,
+		EnableAtModifier:         true,
+		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 	}
 
 	cases := []struct {
@@ -2788,6 +2790,99 @@ func TestInstantQuery(t *testing.T) {
 		queryTime    time.Time
 		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
 	}{
+		{
+			name: "sum_over_time with subquery",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:1m])",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with subquery with default step",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:])",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with subquery with resolution that doesnt divide step length",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:22s])",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with subquery with offset",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:1m] offset 1m)",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with subquery with inner offset",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(sum by (series) (http_requests_total offset 1m)[5m:1m])",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with subquery with inner @ modifier",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(sum by (series) (http_requests_total @ 10)[5m:1m])",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with nested subqueries with inner @ modifier",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
+				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
+				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
+			queryTime:    time.Unix(600, 0),
+			query:        "sum_over_time(rate(sum by (series) (http_requests_total @ 10)[5m:1m] @0)[10m:1m])",
+			sortByLabels: true,
+		},
+		{
+			name: "sum_over_time with subquery should drop name label",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="1"} 2+2x50`,
+			queryTime:    time.Unix(0, 0),
+			query:        `sum_over_time(http_requests_total{series="1"} offset 7s[1h:1m] @ 119.800)`,
+			sortByLabels: true,
+		},
 		{
 			name: "duplicate label set",
 			load: `load 5m
@@ -3638,6 +3733,7 @@ func TestInstantQuery(t *testing.T) {
 									EngineOpts:        opts,
 									DisableFallback:   disableFallback,
 									LogicalOptimizers: optimizers,
+									EnableSubqueries:  true,
 								})
 
 								ctx := context.Background()
