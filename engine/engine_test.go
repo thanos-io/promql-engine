@@ -2837,6 +2837,33 @@ func TestInstantQuery(t *testing.T) {
 			query:     `label_join(http_requests_total{}, "label", "-")`,
 		},
 		{
+			name: "label_replace",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(http_requests_total, "foo", "$1", "series", ".*")`,
+		},
+		{
+			name: "label_replace with bad regular expression",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(http_requests_total, "foo", "$1", "series", "]]")`,
+		},
+		{
+			name: "label_replace non-existing src label",
+			load: `load 30s
+						http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+						http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+						http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(http_requests_total, "foo", "$1", "bar", ".*")`,
+		},
+		{
 			name: "topk",
 			load: `load 30s
 						http_requests_total{pod="nginx-1", series="1"} 1

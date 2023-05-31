@@ -7,11 +7,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 
 	"github.com/efficientgo/core/errors"
-	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
@@ -81,22 +79,26 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 }
 
 func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
-	interval := opts.Step.Milliseconds()
-	// We set interval to be at least 1.
-	if interval == 0 {
-		interval = 1
-	}
-
 	switch funcExpr.Func.Name {
 	case "scalar":
 		return &scalarFunctionOperator{
 			next: nextOps[0],
 			pool: model.NewVectorPool(stepsBatch),
 		}, nil
+	case "label_join", "label_replace":
+		return &relabelFunctionOperator{
+			next:     nextOps[0],
+			funcExpr: funcExpr,
+		}, nil
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
 	if len(nextOps) == 0 {
+		interval := opts.Step.Milliseconds()
+		// We set interval to be at least 1.
+		if interval == 0 {
+			interval = 1
+		}
 
 		op := &noArgFunctionOperator{
 			currentStep: opts.Start.UnixMilli(),
@@ -187,10 +189,6 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	if len(vectors) == 0 {
 		return nil, nil
 	}
-	if o.funcExpr.Func.Name == "label_join" {
-		return vectors, nil
-	}
-
 	scalarIndex := 0
 	for i := range o.nextOps {
 		if i == o.vectorIndex {
@@ -269,55 +267,18 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 			return
 		}
 
-		if o.funcExpr.Func.Name == "scalar" {
-			o.series = []labels.Labels{}
-			return
-		}
-
 		series, loadErr := o.nextOps[o.vectorIndex].Series(ctx)
 		if loadErr != nil {
 			err = loadErr
 			return
 		}
-
 		o.series = make([]labels.Labels, len(series))
 
-		var labelJoinDst string
-		var labelJoinSep string
-		var labelJoinSrcLabels []string
-		if o.funcExpr.Func.Name == "label_join" {
-			l := len(o.funcExpr.Args)
-			labelJoinDst = o.funcExpr.Args[1].(*parser.StringLiteral).Val
-			if !prommodel.LabelName(labelJoinDst).IsValid() {
-				err = errors.Newf("invalid destination label name in label_join: %s", labelJoinDst)
-				return
-			}
-			labelJoinSep = o.funcExpr.Args[2].(*parser.StringLiteral).Val
-			for j := 3; j < l; j++ {
-				labelJoinSrcLabels = append(labelJoinSrcLabels, o.funcExpr.Args[j].(*parser.StringLiteral).Val)
-			}
-		}
 		b := labels.ScratchBuilder{}
 		for i, s := range series {
 			lbls := s
 			switch o.funcExpr.Func.Name {
 			case "last_over_time":
-			case "label_join":
-				srcVals := make([]string, len(labelJoinSrcLabels))
-
-				for j, src := range labelJoinSrcLabels {
-					srcVals[j] = lbls.Get(src)
-				}
-				lb := labels.NewBuilder(lbls)
-
-				strval := strings.Join(srcVals, labelJoinSep)
-				if strval == "" {
-					lb.Del(labelJoinDst)
-				} else {
-					lb.Set(labelJoinDst, strval)
-				}
-
-				lbls = lb.Labels()
 			default:
 				lbls, _ = DropMetricName(s, b)
 			}
