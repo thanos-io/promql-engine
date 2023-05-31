@@ -102,10 +102,6 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 		return nil, err
 	}
 
-	if len(u.cachedVector.Samples) == 0 {
-		return nil, nil
-	}
-
 	result := u.vectorPool.GetVectorBatch()
 	for i := 0; i < u.stepsBatch && u.currentStep <= u.maxt; i++ {
 		outVector := u.vectorPool.GetStepVector(u.currentStep)
