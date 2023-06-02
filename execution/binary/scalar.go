@@ -120,12 +120,12 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	out := o.pool.GetVectorBatch()
 	for v, vector := range in {
 		step := o.pool.GetStepVector(vector.T)
-		for i := range vector.Samples {
-			scalarVal := math.NaN()
-			if len(scalarIn) > v && len(scalarIn[v].Samples) > 0 {
-				scalarVal = scalarIn[v].Samples[0]
-			}
+		scalarVal := math.NaN()
+		if len(scalarIn) > v && len(scalarIn[v].Samples) > 0 {
+			scalarVal = scalarIn[v].Samples[0]
+		}
 
+		for i := range vector.Samples {
 			operands := o.getOperands(vector, i, scalarVal)
 			val, keep := o.floatOp(operands, o.operandValIdx)
 			if o.returnBool {
@@ -142,11 +142,6 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 
 		for i := range vector.HistogramIDs {
-			scalarVal := math.NaN()
-			if len(scalarIn) > v && len(scalarIn[v].Samples) > 0 {
-				scalarVal = scalarIn[v].Samples[0]
-			}
-
 			val := o.histOp(vector.Histograms[i], scalarVal)
 			if val != nil {
 				step.AppendHistogram(o.pool, vector.HistogramIDs[i], val)
