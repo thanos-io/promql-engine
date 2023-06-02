@@ -32,10 +32,11 @@ type scalarOperator struct {
 	pool          *model.VectorPool
 	scalar        model.VectorOperator
 	next          model.VectorOperator
+	opType        parser.ItemType
 	getOperands   getOperandsFunc
 	operandValIdx int
-	operation     operation
-	opType        parser.ItemType
+	floatOp       operation
+	histOp        histogramFloatOperation
 
 	// If true then return the comparison result as 0/1.
 	returnBool bool
@@ -69,7 +70,8 @@ func NewScalar(
 		pool:          pool,
 		next:          next,
 		scalar:        scalar,
-		operation:     binaryOperation,
+		floatOp:       binaryOperation,
+		histOp:        getHistogramFloatOperation(op, scalarSide),
 		opType:        op,
 		getOperands:   getOperands,
 		operandValIdx: operandValIdx,
@@ -125,7 +127,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 
 			operands := o.getOperands(vector, i, scalarVal)
-			val, keep := o.operation(operands, o.operandValIdx)
+			val, keep := o.floatOp(operands, o.operandValIdx)
 			if o.returnBool {
 				if !o.bothScalars {
 					val = 0.0
@@ -138,6 +140,19 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			step.AppendSample(o.pool, vector.SampleIDs[i], val)
 		}
+
+		for i := range vector.HistogramIDs {
+			scalarVal := math.NaN()
+			if len(scalarIn) > v && len(scalarIn[v].Samples) > 0 {
+				scalarVal = scalarIn[v].Samples[0]
+			}
+
+			val := o.histOp(vector.Histograms[i], scalarVal)
+			if val != nil {
+				step.AppendHistogram(o.pool, vector.HistogramIDs[i], val)
+			}
+		}
+
 		out = append(out, step)
 		o.next.GetPool().PutStepVector(vector)
 	}
