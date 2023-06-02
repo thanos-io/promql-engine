@@ -11,7 +11,6 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
@@ -30,7 +29,7 @@ type functionOperator struct {
 
 	call         FunctionCall
 	scalarPoints [][]float64
-	sampleBuf    []promql.Sample
+	sampleBuf    []Sample
 }
 
 type noArgFunctionOperator struct {
@@ -138,7 +137,7 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 		funcExpr:     funcExpr,
 		vectorIndex:  0,
 		scalarPoints: scalarPoints,
-		sampleBuf:    make([]promql.Sample, 1),
+		sampleBuf:    make([]Sample, 1),
 	}
 
 	for i := range funcExpr.Args {
@@ -217,18 +216,15 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		o.nextOps[i].GetPool().PutVectors(scalarVectors)
 		scalarIndex++
 	}
-	lblsBuilder := labels.ScratchBuilder{}
 	for batchIndex, vector := range vectors {
 		i := 0
 		fa := FunctionArgs{}
 		for i < len(vectors[batchIndex].Samples) {
 			o.sampleBuf[0].H = nil
 			o.sampleBuf[0].F = vector.Samples[i]
-			fa.Labels = o.series[0]
 			fa.Samples = o.sampleBuf
 			fa.StepTime = vector.T
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
-			fa.LabelsBuilder = lblsBuilder
 			result := o.call(fa)
 
 			if result.T != InvalidSample.T {
@@ -244,11 +240,9 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		i = 0
 		for i < len(vectors[batchIndex].Histograms) {
 			o.sampleBuf[0].H = vector.Histograms[i]
-			fa.Labels = o.series[0]
 			fa.Samples = o.sampleBuf
 			fa.StepTime = vector.T
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
-			fa.LabelsBuilder = lblsBuilder
 			result := o.call(fa)
 
 			// This operator modifies samples directly in the input vector to avoid allocations.

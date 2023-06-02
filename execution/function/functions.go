@@ -10,44 +10,45 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
-	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/parser"
 )
 
-var InvalidSample = promql.Sample{T: -1, F: 0}
+var InvalidSample = Sample{T: -1, F: 0}
+
+type Sample struct {
+	T int64
+	F float64
+	H *histogram.FloatHistogram
+}
 
 type FunctionArgs struct {
-	Labels           labels.Labels
-	Samples          []promql.Sample
+	Samples          []Sample
 	StepTime         int64
 	SelectRange      int64
 	ScalarPoints     []float64
 	Offset           int64
 	MetricAppearedTs *int64
-	LabelsBuilder    labels.ScratchBuilder
 }
 
 // FunctionCall represents functions as defined in https://prometheus.io/docs/prometheus/latest/querying/functions/
-type FunctionCall func(f FunctionArgs) promql.Sample
+type FunctionCall func(f FunctionArgs) Sample
 
 func simpleFunc(f func(float64) float64) FunctionCall {
-	return func(fa FunctionArgs) promql.Sample {
+	return func(fa FunctionArgs) Sample {
 		if len(fa.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: fa.Labels,
-			T:      fa.StepTime,
-			F:      f(fa.Samples[0].F),
+		return Sample{
+			T: fa.StepTime,
+			F: f(fa.Samples[0].F),
 		}
 	}
 
 }
 
-func filterFloatOnlySamples(samples []promql.Sample) []promql.Sample {
+func filterFloatOnlySamples(samples []Sample) []Sample {
 	i := 0
 	for _, sample := range samples {
 		if sample.H == nil {
@@ -99,7 +100,7 @@ var Funcs = map[string]FunctionCall{
 		}
 		return sign
 	}),
-	"round": func(f FunctionArgs) promql.Sample {
+	"round": func(f FunctionArgs) Sample {
 		if len(f.Samples) != 1 || len(f.ScalarPoints) > 1 {
 			return InvalidSample
 		}
@@ -109,152 +110,140 @@ var Funcs = map[string]FunctionCall{
 			toNearest = f.ScalarPoints[0]
 		}
 		toNearestInverse := 1.0 / toNearest
-		return promql.Sample{
+		return Sample{
 			T: f.StepTime,
 			F: math.Floor(f.Samples[0].F*toNearestInverse+0.5) / toNearestInverse,
 		}
 	},
-	"pi": func(f FunctionArgs) promql.Sample {
-		return promql.Sample{
+	"pi": func(f FunctionArgs) Sample {
+		return Sample{
 			T: f.StepTime,
 			F: math.Pi,
 		}
 	},
-	"sum_over_time": func(f FunctionArgs) promql.Sample {
+	"sum_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      sumOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: sumOverTime(f.Samples),
 		}
 	},
-	"max_over_time": func(f FunctionArgs) promql.Sample {
+	"max_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      maxOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: maxOverTime(f.Samples),
 		}
 	},
-	"min_over_time": func(f FunctionArgs) promql.Sample {
+	"min_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      minOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: minOverTime(f.Samples),
 		}
 	},
-	"avg_over_time": func(f FunctionArgs) promql.Sample {
+	"avg_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      avgOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: avgOverTime(f.Samples),
 		}
 	},
-	"stddev_over_time": func(f FunctionArgs) promql.Sample {
+	"stddev_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      stddevOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: stddevOverTime(f.Samples),
 		}
 	},
-	"stdvar_over_time": func(f FunctionArgs) promql.Sample {
+	"stdvar_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      stdvarOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: stdvarOverTime(f.Samples),
 		}
 	},
-	"count_over_time": func(f FunctionArgs) promql.Sample {
+	"count_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      countOverTime(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: countOverTime(f.Samples),
 		}
 	},
-	"last_over_time": func(f FunctionArgs) promql.Sample {
+	"last_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      f.Samples[len(f.Samples)-1].F,
+		return Sample{
+			T: f.StepTime,
+			F: f.Samples[len(f.Samples)-1].F,
 		}
 	},
-	"label_join": func(f FunctionArgs) promql.Sample {
+	"label_join": func(f FunctionArgs) Sample {
 		// This is specifically handled by functionOperator Series()
-		return promql.Sample{}
+		return Sample{}
 	},
-	"label_replace": func(f FunctionArgs) promql.Sample {
+	"label_replace": func(f FunctionArgs) Sample {
 		// This is specifically handled by functionOperator Series()
-		return promql.Sample{}
+		return Sample{}
 	},
-	"present_over_time": func(f FunctionArgs) promql.Sample {
+	"present_over_time": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      1,
+		return Sample{
+			T: f.StepTime,
+			F: 1,
 		}
 	},
-	"time": func(f FunctionArgs) promql.Sample {
-		return promql.Sample{
+	"time": func(f FunctionArgs) Sample {
+		return Sample{
 			T: f.StepTime,
 			F: float64(f.StepTime) / 1000,
 		}
 	},
-	"changes": func(f FunctionArgs) promql.Sample {
+	"changes": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      changes(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: changes(f.Samples),
 		}
 	},
-	"resets": func(f FunctionArgs) promql.Sample {
+	"resets": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      resets(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: resets(f.Samples),
 		}
 	},
-	"deriv": func(f FunctionArgs) promql.Sample {
+	"deriv": func(f FunctionArgs) Sample {
 		if len(f.Samples) < 2 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      deriv(f.Samples),
+		return Sample{
+			T: f.StepTime,
+			F: deriv(f.Samples),
 		}
 	},
-	"irate": func(f FunctionArgs) promql.Sample {
+	"irate": func(f FunctionArgs) Sample {
 		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) < 2 {
 			return InvalidSample
@@ -263,13 +252,12 @@ var Funcs = map[string]FunctionCall{
 		if !ok {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      val,
+		return Sample{
+			T: f.StepTime,
+			F: val,
 		}
 	},
-	"idelta": func(f FunctionArgs) promql.Sample {
+	"idelta": func(f FunctionArgs) Sample {
 		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) < 2 {
 			return InvalidSample
@@ -278,67 +266,62 @@ var Funcs = map[string]FunctionCall{
 		if !ok {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      val,
+		return Sample{
+			T: f.StepTime,
+			F: val,
 		}
 	},
-	"vector": func(f FunctionArgs) promql.Sample {
+	"vector": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      f.Samples[0].F,
+		return Sample{
+			T: f.StepTime,
+			F: f.Samples[0].F,
 		}
 	},
-	"scalar": func(f FunctionArgs) promql.Sample {
+	"scalar": func(f FunctionArgs) Sample {
 		// This is handled specially by operator.
-		return promql.Sample{}
+		return Sample{}
 	},
-	"absent": func(f FunctionArgs) promql.Sample {
+	"absent": func(f FunctionArgs) Sample {
 		// This is handled specially by operator.
-		return promql.Sample{}
+		return Sample{}
 	},
-	"rate": func(f FunctionArgs) promql.Sample {
+	"rate": func(f FunctionArgs) Sample {
 		if len(f.Samples) < 2 {
 			return InvalidSample
 		}
 		v, h := extrapolatedRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset)
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      v,
-			H:      h,
+		return Sample{
+			T: f.StepTime,
+			F: v,
+			H: h,
 		}
 	},
-	"delta": func(f FunctionArgs) promql.Sample {
+	"delta": func(f FunctionArgs) Sample {
 		if len(f.Samples) < 2 {
 			return InvalidSample
 		}
 		v, h := extrapolatedRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset)
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      v,
-			H:      h,
+		return Sample{
+			T: f.StepTime,
+			F: v,
+			H: h,
 		}
 	},
-	"increase": func(f FunctionArgs) promql.Sample {
+	"increase": func(f FunctionArgs) Sample {
 		if len(f.Samples) < 2 {
 			return InvalidSample
 		}
 		v, h := extrapolatedRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset)
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      v,
-			H:      h,
+		return Sample{
+			T: f.StepTime,
+			F: v,
+			H: h,
 		}
 	},
-	"xrate": func(f FunctionArgs) promql.Sample {
+	"xrate": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
@@ -346,14 +329,13 @@ var Funcs = map[string]FunctionCall{
 			panic("BUG: we got some samples but metric still hasn't appeared")
 		}
 		v, h := extendedRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      v,
-			H:      h,
+		return Sample{
+			T: f.StepTime,
+			F: v,
+			H: h,
 		}
 	},
-	"xdelta": func(f FunctionArgs) promql.Sample {
+	"xdelta": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
@@ -361,14 +343,13 @@ var Funcs = map[string]FunctionCall{
 			panic("BUG: we got some samples but metric still hasn't appeared")
 		}
 		v, h := extendedRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      v,
-			H:      h,
+		return Sample{
+			T: f.StepTime,
+			F: v,
+			H: h,
 		}
 	},
-	"xincrease": func(f FunctionArgs) promql.Sample {
+	"xincrease": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 {
 			return InvalidSample
 		}
@@ -376,14 +357,13 @@ var Funcs = map[string]FunctionCall{
 			panic("BUG: we got some samples but metric still hasn't appeared")
 		}
 		v, h := extendedRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      v,
-			H:      h,
+		return Sample{
+			T: f.StepTime,
+			F: v,
+			H: h,
 		}
 	},
-	"clamp": func(f FunctionArgs) promql.Sample {
+	"clamp": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 || len(f.ScalarPoints) < 2 {
 			return InvalidSample
 		}
@@ -396,13 +376,12 @@ var Funcs = map[string]FunctionCall{
 			return InvalidSample
 		}
 
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      math.Max(min, math.Min(max, v)),
+		return Sample{
+			T: f.StepTime,
+			F: math.Max(min, math.Min(max, v)),
 		}
 	},
-	"clamp_min": func(f FunctionArgs) promql.Sample {
+	"clamp_min": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 || len(f.ScalarPoints) == 0 {
 			return InvalidSample
 		}
@@ -410,13 +389,12 @@ var Funcs = map[string]FunctionCall{
 		v := f.Samples[0].F
 		min := f.ScalarPoints[0]
 
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      math.Max(min, v),
+		return Sample{
+			T: f.StepTime,
+			F: math.Max(min, v),
 		}
 	},
-	"clamp_max": func(f FunctionArgs) promql.Sample {
+	"clamp_max": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 || len(f.ScalarPoints) == 0 {
 			return InvalidSample
 		}
@@ -424,78 +402,74 @@ var Funcs = map[string]FunctionCall{
 		v := f.Samples[0].F
 		max := f.ScalarPoints[0]
 
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      math.Min(max, v),
+		return Sample{
+			T: f.StepTime,
+			F: math.Min(max, v),
 		}
 	},
-	"histogram_sum": func(f FunctionArgs) promql.Sample {
+	"histogram_sum": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 || f.Samples[0].H == nil {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      f.Samples[0].H.Sum,
+		return Sample{
+			T: f.StepTime,
+			F: f.Samples[0].H.Sum,
 		}
 	},
-	"histogram_count": func(f FunctionArgs) promql.Sample {
+	"histogram_count": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 || f.Samples[0].H == nil {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      f.Samples[0].H.Count,
+		return Sample{
+			T: f.StepTime,
+			F: f.Samples[0].H.Count,
 		}
 	},
-	"histogram_fraction": func(f FunctionArgs) promql.Sample {
+	"histogram_fraction": func(f FunctionArgs) Sample {
 		if len(f.Samples) == 0 || f.Samples[0].H == nil {
 			return InvalidSample
 		}
-		return promql.Sample{
-			Metric: f.Labels,
-			T:      f.StepTime,
-			F:      histogramFraction(f.ScalarPoints[0], f.ScalarPoints[1], f.Samples[0].H),
+		return Sample{
+			T: f.StepTime,
+			F: histogramFraction(f.ScalarPoints[0], f.ScalarPoints[1], f.Samples[0].H),
 		}
 	},
-	"days_in_month": func(f FunctionArgs) promql.Sample {
+	"days_in_month": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
 		})
 	},
-	"day_of_month": func(f FunctionArgs) promql.Sample {
+	"day_of_month": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.Day())
 		})
 	},
-	"day_of_week": func(f FunctionArgs) promql.Sample {
+	"day_of_week": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.Weekday())
 		})
 	},
-	"day_of_year": func(f FunctionArgs) promql.Sample {
+	"day_of_year": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.YearDay())
 		})
 	},
-	"hour": func(f FunctionArgs) promql.Sample {
+	"hour": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.Hour())
 		})
 	},
-	"minute": func(f FunctionArgs) promql.Sample {
+	"minute": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.Minute())
 		})
 	},
-	"month": func(f FunctionArgs) promql.Sample {
+	"month": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.Month())
 		})
 	},
-	"year": func(f FunctionArgs) promql.Sample {
+	"year": func(f FunctionArgs) Sample {
 		return dateWrapper(f, func(t time.Time) float64 {
 			return float64(t.Year())
 		})
@@ -519,7 +493,7 @@ func NewFunctionCall(f *parser.Function) (FunctionCall, error) {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []promql.Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram) {
+func extrapolatedRate(samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -598,7 +572,7 @@ func extrapolatedRate(samples []promql.Sample, isCounter, isRate bool, stepTime 
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // taking into account the last sample before the range start, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extendedRate(samples []promql.Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64, metricAppearedTs int64) (float64, *histogram.FloatHistogram) {
+func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64, metricAppearedTs int64) (float64, *histogram.FloatHistogram) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -685,7 +659,7 @@ func extendedRate(samples []promql.Sample, isCounter, isRate bool, stepTime int6
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram.
-func histogramRate(points []promql.Sample, isCounter bool) *histogram.FloatHistogram {
+func histogramRate(points []Sample, isCounter bool) *histogram.FloatHistogram {
 	prev := points[0].H // We already know that this is a histogram.
 	last := points[len(points)-1].H
 	if last == nil {
@@ -731,7 +705,7 @@ func histogramRate(points []promql.Sample, isCounter bool) *histogram.FloatHisto
 	return h.Compact(0)
 }
 
-func instantValue(samples []promql.Sample, isRate bool) (float64, bool) {
+func instantValue(samples []Sample, isRate bool) (float64, bool) {
 	lastSample := samples[len(samples)-1]
 	previousSample := samples[len(samples)-2]
 
@@ -757,7 +731,7 @@ func instantValue(samples []promql.Sample, isRate bool) (float64, bool) {
 	return resultValue, true
 }
 
-func maxOverTime(points []promql.Sample) float64 {
+func maxOverTime(points []Sample) float64 {
 	max := points[0].F
 	for _, v := range points {
 		if v.F > max || math.IsNaN(max) {
@@ -767,7 +741,7 @@ func maxOverTime(points []promql.Sample) float64 {
 	return max
 }
 
-func minOverTime(points []promql.Sample) float64 {
+func minOverTime(points []Sample) float64 {
 	min := points[0].F
 	for _, v := range points {
 		if v.F < min || math.IsNaN(min) {
@@ -777,11 +751,11 @@ func minOverTime(points []promql.Sample) float64 {
 	return min
 }
 
-func countOverTime(points []promql.Sample) float64 {
+func countOverTime(points []Sample) float64 {
 	return float64(len(points))
 }
 
-func avgOverTime(points []promql.Sample) float64 {
+func avgOverTime(points []Sample) float64 {
 	var mean, count, c float64
 	for _, v := range points {
 		count++
@@ -811,7 +785,7 @@ func avgOverTime(points []promql.Sample) float64 {
 	return mean + c
 }
 
-func sumOverTime(points []promql.Sample) float64 {
+func sumOverTime(points []Sample) float64 {
 	var sum, c float64
 	for _, v := range points {
 		sum, c = KahanSumInc(v.F, sum, c)
@@ -822,7 +796,7 @@ func sumOverTime(points []promql.Sample) float64 {
 	return sum + c
 }
 
-func stddevOverTime(points []promql.Sample) float64 {
+func stddevOverTime(points []Sample) float64 {
 	var count float64
 	var mean, cMean float64
 	var aux, cAux float64
@@ -835,7 +809,7 @@ func stddevOverTime(points []promql.Sample) float64 {
 	return math.Sqrt((aux + cAux) / count)
 }
 
-func stdvarOverTime(points []promql.Sample) float64 {
+func stdvarOverTime(points []Sample) float64 {
 	var count float64
 	var mean, cMean float64
 	var aux, cAux float64
@@ -848,7 +822,7 @@ func stdvarOverTime(points []promql.Sample) float64 {
 	return (aux + cAux) / count
 }
 
-func changes(points []promql.Sample) float64 {
+func changes(points []Sample) float64 {
 	var count float64
 	prev := points[0].F
 	count = 0
@@ -862,7 +836,7 @@ func changes(points []promql.Sample) float64 {
 	return count
 }
 
-func deriv(points []promql.Sample) float64 {
+func deriv(points []Sample) float64 {
 	// We pass in an arbitrary timestamp that is near the values in use
 	// to avoid floating point accuracy issues, see
 	// https://github.com/prometheus/prometheus/issues/2674
@@ -870,7 +844,7 @@ func deriv(points []promql.Sample) float64 {
 	return slope
 }
 
-func resets(points []promql.Sample) float64 {
+func resets(points []Sample) float64 {
 	count := 0
 	prev := points[0].F
 	for _, sample := range points[1:] {
@@ -884,7 +858,7 @@ func resets(points []promql.Sample) float64 {
 	return float64(count)
 }
 
-func linearRegression(samples []promql.Sample, interceptTime int64) (slope, intercept float64) {
+func linearRegression(samples []Sample, interceptTime int64) (slope, intercept float64) {
 	var (
 		n          float64
 		sumX, cX   float64
@@ -939,18 +913,15 @@ func KahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 }
 
 // Common code for date related functions.
-func dateWrapper(fa FunctionArgs, f func(time.Time) float64) promql.Sample {
+func dateWrapper(fa FunctionArgs, f func(time.Time) float64) Sample {
 	if len(fa.Samples) == 0 {
-		return promql.Sample{
-			Metric: labels.Labels{},
-			F:      f(time.Unix(fa.StepTime/1000, 0).UTC()),
+		return Sample{
+			F: f(time.Unix(fa.StepTime/1000, 0).UTC()),
 		}
 	}
 	t := time.Unix(int64(fa.Samples[0].F), 0).UTC()
-	lbls, _ := DropMetricName(fa.Labels, fa.LabelsBuilder)
-	return promql.Sample{
-		Metric: lbls,
-		F:      f(t),
+	return Sample{
+		F: f(t),
 	}
 }
 
