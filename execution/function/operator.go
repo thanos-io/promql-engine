@@ -27,57 +27,12 @@ type functionOperator struct {
 	vectorIndex int
 	nextOps     []model.VectorOperator
 
-	call         FunctionCall
+	call         functionCall
 	scalarPoints [][]float64
-	sampleBuf    []Sample
+	sampleBuf    []sample
 }
 
-type noArgFunctionOperator struct {
-	mint        int64
-	maxt        int64
-	step        int64
-	currentStep int64
-	stepsBatch  int
-	funcExpr    *parser.Call
-	call        FunctionCall
-	vectorPool  *model.VectorPool
-	series      []labels.Labels
-	sampleIDs   []uint64
-}
-
-func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*noArgFunctionOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{}
-}
-
-func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {
-	return o.series, nil
-}
-
-func (o *noArgFunctionOperator) GetPool() *model.VectorPool {
-	return o.vectorPool
-}
-
-func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, error) {
-	if o.currentStep > o.maxt {
-		return nil, nil
-	}
-	fa := FunctionArgs{}
-	ret := o.vectorPool.GetVectorBatch()
-	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
-		sv := o.vectorPool.GetStepVector(o.currentStep)
-		fa.StepTime = o.currentStep
-		result := o.call(fa)
-		sv.Samples = []float64{result.F}
-		sv.SampleIDs = o.sampleIDs
-
-		ret = append(ret, sv)
-		o.currentStep += o.step
-	}
-
-	return ret, nil
-}
-
-func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	switch funcExpr.Func.Name {
 	case "scalar":
 		return &scalarFunctionOperator{
@@ -95,6 +50,19 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 			pool:     model.NewVectorPool(stepsBatch),
 			funcExpr: funcExpr,
 		}, nil
+	case "histogram_quantile":
+		return &histogramOperator{
+			pool:         model.NewVectorPool(stepsBatch),
+			funcArgs:     funcExpr.Args,
+			once:         sync.Once{},
+			scalarOp:     nextOps[0],
+			vectorOp:     nextOps[1],
+			scalarPoints: make([]float64, stepsBatch),
+		}, nil
+	}
+	call, ok := instantVectorFuncs[funcExpr.Func.Name]
+	if !ok {
+		return nil, parse.UnknownFunctionError(funcExpr.Func)
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
@@ -137,7 +105,7 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 		funcExpr:     funcExpr,
 		vectorIndex:  0,
 		scalarPoints: scalarPoints,
-		sampleBuf:    make([]Sample, 1),
+		sampleBuf:    make([]sample, 1),
 	}
 
 	for i := range funcExpr.Args {
@@ -148,7 +116,6 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 	}
 
 	// Check selector type.
-	// TODO(saswatamcode): Add support for matrix.
 	switch funcExpr.Args[f.vectorIndex].Type() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
 		return f, nil
@@ -218,7 +185,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	}
 	for batchIndex, vector := range vectors {
 		i := 0
-		fa := FunctionArgs{}
+		fa := functionArgs{}
 		for i < len(vectors[batchIndex].Samples) {
 			o.sampleBuf[0].H = nil
 			o.sampleBuf[0].F = vector.Samples[i]
@@ -227,7 +194,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			fa.ScalarPoints = o.scalarPoints[batchIndex]
 			result := o.call(fa)
 
-			if result.T != InvalidSample.T {
+			if result.T != invalidSample.T {
 				vector.Samples[i] = result.F
 				i++
 			} else {
@@ -250,7 +217,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			// always remove the input histogram so that it does not propagate to the output.
 			sampleID := vectors[batchIndex].HistogramIDs[i]
 			vectors[batchIndex].RemoveHistogram(i)
-			if result.T != InvalidSample.T {
+			if result.T != invalidSample.T {
 				vectors[batchIndex].AppendSample(o.GetPool(), sampleID, result.F)
 			}
 		}
