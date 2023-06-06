@@ -4302,6 +4302,10 @@ func TestNativeHistograms(t *testing.T) {
 			query: "min by (foo) (native_histogram_series)",
 		},
 		{
+			name:  "absent",
+			query: "absent(native_histogram_series)",
+		},
+		{
 			name:  "histogram_sum",
 			query: "histogram_sum(native_histogram_series)",
 		},

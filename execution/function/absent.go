@@ -84,7 +84,7 @@ func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	result := o.GetPool().GetVectorBatch()
 	for i := range vectors {
 		sv := o.GetPool().GetStepVector(vectors[i].T)
-		if len(vectors[i].Samples) == 0 {
+		if len(vectors[i].Samples) == 0 && len(vectors[i].Histograms) == 0 {
 			sv.AppendSample(o.GetPool(), 0, 1)
 		}
 		result = append(result, sv)
