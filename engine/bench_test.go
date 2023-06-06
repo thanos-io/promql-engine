@@ -355,6 +355,10 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			name:  "histogram_quantile",
 			query: "histogram_quantile(0.9, sum(native_histogram_series))",
 		},
+		{
+			name:  "histogram scalar binop",
+			query: "sum(native_histogram_series * 60)",
+		},
 	}
 
 	opts := promql.EngineOpts{

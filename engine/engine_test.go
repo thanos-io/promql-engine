@@ -4237,7 +4237,7 @@ type histogramGeneratorFunc func(app storage.Appender, numSeries int, withMixedT
 func TestNativeHistograms(t *testing.T) {
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
+		MaxSamples:           1e16,
 		EnableNegativeOffset: true,
 		EnableAtModifier:     true,
 	}
@@ -4317,6 +4317,18 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "histogram_fraction",
 			query: "histogram_fraction(0, 0.2, native_histogram_series)",
 		},
+		{
+			name:  "lhs multiplication",
+			query: "native_histogram_series * 3",
+		},
+		{
+			name:  "rhs multiplication",
+			query: "3 * native_histogram_series",
+		},
+		{
+			name:  "lhs division",
+			query: "native_histogram_series / 2",
+		},
 	}
 
 	t.Run("integer_histograms", func(t *testing.T) {
@@ -4344,8 +4356,8 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					testutil.Ok(t, app.Commit())
 					testutil.Ok(t, test.Run())
 
-					// New Engine
-					engine := engine.New(engine.Opts{
+					promEngine := promql.NewEngine(opts)
+					thanosEngine := engine.New(engine.Opts{
 						EngineOpts:        opts,
 						DisableFallback:   true,
 						LogicalOptimizers: logicalplan.AllOptimizers,
@@ -4353,14 +4365,13 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 
 					t.Run("instant", func(t *testing.T) {
 						ctx := test.Context()
-						qry, err := engine.NewInstantQuery(ctx, test.Queryable(), nil, tc.query, time.Unix(50, 0))
+						qry, err := thanosEngine.NewInstantQuery(ctx, test.Queryable(), nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
 						newResult := qry.Exec(test.Context())
 						testutil.Ok(t, newResult.Err)
 						newVector, err := newResult.Vector()
 						testutil.Ok(t, err)
 
-						promEngine := test.QueryEngine()
 						qry, err = promEngine.NewInstantQuery(ctx, test.Queryable(), nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
 						promResult := qry.Exec(test.Context())
@@ -4384,14 +4395,13 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					})
 
 					t.Run("range", func(t *testing.T) {
-						qry, err := engine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						qry, err := thanosEngine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
 						res := qry.Exec(test.Context())
 						testutil.Ok(t, res.Err)
 						actual, err := res.Matrix()
 						testutil.Ok(t, err)
 
-						promEngine := test.QueryEngine()
 						qry, err = promEngine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
 						res = qry.Exec(test.Context())
