@@ -106,12 +106,15 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 	case promql.Vector:
 		s.series = make([]engstore.SignedSeries, len(val))
 		for i, sample := range val {
+			series := promql.Series{Metric: sample.Metric}
+			if sample.H == nil {
+				series.Floats = []promql.FPoint{{T: sample.T, F: sample.F}}
+			} else {
+				series.Histograms = []promql.HPoint{{T: sample.T, H: sample.H}}
+			}
 			s.series[i] = engstore.SignedSeries{
 				Signature: uint64(i),
-				Series: promql.NewStorageSeries(promql.Series{
-					Metric: sample.Metric,
-					Floats: []promql.FPoint{{T: sample.T, F: sample.F}},
-				}),
+				Series:    promql.NewStorageSeries(series),
 			}
 		}
 	}
