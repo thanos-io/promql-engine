@@ -55,7 +55,7 @@ type matrixSelector struct {
 	extLookbackDelta int64
 }
 
-// NewRangeVectorFunction creates operator which selects vector of series over time.
+// NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector engstore.SeriesSelector,

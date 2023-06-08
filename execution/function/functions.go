@@ -10,21 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-var invalidSample = sample{T: -1, F: 0}
-
-type sample struct {
-	T int64
-	F float64
-	H *histogram.FloatHistogram
-}
-
-type functionArgs struct {
-	Samples      []sample
-	StepTime     int64
-	ScalarPoints []float64
-}
-
-type functionCall func(f functionArgs) sample
+type functionCall func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool)
 
 var instantVectorFuncs = map[string]functionCall{
 	"abs":   simpleFunc(math.Abs),
@@ -65,188 +51,182 @@ var instantVectorFuncs = map[string]functionCall{
 		}
 		return sign
 	}),
-	"round": func(f functionArgs) sample {
-		if len(f.Samples) != 1 || len(f.ScalarPoints) > 1 {
-			return invalidSample
+	"round": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if len(vargs) > 1 {
+			return 0., false
 		}
 
 		toNearest := 1.0
-		if len(f.ScalarPoints) > 0 {
-			toNearest = f.ScalarPoints[0]
+		if len(vargs) > 0 {
+			toNearest = vargs[0]
 		}
 		toNearestInverse := 1.0 / toNearest
-		return sample{
-			T: f.StepTime,
-			F: math.Floor(f.Samples[0].F*toNearestInverse+0.5) / toNearestInverse,
-		}
+		return math.Floor(f*toNearestInverse+0.5) / toNearestInverse, true
 	},
-	"pi": func(f functionArgs) sample {
-		return sample{
-			T: f.StepTime,
-			F: math.Pi,
-		}
+	"pi": func(float64, *histogram.FloatHistogram, ...float64) (float64, bool) {
+		return math.Pi, true
 	},
-	"label_join": func(f functionArgs) sample {
-		// This is specifically handled by functionOperator Series()
-		return sample{}
+	"vector": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return f, true
 	},
-	"label_replace": func(f functionArgs) sample {
-		// This is specifically handled by functionOperator Series()
-		return sample{}
-	},
-	"time": func(f functionArgs) sample {
-		return sample{
-			T: f.StepTime,
-			F: float64(f.StepTime) / 1000,
-		}
-	},
-	"vector": func(f functionArgs) sample {
-		if len(f.Samples) == 0 {
-			return invalidSample
-		}
-		return sample{
-			T: f.StepTime,
-			F: f.Samples[0].F,
-		}
-	},
-	"clamp": func(f functionArgs) sample {
-		if len(f.Samples) == 0 || len(f.ScalarPoints) < 2 {
-			return invalidSample
+	"clamp": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if len(vargs) != 2 {
+			return 0., false
 		}
 
-		v := f.Samples[0].F
-		min := f.ScalarPoints[0]
-		max := f.ScalarPoints[1]
+		v := f
+		min := vargs[0]
+		max := vargs[1]
 
 		if max < min {
-			return invalidSample
+			return 0., false
 		}
 
-		return sample{
-			T: f.StepTime,
-			F: math.Max(min, math.Min(max, v)),
-		}
+		return math.Max(min, math.Min(max, v)), true
 	},
-	"clamp_min": func(f functionArgs) sample {
-		if len(f.Samples) == 0 || len(f.ScalarPoints) == 0 {
-			return invalidSample
+	"clamp_min": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if len(vargs) != 1 {
+			return 0., false
 		}
 
-		v := f.Samples[0].F
-		min := f.ScalarPoints[0]
+		v := f
+		min := vargs[0]
 
-		return sample{
-			T: f.StepTime,
-			F: math.Max(min, v),
-		}
+		return math.Max(min, v), true
 	},
-	"clamp_max": func(f functionArgs) sample {
-		if len(f.Samples) == 0 || len(f.ScalarPoints) == 0 {
-			return invalidSample
+	"clamp_max": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if len(vargs) != 1 {
+			return 0., false
 		}
 
-		v := f.Samples[0].F
-		max := f.ScalarPoints[0]
+		v := f
+		max := vargs[0]
 
-		return sample{
-			T: f.StepTime,
-			F: math.Min(max, v),
+		return math.Min(max, v), false
+	},
+	"histogram_sum": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if h == nil {
+			return 0., false
 		}
+		return h.Sum, true
 	},
-	"histogram_sum": func(f functionArgs) sample {
-		if len(f.Samples) == 0 || f.Samples[0].H == nil {
-			return invalidSample
+	"histogram_count": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if h == nil {
+			return 0., false
 		}
-		return sample{
-			T: f.StepTime,
-			F: f.Samples[0].H.Sum,
+		return h.Count, true
+	},
+	"histogram_fraction": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		if h == nil || len(vargs) != 2 {
+			return 0., false
 		}
+		return histogramFraction(vargs[0], vargs[1], h), true
 	},
-	"histogram_count": func(f functionArgs) sample {
-		if len(f.Samples) == 0 || f.Samples[0].H == nil {
-			return invalidSample
-		}
-		return sample{
-			T: f.StepTime,
-			F: f.Samples[0].H.Count,
-		}
+	// variants of date time functions with an argument
+	"days_in_month": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return daysInMonth(dateFromSampleValue(f)), true
 	},
-	"histogram_fraction": func(f functionArgs) sample {
-		if len(f.Samples) == 0 || f.Samples[0].H == nil {
-			return invalidSample
-		}
-		return sample{
-			T: f.StepTime,
-			F: histogramFraction(f.ScalarPoints[0], f.ScalarPoints[1], f.Samples[0].H),
-		}
+	"day_of_month": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return dayOfMonth(dateFromSampleValue(f)), true
 	},
-	"histogram_quantile": func(f functionArgs) sample {
-		// This is handled specially by operator.
-		return sample{}
+	"day_of_week": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return dayOfWeek(dateFromSampleValue(f)), true
 	},
-	"days_in_month": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
-		})
+	"day_of_year": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return dayOfYear(dateFromSampleValue(f)), true
 	},
-	"day_of_month": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.Day())
-		})
+	"hour": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return hour(dateFromSampleValue(f)), true
 	},
-	"day_of_week": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.Weekday())
-		})
+	"minute": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return minute(dateFromSampleValue(f)), true
 	},
-	"day_of_year": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.YearDay())
-		})
+	"month": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return month(dateFromSampleValue(f)), true
 	},
-	"hour": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.Hour())
-		})
+	"year": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return year(dateFromSampleValue(f)), true
 	},
-	"minute": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.Minute())
-		})
+}
+
+type noArgFunctionCall func(t int64) float64
+
+var noArgFuncs = map[string]noArgFunctionCall{
+	"pi": func(_ int64) float64 {
+		return math.Pi
 	},
-	"month": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.Month())
-		})
+	"time": func(t int64) float64 {
+		return float64(t) / 1000
 	},
-	"year": func(f functionArgs) sample {
-		return dateWrapper(f, func(t time.Time) float64 {
-			return float64(t.Year())
-		})
+	// variants of date time functions with no argument
+	"days_in_month": func(t int64) float64 {
+		return daysInMonth(dateFromStepTime(t))
+	},
+	"day_of_month": func(t int64) float64 {
+		return dayOfMonth(dateFromStepTime(t))
+	},
+	"day_of_week": func(t int64) float64 {
+		return dayOfWeek(dateFromStepTime(t))
+	},
+	"day_of_year": func(t int64) float64 {
+		return dayOfYear(dateFromStepTime(t))
+	},
+	"hour": func(t int64) float64 {
+		return hour(dateFromStepTime(t))
+	},
+	"minute": func(t int64) float64 {
+		return minute(dateFromStepTime(t))
+	},
+	"month": func(t int64) float64 {
+		return month(dateFromStepTime(t))
+	},
+	"year": func(t int64) float64 {
+		return year(dateFromStepTime(t))
 	},
 }
 
 func simpleFunc(f func(float64) float64) functionCall {
-	return func(fa functionArgs) sample {
-		if len(fa.Samples) == 0 {
-			return invalidSample
-		}
-		return sample{
-			T: fa.StepTime,
-			F: f(fa.Samples[0].F),
-		}
+	return func(v float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return f(v), true
 	}
 }
 
-// Common code for date related functions.
-func dateWrapper(fa functionArgs, f func(time.Time) float64) sample {
-	if len(fa.Samples) == 0 {
-		return sample{
-			F: f(time.Unix(fa.StepTime/1000, 0).UTC()),
-		}
-	}
-	t := time.Unix(int64(fa.Samples[0].F), 0).UTC()
-	return sample{
-		F: f(t),
-	}
+func dateFromSampleValue(f float64) time.Time {
+	return time.Unix(int64(f), 0).UTC()
+}
+
+func dateFromStepTime(t int64) time.Time {
+	return time.Unix(t/1000, 0).UTC()
+}
+
+func daysInMonth(t time.Time) float64 {
+	return float64(32 - time.Date(t.Year(), t.Month(), 32, 0, 0, 0, 0, time.UTC).Day())
+}
+
+func dayOfMonth(t time.Time) float64 {
+	return float64(t.Day())
+}
+
+func dayOfWeek(t time.Time) float64 {
+	return float64(t.Weekday())
+}
+
+func dayOfYear(t time.Time) float64 {
+	return float64(t.YearDay())
+}
+
+func hour(t time.Time) float64 {
+	return float64(t.Hour())
+}
+
+func minute(t time.Time) float64 {
+	return float64(t.Minute())
+}
+
+func month(t time.Time) float64 {
+	return float64(t.Month())
+}
+
+func year(t time.Time) float64 {
+	return float64(t.Year())
 }

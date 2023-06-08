@@ -20,7 +20,7 @@ type noArgFunctionOperator struct {
 	currentStep int64
 	stepsBatch  int
 	funcExpr    *parser.Call
-	call        functionCall
+	call        noArgFunctionCall
 	vectorPool  *model.VectorPool
 	series      []labels.Labels
 	sampleIDs   []uint64
@@ -42,15 +42,11 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
-	fa := functionArgs{}
 	ret := o.vectorPool.GetVectorBatch()
 	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
 		sv := o.vectorPool.GetStepVector(o.currentStep)
-		fa.StepTime = o.currentStep
-		result := o.call(fa)
-		sv.Samples = []float64{result.F}
+		sv.Samples = []float64{o.call(o.currentStep)}
 		sv.SampleIDs = o.sampleIDs
-
 		ret = append(ret, sv)
 		o.currentStep += o.step
 	}

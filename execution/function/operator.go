@@ -29,10 +29,10 @@ type functionOperator struct {
 
 	call         functionCall
 	scalarPoints [][]float64
-	sampleBuf    []sample
 }
 
 func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+	// Some functions need to be handled in special operators
 	switch funcExpr.Func.Name {
 	case "scalar":
 		return &scalarFunctionOperator{
@@ -60,41 +60,55 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 			scalarPoints: make([]float64, stepsBatch),
 		}, nil
 	}
+
+	// Short-circuit functions that take no args. Their only input is the step's timestamp.
+	if len(nextOps) == 0 {
+		return newNoArgsFunctionOperator(funcExpr, stepsBatch, opts)
+	}
+	// All remaining functions
+	return newInstantVectorFunctionOperator(funcExpr, nextOps, stepsBatch, opts)
+}
+
+func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+	call, ok := noArgFuncs[funcExpr.Func.Name]
+	if !ok {
+		return nil, parse.UnknownFunctionError(funcExpr.Func)
+	}
+
+	interval := opts.Step.Milliseconds()
+	// We set interval to be at least 1.
+	if interval == 0 {
+		interval = 1
+	}
+
+	op := &noArgFunctionOperator{
+		currentStep: opts.Start.UnixMilli(),
+		mint:        opts.Start.UnixMilli(),
+		maxt:        opts.End.UnixMilli(),
+		step:        interval,
+		stepsBatch:  stepsBatch,
+		funcExpr:    funcExpr,
+		call:        call,
+		vectorPool:  model.NewVectorPool(stepsBatch),
+	}
+
+	switch funcExpr.Func.Name {
+	case "pi", "time":
+		op.sampleIDs = []uint64{0}
+	default:
+		// Other functions require non-nil labels.
+		op.series = []labels.Labels{{}}
+		op.sampleIDs = []uint64{0}
+	}
+	return op, nil
+}
+
+func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := instantVectorFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, parse.UnknownFunctionError(funcExpr.Func)
 	}
 
-	// Short-circuit functions that take no args. Their only input is the step's timestamp.
-	if len(nextOps) == 0 {
-		interval := opts.Step.Milliseconds()
-		// We set interval to be at least 1.
-		if interval == 0 {
-			interval = 1
-		}
-
-		op := &noArgFunctionOperator{
-			currentStep: opts.Start.UnixMilli(),
-			mint:        opts.Start.UnixMilli(),
-			maxt:        opts.End.UnixMilli(),
-			step:        interval,
-			stepsBatch:  stepsBatch,
-			funcExpr:    funcExpr,
-			call:        call,
-			vectorPool:  model.NewVectorPool(stepsBatch),
-		}
-
-		switch funcExpr.Func.Name {
-		case "pi", "time":
-			op.sampleIDs = []uint64{0}
-		default:
-			// Other functions require non-nil labels.
-			op.series = []labels.Labels{{}}
-			op.sampleIDs = []uint64{0}
-		}
-
-		return op, nil
-	}
 	scalarPoints := make([][]float64, stepsBatch)
 	for i := 0; i < stepsBatch; i++ {
 		scalarPoints[i] = make([]float64, len(nextOps)-1)
@@ -105,7 +119,6 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 		funcExpr:     funcExpr,
 		vectorIndex:  0,
 		scalarPoints: scalarPoints,
-		sampleBuf:    make([]sample, 1),
 	}
 
 	for i := range funcExpr.Args {
@@ -185,17 +198,9 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	}
 	for batchIndex, vector := range vectors {
 		i := 0
-		fa := functionArgs{}
 		for i < len(vectors[batchIndex].Samples) {
-			o.sampleBuf[0].H = nil
-			o.sampleBuf[0].F = vector.Samples[i]
-			fa.Samples = o.sampleBuf
-			fa.StepTime = vector.T
-			fa.ScalarPoints = o.scalarPoints[batchIndex]
-			result := o.call(fa)
-
-			if result.T != invalidSample.T {
-				vector.Samples[i] = result.F
+			if v, ok := o.call(vector.Samples[i], nil, o.scalarPoints[batchIndex]...); ok {
+				vector.Samples[i] = v
 				i++
 			} else {
 				// This operator modifies samples directly in the input vector to avoid allocations.
@@ -206,19 +211,14 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		i = 0
 		for i < len(vectors[batchIndex].Histograms) {
-			o.sampleBuf[0].H = vector.Histograms[i]
-			fa.Samples = o.sampleBuf
-			fa.StepTime = vector.T
-			fa.ScalarPoints = o.scalarPoints[batchIndex]
-			result := o.call(fa)
-
+			v, ok := o.call(0., vector.Histograms[i], o.scalarPoints[batchIndex]...)
 			// This operator modifies samples directly in the input vector to avoid allocations.
 			// All current functions for histograms produce a float64 sample. It's therefore safe to
 			// always remove the input histogram so that it does not propagate to the output.
 			sampleID := vectors[batchIndex].HistogramIDs[i]
 			vectors[batchIndex].RemoveHistogram(i)
-			if result.T != invalidSample.T {
-				vectors[batchIndex].AppendSample(o.GetPool(), sampleID, result.F)
+			if ok {
+				vectors[batchIndex].AppendSample(o.GetPool(), sampleID, v)
 			}
 		}
 	}
@@ -243,12 +243,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 
 		b := labels.ScratchBuilder{}
 		for i, s := range series {
-			lbls := s
-			switch o.funcExpr.Func.Name {
-			case "last_over_time":
-			default:
-				lbls, _ = DropMetricName(s, b)
-			}
+			lbls, _ := DropMetricName(s, b)
 			o.series[i] = lbls
 		}
 	})
