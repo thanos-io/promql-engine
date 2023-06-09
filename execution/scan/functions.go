@@ -9,8 +9,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-var invalidSample = sample{T: -1, F: 0}
-
 type sample struct {
 	T int64
 	F float64
@@ -26,7 +24,7 @@ type functionArgs struct {
 	MetricAppearedTs *int64
 }
 
-type functionCall func(f functionArgs) sample
+type functionCall func(f functionArgs) (float64, *histogram.FloatHistogram, bool)
 
 func instantValue(samples []sample, isRate bool) (float64, bool) {
 	lastSample := samples[len(samples)-1]
@@ -55,216 +53,150 @@ func instantValue(samples []sample, isRate bool) (float64, bool) {
 }
 
 var rangeVectorFuncs = map[string]functionCall{
-	"sum_over_time": func(f functionArgs) sample {
+	"sum_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: sumOverTime(f.Samples),
-		}
+		return sumOverTime(f.Samples), nil, true
 	},
-	"max_over_time": func(f functionArgs) sample {
+	"max_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: maxOverTime(f.Samples),
-		}
+		return maxOverTime(f.Samples), nil, true
 	},
-	"min_over_time": func(f functionArgs) sample {
+	"min_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: minOverTime(f.Samples),
-		}
+		return minOverTime(f.Samples), nil, true
 	},
-	"avg_over_time": func(f functionArgs) sample {
+	"avg_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: avgOverTime(f.Samples),
-		}
+		return avgOverTime(f.Samples), nil, true
 	},
-	"stddev_over_time": func(f functionArgs) sample {
+	"stddev_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: stddevOverTime(f.Samples),
-		}
+		return stddevOverTime(f.Samples), nil, true
 	},
-	"stdvar_over_time": func(f functionArgs) sample {
+	"stdvar_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: stdvarOverTime(f.Samples),
-		}
+		return stdvarOverTime(f.Samples), nil, true
 	},
-	"count_over_time": func(f functionArgs) sample {
+	"count_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: countOverTime(f.Samples),
-		}
+		return countOverTime(f.Samples), nil, true
 	},
-	"last_over_time": func(f functionArgs) sample {
+	"last_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: f.Samples[len(f.Samples)-1].F,
-		}
+		return f.Samples[len(f.Samples)-1].F, nil, true
 	},
-	"present_over_time": func(f functionArgs) sample {
+	"present_over_time": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: 1,
-		}
+		return 1., nil, true
 	},
-	"changes": func(f functionArgs) sample {
+	"changes": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: changes(f.Samples),
-		}
+		return changes(f.Samples), nil, true
 	},
-	"resets": func(f functionArgs) sample {
+	"resets": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: resets(f.Samples),
-		}
+		return resets(f.Samples), nil, true
 	},
-	"deriv": func(f functionArgs) sample {
+	"deriv": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) < 2 {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: deriv(f.Samples),
-		}
+		return deriv(f.Samples), nil, true
 	},
-	"irate": func(f functionArgs) sample {
+	"irate": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) < 2 {
-			return invalidSample
+			return 0., nil, false
 		}
 		val, ok := instantValue(f.Samples, true)
 		if !ok {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: val,
-		}
+		return val, nil, true
 	},
-	"idelta": func(f functionArgs) sample {
+	"idelta": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) < 2 {
-			return invalidSample
+			return 0., nil, false
 		}
 		val, ok := instantValue(f.Samples, false)
 		if !ok {
-			return invalidSample
+			return 0., nil, false
 		}
-		return sample{
-			T: f.StepTime,
-			F: val,
-		}
+		return val, nil, true
 	},
-	"rate": func(f functionArgs) sample {
+	"rate": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) < 2 {
-			return invalidSample
+			return 0., nil, false
 		}
 		v, h := extrapolatedRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset)
-		return sample{
-			T: f.StepTime,
-			F: v,
-			H: h,
-		}
+		return v, h, true
 	},
-	"delta": func(f functionArgs) sample {
+	"delta": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) < 2 {
-			return invalidSample
+			return 0., nil, false
 		}
 		v, h := extrapolatedRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset)
-		return sample{
-			T: f.StepTime,
-			F: v,
-			H: h,
-		}
+		return v, h, true
 	},
-	"increase": func(f functionArgs) sample {
+	"increase": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) < 2 {
-			return invalidSample
+			return 0., nil, false
 		}
 		v, h := extrapolatedRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset)
-		return sample{
-			T: f.StepTime,
-			F: v,
-			H: h,
-		}
+		return v, h, true
 	},
-	"xrate": func(f functionArgs) sample {
+	"xrate": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
 		if f.MetricAppearedTs == nil {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
 		v, h := extendedRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
-		return sample{
-			T: f.StepTime,
-			F: v,
-			H: h,
-		}
+		return v, h, true
 	},
-	"xdelta": func(f functionArgs) sample {
+	"xdelta": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
 		if f.MetricAppearedTs == nil {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
 		v, h := extendedRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
-		return sample{
-			T: f.StepTime,
-			F: v,
-			H: h,
-		}
+		return v, h, true
 	},
-	"xincrease": func(f functionArgs) sample {
+	"xincrease": func(f functionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {
-			return invalidSample
+			return 0., nil, false
 		}
 		if f.MetricAppearedTs == nil {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
 		v, h := extendedRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
-		return sample{
-			T: f.StepTime,
-			F: v,
-			H: h,
-		}
+		return v, h, true
 	},
 }
 

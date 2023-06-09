@@ -102,7 +102,7 @@ var instantVectorFuncs = map[string]functionCall{
 		v := f
 		max := vargs[0]
 
-		return math.Min(max, v), false
+		return math.Min(max, v), true
 	},
 	"histogram_sum": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
 		if h == nil {

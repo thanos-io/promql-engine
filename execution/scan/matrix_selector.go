@@ -160,7 +160,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
 			// https://github.com/thanos-io/promql-engine/issues/39
-			result := o.call(functionArgs{
+			f, h, ok := o.call(functionArgs{
 				Samples:          rangeSamples,
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
@@ -168,12 +168,12 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				MetricAppearedTs: o.scanners[i].metricAppearedTs,
 			})
 
-			if result.T != invalidSample.T {
-				vectors[currStep].T = result.T
-				if result.H != nil {
-					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, result.H)
+			if ok {
+				vectors[currStep].T = seriesTs
+				if h != nil {
+					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, h)
 				} else {
-					vectors[currStep].AppendSample(o.vectorPool, series.signature, result.F)
+					vectors[currStep].AppendSample(o.vectorPool, series.signature, f)
 				}
 			}
 
