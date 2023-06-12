@@ -3349,6 +3349,14 @@ func TestInstantQuery(t *testing.T) {
 			query: "sum_over_time(http_requests_total[5m] @ 180 offset 2m)",
 		},
 		{
+			name: "scalar with nested binary operator with step invariant",
+			load: `load 30s
+      http_requests_total{pod="nginx-1", route="/"} 53.33+56.00x40
+      http_requests_total{pod="nginx-2", route="/"} -26+2.00x40`,
+			query: `vector(scalar((http_requests_total @ end() offset 5m > http_requests_total)))
+      `,
+		},
+		{
 			name:  "scalar func with non existent metric in scalar comparison",
 			query: `scalar(non_existent_metric) < bool 0`,
 		},
