@@ -18,6 +18,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"runtime"
 	"sort"
 	"time"
@@ -69,7 +70,17 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
 		Step: step.Milliseconds(),
 	}
-	return newOperator(expr, selectorPool, opts, hints)
+
+	startTime := time.Now()
+	operator, err := newOperator(expr, selectorPool, opts, hints)
+	elapsedTime := time.Since(startTime)
+	fmt.Printf("Operator: %T, Time: %s\n", operator, elapsedTime)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return operator, nil
 }
 
 func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
