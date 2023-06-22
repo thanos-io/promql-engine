@@ -51,6 +51,37 @@ import (
 
 const stepsBatch = 10
 
+// TimingOperator wraps another VectorOperator and tracks the time consumed in its Next method.
+type TimingOperator struct {
+	operator   model.VectorOperator
+	startTime  time.Time
+	operatorID string // Identifier for the operator (for logging purposes)
+}
+
+func NewTimingOperator(operator model.VectorOperator, operatorID string) *TimingOperator {
+	return &TimingOperator{
+		operator:   operator,
+		operatorID: operatorID,
+	}
+}
+
+// Next implements the Next method of the VectorOperator interface.
+func (o *TimingOperator) Next(ctx context.Context) []model.StepVector {
+	o.startTime = time.Now()
+
+	// Call the Next method of the wrapped operator
+	result, err := o.operator.Next(ctx)
+
+	if err != nil {
+		return nil
+	}
+
+	elapsedTime := time.Since(o.startTime)
+	fmt.Printf("Operator: %s, Next Time: %s\n", o.operatorID, elapsedTime)
+
+	return result
+}
+
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
@@ -71,14 +102,14 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		Step: step.Milliseconds(),
 	}
 
-	startTime := time.Now()
 	operator, err := newOperator(expr, selectorPool, opts, hints)
-	elapsedTime := time.Since(startTime)
-	fmt.Printf("Operator: %T, Time: %s\n", operator, elapsedTime)
 
 	if err != nil {
 		return nil, err
 	}
+	timingOperator := NewTimingOperator(operator, "MyOperator")
+
+	timingOperator.Next(ctx)
 
 	return operator, nil
 }
