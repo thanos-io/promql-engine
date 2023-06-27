@@ -19,6 +19,7 @@ package execution
 import (
 	"context"
 	"fmt"
+	"math"
 	"runtime"
 	"sort"
 	"time"
@@ -31,6 +32,8 @@ import (
 	"github.com/efficientgo/core/errors"
 
 	"github.com/prometheus/prometheus/storage"
+
+	"github.com/prometheus/prometheus/model/histogram"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -53,9 +56,15 @@ const stepsBatch = 10
 
 // TimingOperator wraps another VectorOperator and tracks the time consumed in its Next method.
 type TimingOperator struct {
-	operator   model.VectorOperator
-	startTime  time.Time
-	operatorID string // Identifier for the operator (for logging purposes)
+	operator      model.VectorOperator
+	startTime     time.Time
+	operatorID    string // Identifier for the operator (for logging purposes)
+	pool          *model.VectorPool
+	scalar        model.VectorOperator
+	getOperands   getOperandsFunc
+	operandValIdx int
+	floatOp       operation
+	histOp        histogramFloatOperation
 }
 
 func NewTimingOperator(operator model.VectorOperator, operatorID string) *TimingOperator {
@@ -66,20 +75,54 @@ func NewTimingOperator(operator model.VectorOperator, operatorID string) *Timing
 }
 
 // Next implements the Next method of the VectorOperator interface.
-func (o *TimingOperator) Next(ctx context.Context) []model.StepVector {
+func (o *TimingOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
 	o.startTime = time.Now()
-
-	// Call the Next method of the wrapped operator
-	result, err := o.operator.Next(ctx)
-
+	in, err := o.operator.Next(ctx)
 	if err != nil {
-		return nil
+		return nil, err
+	}
+	if in == nil {
+		return nil, nil
+	}
+	scalarIn, err := o.scalar.Next(ctx)
+
+	out := o.pool.GetVectorBatch()
+
+	for _, vector := range in {
+		step := o.pool.GetStepVector(vector.T)
+		scalarVal := math.NaN()
+
+		for i := range vector.Samples {
+			operands := o.getOperands(vector, i, scalarVal)
+			val, _ := o.floatOp(operands, o.operandValIdx)
+
+			// step.AppendSample(o.pool, vector.SampleIDs[i], val)
+			step.AppendSample(o.pool, vector.SampleIDs[i], val)
+		}
+		for i := range vector.HistogramIDs {
+			val := o.histOp(vector.Histograms[i], scalarVal)
+			if val != nil {
+				step.AppendHistogram(o.pool, vector.HistogramIDs[i], val)
+			}
+		}
+		o.operator.GetPool().PutStepVector(vector)
 	}
 
+	if err != nil {
+		return nil, err
+	}
+	for i := range scalarIn {
+		o.scalar.GetPool().PutStepVector(scalarIn[i])
+	}
 	elapsedTime := time.Since(o.startTime)
-	fmt.Printf("Operator: %s, Next Time: %s\n", o.operatorID, elapsedTime)
+	fmt.Printf("Operator: %s, Time taken : %s\n", o.operatorID, elapsedTime)
 
-	return result
+	return out, nil
 }
 
 // New creates new physical query execution for a given query expression which represents logical plan.
@@ -108,8 +151,9 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		return nil, err
 	}
 	timingOperator := NewTimingOperator(operator, "MyOperator")
-
-	timingOperator.Next(ctx)
+	if timingOperator != nil {
+		timingOperator.Next(ctx)
+	}
 
 	return operator, nil
 }
@@ -402,3 +446,9 @@ func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Option
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset
 }
+
+type getOperandsFunc func(v model.StepVector, i int, scalar float64) [2]float64
+
+type operation func(operands [2]float64, valueIdx int) (float64, bool)
+
+type histogramFloatOperation func(lhsHist *histogram.FloatHistogram, rhsFloat float64) *histogram.FloatHistogram
