@@ -161,7 +161,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
+		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val, true), nil
 
 	case *parser.VectorSelector:
 		start, end := getTimeRangesForVectorSelector(e, opts, 0)
@@ -320,7 +320,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.StepInvariantExpr:
 		switch t := e.Expr.(type) {
 		case *parser.NumberLiteral:
-			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val), nil
+			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val, true), nil
 		}
 		next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
 		if err != nil {

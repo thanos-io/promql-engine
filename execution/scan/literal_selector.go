@@ -7,11 +7,21 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/query"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
+)
+
+var (
+	constantMetric = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "operator_duration_seconds",
+		Help: "Time taken by each operator",
+	}, []string{"operator", "duration"})
 )
 
 // numberLiteralSelector returns []model.StepVector with same sample value across time range.
@@ -26,10 +36,12 @@ type numberLiteralSelector struct {
 	series      []labels.Labels
 	once        sync.Once
 
-	val float64
+	val        float64
+	recordTime bool
+	duration   time.Duration
 }
 
-func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
+func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64, recordTime bool) *numberLiteralSelector {
 	return &numberLiteralSelector{
 		vectorPool:  pool,
 		numSteps:    opts.NumSteps(),
@@ -38,6 +50,8 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 		step:        opts.Step.Milliseconds(),
 		currentStep: opts.Start.UnixMilli(),
 		val:         val,
+		recordTime:  recordTime,
+		duration:    time.Duration(0),
 	}
 }
 
@@ -60,6 +74,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
@@ -83,6 +98,12 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
+	duration := time.Since(start)
+	if o.recordTime {
+		o.duration = duration
+		const opName = "numberLiteralSelector"
+		constantMetric.WithLabelValues(opName, fmt.Sprintf("%v", duration)).Add(duration.Seconds())
+	}
 
 	return vectors, nil
 }
