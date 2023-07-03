@@ -52,7 +52,7 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
+func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration, enableAnalysis bool) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Context:          ctx,
 		Start:            mint,
@@ -61,6 +61,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		LookbackDelta:    lookbackDelta,
 		StepsBatch:       stepsBatch,
 		ExtLookbackDelta: extLookbackDelta,
+		EnableAnalysis:   enableAnalysis,
 	}
 	selectorPool := engstore.NewSelectorPool(queryable)
 	hints := storage.SelectHints{
