@@ -737,16 +737,18 @@ func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext s
 		return
 	}
 
-	_, _ = w.Write([]byte(":\n"))
+	_, _ = w.Write([]byte(indent))
+	_, _ = w.Write([]byte("Children:\n"))
 
-	for i, n := range next {
+	for i, obsVector := range next {
 		if i == len(next)-1 {
-			analyze(w, n, indentNext+"└──", indentNext+"   ")
+			analyze(w, obsVector, indentNext+"└──", indentNext+"   ")
 		} else {
-			analyze(w, n, indentNext+"└──", indentNext+"   ")
+			analyze(w, obsVector, indentNext+"├──", indentNext+"│  ")
 		}
 	}
 }
+
 func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
 	me, next := o.Explain()
 	_, _ = w.Write([]byte(indent))
