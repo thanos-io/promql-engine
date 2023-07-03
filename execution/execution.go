@@ -53,7 +53,7 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
+func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration, enableAnalysis bool) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Context:          ctx,
 		Start:            mint,
@@ -62,6 +62,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		LookbackDelta:    lookbackDelta,
 		StepsBatch:       stepsBatch,
 		ExtLookbackDelta: extLookbackDelta,
+		EnableAnalysis:   enableAnalysis,
 	}
 	selectorPool := engstore.NewSelectorPool(queryable)
 	hints := storage.SelectHints{
@@ -78,7 +79,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val, true), nil
+		return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, e.Val), nil
 
 	case *parser.VectorSelector:
 		start, end := getTimeRangesForVectorSelector(e, opts, 0)
@@ -237,7 +238,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.StepInvariantExpr:
 		switch t := e.Expr.(type) {
 		case *parser.NumberLiteral:
-			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val, true), nil
+			return scan.NewNumberLiteralSelector(model.NewVectorPool(stepsBatch), opts, t.Val), nil
 		}
 		next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
 		if err != nil {

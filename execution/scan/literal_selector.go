@@ -9,19 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/query"
-
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/prometheus/model/labels"
-)
-
-var (
-	constantMetric = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "operator_duration_seconds",
-		Help: "Time taken by each operator",
-	}, []string{"operator", "duration"})
 )
 
 // numberLiteralSelector returns []model.StepVector with same sample value across time range.
@@ -36,13 +26,12 @@ type numberLiteralSelector struct {
 	series      []labels.Labels
 	once        sync.Once
 
-	val        float64
-	recordTime bool
-	duration   time.Duration
+	val float64
+	t   model.OperatorTelemetry
 }
 
-func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64, recordTime bool) *numberLiteralSelector {
-	return &numberLiteralSelector{
+func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
+	op := &numberLiteralSelector{
 		vectorPool:  pool,
 		numSteps:    opts.NumSteps(),
 		mint:        opts.Start.UnixMilli(),
@@ -50,9 +39,14 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 		step:        opts.Step.Milliseconds(),
 		currentStep: opts.Start.UnixMilli(),
 		val:         val,
-		recordTime:  recordTime,
-		duration:    time.Duration(0),
 	}
+
+	op.t = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		op.t = &model.TimingInformation{}
+	}
+
+	return op
 }
 
 func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
@@ -99,11 +93,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 	}
 	o.currentStep += o.step * int64(o.numSteps)
 	duration := time.Since(start)
-	if o.recordTime {
-		o.duration = duration
-		const opName = "numberLiteralSelector"
-		constantMetric.WithLabelValues(opName, fmt.Sprintf("%v", duration)).Add(duration.Seconds())
-	}
+	o.t.AddCPUTimeTaken(duration)
 
 	return vectors, nil
 }

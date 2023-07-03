@@ -22,9 +22,13 @@ func (ti *TimingInformation) AddCPUTimeTaken(t time.Duration) {
 	ti.CPUTime += t
 }
 
+type OperatorTelemetry interface {
+	AddCPUTimeTaken(time.Duration)
+}
+
 type ObservableVectorOperator interface {
 	VectorOperator
-	AddCPUTimeTaken(time.Duration)
+	OperatorTelemetry
 
 	Analyze() (*TimingInformation, []ObservableVectorOperator)
 }
