@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"runtime"
@@ -723,7 +724,25 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 }
 
 func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext string) {
-	// TODO: Implement.
+	ti, obsVectors := o.Analyze()
+
+	_, _ = w.Write([]byte(indent))
+	_, _ = w.Write([]byte(fmt.Sprintf("Operator Time: %v\n", ti.CPUTime)))
+
+	if len(obsVectors) == 0 {
+		return
+	}
+
+	_, _ = w.Write([]byte(indent))
+	_, _ = w.Write([]byte("Children:\n"))
+
+	for i, obsVector := range obsVectors {
+		if i == len(obsVectors)-1 {
+			analyze(w, obsVector, indentNext+"└──", indentNext+"   ")
+		} else {
+			analyze(w, obsVector, indentNext+"├──", indentNext+"│  ")
+		}
+	}
 }
 
 func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
