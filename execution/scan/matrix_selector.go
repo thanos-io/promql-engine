@@ -48,6 +48,9 @@ type matrixSelector struct {
 	offset      int64
 	currentStep int64
 
+	isExtFunction bool
+	deltaReduced  bool
+
 	shard     int
 	numShards int
 
@@ -68,16 +71,20 @@ func NewMatrixSelector(
 	if !ok {
 		return nil, parse.UnknownFunctionError(funcExpr.Func)
 	}
+	isExtFunction := parse.IsExtFunction(funcExpr.Func.Name)
 	return &matrixSelector{
 		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
 		vectorPool: pool,
 
-		numSteps: opts.NumSteps(),
-		mint:     opts.Start.UnixMilli(),
-		maxt:     opts.End.UnixMilli(),
-		step:     opts.Step.Milliseconds(),
+		numSteps:      opts.NumSteps(),
+		mint:          opts.Start.UnixMilli(),
+		maxt:          opts.End.UnixMilli(),
+		step:          opts.Step.Milliseconds(),
+		isExtFunction: isExtFunction,
+		// For ext functions we should not reduce the buffering delta.
+		deltaReduced: isExtFunction,
 
 		selectRange: selectRange.Milliseconds(),
 		offset:      offset.Milliseconds(),
@@ -146,10 +153,10 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			var rangeSamples []sample
 			var err error
 
-			if parse.IsExtFunction(o.funcExpr.Func.Name) {
-				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
-			} else {
+			if !o.isExtFunction {
 				rangeSamples, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousSamples)
+			} else {
+				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
 			}
 
 			if err != nil {
@@ -184,8 +191,9 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if stepRange > o.step {
 				stepRange = o.step
 			}
-			if !parse.IsExtFunction(o.funcExpr.Func.Name) {
+			if !o.deltaReduced {
 				series.samples.ReduceDelta(stepRange)
+				o.deltaReduced = true
 			}
 
 			seriesTs += o.step

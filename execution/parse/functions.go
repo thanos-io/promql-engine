@@ -8,7 +8,7 @@ import (
 	"github.com/thanos-io/promql-engine/parser"
 )
 
-var Functions = map[string]*parser.Function{
+var XFunctions = map[string]*parser.Function{
 	"xdelta": {
 		Name:       "xdelta",
 		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
@@ -28,7 +28,7 @@ var Functions = map[string]*parser.Function{
 
 // IsExtFunction is a convenience function to determine whether extended range calculations are required.
 func IsExtFunction(functionName string) bool {
-	_, ok := Functions[functionName]
+	_, ok := XFunctions[functionName]
 	return ok
 }
 
