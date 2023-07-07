@@ -75,7 +75,18 @@ The current implementation uses goroutines very liberally which means the query 
 
 ### Plan optimization
 
-The current implementation creates a physical plan directly from the PromQL abstract syntax tree. Plan optimizations not yet implemented and would require having a logical plan as an intermediary step.
+Each PromQL query is initially treated as a declarative (logical) plan and is optimizes before execution. 
+The engine currently supports several optimizers, some of which are enabled by default and others need to be explicitly opted-into.
+Optimizers implement the [Optimizer](https://pkg.go.dev/github.com/thanos-io/promql-engine@v0.0.0-20230612203010-0bdf2ad20a9d/logicalplan#Optimizer) interface and all implementations can be found in the [logicalplan](https://pkg.go.dev/github.com/thanos-io/promql-engine@v0.0.0-20230612203010-0bdf2ad20a9d/logicalplan) package.
+
+### Extensibility
+
+THe engine can be extended through custom optimizers which can be used injected at instantiation. These optimizers can be used to either
+rearrange the logical nodes into a new plan, or to inject new nodes altogether.
+
+It is also possible to modify the actual execution of a query by injecting a node implementing the `UserDefinedOperator` interface.
+This node type has a `MakeExecutionOperator` method which can be used to control which execution operator should be instantiated for
+the logical node.
 
 ## Distributed execution mode
 

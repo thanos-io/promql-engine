@@ -203,6 +203,8 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return exchange.NewConcurrent(remoteExec, 2), nil
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
+	case logicalplan.UserDefinedExpr:
+		return e.MakeExecutionOperator(stepsBatch, model.NewVectorPool(stepsBatch), storage, opts, hints)
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}
