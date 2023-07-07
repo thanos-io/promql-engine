@@ -28,6 +28,7 @@ type matrixScanner struct {
 	previousSamples  []sample
 	samples          *storage.BufferedSeriesIterator
 	metricAppearedTs *int64
+	deltaReduced     bool
 }
 
 type matrixSelector struct {
@@ -49,7 +50,6 @@ type matrixSelector struct {
 	currentStep int64
 
 	isExtFunction bool
-	deltaReduced  bool
 
 	shard     int
 	numShards int
@@ -83,8 +83,6 @@ func NewMatrixSelector(
 		maxt:          opts.End.UnixMilli(),
 		step:          opts.Step.Milliseconds(),
 		isExtFunction: isExtFunction,
-		// For ext functions we should not reduce the buffering delta.
-		deltaReduced: isExtFunction,
 
 		selectRange: selectRange.Milliseconds(),
 		offset:      offset.Milliseconds(),
@@ -142,7 +140,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	ts = o.currentStep
 	for i := 0; i < len(o.scanners); i++ {
 		var (
-			series   = o.scanners[i]
+			series   = &o.scanners[i]
 			seriesTs = ts
 		)
 
@@ -191,9 +189,9 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if stepRange > o.step {
 				stepRange = o.step
 			}
-			if !o.deltaReduced {
+			if !series.deltaReduced {
 				series.samples.ReduceDelta(stepRange)
-				o.deltaReduced = true
+				series.deltaReduced = true
 			}
 
 			seriesTs += o.step
@@ -234,14 +232,15 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 			// If we are dealing with an extended range function we need to search further in the past for valid series.
 			var selectRange = o.selectRange
-			if parse.IsExtFunction(o.funcExpr.Func.Name) {
+			if o.isExtFunction {
 				selectRange += o.extLookbackDelta
 			}
 
 			o.scanners[i] = matrixScanner{
-				labels:    lbls,
-				signature: s.Signature,
-				samples:   storage.NewBufferIterator(s.Iterator(nil), selectRange),
+				labels:       lbls,
+				signature:    s.Signature,
+				samples:      storage.NewBufferIterator(s.Iterator(nil), selectRange),
+				deltaReduced: o.isExtFunction,
 			}
 			o.series[i] = lbls
 		}
