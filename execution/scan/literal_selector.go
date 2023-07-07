@@ -43,7 +43,7 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 
 	op.OperatorTelemetry = &model.NoopTimingInformation{}
 	if opts.EnableAnalysis {
-		op.OperatorTelemetry = &model.TimingInformation{CPUTime: time.Duration(0)}
+		op.OperatorTelemetry = &model.TimingInformation{}
 	}
 
 	return op
