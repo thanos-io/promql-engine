@@ -46,17 +46,6 @@ type histogramOperator struct {
 	seriesBuckets []buckets
 }
 
-func NewHistogramOperator(pool *model.VectorPool, args parser.Expressions, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
-	return &histogramOperator{
-		pool:         pool,
-		funcArgs:     args,
-		once:         sync.Once{},
-		scalarOp:     nextOps[0],
-		vectorOp:     nextOps[1],
-		scalarPoints: make([]float64, stepsBatch),
-	}, nil
-}
-
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
 	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
 	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
