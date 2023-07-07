@@ -362,7 +362,6 @@ var _ ExplainableQuery = &compatibilityQuery{}
 type Query struct {
 	exec model.VectorOperator
 	opts *promql.QueryOpts
-	obs  model.ObservableVectorOperator
 }
 
 // Explain returns human-readable explanation of the created executor.
@@ -373,7 +372,7 @@ func (q *Query) Explain() *ExplainOutputNode {
 
 func (q *Query) Analyze() *AnalyzeOutputNode {
 
-	return analyzeVector(q.obs)
+	return analyzeVector(q.exec.(model.ObservableVectorOperator))
 }
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
 	telemetry, obs_vectors := obsv.Analyze()
