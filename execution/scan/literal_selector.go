@@ -27,7 +27,7 @@ type numberLiteralSelector struct {
 	once        sync.Once
 
 	val float64
-	t   *model.TimingInformation
+	t   model.OperatorTelemetry
 }
 
 func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
@@ -41,7 +41,7 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 		val:         val,
 	}
 
-	// op.t = &model.NoopTimingInformation{}
+	op.t = &model.NoopTimingInformation{}
 	if opts.EnableAnalysis {
 		op.t = &model.TimingInformation{}
 	}
@@ -49,7 +49,10 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 	return op
 }
 func (o *numberLiteralSelector) Analyze() (*model.TimingInformation, []model.ObservableVectorOperator) {
-	return o.t, nil
+	if telemetry, ok := o.t.(*model.TimingInformation); ok {
+		return telemetry, nil
+	}
+	return nil, nil
 
 }
 func (o *numberLiteralSelector) AddCPUTimeTaken(t time.Duration) {

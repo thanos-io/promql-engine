@@ -348,8 +348,8 @@ type ExplainableQuery interface {
 	Analyze() *AnalyzeOutputNode
 }
 type AnalyzeOutputNode struct {
-	OperatorTime *model.TimingInformation
-	Children     []AnalyzeOutputNode
+	OperatorTelemetry *model.TimingInformation
+	Children          []AnalyzeOutputNode
 }
 
 type ExplainOutputNode struct {
@@ -376,15 +376,15 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 	return analyzeVector(q.obs)
 }
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
-	ti, obs_vectors := obsv.Analyze()
+	telemetry, obs_vectors := obsv.Analyze()
 	var children []AnalyzeOutputNode
 	for _, vector := range obs_vectors {
 		children = append(children, *analyzeVector(vector))
 	}
 
 	return &AnalyzeOutputNode{
-		OperatorTime: ti,
-		Children:     children,
+		OperatorTelemetry: telemetry,
+		Children:          children,
 	}
 
 }
