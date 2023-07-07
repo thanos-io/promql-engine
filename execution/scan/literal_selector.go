@@ -50,6 +50,7 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 }
 func (o *numberLiteralSelector) Analyze() (*model.TimingInformation, []model.ObservableVectorOperator) {
 	if telemetry, ok := o.t.(*model.TimingInformation); ok {
+		_, _ = o.Next(context.Background())
 		return telemetry, nil
 	}
 	return nil, nil

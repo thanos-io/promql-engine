@@ -10,6 +10,7 @@ import (
 	"math"
 	"runtime"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -514,7 +515,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	switch e := q.expr.(type) {
 	case *parser.StringLiteral:
 		if q.debugWriter != nil {
-			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), "", "")
+			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), " ", "")
 		}
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
@@ -721,29 +722,27 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 		*errp = errors.Wrap(err, "unexpected error")
 	}
 }
-
 func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext string) {
-	ti, obsVectors := o.Analyze()
+	telemetry, next := o.Analyze()
 
-	_, _ = w.Write([]byte(indent))
-	_, _ = w.Write([]byte(fmt.Sprintf("Operator Time: %v\n", ti.CPUTime)))
-
-	if len(obsVectors) == 0 {
+	// _, _ = w.Write([]byte(indent))
+	fmt.Println("Operator Time : ")
+	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.CPUTime), 10)))
+	if len(next) == 0 {
+		_, _ = w.Write([]byte("\n"))
 		return
 	}
 
-	_, _ = w.Write([]byte(indent))
-	_, _ = w.Write([]byte("Children:\n"))
+	_, _ = w.Write([]byte(":\n"))
 
-	for i, obsVector := range obsVectors {
-		if i == len(obsVectors)-1 {
-			analyze(w, obsVector, indentNext+"└──", indentNext+"   ")
+	for i, n := range next {
+		if i == len(next)-1 {
+			analyze(w, n, indentNext+"└──", indentNext+"   ")
 		} else {
-			analyze(w, obsVector, indentNext+"├──", indentNext+"│  ")
+			analyze(w, n, indentNext+"└──", indentNext+"   ")
 		}
 	}
 }
-
 func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
 	me, next := o.Explain()
 	_, _ = w.Write([]byte(indent))
