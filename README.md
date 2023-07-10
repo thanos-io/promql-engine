@@ -75,7 +75,7 @@ The current implementation uses goroutines very liberally which means the query 
 
 ### Plan optimization
 
-Each PromQL query is initially treated as a declarative (logical) plan and is optimizes before execution. The engine currently supports several optimizers, some of which are enabled by default and others need to be explicitly opted-into. Optimizers implement the [Optimizer](https://pkg.go.dev/github.com/thanos-io/promql-engine@v0.0.0-20230612203010-0bdf2ad20a9d/logicalplan#Optimizer) interface and all implementations can be found in the [logicalplan](https://pkg.go.dev/github.com/thanos-io/promql-engine@v0.0.0-20230612203010-0bdf2ad20a9d/logicalplan) package.
+Each PromQL query is initially treated as a declarative (logical) plan and is optimizes before execution. The engine currently supports several optimizers, some of which are enabled by default and others need to be explicitly opted-into. Optimizers implement the [Optimizer](https://pkg.go.dev/github.com/thanos-io/promql-engine@main/logicalplan#Optimizer) interface and all implementations can be found in the [logicalplan](https://pkg.go.dev/github.com/thanos-io/promql-engine@main/logicalplan) package.
 
 ### Extensibility
 
