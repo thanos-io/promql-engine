@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"math"
 	"runtime"
@@ -726,7 +725,7 @@ func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext s
 	telemetry, next := o.Analyze()
 
 	// _, _ = w.Write([]byte(indent))
-	fmt.Println("Operator Time : ")
+	_, _ = w.Write([]byte("Operator Time :"))
 	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.CPUTime), 10)))
 	if len(next) == 0 {
 		_, _ = w.Write([]byte("\n"))
