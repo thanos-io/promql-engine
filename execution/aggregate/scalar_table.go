@@ -101,24 +101,43 @@ func (t *scalarTable) size() int {
 	return len(t.outputs)
 }
 
-func hashMetric(metric labels.Labels, without bool, grouping []string, buf []byte) (uint64, string, labels.Labels) {
+func hashMetric(
+	builder labels.ScratchBuilder,
+	metric labels.Labels,
+	without bool,
+	grouping []string,
+	groupingSet map[string]struct{},
+	buf []byte,
+) (uint64, string, labels.Labels) {
 	buf = buf[:0]
+	builder.Reset()
+
 	if without {
-		lb := labels.NewBuilder(metric)
-		lb.Del(grouping...)
-		lb.Del(labels.MetricName)
+		for _, lbl := range metric {
+			if lbl.Name == labels.MetricName {
+				continue
+			}
+			if _, ok := groupingSet[lbl.Name]; ok {
+				continue
+			}
+			builder.Add(lbl.Name, lbl.Value)
+		}
 		key, bytes := metric.HashWithoutLabels(buf, grouping...)
-		return key, string(bytes), lb.Labels()
+		return key, string(bytes), builder.Labels()
 	}
 
 	if len(grouping) == 0 {
 		return 0, "", labels.Labels{}
 	}
 
-	lb := labels.NewBuilder(metric)
-	lb.Keep(grouping...)
+	for _, lbl := range metric {
+		if _, ok := groupingSet[lbl.Name]; !ok {
+			continue
+		}
+		builder.Add(lbl.Name, lbl.Value)
+	}
 	key, bytes := metric.HashForLabels(buf, grouping...)
-	return key, string(bytes), lb.Labels()
+	return key, string(bytes), builder.Labels()
 }
 
 type newAccumulatorFunc func() *accumulator
