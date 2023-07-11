@@ -113,15 +113,15 @@ func hashMetric(
 	builder.Reset()
 
 	if without {
-		for _, lbl := range metric {
+		metric.Range(func(lbl labels.Label) {
 			if lbl.Name == labels.MetricName {
-				continue
+				return
 			}
 			if _, ok := groupingSet[lbl.Name]; ok {
-				continue
+				return
 			}
 			builder.Add(lbl.Name, lbl.Value)
-		}
+		})
 		key, bytes := metric.HashWithoutLabels(buf, grouping...)
 		return key, string(bytes), builder.Labels()
 	}
@@ -130,12 +130,12 @@ func hashMetric(
 		return 0, "", labels.Labels{}
 	}
 
-	for _, lbl := range metric {
+	metric.Range(func(lbl labels.Label) {
 		if _, ok := groupingSet[lbl.Name]; !ok {
-			continue
+			return
 		}
 		builder.Add(lbl.Name, lbl.Value)
-	}
+	})
 	key, bytes := metric.HashForLabels(buf, grouping...)
 	return key, string(bytes), builder.Labels()
 }
