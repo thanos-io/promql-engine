@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
@@ -107,6 +108,63 @@ func TestQueryExplain(t *testing.T) {
 
 				explainableQuery = query.(engine.ExplainableQuery)
 				testutil.Equals(t, tc.expected, explainableQuery.Explain())
+			})
+		}
+	}
+}
+
+func TestQueryAnalyze(t *testing.T) {
+	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	series := storage.MockSeries(
+		[]int64{240, 270, 300, 600, 630, 660},
+		[]float64{1, 2, 3, 4, 5, 6},
+		[]string{labels.MetricName, "foo"},
+	)
+
+	start := time.Unix(0, 0)
+	end := time.Unix(1000, 0)
+
+	// Calculate concurrencyOperators according to max available CPUs.
+	totalOperators := runtime.GOMAXPROCS(0) / 2
+	concurrencyOperators := []engine.AnalyzeOutputNode{}
+	for i := 0; i < totalOperators; i++ {
+		concurrencyOperators = append(concurrencyOperators, engine.AnalyzeOutputNode{
+			OperatorTelemetry: &model.TimingInformation{}, Children: []engine.AnalyzeOutputNode{
+				{OperatorTelemetry: &model.TimingInformation{}},
+			},
+		})
+	}
+
+	for _, tc := range []struct {
+		query    string
+		expected *engine.AnalyzeOutputNode
+	}{
+		{
+			query:    "34",
+			expected: &engine.AnalyzeOutputNode{OperatorTelemetry: &model.TimingInformation{}},
+		},
+	} {
+		{
+			t.Run(tc.query, func(t *testing.T) {
+				ng := engine.New(engine.Opts{EngineOpts: opts})
+				ctx := context.Background()
+
+				var (
+					query promql.Query
+					err   error
+				)
+
+				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
+				testutil.Ok(t, err)
+
+				explainableQuery := query.(engine.ExplainableQuery)
+				testutil.Equals(t, tc.expected, explainableQuery.Analyze())
+
+				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
+				testutil.Ok(t, err)
+
+				explainableQuery = query.(engine.ExplainableQuery)
+				testutil.Equals(t, tc.expected, explainableQuery.Analyze())
 			})
 		}
 	}

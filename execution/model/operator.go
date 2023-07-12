@@ -24,6 +24,14 @@ func (ti *TimingInformation) AddCPUTimeTaken(t time.Duration) {
 
 type OperatorTelemetry interface {
 	AddCPUTimeTaken(time.Duration)
+	CPUTimeTaken() time.Duration
+}
+
+func (ti *NoopTimingInformation) CPUTimeTaken() time.Duration {
+	return time.Duration(0)
+}
+func (ti *TimingInformation) CPUTimeTaken() time.Duration {
+	return ti.CPUTime
 }
 
 type ObservableVectorOperator interface {

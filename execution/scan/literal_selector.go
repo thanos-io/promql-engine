@@ -50,15 +50,12 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 }
 func (o *numberLiteralSelector) Analyze() (*model.TimingInformation, []model.ObservableVectorOperator) {
 	if telemetry, ok := o.t.(*model.TimingInformation); ok {
-		_, _ = o.Next(context.Background())
 		return telemetry, nil
 	}
 	return nil, nil
 
 }
-func (o *numberLiteralSelector) AddCPUTimeTaken(t time.Duration) {
-	o.t.AddCPUTimeTaken(t)
-}
+func (o *numberLiteralSelector) AddCPUTimeTaken(t time.Duration) {}
 func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
 }
@@ -103,7 +100,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 	}
 	o.currentStep += o.step * int64(o.numSteps)
 	duration := time.Since(start)
-	o.AddCPUTimeTaken(duration)
+	o.t.AddCPUTimeTaken(duration)
 
 	return vectors, nil
 }
