@@ -56,6 +56,9 @@ func (o *numberLiteralSelector) Analyze() (*model.TimingInformation, []model.Obs
 
 }
 func (o *numberLiteralSelector) AddCPUTimeTaken(t time.Duration) {}
+func (o *numberLiteralSelector) CPUTimeTaken() time.Duration {
+	return o.t.CPUTimeTaken()
+}
 func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
 }

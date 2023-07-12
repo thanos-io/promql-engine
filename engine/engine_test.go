@@ -141,7 +141,7 @@ func TestQueryAnalyze(t *testing.T) {
 	}{
 		{
 			query:    "34",
-			expected: &engine.AnalyzeOutputNode{OperatorTelemetry: &model.TimingInformation{}},
+			expected: &engine.AnalyzeOutputNode{OperatorTelemetry: &model.TimingInformation{}, Children: concurrencyOperators},
 		},
 	} {
 		{
