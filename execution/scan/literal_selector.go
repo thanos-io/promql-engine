@@ -53,7 +53,7 @@ func (o *numberLiteralSelector) Analyze() (model.OperatorTelemetry, []model.Obse
 	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
 		return o, nil
 	}
-	return nil, nil
+	return o, nil
 
 }
 

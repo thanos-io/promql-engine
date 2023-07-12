@@ -42,12 +42,12 @@ type dedupOperator struct {
 }
 
 func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator) model.VectorOperator {
-	do := &dedupOperator{
+	d := &dedupOperator{
 		next: next,
 		pool: pool,
 	}
-	do.OperatorTelemetry = &model.TimingInformation{}
-	return do
+	d.OperatorTelemetry = &model.TimingInformation{}
+	return d
 }
 
 func (d *dedupOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
