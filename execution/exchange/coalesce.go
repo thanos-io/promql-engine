@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -42,15 +43,33 @@ type coalesce struct {
 	inVectors [][]model.StepVector
 	// sampleOffsets holds per-operator offsets needed to map an input sample ID to an output sample ID.
 	sampleOffsets []uint64
+	model.OperatorTelemetry
 }
 
 func NewCoalesce(pool *model.VectorPool, operators ...model.VectorOperator) model.VectorOperator {
-	return &coalesce{
+	c := &coalesce{
 		pool:          pool,
 		sampleOffsets: make([]uint64, len(operators)),
 		operators:     operators,
 		inVectors:     make([][]model.StepVector, len(operators)),
 	}
+	c.OperatorTelemetry = &model.TimingInformation{}
+	return c
+}
+
+func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if telemetry, ok := c.OperatorTelemetry.(*model.TimingInformation); ok {
+		obsOperators := make([]model.ObservableVectorOperator, len(c.operators))
+		for i, operator := range c.operators {
+			if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
+				obsOperators[i] = obsOperator
+			} else {
+				obsOperators[i] = nil
+			}
+		}
+		return telemetry, obsOperators
+	}
+	return nil, nil
 }
 
 func (c *coalesce) Explain() (me string, next []model.VectorOperator) {
@@ -76,7 +95,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-
+	start := time.Now()
 	var err error
 	c.once.Do(func() { err = c.loadSeries(ctx) })
 	if err != nil {
@@ -131,6 +150,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 		c.inVectors[opIdx] = nil
 		c.operators[opIdx].GetPool().PutVectors(vectors)
 	}
+	c.AddCPUTimeTaken(time.Since(start))
 
 	if out == nil {
 		return nil, nil

@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+
 	"io"
 	"math"
 	"runtime"
@@ -371,8 +372,11 @@ func (q *Query) Explain() *ExplainOutputNode {
 }
 
 func (q *Query) Analyze() *AnalyzeOutputNode {
+	if observableRoot, ok := q.exec.(model.ObservableVectorOperator); ok {
+		return analyzeVector(observableRoot)
+	}
+	return nil
 
-	return analyzeVector(q.exec.(model.ObservableVectorOperator))
 }
 
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
