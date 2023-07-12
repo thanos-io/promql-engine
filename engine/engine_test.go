@@ -135,6 +135,19 @@ func TestQueryAnalyze(t *testing.T) {
 		})
 	}
 
+	assertCPUTimeNonZero := func(t *testing.T, got *engine.AnalyzeOutputNode) {
+		if got.OperatorTelemetry != nil {
+			telemetry, ok := got.OperatorTelemetry.(*model.TimingInformation)
+			if !ok {
+				t.Errorf("unexpected type for OperatorTelemetry: %T", got.OperatorTelemetry)
+				return
+			}
+			if telemetry.CPUTime <= 0 {
+				t.Errorf("expected non-zero CPUTime, got %v", telemetry.CPUTime)
+			}
+		}
+	}
+
 	for _, tc := range []struct {
 		query    string
 		expected *engine.AnalyzeOutputNode
@@ -146,7 +159,7 @@ func TestQueryAnalyze(t *testing.T) {
 	} {
 		{
 			t.Run(tc.query, func(t *testing.T) {
-				ng := engine.New(engine.Opts{EngineOpts: opts})
+				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
 				ctx := context.Background()
 
 				var (
@@ -159,12 +172,14 @@ func TestQueryAnalyze(t *testing.T) {
 
 				explainableQuery := query.(engine.ExplainableQuery)
 				testutil.Equals(t, tc.expected, explainableQuery.Analyze())
+				assertCPUTimeNonZero(t, explainableQuery.Analyze())
 
 				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
 
 				explainableQuery = query.(engine.ExplainableQuery)
 				testutil.Equals(t, tc.expected, explainableQuery.Analyze())
+				assertCPUTimeNonZero(t, explainableQuery.Analyze())
 			})
 		}
 	}

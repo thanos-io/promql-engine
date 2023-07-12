@@ -38,7 +38,7 @@ type ObservableVectorOperator interface {
 	VectorOperator
 	OperatorTelemetry
 
-	Analyze() (*TimingInformation, []ObservableVectorOperator)
+	Analyze() (OperatorTelemetry, []ObservableVectorOperator)
 }
 
 // VectorOperator performs operations on series in step by step fashion.

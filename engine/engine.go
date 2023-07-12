@@ -348,7 +348,7 @@ type ExplainableQuery interface {
 	Analyze() *AnalyzeOutputNode
 }
 type AnalyzeOutputNode struct {
-	OperatorTelemetry *model.TimingInformation
+	OperatorTelemetry model.OperatorTelemetry
 	Children          []AnalyzeOutputNode
 }
 
@@ -374,6 +374,7 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 
 	return analyzeVector(q.exec.(model.ObservableVectorOperator))
 }
+
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
 	telemetry, obsVectors := obsv.Analyze()
 	var children []AnalyzeOutputNode
@@ -726,7 +727,7 @@ func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext s
 
 	// _, _ = w.Write([]byte(indent))
 	_, _ = w.Write([]byte("Operator Time :"))
-	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.CPUTime), 10)))
+	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.(*model.TimingInformation).CPUTime), 10)))
 	if len(next) == 0 {
 		_, _ = w.Write([]byte("\n"))
 		return

@@ -49,7 +49,7 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 	return op
 }
 
-func (o *numberLiteralSelector) Analyze() (*model.TimingInformation, []model.ObservableVectorOperator) {
+func (o *numberLiteralSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	if telemetry, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
 		return telemetry, nil
 	}
@@ -100,8 +100,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
-	duration := time.Since(start)
-	o.AddCPUTimeTaken(duration)
+	o.AddCPUTimeTaken(time.Since(start))
 
 	return vectors, nil
 }
