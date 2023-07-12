@@ -27,7 +27,7 @@ type numberLiteralSelector struct {
 	once        sync.Once
 
 	val float64
-	t   model.OperatorTelemetry
+	model.OperatorTelemetry
 }
 
 func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
@@ -41,24 +41,22 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 		val:         val,
 	}
 
-	op.t = &model.NoopTimingInformation{}
+	op.OperatorTelemetry = &model.NoopTimingInformation{}
 	if opts.EnableAnalysis {
-		op.t = &model.TimingInformation{CPUTime: time.Duration(0)}
+		op.OperatorTelemetry = &model.TimingInformation{CPUTime: time.Duration(0)}
 	}
 
 	return op
 }
+
 func (o *numberLiteralSelector) Analyze() (*model.TimingInformation, []model.ObservableVectorOperator) {
-	if telemetry, ok := o.t.(*model.TimingInformation); ok {
+	if telemetry, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
 		return telemetry, nil
 	}
 	return nil, nil
 
 }
-func (o *numberLiteralSelector) AddCPUTimeTaken(t time.Duration) {}
-func (o *numberLiteralSelector) CPUTimeTaken() time.Duration {
-	return o.t.CPUTimeTaken()
-}
+
 func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
 }
@@ -103,7 +101,7 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 	}
 	o.currentStep += o.step * int64(o.numSteps)
 	duration := time.Since(start)
-	o.t.AddCPUTimeTaken(duration)
+	o.AddCPUTimeTaken(duration)
 
 	return vectors, nil
 }
