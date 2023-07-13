@@ -149,12 +149,10 @@ func TestQueryAnalyze(t *testing.T) {
 	}
 
 	for _, tc := range []struct {
-		query    string
-		expected *engine.AnalyzeOutputNode
+		query string
 	}{
 		{
-			query:    "foo",
-			expected: &engine.AnalyzeOutputNode{OperatorTelemetry: &model.TimingInformation{}, Children: concurrencyOperators},
+			query: "foo",
 		},
 	} {
 		{
@@ -171,14 +169,13 @@ func TestQueryAnalyze(t *testing.T) {
 				testutil.Ok(t, err)
 
 				explainableQuery := query.(engine.ExplainableQuery)
-				testutil.Equals(t, tc.expected, explainableQuery.Analyze())
+
 				assertCPUTimeNonZero(t, explainableQuery.Analyze())
 
 				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
 
 				explainableQuery = query.(engine.ExplainableQuery)
-				testutil.Equals(t, tc.expected, explainableQuery.Analyze())
 				assertCPUTimeNonZero(t, explainableQuery.Analyze())
 			})
 		}

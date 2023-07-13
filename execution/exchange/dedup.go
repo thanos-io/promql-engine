@@ -51,8 +51,8 @@ func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator) model.V
 }
 
 func (d *dedupOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if telemetry, ok := d.OperatorTelemetry.(*model.TimingInformation); ok {
-		return telemetry, []model.ObservableVectorOperator{d.next.(model.ObservableVectorOperator)}
+	if _, ok := d.OperatorTelemetry.(*model.TimingInformation); ok {
+		return d.OperatorTelemetry, []model.ObservableVectorOperator{d.next.(model.ObservableVectorOperator)}
 	}
 	return nil, nil
 

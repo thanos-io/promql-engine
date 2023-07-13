@@ -38,8 +38,8 @@ func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperat
 }
 
 func (c *concurrencyOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if telemetry, ok := c.OperatorTelemetry.(*model.TimingInformation); ok {
-		return telemetry, []model.ObservableVectorOperator{c.next.(model.ObservableVectorOperator)}
+	if _, ok := c.OperatorTelemetry.(*model.TimingInformation); ok {
+		return c.OperatorTelemetry, []model.ObservableVectorOperator{c.next.(model.ObservableVectorOperator)}
 	}
 	return nil, nil
 

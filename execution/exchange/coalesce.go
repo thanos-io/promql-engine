@@ -58,7 +58,7 @@ func NewCoalesce(pool *model.VectorPool, operators ...model.VectorOperator) mode
 }
 
 func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if telemetry, ok := c.OperatorTelemetry.(*model.TimingInformation); ok {
+	if _, ok := c.OperatorTelemetry.(*model.TimingInformation); ok {
 		obsOperators := make([]model.ObservableVectorOperator, len(c.operators))
 		for i, operator := range c.operators {
 			if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
@@ -67,11 +67,10 @@ func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorO
 				obsOperators[i] = nil
 			}
 		}
-		return telemetry, obsOperators
+		return c.OperatorTelemetry, obsOperators
 	}
 	return nil, nil
 }
-
 func (c *coalesce) Explain() (me string, next []model.VectorOperator) {
 	return "[*coalesce]", c.operators
 }

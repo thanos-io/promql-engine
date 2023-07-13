@@ -37,7 +37,6 @@ func (ti *TimingInformation) CPUTimeTaken() time.Duration {
 type ObservableVectorOperator interface {
 	VectorOperator
 	OperatorTelemetry
-
 	Analyze() (OperatorTelemetry, []ObservableVectorOperator)
 }
 
