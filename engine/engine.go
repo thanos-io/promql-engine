@@ -174,9 +174,9 @@ func New(opts Opts) *compatibilityEngine {
 	}
 
 	if opts.EnableXFunctions {
-		parser.Functions["xdelta"] = parse.Functions["xdelta"]
-		parser.Functions["xincrease"] = parse.Functions["xincrease"]
-		parser.Functions["xrate"] = parse.Functions["xrate"]
+		parser.Functions["xdelta"] = parse.XFunctions["xdelta"]
+		parser.Functions["xincrease"] = parse.XFunctions["xincrease"]
+		parser.Functions["xrate"] = parse.XFunctions["xrate"]
 	}
 
 	metrics := &engineMetrics{

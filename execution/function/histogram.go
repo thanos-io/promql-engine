@@ -48,17 +48,7 @@ type histogramOperator struct {
 	model.OperatorTelemetry
 }
 
-func NewHistogramOperator(pool *model.VectorPool, args parser.Expressions, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
-	return &histogramOperator{
-		pool:              pool,
-		funcArgs:          args,
-		once:              sync.Once{},
-		scalarOp:          nextOps[0],
-		vectorOp:          nextOps[1],
-		scalarPoints:      make([]float64, stepsBatch),
-		OperatorTelemetry: &model.TimingInformation{},
-	}, nil
-}
+
 
 func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
