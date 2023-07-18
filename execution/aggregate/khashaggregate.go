@@ -141,6 +141,13 @@ func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 func (a *kAggregate) GetPool() *model.VectorPool {
 	return a.vectorPool
 }
+func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
+		return a.OperatorTelemetry, []model.ObservableVectorOperator{a.paramOp.(model.ObservableVectorOperator), a.next.(model.ObservableVectorOperator)}
+	}
+	return nil, nil
+
+}
 
 func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
