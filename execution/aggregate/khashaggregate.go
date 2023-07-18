@@ -10,6 +10,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -36,6 +37,7 @@ type kAggregate struct {
 	inputToHeap []*samplesHeap
 	heaps       []*samplesHeap
 	compare     func(float64, float64) bool
+	model.OperatorTelemetry
 }
 
 func NewKHashAggregate(
@@ -72,7 +74,7 @@ func NewKHashAggregate(
 		compare:     compare,
 		params:      make([]float64, stepsBatch),
 	}
-
+	a.OperatorTelemetry = &model.TimingInformation{}
 	return a, nil
 }
 
@@ -81,6 +83,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	if err != nil {
 		return nil, err
 	}
+	start := time.Now()
 	args, err := a.paramOp.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -120,6 +123,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
+	a.AddCPUTimeTaken(time.Since(start))
 
 	return result, nil
 }
@@ -136,6 +140,13 @@ func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 
 func (a *kAggregate) GetPool() *model.VectorPool {
 	return a.vectorPool
+}
+func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
+		return a.OperatorTelemetry, []model.ObservableVectorOperator{a.paramOp.(model.ObservableVectorOperator), a.next.(model.ObservableVectorOperator)}
+	}
+	return nil, nil
+
 }
 
 func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {

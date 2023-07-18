@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -37,6 +38,7 @@ type aggregate struct {
 	newAccumulator newAccumulatorFunc
 	stepsBatch     int
 	workers        worker.Group
+	model.OperatorTelemetry
 }
 
 func NewHashAggregate(
@@ -68,8 +70,17 @@ func NewHashAggregate(
 		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
+	a.OperatorTelemetry = &model.TimingInformation{}
 
 	return a, nil
+}
+
+func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
+		return a.OperatorTelemetry, nil
+	}
+	return nil, nil
+
 }
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
@@ -106,7 +117,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-
+	start := time.Now()
 	in, err := a.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -151,7 +162,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		result = append(result, output)
 		a.next.GetPool().PutStepVector(vector)
 	}
-
+	a.AddCPUTimeTaken(time.Since(start))
 	return result, nil
 }
 

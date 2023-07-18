@@ -6,6 +6,7 @@ package function
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -15,6 +16,15 @@ import (
 type scalarFunctionOperator struct {
 	pool *model.VectorPool
 	next model.VectorOperator
+	model.OperatorTelemetry
+}
+
+func (o *scalarFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+		return o.OperatorTelemetry, []model.ObservableVectorOperator{}
+	}
+	return nil, nil
+
 }
 
 func (o *scalarFunctionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -35,6 +45,7 @@ func (o *scalarFunctionOperator) Next(ctx context.Context) ([]model.StepVector, 
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
 	in, err := o.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -55,6 +66,7 @@ func (o *scalarFunctionOperator) Next(ctx context.Context) ([]model.StepVector, 
 		o.next.GetPool().PutStepVector(vector)
 	}
 	o.next.GetPool().PutVectors(in)
+	o.AddCPUTimeTaken(time.Since(start))
 
 	return result, nil
 }

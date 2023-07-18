@@ -52,6 +52,7 @@ type matrixSelector struct {
 
 	// Lookback delta for extended range functions.
 	extLookbackDelta int64
+	model.OperatorTelemetry
 }
 
 // NewMatrixSelector creates operator which selects vector of series over time.
@@ -65,7 +66,7 @@ func NewMatrixSelector(
 	shard, numShard int,
 ) model.VectorOperator {
 	// TODO(fpetkovski): Add offset parameter.
-	return &matrixSelector{
+	m := &matrixSelector{
 		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
@@ -85,6 +86,20 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
+	m.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		m.OperatorTelemetry = &model.TimingInformation{}
+	}
+
+	return m
+}
+
+func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+		return o.OperatorTelemetry, nil
+	}
+	return nil, nil
+
 }
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
@@ -112,6 +127,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
@@ -194,7 +210,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
-
+	o.AddCPUTimeTaken(time.Since(start))
 	return vectors, nil
 }
 

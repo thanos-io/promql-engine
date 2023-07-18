@@ -154,6 +154,12 @@ func TestQueryAnalyze(t *testing.T) {
 		{
 			query: "foo",
 		},
+		{
+			query: "time()",
+		},
+		{
+			query: "sum(foo) by (job)",
+		},
 	} {
 		{
 			t.Run(tc.query, func(t *testing.T) {

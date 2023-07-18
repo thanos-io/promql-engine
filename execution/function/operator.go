@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -30,6 +31,7 @@ type functionOperator struct {
 	call         FunctionCall
 	scalarPoints [][]float64
 	sampleBuf    []Sample
+	model.OperatorTelemetry
 }
 
 type noArgFunctionOperator struct {
@@ -43,6 +45,15 @@ type noArgFunctionOperator struct {
 	vectorPool  *model.VectorPool
 	series      []labels.Labels
 	sampleIDs   []uint64
+	model.OperatorTelemetry
+}
+
+func (o *noArgFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+		return o.OperatorTelemetry, []model.ObservableVectorOperator{}
+	}
+	return nil, nil
+
 }
 
 func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -61,6 +72,7 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
+	start := time.Now()
 	fa := FunctionArgs{}
 	ret := o.vectorPool.GetVectorBatch()
 	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
@@ -73,6 +85,7 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 		ret = append(ret, sv)
 		o.currentStep += o.step
 	}
+	o.AddCPUTimeTaken(time.Since(start))
 
 	return ret, nil
 }
@@ -124,6 +137,10 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 			op.series = []labels.Labels{{}}
 			op.sampleIDs = []uint64{0}
 		}
+		op.OperatorTelemetry = &model.NoopTimingInformation{}
+		if opts.EnableAnalysis {
+			op.OperatorTelemetry = &model.TimingInformation{}
+		}
 
 		return op, nil
 	}
@@ -146,6 +163,10 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 			break
 		}
 	}
+	f.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		f.OperatorTelemetry = &model.TimingInformation{}
+	}
 
 	// Check selector type.
 	// TODO(saswatamcode): Add support for matrix.
@@ -155,6 +176,22 @@ func NewFunctionOperator(funcExpr *parser.Call, call FunctionCall, nextOps []mod
 	default:
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
 	}
+}
+
+func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+		obsOperators := make([]model.ObservableVectorOperator, len(o.nextOps))
+		for i, operator := range o.nextOps {
+			if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
+				obsOperators[i] = obsOperator
+			} else {
+				obsOperators[i] = nil
+			}
+		}
+		return o.OperatorTelemetry, obsOperators
+	}
+	return nil, nil
+
 }
 
 func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -183,7 +220,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
-
+	start := time.Now()
 	// Process non-variadic single/multi-arg instant vector and scalar input functions.
 	// Call next on vector input.
 	vectors, err := o.nextOps[o.vectorIndex].Next(ctx)
@@ -255,6 +292,8 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			}
 		}
 	}
+
+	o.AddCPUTimeTaken(time.Since(start))
 
 	return vectors, nil
 }

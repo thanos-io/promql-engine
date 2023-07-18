@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -43,6 +44,7 @@ type scalarOperator struct {
 
 	// Keep the result if both sides are scalars.
 	bothScalars bool
+	model.OperatorTelemetry
 }
 
 func NewScalar(
@@ -67,17 +69,25 @@ func NewScalar(
 	}
 
 	return &scalarOperator{
-		pool:          pool,
-		next:          next,
-		scalar:        scalar,
-		floatOp:       binaryOperation,
-		histOp:        getHistogramFloatOperation(op, scalarSide),
-		opType:        op,
-		getOperands:   getOperands,
-		operandValIdx: operandValIdx,
-		returnBool:    returnBool,
-		bothScalars:   scalarSide == ScalarSideBoth,
+		pool:              pool,
+		next:              next,
+		scalar:            scalar,
+		floatOp:           binaryOperation,
+		histOp:            getHistogramFloatOperation(op, scalarSide),
+		opType:            op,
+		getOperands:       getOperands,
+		operandValIdx:     operandValIdx,
+		returnBool:        returnBool,
+		bothScalars:       scalarSide == ScalarSideBoth,
+		OperatorTelemetry: &model.TimingInformation{},
 	}, nil
+}
+func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+		return o.OperatorTelemetry, nil
+	}
+	return nil, nil
+
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
@@ -99,6 +109,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
 
 	in, err := o.next.Next(ctx)
 	if err != nil {
@@ -158,6 +169,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	o.next.GetPool().PutVectors(in)
 	o.scalar.GetPool().PutVectors(scalarIn)
+	o.AddCPUTimeTaken(time.Since(start))
 
 	return out, nil
 }
