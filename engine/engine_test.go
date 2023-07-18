@@ -168,12 +168,18 @@ func TestQueryAnalyze(t *testing.T) {
 				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
 				testutil.Ok(t, err)
 
+				queryResults := query.Exec(context.Background())
+				testutil.Ok(t, queryResults.Err)
+
 				explainableQuery := query.(engine.ExplainableQuery)
 
 				assertCPUTimeNonZero(t, explainableQuery.Analyze())
 
 				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
+
+				queryResults = query.Exec(context.Background())
+				testutil.Ok(t, queryResults.Err)
 
 				explainableQuery = query.(engine.ExplainableQuery)
 				assertCPUTimeNonZero(t, explainableQuery.Analyze())
