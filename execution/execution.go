@@ -164,7 +164,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		if err != nil {
 			return nil, err
 		}
-		return step_invariant.NewStepInvariantOperator(model.NewVectorPool(stepsBatch), next, e.Expr, opts, stepsBatch)
+		return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(stepsBatch, 1), next, e.Expr, opts, stepsBatch)
 
 	case logicalplan.Deduplicate:
 		// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
@@ -320,7 +320,7 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 		scalarSide = binary.ScalarSideLeft
 	}
 
-	return binary.NewScalar(model.NewVectorPool(stepsBatch), lhs, rhs, e.Op, scalarSide, e.ReturnBool)
+	return binary.NewScalar(model.NewVectorPoolWithSize(stepsBatch, 1), lhs, rhs, e.Op, scalarSide, e.ReturnBool)
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
