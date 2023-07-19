@@ -39,6 +39,7 @@ func (o *relabelFunctionOperator) GetPool() *model.VectorPool {
 }
 
 func (o *relabelFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+
 	return o.next.Next(ctx)
 }
 

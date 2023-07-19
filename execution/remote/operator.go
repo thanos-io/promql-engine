@@ -45,7 +45,7 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart ti
 
 func (e *Execution) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	if _, ok := e.OperatorTelemetry.(*model.TimingInformation); ok {
-		return e.OperatorTelemetry, nil
+		return e, nil
 	}
 	return nil, nil
 

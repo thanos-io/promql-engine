@@ -25,7 +25,7 @@ type absentOperator struct {
 
 func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-		return o.OperatorTelemetry, []model.ObservableVectorOperator{}
+		return o, []model.ObservableVectorOperator{}
 	}
 	return nil, nil
 

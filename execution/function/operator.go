@@ -78,15 +78,6 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 		return nil, parse.UnknownFunctionError(funcExpr.Func)
 	}
 
-		switch funcExpr.Func.Name {
-		case "pi", "time":
-			op.sampleIDs = []uint64{0}
-		default:
-			// Other functions require non-nil labels.
-			op.series = []labels.Labels{{}}
-			op.sampleIDs = []uint64{0}
-		}
-
 	interval := opts.Step.Milliseconds()
 	// We set interval to be at least 1.
 	if interval == 0 {
@@ -103,10 +94,14 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 		call:        call,
 		vectorPool:  model.NewVectorPool(stepsBatch),
 	}
-  op.OperatorTelemetry = &model.NoopTimingInformation{}
-		if opts.EnableAnalysis {
-			op.OperatorTelemetry = &model.TimingInformation{}
-		}
+	switch funcExpr.Func.Name {
+	case "pi", "time":
+		op.sampleIDs = []uint64{0}
+	default:
+		// Other functions require non-nil labels.
+		op.series = []labels.Labels{{}}
+		op.sampleIDs = []uint64{0}
+	}
 
 	return op, nil
 }
@@ -159,7 +154,7 @@ func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.Observabl
 				obsOperators[i] = nil
 			}
 		}
-		return o.OperatorTelemetry, obsOperators
+		return o, obsOperators
 	}
 	return nil, nil
 

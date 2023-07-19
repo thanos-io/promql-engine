@@ -42,6 +42,7 @@ type vectorOperator struct {
 
 	// If true then 1/0 needs to be returned instead of the value.
 	returnBool bool
+	model.OperatorTelemetry
 }
 
 func NewVectorOperator(
@@ -64,15 +65,33 @@ func NewVectorOperator(
 	slices.Sort(groupings)
 
 	return &vectorOperator{
-		pool:           pool,
-		lhs:            lhs,
-		rhs:            rhs,
-		matching:       matching,
-		groupingLabels: groupings,
-		operation:      op,
-		opType:         operation,
-		returnBool:     returnBool,
+		pool:              pool,
+		lhs:               lhs,
+		rhs:               rhs,
+		matching:          matching,
+		groupingLabels:    groupings,
+		operation:         op,
+		opType:            operation,
+		returnBool:        returnBool,
+		OperatorTelemetry: &model.TimingInformation{},
 	}, nil
+}
+
+func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+
+		next := make([]model.ObservableVectorOperator, 0, 2)
+		if obsnextParamOp, ok := o.lhs.(model.ObservableVectorOperator); ok {
+			next = append(next, obsnextParamOp)
+		}
+		if obsnext, ok := o.rhs.(model.ObservableVectorOperator); ok {
+			next = append(next, obsnext)
+		}
+
+		return o, next
+	}
+	return nil, nil
+
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {

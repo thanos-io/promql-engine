@@ -67,7 +67,7 @@ func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorO
 				obsOperators[i] = nil
 			}
 		}
-		return c.OperatorTelemetry, obsOperators
+		return c, obsOperators
 	}
 	return nil, nil
 }

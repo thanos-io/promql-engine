@@ -39,10 +39,14 @@ func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperat
 
 func (c *concurrencyOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	if _, ok := c.OperatorTelemetry.(*model.TimingInformation); ok {
-		return c.OperatorTelemetry, []model.ObservableVectorOperator{c.next.(model.ObservableVectorOperator)}
+
+		next := make([]model.ObservableVectorOperator, 0, 1)
+		if obsnext, ok := c.next.(model.ObservableVectorOperator); ok {
+			next = append(next, obsnext)
+		}
+		return c, next
 	}
 	return nil, nil
-
 }
 
 func (c *concurrencyOperator) Explain() (me string, next []model.VectorOperator) {
