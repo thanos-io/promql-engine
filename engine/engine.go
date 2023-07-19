@@ -376,7 +376,6 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 		return analyzeVector(observableRoot)
 	}
 	return nil
-
 }
 
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
@@ -390,7 +389,6 @@ func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
 		OperatorTelemetry: telemetry,
 		Children:          children,
 	}
-
 }
 
 func explainVector(v model.VectorOperator) *ExplainOutputNode {

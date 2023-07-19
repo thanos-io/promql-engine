@@ -159,23 +159,6 @@ func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVecto
 
 }
 
-func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
-
-		next := make([]model.ObservableVectorOperator, 0, 2)
-		if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnextParamOp)
-		}
-		if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnext)
-		}
-
-		return a, next
-	}
-	return nil, nil
-
-}
-
 func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
 	if a.by {
 		return fmt.Sprintf("[*kaggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
