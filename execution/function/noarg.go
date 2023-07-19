@@ -6,6 +6,7 @@ package function
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -24,6 +25,14 @@ type noArgFunctionOperator struct {
 	vectorPool  *model.VectorPool
 	series      []labels.Labels
 	sampleIDs   []uint64
+	model.OperatorTelemetry
+}
+
+func (o *noArgFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
+		return o, []model.ObservableVectorOperator{}
+	}
+	return nil, nil
 }
 
 func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -42,6 +51,7 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
+	start := time.Now()
 	ret := o.vectorPool.GetVectorBatch()
 	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
 		sv := o.vectorPool.GetStepVector(o.currentStep)
@@ -50,6 +60,7 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 		ret = append(ret, sv)
 		o.currentStep += o.step
 	}
+	o.AddCPUTimeTaken(time.Since(start))
 
 	return ret, nil
 }

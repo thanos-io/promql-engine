@@ -102,6 +102,10 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 		op.series = []labels.Labels{{}}
 		op.sampleIDs = []uint64{0}
 	}
+	op.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		op.OperatorTelemetry = &model.TimingInformation{}
+	}
 
 	return op, nil
 }
