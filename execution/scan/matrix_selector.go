@@ -74,7 +74,7 @@ func NewMatrixSelector(
 		return nil, parse.UnknownFunctionError(funcExpr.Func)
 	}
 	isExtFunction := parse.IsExtFunction(funcExpr.Func.Name)
-  m := &matrixSelector{
+	m := &matrixSelector{
 		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
@@ -104,11 +104,7 @@ func NewMatrixSelector(
 }
 
 func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-		return o, nil
-	}
-	return nil, nil
-
+	return o, nil
 }
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {

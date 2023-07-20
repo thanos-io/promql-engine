@@ -29,10 +29,7 @@ type noArgFunctionOperator struct {
 }
 
 func (o *noArgFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-		return o, []model.ObservableVectorOperator{}
-	}
-	return nil, nil
+	return o, []model.ObservableVectorOperator{}
 }
 
 func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {

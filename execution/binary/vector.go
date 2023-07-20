@@ -78,20 +78,14 @@ func NewVectorOperator(
 }
 
 func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-
-		next := make([]model.ObservableVectorOperator, 0, 2)
-		if obsnextParamOp, ok := o.lhs.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnextParamOp)
-		}
-		if obsnext, ok := o.rhs.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnext)
-		}
-
-		return o, next
+	next := make([]model.ObservableVectorOperator, 0, 2)
+	if obsnextParamOp, ok := o.lhs.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnextParamOp)
 	}
-	return nil, nil
-
+	if obsnext, ok := o.rhs.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
+	}
+	return o, next
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {

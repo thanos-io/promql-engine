@@ -48,20 +48,15 @@ type histogramOperator struct {
 	model.OperatorTelemetry
 }
 
-
-
 func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-		next := make([]model.ObservableVectorOperator, 0, 2)
-		if obsScalarOp, ok := o.scalarOp.(model.ObservableVectorOperator); ok {
-			next = append(next, obsScalarOp)
-		}
-		if obsVectorOp, ok := o.vectorOp.(model.ObservableVectorOperator); ok {
-			next = append(next, obsVectorOp)
-		}
-		return o, next
+	next := make([]model.ObservableVectorOperator, 0, 2)
+	if obsScalarOp, ok := o.scalarOp.(model.ObservableVectorOperator); ok {
+		next = append(next, obsScalarOp)
 	}
-	return nil, nil
+	if obsVectorOp, ok := o.vectorOp.(model.ObservableVectorOperator); ok {
+		next = append(next, obsVectorOp)
+	}
+	return o, next
 }
 
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {

@@ -81,10 +81,7 @@ func NewVectorSelector(
 }
 
 func (o *vectorSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-		return o, nil
-	}
-	return nil, nil
+	return o, nil
 }
 
 func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {

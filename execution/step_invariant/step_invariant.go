@@ -35,16 +35,11 @@ type stepInvariantOperator struct {
 }
 
 func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := u.OperatorTelemetry.(*model.TimingInformation); ok {
-
-		next := make([]model.ObservableVectorOperator, 0, 1)
-		if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnext)
-		}
-		return u, next
+	next := make([]model.ObservableVectorOperator, 0, 1)
+	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
 	}
-	return nil, nil
-
+	return u, next
 }
 
 func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {

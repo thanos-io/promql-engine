@@ -82,21 +82,16 @@ func NewScalar(
 		OperatorTelemetry: &model.TimingInformation{},
 	}, nil
 }
+
 func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := o.OperatorTelemetry.(*model.TimingInformation); ok {
-
-		next := make([]model.ObservableVectorOperator, 0, 2)
-		if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnext)
-		}
-		if obsnextScalar, ok := o.scalar.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnextScalar)
-		}
-
-		return o, next
+	next := make([]model.ObservableVectorOperator, 0, 2)
+	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
 	}
-	return nil, nil
-
+	if obsnextScalar, ok := o.scalar.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnextScalar)
+	}
+	return o, next
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
