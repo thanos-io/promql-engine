@@ -77,17 +77,13 @@ func NewHashAggregate(
 
 func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
 	var ops []model.ObservableVectorOperator
-	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
-		if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
-			ops = append(ops, obsnextParamOp)
-		}
-		if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
-			ops = append(ops, obsnext)
-		}
-		return a, ops
+	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
+		ops = append(ops, obsnextParamOp)
 	}
-	return nil, nil
-
+	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
+		ops = append(ops, obsnext)
+	}
+	return a, ops
 }
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {

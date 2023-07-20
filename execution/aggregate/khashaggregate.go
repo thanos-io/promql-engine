@@ -143,20 +143,14 @@ func (a *kAggregate) GetPool() *model.VectorPool {
 }
 
 func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	if _, ok := a.OperatorTelemetry.(*model.TimingInformation); ok {
-
-		next := make([]model.ObservableVectorOperator, 0, 2)
-		if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnextParamOp)
-		}
-		if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
-			next = append(next, obsnext)
-		}
-
-		return a, next
+	next := make([]model.ObservableVectorOperator, 0, 2)
+	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnextParamOp)
 	}
-	return nil, nil
-
+	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
+	}
+	return a, next
 }
 
 func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
