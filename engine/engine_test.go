@@ -137,13 +137,8 @@ func TestQueryAnalyze(t *testing.T) {
 
 	assertCPUTimeNonZero := func(t *testing.T, got *engine.AnalyzeOutputNode) {
 		if got != nil {
-			telemetry, ok := got.OperatorTelemetry.(*model.TimingInformation)
-			if !ok {
-				t.Errorf("unexpected type for OperatorTelemetry: %T", got.OperatorTelemetry)
-				return
-			}
-			if telemetry.CPUTime <= 0 {
-				t.Errorf("expected non-zero CPUTime, got %v ", telemetry.CPUTimeTaken())
+			if got.OperatorTelemetry.CPUTimeTaken() <= 0 {
+				t.Errorf("expected non-zero CPUTime, got %v ", got.OperatorTelemetry.CPUTimeTaken())
 			}
 		}
 	}
