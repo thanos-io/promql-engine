@@ -5,9 +5,33 @@ package model
 
 import (
 	"context"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
+
+type NoopTimingInformation struct{}
+
+func (ti *NoopTimingInformation) AddCPUTimeTaken(t time.Duration) {}
+
+type TimingInformation struct {
+	CPUTime time.Duration
+}
+
+func (ti *TimingInformation) AddCPUTimeTaken(t time.Duration) {
+	ti.CPUTime += t
+}
+
+type OperatorTelemetry interface {
+	AddCPUTimeTaken(time.Duration)
+}
+
+type ObservableVectorOperator interface {
+	VectorOperator
+	OperatorTelemetry
+
+	Analyze() (*TimingInformation, []ObservableVectorOperator)
+}
 
 // VectorOperator performs operations on series in step by step fashion.
 type VectorOperator interface {

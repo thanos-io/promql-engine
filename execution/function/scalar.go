@@ -15,6 +15,7 @@ import (
 type scalarFunctionOperator struct {
 	pool *model.VectorPool
 	next model.VectorOperator
+	model.TimingInformation
 }
 
 func (o *scalarFunctionOperator) Explain() (me string, next []model.VectorOperator) {

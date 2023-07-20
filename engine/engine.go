@@ -69,6 +69,9 @@ type Opts struct {
 	// This will default to false.
 	EnableXFunctions bool
 
+	// EnableAnalysis enables query analysis.
+	EnableAnalysis bool
+
 	// FallbackEngine
 	Engine v1.QueryEngine
 }
@@ -211,6 +214,7 @@ func New(opts Opts) *compatibilityEngine {
 		timeout:           opts.Timeout,
 		metrics:           metrics,
 		extLookbackDelta:  opts.ExtLookbackDelta,
+		enableAnalysis:    opts.EnableAnalysis,
 	}
 }
 
@@ -225,6 +229,8 @@ type compatibilityEngine struct {
 	logicalOptimizers []logicalplan.Optimizer
 	timeout           time.Duration
 	metrics           *engineMetrics
+
+	enableAnalysis bool
 
 	extLookbackDelta time.Duration
 }
@@ -260,7 +266,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta)
+	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta, e.enableAnalysis)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -275,12 +281,13 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	}
 
 	return &compatibilityQuery{
-		Query:      &Query{exec: exec, opts: opts},
-		engine:     e,
-		expr:       expr,
-		ts:         ts,
-		t:          InstantQuery,
-		resultSort: resultSort,
+		Query:       &Query{exec: exec, opts: opts},
+		engine:      e,
+		expr:        expr,
+		ts:          ts,
+		t:           InstantQuery,
+		resultSort:  resultSort,
+		debugWriter: e.debugWriter,
 	}, nil
 }
 
@@ -311,7 +318,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta)
+	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta, e.enableAnalysis)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -326,10 +333,11 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	}
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exec, opts: opts},
-		engine: e,
-		expr:   expr,
-		t:      RangeQuery,
+		Query:       &Query{exec: exec, opts: opts},
+		engine:      e,
+		expr:        expr,
+		t:           RangeQuery,
+		debugWriter: e.debugWriter,
 	}, nil
 }
 
@@ -337,7 +345,11 @@ type ExplainableQuery interface {
 	promql.Query
 
 	Explain() *ExplainOutputNode
-	Profile()
+	Analyze() *AnalyzeOutputNode
+}
+
+type AnalyzeOutputNode struct {
+	// TODO: Add fields.
 }
 
 type ExplainOutputNode struct {
@@ -358,8 +370,11 @@ func (q *Query) Explain() *ExplainOutputNode {
 	return explainVector(q.exec)
 }
 
-func (q *Query) Profile() {
-	// TODO(bwplotka): Return profile.
+// Analyze returns human-readable query analysis of the created exector.
+// This must always be called after Exec, in order to populate telemetry data.
+func (q *Query) Analyze() *AnalyzeOutputNode {
+	// TODO: Implement by calling Analyze on ObservableVectorOperators.
+	return &AnalyzeOutputNode{}
 }
 
 func explainVector(v model.VectorOperator) *ExplainOutputNode {
@@ -478,13 +493,17 @@ type compatibilityQuery struct {
 	t          QueryType
 	resultSort resultSorter
 
-	cancel context.CancelFunc
+	cancel      context.CancelFunc
+	debugWriter io.Writer
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	// Handle case with strings early on as this does not need us to process samples.
 	switch e := q.expr.(type) {
 	case *parser.StringLiteral:
+		if q.debugWriter != nil {
+			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), "", "")
+		}
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
 	ret = &promql.Result{
@@ -567,6 +586,9 @@ loop:
 		}
 		sort.Sort(resultMatrix)
 		ret.Value = resultMatrix
+		if q.debugWriter != nil {
+			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), "", "")
+		}
 		return ret
 	}
 
@@ -610,6 +632,10 @@ loop:
 	}
 
 	ret.Value = result
+
+	if q.debugWriter != nil {
+		analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), "", "")
+	}
 	return ret
 }
 
@@ -686,6 +712,12 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 		level.Error(logger).Log("msg", "runtime panic in engine", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
 	}
+}
+
+// Useful for local testing.
+
+func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext string) {
+	// TODO: Implement.
 }
 
 func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
