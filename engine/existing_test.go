@@ -29,7 +29,7 @@ func TestRangeQuery(t *testing.T) {
 		{
 			Name: "sum_over_time with all values",
 			Load: `load 30s
-              bar 0 1 10 100 1000`,
+			    bar 0 1 10 100 1000`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
@@ -44,7 +44,7 @@ func TestRangeQuery(t *testing.T) {
 		{
 			Name: "sum_over_time with trailing values",
 			Load: `load 30s
-              bar 0 1 10 100 1000 0 0 0 0`,
+			    bar 0 1 10 100 1000 0 0 0 0`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
@@ -59,7 +59,7 @@ func TestRangeQuery(t *testing.T) {
 		{
 			Name: "sum_over_time with all values long",
 			Load: `load 30s
-              bar 0 1 10 100 1000 10000 100000 1000000 10000000`,
+			    bar 0 1 10 100 1000 10000 100000 1000000 10000000`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
@@ -74,7 +74,7 @@ func TestRangeQuery(t *testing.T) {
 		{
 			Name: "sum_over_time with all values random",
 			Load: `load 30s
-              bar 5 17 42 2 7 905 51`,
+			    bar 5 17 42 2 7 905 51`,
 			Query: "sum_over_time(bar[30s])",
 			Result: promql.Matrix{
 				promql.Series{
@@ -89,7 +89,7 @@ func TestRangeQuery(t *testing.T) {
 		{
 			Name: "metric query",
 			Load: `load 30s
-              metric 1+1x4`,
+			    metric 1+1x4`,
 			Query: "metric",
 			Result: promql.Matrix{
 				promql.Series{
@@ -104,7 +104,7 @@ func TestRangeQuery(t *testing.T) {
 		{
 			Name: "metric query with trailing values",
 			Load: `load 30s
-              metric 1+1x8`,
+			    metric 1+1x8`,
 			Query: "metric",
 			Result: promql.Matrix{
 				promql.Series{
