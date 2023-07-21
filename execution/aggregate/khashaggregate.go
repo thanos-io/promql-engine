@@ -170,14 +170,24 @@ func (a *kAggregate) init(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	hapsHash := make(map[uint64]*samplesHeap)
-	buf := make([]byte, 1024)
+	var (
+		// heapsHash is a map of hash of the series to output samples heap for that series.
+		heapsHash = make(map[uint64]*samplesHeap)
+		// hashingBuf is a buffer used for metric hashing.
+		hashingBuf = make([]byte, 1024)
+		// builder is a scratch builder used for creating output series.
+		builder labels.ScratchBuilder
+	)
+	labelsMap := make(map[string]struct{})
+	for _, lblName := range a.labels {
+		labelsMap[lblName] = struct{}{}
+	}
 	for i := 0; i < len(series); i++ {
-		hash, _, _ := hashMetric(series[i], !a.by, a.labels, buf)
-		h, ok := hapsHash[hash]
+		hash, _, _ := hashMetric(builder, series[i], !a.by, a.labels, labelsMap, hashingBuf)
+		h, ok := heapsHash[hash]
 		if !ok {
 			h = &samplesHeap{compare: a.compare}
-			hapsHash[hash] = h
+			heapsHash[hash] = h
 			a.heaps = append(a.heaps, h)
 		}
 		a.inputToHeap = append(a.inputToHeap, h)

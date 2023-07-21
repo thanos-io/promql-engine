@@ -40,7 +40,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 	case "scalar":
 		return &scalarFunctionOperator{
 			next: nextOps[0],
-			pool: model.NewVectorPool(stepsBatch),
+			pool: model.NewVectorPoolWithSize(stepsBatch, 1),
 		}, nil
 	case "label_join", "label_replace":
 		return &relabelFunctionOperator{

@@ -38,6 +38,8 @@ func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {
 
 func (o *absentOperator) loadSeries() {
 	o.once.Do(func() {
+		o.pool.SetStepSize(1)
+
 		// https://github.com/prometheus/prometheus/blob/main/promql/functions.go#L1385
 		var lm []*labels.Matcher
 		switch n := o.funcExpr.Args[0].(type) {

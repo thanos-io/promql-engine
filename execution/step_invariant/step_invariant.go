@@ -86,6 +86,7 @@ func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, er
 	var err error
 	u.seriesOnce.Do(func() {
 		u.series, err = u.next.Series(ctx)
+		u.vectorPool.SetStepSize(len(u.series))
 	})
 	if err != nil {
 		return nil, err
