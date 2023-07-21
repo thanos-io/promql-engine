@@ -18,6 +18,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type kAggregate struct {
@@ -48,6 +49,7 @@ func NewKHashAggregate(
 	by bool,
 	labels []string,
 	stepsBatch int,
+	opts *query.Options,
 ) (model.VectorOperator, error) {
 	var compare func(float64, float64) bool
 
@@ -74,7 +76,10 @@ func NewKHashAggregate(
 		compare:     compare,
 		params:      make([]float64, stepsBatch),
 	}
-	a.OperatorTelemetry = &model.TimingInformation{}
+	a.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		a.OperatorTelemetry = &model.TimingInformation{}
+	}
 	return a, nil
 }
 

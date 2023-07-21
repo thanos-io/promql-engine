@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type errorChan chan error
@@ -46,14 +47,17 @@ type coalesce struct {
 	model.OperatorTelemetry
 }
 
-func NewCoalesce(pool *model.VectorPool, operators ...model.VectorOperator) model.VectorOperator {
+func NewCoalesce(pool *model.VectorPool, opts *query.Options, operators ...model.VectorOperator) model.VectorOperator {
 	c := &coalesce{
 		pool:          pool,
 		sampleOffsets: make([]uint64, len(operators)),
 		operators:     operators,
 		inVectors:     make([][]model.StepVector, len(operators)),
 	}
-	c.OperatorTelemetry = &model.TimingInformation{}
+	c.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		c.OperatorTelemetry = &model.TimingInformation{}
+	}
 	return c
 }
 

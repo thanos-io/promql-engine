@@ -21,7 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/execution/model"
+
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
@@ -123,17 +123,6 @@ func TestQueryAnalyze(t *testing.T) {
 
 	start := time.Unix(0, 0)
 	end := time.Unix(1000, 0)
-
-	// Calculate concurrencyOperators according to max available CPUs.
-	totalOperators := runtime.GOMAXPROCS(0) / 2
-	concurrencyOperators := []engine.AnalyzeOutputNode{}
-	for i := 0; i < totalOperators; i++ {
-		concurrencyOperators = append(concurrencyOperators, engine.AnalyzeOutputNode{
-			OperatorTelemetry: &model.TimingInformation{}, Children: []engine.AnalyzeOutputNode{
-				{OperatorTelemetry: &model.TimingInformation{}},
-			},
-		})
-	}
 
 	assertCPUTimeNonZero := func(t *testing.T, got *engine.AnalyzeOutputNode) {
 		if got != nil {

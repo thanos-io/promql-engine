@@ -14,6 +14,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 // vectorOperator evaluates an expression between two step vectors.
@@ -52,6 +53,7 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	operation parser.ItemType,
 	returnBool bool,
+	opts *query.Options,
 ) (model.VectorOperator, error) {
 	op, err := newOperation(operation, true)
 	if err != nil {
@@ -64,17 +66,21 @@ func NewVectorOperator(
 	copy(groupings, matching.MatchingLabels)
 	slices.Sort(groupings)
 
-	return &vectorOperator{
-		pool:              pool,
-		lhs:               lhs,
-		rhs:               rhs,
-		matching:          matching,
-		groupingLabels:    groupings,
-		operation:         op,
-		opType:            operation,
-		returnBool:        returnBool,
-		OperatorTelemetry: &model.TimingInformation{},
-	}, nil
+	o := &vectorOperator{
+		pool:           pool,
+		lhs:            lhs,
+		rhs:            rhs,
+		matching:       matching,
+		groupingLabels: groupings,
+		operation:      op,
+		opType:         operation,
+		returnBool:     returnBool,
+	}
+	o.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		o.OperatorTelemetry = &model.TimingInformation{}
+	}
+	return o, nil
 }
 
 func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {

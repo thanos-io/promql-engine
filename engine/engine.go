@@ -348,6 +348,7 @@ type ExplainableQuery interface {
 	Explain() *ExplainOutputNode
 	Analyze() *AnalyzeOutputNode
 }
+
 type AnalyzeOutputNode struct {
 	OperatorTelemetry model.OperatorTelemetry
 	Children          []AnalyzeOutputNode
@@ -724,17 +725,16 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 		*errp = errors.Wrap(err, "unexpected error")
 	}
 }
+
 func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext string) {
 	telemetry, next := o.Analyze()
-
-	// _, _ = w.Write([]byte(indent))
+	_, _ = w.Write([]byte(indent))
 	_, _ = w.Write([]byte("Operator Time :"))
-	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.(*model.TimingInformation).CPUTime), 10)))
+	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.CPUTimeTaken()), 10)))
 	if len(next) == 0 {
 		_, _ = w.Write([]byte("\n"))
 		return
 	}
-
 	_, _ = w.Write([]byte(":\n"))
 
 	for i, n := range next {
@@ -745,6 +745,7 @@ func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext s
 		}
 	}
 }
+
 func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
 	me, next := o.Explain()
 	_, _ = w.Write([]byte(indent))

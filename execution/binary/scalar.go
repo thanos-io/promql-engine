@@ -15,6 +15,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type ScalarSide int
@@ -54,6 +55,7 @@ func NewScalar(
 	op parser.ItemType,
 	scalarSide ScalarSide,
 	returnBool bool,
+	opts *query.Options,
 ) (*scalarOperator, error) {
 	binaryOperation, err := newOperation(op, scalarSide != ScalarSideBoth)
 	if err != nil {
@@ -68,19 +70,24 @@ func NewScalar(
 		operandValIdx = 1
 	}
 
-	return &scalarOperator{
-		pool:              pool,
-		next:              next,
-		scalar:            scalar,
-		floatOp:           binaryOperation,
-		histOp:            getHistogramFloatOperation(op, scalarSide),
-		opType:            op,
-		getOperands:       getOperands,
-		operandValIdx:     operandValIdx,
-		returnBool:        returnBool,
-		bothScalars:       scalarSide == ScalarSideBoth,
-		OperatorTelemetry: &model.TimingInformation{},
-	}, nil
+	o := &scalarOperator{
+		pool:          pool,
+		next:          next,
+		scalar:        scalar,
+		floatOp:       binaryOperation,
+		histOp:        getHistogramFloatOperation(op, scalarSide),
+		opType:        op,
+		getOperands:   getOperands,
+		operandValIdx: operandValIdx,
+		returnBool:    returnBool,
+		bothScalars:   scalarSide == ScalarSideBoth,
+	}
+	o.OperatorTelemetry = &model.NoopTimingInformation{}
+	if opts.EnableAnalysis {
+		o.OperatorTelemetry = &model.TimingInformation{}
+	}
+	return o, nil
+
 }
 
 func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
