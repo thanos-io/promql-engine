@@ -113,6 +113,20 @@ func TestQueryExplain(t *testing.T) {
 	}
 }
 
+func assertCPUTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
+	if got != nil {
+		if got.OperatorTelemetry.CPUTimeTaken() <= 0 {
+			t.Errorf("expected non-zero CPUTime for Operator, got %v ", got.OperatorTelemetry.CPUTimeTaken())
+			return false
+		}
+		for i := range got.Children {
+			child := got.Children[i]
+			return got.OperatorTelemetry.CPUTimeTaken() > 0 && assertCPUTimeNonZero(t, &child)
+		}
+	}
+	return true
+}
+
 func TestQueryAnalyze(t *testing.T) {
 	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
 	series := storage.MockSeries(
@@ -123,14 +137,6 @@ func TestQueryAnalyze(t *testing.T) {
 
 	start := time.Unix(0, 0)
 	end := time.Unix(1000, 0)
-
-	assertCPUTimeNonZero := func(t *testing.T, got *engine.AnalyzeOutputNode) {
-		if got != nil {
-			if got.OperatorTelemetry.CPUTimeTaken() <= 0 {
-				t.Errorf("expected non-zero CPUTime, got %v ", got.OperatorTelemetry.CPUTimeTaken())
-			}
-		}
-	}
 
 	for _, tc := range []struct {
 		query string
@@ -143,6 +149,9 @@ func TestQueryAnalyze(t *testing.T) {
 		},
 		{
 			query: "sum(foo) by (job)",
+		},
+		{
+			query: "rate(http_requests_total[30s]) > bool 0",
 		},
 	} {
 		{
@@ -163,7 +172,7 @@ func TestQueryAnalyze(t *testing.T) {
 
 				explainableQuery := query.(engine.ExplainableQuery)
 
-				assertCPUTimeNonZero(t, explainableQuery.Analyze())
+				testutil.Assert(t, assertCPUTimeNonZero(t, explainableQuery.Analyze()))
 
 				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
@@ -172,7 +181,7 @@ func TestQueryAnalyze(t *testing.T) {
 				testutil.Ok(t, queryResults.Err)
 
 				explainableQuery = query.(engine.ExplainableQuery)
-				assertCPUTimeNonZero(t, explainableQuery.Analyze())
+				testutil.Assert(t, assertCPUTimeNonZero(t, explainableQuery.Analyze()))
 			})
 		}
 	}
