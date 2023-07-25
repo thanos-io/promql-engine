@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/query"
 )
