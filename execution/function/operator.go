@@ -38,30 +38,53 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 
 	switch funcExpr.Func.Name {
 	case "scalar":
-		return &scalarFunctionOperator{
+		s := &scalarFunctionOperator{
 			next: nextOps[0],
 			pool: model.NewVectorPoolWithSize(stepsBatch, 1),
-		}, nil
+		}
+		s.OperatorTelemetry = &model.NoopTimingInformation{}
+		if opts.EnableAnalysis {
+			s.OperatorTelemetry = &model.TimingInformation{}
+		}
+		return s, nil
+
 	case "label_join", "label_replace":
-		return &relabelFunctionOperator{
+		r := &relabelFunctionOperator{
 			next:     nextOps[0],
 			funcExpr: funcExpr,
-		}, nil
+		}
+		r.OperatorTelemetry = &model.NoopTimingInformation{}
+		if opts.EnableAnalysis {
+			r.OperatorTelemetry = &model.TimingInformation{}
+		}
+		return r, nil
+
 	case "absent":
-		return &absentOperator{
+		a := &absentOperator{
 			next:     nextOps[0],
 			pool:     model.NewVectorPool(stepsBatch),
 			funcExpr: funcExpr,
-		}, nil
+		}
+		a.OperatorTelemetry = &model.NoopTimingInformation{}
+		if opts.EnableAnalysis {
+			a.OperatorTelemetry = &model.TimingInformation{}
+		}
+		return a, nil
+
 	case "histogram_quantile":
-		return &histogramOperator{
+		h := &histogramOperator{
 			pool:         model.NewVectorPool(stepsBatch),
 			funcArgs:     funcExpr.Args,
 			once:         sync.Once{},
 			scalarOp:     nextOps[0],
 			vectorOp:     nextOps[1],
 			scalarPoints: make([]float64, stepsBatch),
-		}, nil
+		}
+		h.OperatorTelemetry = &model.NoopTimingInformation{}
+		if opts.EnableAnalysis {
+			h.OperatorTelemetry = &model.TimingInformation{}
+		}
+		return h, nil
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
