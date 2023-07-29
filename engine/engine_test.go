@@ -1311,6 +1311,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "year()",
 		},
 		{
+			name: "timestamp with input",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "timestamp(http_requests_total)",
+		},
+		{
 			name: "selector merge",
 			load: `load 30s
 					http_requests_total{pod="nginx-1", ns="nginx"} 1+1x15

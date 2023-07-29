@@ -429,6 +429,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 			query: "round(http_requests_total, 0.5)",
 		},
 		{
+			name:  "timestamp with input",
+			query: "timestamp(http_requests_total)",
+		},
+		{
 			name:  "avg",
 			query: "avg(http_requests_total)",
 		},

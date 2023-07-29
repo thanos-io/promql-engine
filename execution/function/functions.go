@@ -147,6 +147,9 @@ var instantVectorFuncs = map[string]functionCall{
 	"year": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
 		return year(dateFromSampleValue(f)), true
 	},
+	"timestamp": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
+		return timestamp(dateFromSampleValue(f)), true
+	},
 }
 
 type noArgFunctionCall func(t int64) float64
@@ -182,6 +185,9 @@ var noArgFuncs = map[string]noArgFunctionCall{
 	},
 	"year": func(t int64) float64 {
 		return year(dateFromStepTime(t))
+	},
+	"timestamp": func(t int64) float64 {
+		return timestamp(dateFromStepTime(t))
 	},
 }
 
@@ -229,4 +235,8 @@ func month(t time.Time) float64 {
 
 func year(t time.Time) float64 {
 	return float64(t.Year())
+}
+
+func timestamp(t time.Time) float64 {
+	return float64(t.Unix())
 }
