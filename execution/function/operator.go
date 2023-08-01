@@ -167,12 +167,10 @@ func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.Vec
 }
 
 func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	obsOperators := make([]model.ObservableVectorOperator, len(o.nextOps))
-	for i, operator := range o.nextOps {
+	obsOperators := make([]model.ObservableVectorOperator, 0, len(o.nextOps))
+	for _, operator := range o.nextOps {
 		if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
-			obsOperators[i] = obsOperator
-		} else {
-			obsOperators[i] = nil
+			obsOperators = append(obsOperators, obsOperator)
 		}
 	}
 	return o, obsOperators
