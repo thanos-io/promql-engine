@@ -33,7 +33,7 @@ func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperat
 		buffer:     make(chan maybeStepVector, bufferSize),
 		bufferSize: bufferSize,
 	}
-	c.OperatorTelemetry = &model.TimingInformation{}
+	c.OperatorTelemetry = &model.TrackedTelemetry{}
 	return c
 }
 

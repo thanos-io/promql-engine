@@ -76,9 +76,9 @@ func NewKHashAggregate(
 		compare:     compare,
 		params:      make([]float64, stepsBatch),
 	}
-	a.OperatorTelemetry = &model.NoopTimingInformation{}
+	a.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		a.OperatorTelemetry = &model.TimingInformation{}
+		a.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 	return a, nil
 }

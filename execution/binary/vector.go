@@ -76,9 +76,9 @@ func NewVectorOperator(
 		opType:         operation,
 		returnBool:     returnBool,
 	}
-	o.OperatorTelemetry = &model.NoopTimingInformation{}
+	o.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TimingInformation{}
+		o.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 	return o, nil
 }

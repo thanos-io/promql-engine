@@ -32,7 +32,7 @@ func NewUnaryNegation(
 ) (model.VectorOperator, error) {
 	u := &unaryNegation{
 		next:              next,
-		OperatorTelemetry: &model.TimingInformation{},
+		OperatorTelemetry: &model.TrackedTelemetry{},
 	}
 
 	return u, nil

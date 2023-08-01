@@ -70,7 +70,7 @@ func NewHashAggregate(
 		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
-	a.OperatorTelemetry = &model.TimingInformation{}
+	a.OperatorTelemetry = &model.TrackedTelemetry{}
 
 	return a, nil
 }

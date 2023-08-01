@@ -95,9 +95,9 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = &model.NoopTimingInformation{}
+	m.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		m.OperatorTelemetry = &model.TimingInformation{}
+		m.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	return m, nil

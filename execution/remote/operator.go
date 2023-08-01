@@ -36,9 +36,9 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart ti
 		queryRangeStart: queryRangeStart,
 		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, 1),
 	}
-	e.OperatorTelemetry = &model.NoopTimingInformation{}
+	e.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		e.OperatorTelemetry = &model.TimingInformation{}
+		e.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 	return e
 }

@@ -10,15 +10,15 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type NoopTimingInformation struct{}
+type NoopTelemetry struct{}
 
-func (ti *NoopTimingInformation) AddCPUTimeTaken(t time.Duration) {}
+func (ti *NoopTelemetry) AddCPUTimeTaken(t time.Duration) {}
 
-type TimingInformation struct {
+type TrackedTelemetry struct {
 	CPUTime time.Duration
 }
 
-func (ti *TimingInformation) AddCPUTimeTaken(t time.Duration) {
+func (ti *TrackedTelemetry) AddCPUTimeTaken(t time.Duration) {
 	ti.CPUTime += t
 }
 
@@ -27,10 +27,10 @@ type OperatorTelemetry interface {
 	CPUTimeTaken() time.Duration
 }
 
-func (ti *NoopTimingInformation) CPUTimeTaken() time.Duration {
+func (ti *NoopTelemetry) CPUTimeTaken() time.Duration {
 	return time.Duration(0)
 }
-func (ti *TimingInformation) CPUTimeTaken() time.Duration {
+func (ti *TrackedTelemetry) CPUTimeTaken() time.Duration {
 	return ti.CPUTime
 }
 

@@ -350,8 +350,9 @@ type ExplainableQuery interface {
 }
 
 type AnalyzeOutputNode struct {
-	OperatorTelemetry model.OperatorTelemetry
-	Children          []AnalyzeOutputNode
+	OperatorName      string                  `json:"name,omitempty"`
+	OperatorTelemetry model.OperatorTelemetry `json:"telemetry,omitempty"`
+	Children          []AnalyzeOutputNode     `json:"children,omitempty"`
 }
 
 type ExplainOutputNode struct {
@@ -381,12 +382,14 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
 	telemetry, obsVectors := obsv.Analyze()
+	name, _ := obsv.(model.VectorOperator).Explain()
 	var children []AnalyzeOutputNode
 	for _, vector := range obsVectors {
 		children = append(children, *analyzeVector(vector))
 	}
 
 	return &AnalyzeOutputNode{
+		OperatorName:      name,
 		OperatorTelemetry: telemetry,
 		Children:          children,
 	}

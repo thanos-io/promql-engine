@@ -74,9 +74,9 @@ func NewStepInvariantOperator(
 	case *parser.MatrixSelector, *parser.SubqueryExpr:
 		u.cacheResult = false
 	}
-	u.OperatorTelemetry = &model.NoopTimingInformation{}
+	u.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		u.OperatorTelemetry = &model.TimingInformation{}
+		u.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	return u, nil

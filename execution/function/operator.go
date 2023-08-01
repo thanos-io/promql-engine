@@ -33,6 +33,13 @@ type functionOperator struct {
 	model.OperatorTelemetry
 }
 
+func SetTelemetry(t model.OperatorTelemetry, opts *query.Options) {
+	t = &model.NoopTelemetry{}
+	if opts.EnableAnalysis {
+		t = &model.TrackedTelemetry{}
+	}
+}
+
 func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	// Some functions need to be handled in special operators
 
@@ -42,10 +49,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 			next: nextOps[0],
 			pool: model.NewVectorPoolWithSize(stepsBatch, 1),
 		}
-		s.OperatorTelemetry = &model.NoopTimingInformation{}
-		if opts.EnableAnalysis {
-			s.OperatorTelemetry = &model.TimingInformation{}
-		}
+		SetTelemetry(s.OperatorTelemetry, opts)
 		return s, nil
 
 	case "label_join", "label_replace":
@@ -53,10 +57,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 			next:     nextOps[0],
 			funcExpr: funcExpr,
 		}
-		r.OperatorTelemetry = &model.NoopTimingInformation{}
-		if opts.EnableAnalysis {
-			r.OperatorTelemetry = &model.TimingInformation{}
-		}
+		SetTelemetry(r.OperatorTelemetry, opts)
 		return r, nil
 
 	case "absent":
@@ -65,10 +66,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 			pool:     model.NewVectorPool(stepsBatch),
 			funcExpr: funcExpr,
 		}
-		a.OperatorTelemetry = &model.NoopTimingInformation{}
-		if opts.EnableAnalysis {
-			a.OperatorTelemetry = &model.TimingInformation{}
-		}
+		SetTelemetry(a.OperatorTelemetry, opts)
 		return a, nil
 
 	case "histogram_quantile":
@@ -80,10 +78,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 			vectorOp:     nextOps[1],
 			scalarPoints: make([]float64, stepsBatch),
 		}
-		h.OperatorTelemetry = &model.NoopTimingInformation{}
-		if opts.EnableAnalysis {
-			h.OperatorTelemetry = &model.TimingInformation{}
-		}
+		SetTelemetry(h.OperatorTelemetry, opts)
 		return h, nil
 	}
 
@@ -125,9 +120,9 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 		op.series = []labels.Labels{{}}
 		op.sampleIDs = []uint64{0}
 	}
-	op.OperatorTelemetry = &model.NoopTimingInformation{}
+	op.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		op.OperatorTelemetry = &model.TimingInformation{}
+		op.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	return op, nil
@@ -157,9 +152,9 @@ func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.Vec
 			break
 		}
 	}
-	f.OperatorTelemetry = &model.NoopTimingInformation{}
+	f.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
-		f.OperatorTelemetry = &model.TimingInformation{}
+		f.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	// Check selector type.

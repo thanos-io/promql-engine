@@ -73,9 +73,9 @@ func NewVectorSelector(
 		shard:     shard,
 		numShards: numShards,
 	}
-	o.OperatorTelemetry = &model.NoopTimingInformation{}
+	o.OperatorTelemetry = &model.NoopTelemetry{}
 	if queryOpts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TimingInformation{}
+		o.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 	return o
 }
