@@ -5,7 +5,6 @@ package engine_test
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"strconv"
 	"strings"
@@ -102,10 +101,6 @@ func BenchmarkSingleQuery(b *testing.B) {
 }
 
 func BenchmarkRangeQuery(b *testing.B) {
-
-	sixHourDatasetOnly := flag.Bool("fast", false, "Only runs six hour dataset")
-	flag.Parse()
-
 	samplesPerHour := 60 * 2
 	sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
 	defer sixHourDataset.Close()
@@ -294,9 +289,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				if *sixHourDatasetOnly {
+				if testing.Short() {
 					if tc.test != sixHourDataset {
-						return
+						b.Skip()
 					}
 				}
 
@@ -312,9 +307,9 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				if *sixHourDatasetOnly {
+				if testing.Short() {
 					if tc.test != sixHourDataset {
-						return
+						b.Skip()
 					}
 				}
 
