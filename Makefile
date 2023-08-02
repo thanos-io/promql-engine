@@ -119,6 +119,7 @@ bench-fast: benchmarks
 	@echo "Benchmarking new engine"
 	@go test ./engine -bench 'BenchmarkRangeQuery/.*/new_engine' -run none -count 5 -short | sed -u 's/\/new_engine//' > benchmarks/new.out 
 	@go test ./engine -bench 'BenchmarkNativeHistograms/.*/new_engine'  -run none -count 5 | sed -u 's/\/new_engine//' >> benchmarks/new.out
+	@benchstat benchmarks/old.out benchmarks/new.out
 
 .PHONY: sync-parser
 sync-parser:
