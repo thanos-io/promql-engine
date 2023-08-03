@@ -23,7 +23,6 @@ type unaryNegation struct {
 }
 
 func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
-	u.SetName("[*unaryNegation]")
 	return "[*unaryNegation]", []model.VectorOperator{u.next}
 }
 
@@ -39,6 +38,7 @@ func NewUnaryNegation(
 	return u, nil
 }
 func (u *unaryNegation) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	u.SetName("[*unaryNegation]")
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)

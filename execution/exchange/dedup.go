@@ -51,6 +51,7 @@ func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator) model.V
 }
 
 func (d *dedupOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	d.SetName("[*dedup]")
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := d.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -123,7 +124,6 @@ func (d *dedupOperator) GetPool() *model.VectorPool {
 }
 
 func (d *dedupOperator) Explain() (me string, next []model.VectorOperator) {
-	d.SetName("[*dedup]")
 	return "[*dedup]", []model.VectorOperator{d.next}
 }
 

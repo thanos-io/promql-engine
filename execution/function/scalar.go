@@ -20,6 +20,7 @@ type scalarFunctionOperator struct {
 }
 
 func (o *scalarFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*scalarFunctionOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -28,7 +29,6 @@ func (o *scalarFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Obs
 }
 
 func (o *scalarFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*scalarFunctionOperator]")
 	return "[*scalarFunctionOperator]", []model.VectorOperator{}
 }
 

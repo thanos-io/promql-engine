@@ -38,6 +38,7 @@ func NewConcurrent(next model.VectorOperator, bufferSize int) model.VectorOperat
 }
 
 func (c *concurrencyOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	c.SetName(("[*concurrencyOperator]"))
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := c.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -46,7 +47,6 @@ func (c *concurrencyOperator) Analyze() (model.OperatorTelemetry, []model.Observ
 }
 
 func (c *concurrencyOperator) Explain() (me string, next []model.VectorOperator) {
-	c.SetName(("[*concurrencyOperator"))
 	return fmt.Sprintf("[*concurrencyOperator(buff=%v)]", c.bufferSize), []model.VectorOperator{c.next}
 }
 

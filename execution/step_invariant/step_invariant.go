@@ -35,6 +35,7 @@ type stepInvariantOperator struct {
 }
 
 func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	u.SetName("[*stepInvariantOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -43,7 +44,6 @@ func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.Obse
 }
 
 func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {
-	u.SetName("[*stepInvariantOperator]")
 	return "[*stepInvariantOperator]", []model.VectorOperator{u.next}
 }
 

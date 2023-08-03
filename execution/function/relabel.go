@@ -27,6 +27,7 @@ type relabelFunctionOperator struct {
 }
 
 func (o *relabelFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*relabelFunctionOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -35,7 +36,6 @@ func (o *relabelFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Ob
 }
 
 func (o *relabelFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*relabelFunctionOperator]")
 	return "[*relabelFunctionOperator]", []model.VectorOperator{}
 }
 

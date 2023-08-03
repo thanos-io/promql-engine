@@ -115,9 +115,9 @@ func TestQueryExplain(t *testing.T) {
 
 func assertCPUTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
 	if got != nil {
-		if got.OperatorTelemetry.CPUTimeTaken() <= 0 {
-			t.Errorf("expected non-zero CPUTime for Operator, got %v ", got.OperatorTelemetry.CPUTimeTaken())
-			return false
+		if got.OperatorTelemetry.CPUTimeTaken() >= 0 {
+			t.Errorf("expected non-zero CPUTime for Operator, got %s ", got.OperatorTelemetry.Name())
+
 		}
 		for i := range got.Children {
 			child := got.Children[i]

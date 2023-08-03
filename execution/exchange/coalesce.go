@@ -62,6 +62,7 @@ func NewCoalesce(pool *model.VectorPool, opts *query.Options, operators ...model
 }
 
 func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	c.SetName("[*coalesce]")
 	obsOperators := make([]model.ObservableVectorOperator, 0, len(c.operators))
 	for _, operator := range c.operators {
 		if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
@@ -72,7 +73,7 @@ func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorO
 }
 
 func (c *coalesce) Explain() (me string, next []model.VectorOperator) {
-	c.SetName("[*coalesce]")
+
 	return "[*coalesce]", c.operators
 }
 

@@ -24,6 +24,7 @@ type absentOperator struct {
 }
 
 func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*absentOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 1)
 	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -32,7 +33,6 @@ func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*absentOperator]")
 	return "[*absentOperator]", []model.VectorOperator{}
 }
 

@@ -104,11 +104,11 @@ func NewMatrixSelector(
 }
 
 func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*matrixSelector]")
 	return o, nil
 }
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*matrixSelector]")
 	r := time.Duration(o.selectRange) * time.Millisecond
 	if o.call != nil {
 		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.Matchers(), r, o.shard, o.numShards), nil

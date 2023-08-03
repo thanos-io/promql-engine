@@ -49,6 +49,7 @@ type histogramOperator struct {
 }
 
 func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*functionOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 2)
 	if obsScalarOp, ok := o.scalarOp.(model.ObservableVectorOperator); ok {
 		next = append(next, obsScalarOp)
@@ -60,7 +61,6 @@ func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.Observab
 }
 
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*functionOperator]")
 	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
 	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
 }

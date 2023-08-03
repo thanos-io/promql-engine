@@ -148,6 +148,7 @@ func (a *kAggregate) GetPool() *model.VectorPool {
 }
 
 func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	a.SetName("[*kaggregate]")
 	next := make([]model.ObservableVectorOperator, 0, 2)
 	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnextParamOp)
@@ -159,7 +160,6 @@ func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVecto
 }
 
 func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
-	a.SetName("[*kaggregate]")
 	if a.by {
 		return fmt.Sprintf("[*kaggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
 	}

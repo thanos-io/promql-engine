@@ -76,6 +76,7 @@ func NewHashAggregate(
 }
 
 func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	a.SetName("[*aggregate]")
 	var ops []model.ObservableVectorOperator
 	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
 		ops = append(ops, obsnextParamOp)
@@ -88,12 +89,10 @@ func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVector
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 	var ops []model.VectorOperator
-
 	if a.paramOp != nil {
 		ops = append(ops, a.paramOp)
 	}
 	ops = append(ops, a.next)
-	a.SetName("[*aggregate]")
 	if a.by {
 		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
 	}

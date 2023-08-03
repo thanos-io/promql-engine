@@ -84,6 +84,7 @@ func NewVectorOperator(
 }
 
 func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*vectorOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 2)
 	if obsnextParamOp, ok := o.lhs.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnextParamOp)
@@ -95,7 +96,6 @@ func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*vectorOperator]")
 	if o.matching.On {
 		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 	}

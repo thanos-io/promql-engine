@@ -163,6 +163,7 @@ func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.Vec
 }
 
 func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*functionOperator]")
 	obsOperators := make([]model.ObservableVectorOperator, 0, len(o.nextOps))
 	for _, operator := range o.nextOps {
 		if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
@@ -173,7 +174,6 @@ func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.Observabl
 }
 
 func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*functionOperator]")
 	return fmt.Sprintf("[*functionOperator] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
 }
 

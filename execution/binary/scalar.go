@@ -91,6 +91,7 @@ func NewScalar(
 }
 
 func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*scalarOperator]")
 	next := make([]model.ObservableVectorOperator, 0, 2)
 	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
 		next = append(next, obsnext)
@@ -102,7 +103,6 @@ func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
-	o.SetName("[*scalarOperator]")
 	return fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
 }
 
