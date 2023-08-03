@@ -33,11 +33,11 @@ type functionOperator struct {
 	model.OperatorTelemetry
 }
 
-func SetTelemetry(t model.OperatorTelemetry, opts *query.Options) {
-	t = &model.NoopTelemetry{}
+func SetTelemetry(opts *query.Options) model.OperatorTelemetry {
 	if opts.EnableAnalysis {
-		t = &model.TrackedTelemetry{}
+		return &model.TrackedTelemetry{}
 	}
+	return &model.NoopTelemetry{}
 }
 
 func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
@@ -45,41 +45,37 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 
 	switch funcExpr.Func.Name {
 	case "scalar":
-		s := &scalarFunctionOperator{
-			next: nextOps[0],
-			pool: model.NewVectorPoolWithSize(stepsBatch, 1),
-		}
-		SetTelemetry(s.OperatorTelemetry, opts)
-		return s, nil
+		return &scalarFunctionOperator{
+			next:              nextOps[0],
+			pool:              model.NewVectorPoolWithSize(stepsBatch, 1),
+			OperatorTelemetry: SetTelemetry(opts),
+		}, nil
 
 	case "label_join", "label_replace":
-		r := &relabelFunctionOperator{
-			next:     nextOps[0],
-			funcExpr: funcExpr,
-		}
-		SetTelemetry(r.OperatorTelemetry, opts)
-		return r, nil
+		return &relabelFunctionOperator{
+			next:              nextOps[0],
+			funcExpr:          funcExpr,
+			OperatorTelemetry: SetTelemetry(opts),
+		}, nil
 
 	case "absent":
-		a := &absentOperator{
-			next:     nextOps[0],
-			pool:     model.NewVectorPool(stepsBatch),
-			funcExpr: funcExpr,
-		}
-		SetTelemetry(a.OperatorTelemetry, opts)
-		return a, nil
+		return &absentOperator{
+			next:              nextOps[0],
+			pool:              model.NewVectorPool(stepsBatch),
+			funcExpr:          funcExpr,
+			OperatorTelemetry: SetTelemetry(opts),
+		}, nil
 
 	case "histogram_quantile":
-		h := &histogramOperator{
-			pool:         model.NewVectorPool(stepsBatch),
-			funcArgs:     funcExpr.Args,
-			once:         sync.Once{},
-			scalarOp:     nextOps[0],
-			vectorOp:     nextOps[1],
-			scalarPoints: make([]float64, stepsBatch),
-		}
-		SetTelemetry(h.OperatorTelemetry, opts)
-		return h, nil
+		return &histogramOperator{
+			pool:              model.NewVectorPool(stepsBatch),
+			funcArgs:          funcExpr.Args,
+			once:              sync.Once{},
+			scalarOp:          nextOps[0],
+			vectorOp:          nextOps[1],
+			scalarPoints:      make([]float64, stepsBatch),
+			OperatorTelemetry: SetTelemetry(opts),
+		}, nil
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.

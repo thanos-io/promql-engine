@@ -382,7 +382,7 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 
 func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
 	telemetry, obsVectors := obsv.Analyze()
-	name, _ := obsv.(model.VectorOperator).Explain()
+	name, _ := obsv.Explain()
 	var children []AnalyzeOutputNode
 	for _, vector := range obsVectors {
 		children = append(children, *analyzeVector(vector))
