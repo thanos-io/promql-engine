@@ -32,6 +32,7 @@ func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*absentOperator]")
 	return "[*absentOperator]", []model.VectorOperator{}
 }
 

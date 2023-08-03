@@ -93,7 +93,7 @@ func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 		ops = append(ops, a.paramOp)
 	}
 	ops = append(ops, a.next)
-
+	a.SetName("[*aggregate]")
 	if a.by {
 		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
 	}

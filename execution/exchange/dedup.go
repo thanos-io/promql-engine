@@ -123,6 +123,7 @@ func (d *dedupOperator) GetPool() *model.VectorPool {
 }
 
 func (d *dedupOperator) Explain() (me string, next []model.VectorOperator) {
+	d.SetName("[*dedup]")
 	return "[*dedup]", []model.VectorOperator{d.next}
 }
 

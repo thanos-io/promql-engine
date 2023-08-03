@@ -35,6 +35,7 @@ func (o *relabelFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Ob
 }
 
 func (o *relabelFunctionOperator) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*relabelFunctionOperator]")
 	return "[*relabelFunctionOperator]", []model.VectorOperator{}
 }
 

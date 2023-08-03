@@ -85,6 +85,7 @@ func (o *vectorSelector) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*vectorSelector]")
 	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards), nil
 }
 

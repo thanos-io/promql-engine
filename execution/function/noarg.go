@@ -33,6 +33,7 @@ func (o *noArgFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Obse
 }
 
 func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*noArgFunctionOperator]")
 	return fmt.Sprintf("[*noArgFunctionOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{}
 }
 

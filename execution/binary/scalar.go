@@ -102,6 +102,7 @@ func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*scalarOperator]")
 	return fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
 }
 

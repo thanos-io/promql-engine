@@ -72,6 +72,7 @@ func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorO
 }
 
 func (c *coalesce) Explain() (me string, next []model.VectorOperator) {
+	c.SetName("[*coalesce]")
 	return "[*coalesce]", c.operators
 }
 

@@ -23,6 +23,7 @@ type unaryNegation struct {
 }
 
 func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
+	u.SetName("[*unaryNegation]")
 	return "[*unaryNegation]", []model.VectorOperator{u.next}
 }
 

@@ -28,6 +28,7 @@ func (o *scalarFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Obs
 }
 
 func (o *scalarFunctionOperator) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*scalarFunctionOperator]")
 	return "[*scalarFunctionOperator]", []model.VectorOperator{}
 }
 

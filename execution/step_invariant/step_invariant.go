@@ -43,6 +43,7 @@ func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.Obse
 }
 
 func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {
+	u.SetName("[*stepInvariantOperator]")
 	return "[*stepInvariantOperator]", []model.VectorOperator{u.next}
 }
 

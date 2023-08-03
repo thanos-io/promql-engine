@@ -60,6 +60,7 @@ func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.Observab
 }
 
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
+	o.SetName("[*functionOperator]")
 	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
 	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
 }
