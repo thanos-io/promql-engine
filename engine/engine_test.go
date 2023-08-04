@@ -21,6 +21,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/thanos-io/promql-engine/engine"
+
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
@@ -107,6 +108,80 @@ func TestQueryExplain(t *testing.T) {
 
 				explainableQuery = query.(engine.ExplainableQuery)
 				testutil.Equals(t, tc.expected, explainableQuery.Explain())
+			})
+		}
+	}
+}
+
+func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
+	if got != nil {
+		if got.OperatorTelemetry.ExecutionTimeTaken() <= 0 {
+			t.Errorf("expected non-zero ExecutionTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
+			return false
+		}
+		for i := range got.Children {
+			child := got.Children[i]
+			return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, &child)
+		}
+	}
+	return true
+}
+
+func TestQueryAnalyze(t *testing.T) {
+	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	series := storage.MockSeries(
+		[]int64{240, 270, 300, 600, 630, 660},
+		[]float64{1, 2, 3, 4, 5, 6},
+		[]string{labels.MetricName, "foo"},
+	)
+
+	start := time.Unix(0, 0)
+	end := time.Unix(1000, 0)
+
+	for _, tc := range []struct {
+		query string
+	}{
+		{
+			query: "foo",
+		},
+		{
+			query: "time()",
+		},
+		{
+			query: "sum(foo) by (job)",
+		},
+		{
+			query: "rate(http_requests_total[30s]) > bool 0",
+		},
+	} {
+		{
+			t.Run(tc.query, func(t *testing.T) {
+				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+				ctx := context.Background()
+
+				var (
+					query promql.Query
+					err   error
+				)
+
+				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
+				testutil.Ok(t, err)
+
+				queryResults := query.Exec(context.Background())
+				testutil.Ok(t, queryResults.Err)
+
+				explainableQuery := query.(engine.ExplainableQuery)
+
+				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+
+				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
+				testutil.Ok(t, err)
+
+				queryResults = query.Exec(context.Background())
+				testutil.Ok(t, queryResults.Err)
+
+				explainableQuery = query.(engine.ExplainableQuery)
+				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
 			})
 		}
 	}

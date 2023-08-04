@@ -18,6 +18,7 @@ package execution
 
 import (
 	"context"
+
 	"runtime"
 	"sort"
 	"time"
@@ -48,7 +49,7 @@ const stepsBatch = 10
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration) (model.VectorOperator, error) {
+func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, mint, maxt time.Time, step, lookbackDelta, extLookbackDelta time.Duration, enableAnalysis bool) (model.VectorOperator, error) {
 	opts := &query.Options{
 		Context:          ctx,
 		Start:            mint,
@@ -57,6 +58,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		LookbackDelta:    lookbackDelta,
 		StepsBatch:       stepsBatch,
 		ExtLookbackDelta: extLookbackDelta,
+		EnableAnalysis:   enableAnalysis,
 	}
 	selectorPool := engstore.NewSelectorPool(queryable)
 	hints := storage.SelectHints{
@@ -65,6 +67,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
 		Step: step.Milliseconds(),
 	}
+
 	return newOperator(expr, selectorPool, opts, hints)
 }
 
@@ -118,7 +121,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 		if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
-			next, err = aggregate.NewKHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, stepsBatch)
+			next, err = aggregate.NewKHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, stepsBatch, opts)
 		} else {
 			next, err = aggregate.NewHashAggregate(model.NewVectorPool(stepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, stepsBatch)
 		}
@@ -183,7 +186,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			}
 			operators[i] = operator
 		}
-		coalesce := exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...)
+		coalesce := exchange.NewCoalesce(model.NewVectorPool(stepsBatch), opts, operators...)
 		dedup := exchange.NewDedupOperator(model.NewVectorPool(stepsBatch), coalesce)
 		return exchange.NewConcurrent(dedup, 2), nil
 
@@ -254,7 +257,7 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		operators = append(operators, exchange.NewConcurrent(operator, 2))
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), opts, operators...), nil
 }
 
 func newInstantVectorFunction(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -287,7 +290,7 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 		operators = append(operators, operator)
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), operators...), nil
+	return exchange.NewCoalesce(model.NewVectorPool(stepsBatch), opts, operators...), nil
 }
 
 func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -299,7 +302,7 @@ func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool)
+	return binary.NewVectorOperator(model.NewVectorPool(stepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
 }
 
 func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -320,7 +323,7 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 		scalarSide = binary.ScalarSideLeft
 	}
 
-	return binary.NewScalar(model.NewVectorPoolWithSize(stepsBatch, 1), lhs, rhs, e.Op, scalarSide, e.ReturnBool)
+	return binary.NewScalar(model.NewVectorPoolWithSize(stepsBatch, 1), lhs, rhs, e.Op, scalarSide, e.ReturnBool, opts)
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.

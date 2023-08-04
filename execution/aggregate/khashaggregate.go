@@ -10,6 +10,7 @@ import (
 	"math"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type kAggregate struct {
@@ -36,6 +38,7 @@ type kAggregate struct {
 	inputToHeap []*samplesHeap
 	heaps       []*samplesHeap
 	compare     func(float64, float64) bool
+	model.OperatorTelemetry
 }
 
 func NewKHashAggregate(
@@ -46,6 +49,7 @@ func NewKHashAggregate(
 	by bool,
 	labels []string,
 	stepsBatch int,
+	opts *query.Options,
 ) (model.VectorOperator, error) {
 	var compare func(float64, float64) bool
 
@@ -72,7 +76,10 @@ func NewKHashAggregate(
 		compare:     compare,
 		params:      make([]float64, stepsBatch),
 	}
-
+	a.OperatorTelemetry = &model.NoopTelemetry{}
+	if opts.EnableAnalysis {
+		a.OperatorTelemetry = &model.TrackedTelemetry{}
+	}
 	return a, nil
 }
 
@@ -81,6 +88,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	if err != nil {
 		return nil, err
 	}
+	start := time.Now()
 	args, err := a.paramOp.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -120,6 +128,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
+	a.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }
@@ -136,6 +145,18 @@ func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 
 func (a *kAggregate) GetPool() *model.VectorPool {
 	return a.vectorPool
+}
+
+func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	a.SetName("[*kaggregate]")
+	next := make([]model.ObservableVectorOperator, 0, 2)
+	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnextParamOp)
+	}
+	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
+	}
+	return a, next
 }
 
 func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
