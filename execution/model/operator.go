@@ -13,14 +13,14 @@ import (
 type NoopTelemetry struct{}
 
 type TrackedTelemetry struct {
-	name    string
-	CPUTime time.Duration
+	name          string
+	ExecutionTime time.Duration
 }
 
 func (ti *NoopTelemetry) AddExecutionTimeTaken(t time.Duration) {}
 
 func (ti *TrackedTelemetry) AddExecutionTimeTaken(t time.Duration) {
-	ti.CPUTime += t
+	ti.ExecutionTime += t
 }
 
 func (ti *TrackedTelemetry) Name() string {
@@ -49,7 +49,7 @@ func (ti *NoopTelemetry) ExecutionTimeTaken() time.Duration {
 }
 
 func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
-	return ti.CPUTime
+	return ti.ExecutionTime
 }
 
 type ObservableVectorOperator interface {
