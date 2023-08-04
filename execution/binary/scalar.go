@@ -8,12 +8,14 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type ScalarSide int
@@ -43,6 +45,7 @@ type scalarOperator struct {
 
 	// Keep the result if both sides are scalars.
 	bothScalars bool
+	model.OperatorTelemetry
 }
 
 func NewScalar(
@@ -52,6 +55,7 @@ func NewScalar(
 	op parser.ItemType,
 	scalarSide ScalarSide,
 	returnBool bool,
+	opts *query.Options,
 ) (*scalarOperator, error) {
 	binaryOperation, err := newOperation(op, scalarSide != ScalarSideBoth)
 	if err != nil {
@@ -66,7 +70,7 @@ func NewScalar(
 		operandValIdx = 1
 	}
 
-	return &scalarOperator{
+	o := &scalarOperator{
 		pool:          pool,
 		next:          next,
 		scalar:        scalar,
@@ -77,7 +81,25 @@ func NewScalar(
 		operandValIdx: operandValIdx,
 		returnBool:    returnBool,
 		bothScalars:   scalarSide == ScalarSideBoth,
-	}, nil
+	}
+	o.OperatorTelemetry = &model.NoopTelemetry{}
+	if opts.EnableAnalysis {
+		o.OperatorTelemetry = &model.TrackedTelemetry{}
+	}
+	return o, nil
+
+}
+
+func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*scalarOperator]")
+	next := make([]model.ObservableVectorOperator, 0, 2)
+	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
+	}
+	if obsnextScalar, ok := o.scalar.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnextScalar)
+	}
+	return o, next
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
@@ -99,6 +121,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
 
 	in, err := o.next.Next(ctx)
 	if err != nil {
@@ -158,6 +181,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	o.next.GetPool().PutVectors(in)
 	o.scalar.GetPool().PutVectors(scalarIn)
+	o.AddExecutionTimeTaken(time.Since(start))
 
 	return out, nil
 }

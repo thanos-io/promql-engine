@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -37,6 +38,7 @@ type aggregate struct {
 	newAccumulator newAccumulatorFunc
 	stepsBatch     int
 	workers        worker.Group
+	model.OperatorTelemetry
 }
 
 func NewHashAggregate(
@@ -68,18 +70,29 @@ func NewHashAggregate(
 		newAccumulator: newAccumulator,
 	}
 	a.workers = worker.NewGroup(stepsBatch, a.workerTask)
+	a.OperatorTelemetry = &model.TrackedTelemetry{}
 
 	return a, nil
 }
 
+func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	a.SetName("[*aggregate]")
+	var ops []model.ObservableVectorOperator
+	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
+		ops = append(ops, obsnextParamOp)
+	}
+	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
+		ops = append(ops, obsnext)
+	}
+	return a, ops
+}
+
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 	var ops []model.VectorOperator
-
 	if a.paramOp != nil {
 		ops = append(ops, a.paramOp)
 	}
 	ops = append(ops, a.next)
-
 	if a.by {
 		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
 	}
@@ -106,7 +119,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-
+	start := time.Now()
 	in, err := a.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -151,7 +164,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		result = append(result, output)
 		a.next.GetPool().PutStepVector(vector)
 	}
-
+	a.AddExecutionTimeTaken(time.Since(start))
 	return result, nil
 }
 

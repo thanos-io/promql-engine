@@ -6,6 +6,7 @@ package function
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -19,6 +20,16 @@ type absentOperator struct {
 	series   []labels.Labels
 	pool     *model.VectorPool
 	next     model.VectorOperator
+	model.OperatorTelemetry
+}
+
+func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*absentOperator]")
+	next := make([]model.ObservableVectorOperator, 0, 1)
+	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
+		next = append(next, obsnext)
+	}
+	return o, next
 }
 
 func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
@@ -74,6 +85,7 @@ func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	default:
 	}
 	o.loadSeries()
+	start := time.Now()
 
 	vectors, err := o.next.Next(ctx)
 	if err != nil {
@@ -93,5 +105,6 @@ func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.next.GetPool().PutStepVector(vectors[i])
 	}
 	o.next.GetPool().PutVectors(vectors)
+	o.AddExecutionTimeTaken(time.Since(start))
 	return result, nil
 }

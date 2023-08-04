@@ -5,10 +5,12 @@ package engine
 
 import (
 	"context"
+
 	"io"
 	"math"
 	"runtime"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -71,6 +73,9 @@ type Opts struct {
 
 	// FallbackEngine
 	Engine v1.QueryEngine
+
+	// EnableAnalysis enables query analysis.
+	EnableAnalysis bool
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
@@ -211,6 +216,7 @@ func New(opts Opts) *compatibilityEngine {
 		timeout:           opts.Timeout,
 		metrics:           metrics,
 		extLookbackDelta:  opts.ExtLookbackDelta,
+		enableAnalysis:    opts.EnableAnalysis,
 	}
 }
 
@@ -227,6 +233,7 @@ type compatibilityEngine struct {
 	metrics           *engineMetrics
 
 	extLookbackDelta time.Duration
+	enableAnalysis   bool
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -260,7 +267,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta)
+	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta, e.enableAnalysis)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -275,12 +282,13 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	}
 
 	return &compatibilityQuery{
-		Query:      &Query{exec: exec, opts: opts},
-		engine:     e,
-		expr:       expr,
-		ts:         ts,
-		t:          InstantQuery,
-		resultSort: resultSort,
+		Query:       &Query{exec: exec, opts: opts},
+		engine:      e,
+		expr:        expr,
+		ts:          ts,
+		t:           InstantQuery,
+		resultSort:  resultSort,
+		debugWriter: e.debugWriter,
 	}, nil
 }
 
@@ -311,7 +319,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta)
+	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta, e.enableAnalysis)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -326,10 +334,11 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	}
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exec, opts: opts},
-		engine: e,
-		expr:   expr,
-		t:      RangeQuery,
+		Query:       &Query{exec: exec, opts: opts},
+		engine:      e,
+		expr:        expr,
+		t:           RangeQuery,
+		debugWriter: e.debugWriter,
 	}, nil
 }
 
@@ -337,7 +346,12 @@ type ExplainableQuery interface {
 	promql.Query
 
 	Explain() *ExplainOutputNode
-	Profile()
+	Analyze() *AnalyzeOutputNode
+}
+
+type AnalyzeOutputNode struct {
+	OperatorTelemetry model.OperatorTelemetry `json:"telemetry,omitempty"`
+	Children          []AnalyzeOutputNode     `json:"children,omitempty"`
 }
 
 type ExplainOutputNode struct {
@@ -358,8 +372,25 @@ func (q *Query) Explain() *ExplainOutputNode {
 	return explainVector(q.exec)
 }
 
-func (q *Query) Profile() {
-	// TODO(bwplotka): Return profile.
+func (q *Query) Analyze() *AnalyzeOutputNode {
+	if observableRoot, ok := q.exec.(model.ObservableVectorOperator); ok {
+		return analyzeVector(observableRoot)
+	}
+	return nil
+}
+
+func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
+	telemetry, obsVectors := obsv.Analyze()
+
+	var children []AnalyzeOutputNode
+	for _, vector := range obsVectors {
+		children = append(children, *analyzeVector(vector))
+	}
+
+	return &AnalyzeOutputNode{
+		OperatorTelemetry: telemetry,
+		Children:          children,
+	}
 }
 
 func explainVector(v model.VectorOperator) *ExplainOutputNode {
@@ -479,12 +510,17 @@ type compatibilityQuery struct {
 	resultSort resultSorter
 
 	cancel context.CancelFunc
+
+	debugWriter io.Writer
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	// Handle case with strings early on as this does not need us to process samples.
 	switch e := q.expr.(type) {
 	case *parser.StringLiteral:
+		if q.debugWriter != nil {
+			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), " ", "")
+		}
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
 	ret = &promql.Result{
@@ -567,6 +603,9 @@ loop:
 		}
 		sort.Sort(resultMatrix)
 		ret.Value = resultMatrix
+		if q.debugWriter != nil {
+			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), "", "")
+		}
 		return ret
 	}
 
@@ -685,6 +724,26 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 
 		level.Error(logger).Log("msg", "runtime panic in engine", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
+	}
+}
+
+func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext string) {
+	telemetry, next := o.Analyze()
+	_, _ = w.Write([]byte(indent))
+	_, _ = w.Write([]byte("Operator Time :"))
+	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.ExecutionTimeTaken()), 10)))
+	if len(next) == 0 {
+		_, _ = w.Write([]byte("\n"))
+		return
+	}
+	_, _ = w.Write([]byte(":\n"))
+
+	for i, n := range next {
+		if i == len(next)-1 {
+			analyze(w, n, indentNext+"└──", indentNext+"   ")
+		} else {
+			analyze(w, n, indentNext+"└──", indentNext+"   ")
+		}
 	}
 }
 

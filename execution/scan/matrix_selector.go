@@ -56,6 +56,7 @@ type matrixSelector struct {
 
 	// Lookback delta for extended range functions.
 	extLookbackDelta int64
+	model.OperatorTelemetry
 }
 
 // NewMatrixSelector creates operator which selects vector of series over time.
@@ -66,13 +67,14 @@ func NewMatrixSelector(
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	shard, numShard int,
+
 ) (model.VectorOperator, error) {
 	call, ok := rangeVectorFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, parse.UnknownFunctionError(funcExpr.Func)
 	}
 	isExtFunction := parse.IsExtFunction(funcExpr.Func.Name)
-	return &matrixSelector{
+	m := &matrixSelector{
 		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
@@ -92,7 +94,18 @@ func NewMatrixSelector(
 		numShards: numShard,
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
-	}, nil
+	}
+	m.OperatorTelemetry = &model.NoopTelemetry{}
+	if opts.EnableAnalysis {
+		m.OperatorTelemetry = &model.TrackedTelemetry{}
+	}
+
+	return m, nil
+}
+
+func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
+	o.SetName("[*matrixSelector]")
+	return o, nil
 }
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
@@ -120,6 +133,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
@@ -203,7 +217,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
-
+	o.AddExecutionTimeTaken(time.Since(start))
 	return vectors, nil
 }
 
