@@ -116,7 +116,7 @@ func TestQueryExplain(t *testing.T) {
 func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
 	if got != nil {
 		if got.OperatorTelemetry.ExecutionTimeTaken() <= 0 {
-			t.Errorf("expected non-zero CPUTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
+			t.Errorf("expected non-zero ExecutionTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
 			return false
 		}
 		for i := range got.Children {
