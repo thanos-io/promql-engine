@@ -10,9 +10,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-type NoopTelemetry struct {
-	name string
-}
+type NoopTelemetry struct{}
 
 type TrackedTelemetry struct {
 	name    string
@@ -34,12 +32,10 @@ func (ti *TrackedTelemetry) SetName(operatorName string) {
 }
 
 func (ti *NoopTelemetry) Name() string {
-	return ti.name
+	return ""
 }
 
-func (ti *NoopTelemetry) SetName(operatorName string) {
-	ti.name = operatorName
-}
+func (ti *NoopTelemetry) SetName(operatorName string) {}
 
 type OperatorTelemetry interface {
 	AddCPUTimeTaken(time.Duration)
