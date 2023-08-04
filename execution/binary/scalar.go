@@ -181,7 +181,7 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	o.next.GetPool().PutVectors(in)
 	o.scalar.GetPool().PutVectors(scalarIn)
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 
 	return out, nil
 }

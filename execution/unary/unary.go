@@ -91,6 +91,6 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	for i := range in {
 		floats.Scale(-1, in[i].Samples)
 	}
-	u.AddCPUTimeTaken(time.Since(start))
+	u.AddExecutionTimeTaken(time.Since(start))
 	return in, nil
 }

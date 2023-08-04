@@ -731,7 +731,7 @@ func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext s
 	telemetry, next := o.Analyze()
 	_, _ = w.Write([]byte(indent))
 	_, _ = w.Write([]byte("Operator Time :"))
-	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.CPUTimeTaken()), 10)))
+	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.ExecutionTimeTaken()), 10)))
 	if len(next) == 0 {
 		_, _ = w.Write([]byte("\n"))
 		return

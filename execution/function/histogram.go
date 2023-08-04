@@ -114,7 +114,7 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 		o.scalarOp.GetPool().PutStepVector(scalar)
 	}
 	o.scalarOp.GetPool().PutVectors(scalars)
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 
 	return o.processInputSeries(vectors)
 }

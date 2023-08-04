@@ -105,6 +105,6 @@ func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.next.GetPool().PutStepVector(vectors[i])
 	}
 	o.next.GetPool().PutVectors(vectors)
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 	return result, nil
 }

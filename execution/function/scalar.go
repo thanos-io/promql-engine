@@ -67,7 +67,7 @@ func (o *scalarFunctionOperator) Next(ctx context.Context) ([]model.StepVector, 
 		o.next.GetPool().PutStepVector(vector)
 	}
 	o.next.GetPool().PutVectors(in)
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

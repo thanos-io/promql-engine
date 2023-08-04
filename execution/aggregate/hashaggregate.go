@@ -164,7 +164,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		result = append(result, output)
 		a.next.GetPool().PutStepVector(vector)
 	}
-	a.AddCPUTimeTaken(time.Since(start))
+	a.AddExecutionTimeTaken(time.Since(start))
 	return result, nil
 }
 

@@ -127,7 +127,7 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 		result = append(result, outVector)
 		u.currentStep += u.step
 	}
-	u.AddCPUTimeTaken(time.Since(start))
+	u.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

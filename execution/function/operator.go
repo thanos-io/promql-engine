@@ -259,7 +259,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		}
 	}
 
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 
 	return vectors, nil
 }

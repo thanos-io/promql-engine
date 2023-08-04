@@ -59,7 +59,7 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 		ret = append(ret, sv)
 		o.currentStep += o.step
 	}
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 
 	return ret, nil
 }

@@ -52,7 +52,7 @@ func (o *relabelFunctionOperator) GetPool() *model.VectorPool {
 func (o *relabelFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
 	next, err := o.next.Next(ctx)
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 	return next, err
 }
 

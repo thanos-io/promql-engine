@@ -55,7 +55,7 @@ func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
 func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
 	next, err := e.vectorSelector.Next(ctx)
-	e.AddCPUTimeTaken(time.Since(start))
+	e.AddExecutionTimeTaken(time.Since(start))
 	if next == nil {
 		// Closing the storage prematurely can lead to results from the query
 		// engine to be recycled. Because of this, we close the storage only

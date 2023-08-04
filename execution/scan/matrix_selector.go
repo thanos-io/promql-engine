@@ -217,7 +217,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
-	o.AddCPUTimeTaken(time.Since(start))
+	o.AddExecutionTimeTaken(time.Since(start))
 	return vectors, nil
 }
 

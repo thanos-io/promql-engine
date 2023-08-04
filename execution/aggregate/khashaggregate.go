@@ -128,7 +128,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
-	a.AddCPUTimeTaken(time.Since(start))
+	a.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

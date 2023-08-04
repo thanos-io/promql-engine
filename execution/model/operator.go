@@ -17,9 +17,9 @@ type TrackedTelemetry struct {
 	CPUTime time.Duration
 }
 
-func (ti *NoopTelemetry) AddCPUTimeTaken(t time.Duration) {}
+func (ti *NoopTelemetry) AddExecutionTimeTaken(t time.Duration) {}
 
-func (ti *TrackedTelemetry) AddCPUTimeTaken(t time.Duration) {
+func (ti *TrackedTelemetry) AddExecutionTimeTaken(t time.Duration) {
 	ti.CPUTime += t
 }
 
@@ -38,17 +38,17 @@ func (ti *NoopTelemetry) Name() string {
 func (ti *NoopTelemetry) SetName(operatorName string) {}
 
 type OperatorTelemetry interface {
-	AddCPUTimeTaken(time.Duration)
-	CPUTimeTaken() time.Duration
+	AddExecutionTimeTaken(time.Duration)
+	ExecutionTimeTaken() time.Duration
 	SetName(string)
 	Name() string
 }
 
-func (ti *NoopTelemetry) CPUTimeTaken() time.Duration {
+func (ti *NoopTelemetry) ExecutionTimeTaken() time.Duration {
 	return time.Duration(0)
 }
 
-func (ti *TrackedTelemetry) CPUTimeTaken() time.Duration {
+func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
 	return ti.CPUTime
 }
 

@@ -78,7 +78,7 @@ func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, err
 	if r.err != nil {
 		return nil, r.err
 	}
-	c.AddCPUTimeTaken(time.Since(start))
+	c.AddExecutionTimeTaken(time.Since(start))
 
 	return r.stepVector, nil
 }

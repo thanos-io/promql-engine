@@ -113,15 +113,15 @@ func TestQueryExplain(t *testing.T) {
 	}
 }
 
-func assertCPUTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
+func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
 	if got != nil {
-		if got.OperatorTelemetry.CPUTimeTaken() <= 0 {
-			t.Errorf("expected non-zero CPUTime for Operator, got %s ", got.OperatorTelemetry.CPUTimeTaken())
+		if got.OperatorTelemetry.ExecutionTimeTaken() <= 0 {
+			t.Errorf("expected non-zero CPUTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
 			return false
 		}
 		for i := range got.Children {
 			child := got.Children[i]
-			return got.OperatorTelemetry.CPUTimeTaken() > 0 && assertCPUTimeNonZero(t, &child)
+			return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, &child)
 		}
 	}
 	return true
@@ -172,7 +172,7 @@ func TestQueryAnalyze(t *testing.T) {
 
 				explainableQuery := query.(engine.ExplainableQuery)
 
-				testutil.Assert(t, assertCPUTimeNonZero(t, explainableQuery.Analyze()))
+				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
 
 				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
@@ -181,7 +181,7 @@ func TestQueryAnalyze(t *testing.T) {
 				testutil.Ok(t, queryResults.Err)
 
 				explainableQuery = query.(engine.ExplainableQuery)
-				testutil.Assert(t, assertCPUTimeNonZero(t, explainableQuery.Analyze()))
+				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
 			})
 		}
 	}

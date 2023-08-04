@@ -105,7 +105,7 @@ func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		}
 		result = append(result, out)
 	}
-	d.AddCPUTimeTaken(time.Since(start))
+	d.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

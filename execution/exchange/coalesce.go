@@ -151,7 +151,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 		c.inVectors[opIdx] = nil
 		c.operators[opIdx].GetPool().PutVectors(vectors)
 	}
-	c.AddCPUTimeTaken(time.Since(start))
+	c.AddExecutionTimeTaken(time.Since(start))
 
 	if out == nil {
 		return nil, nil
