@@ -217,6 +217,7 @@ func New(opts Opts) *compatibilityEngine {
 		timeout:           opts.Timeout,
 		metrics:           metrics,
 		extLookbackDelta:  opts.ExtLookbackDelta,
+		maxSamples:        opts.MaxSamples,
 		enableAnalysis:    opts.EnableAnalysis,
 	}
 }
@@ -234,6 +235,7 @@ type compatibilityEngine struct {
 	metrics           *engineMetrics
 
 	extLookbackDelta time.Duration
+	maxSamples       int
 	enableAnalysis   bool
 }
 
@@ -268,7 +270,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta, e.enableAnalysis)
+	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta, e.maxSamples, e.enableAnalysis)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -320,7 +322,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta, e.enableAnalysis)
+	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta, e.maxSamples, e.enableAnalysis)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)

@@ -12,6 +12,7 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/thanos-io/promql-engine/execution/limits"
 	"github.com/thanos-io/promql-engine/execution/model"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/query"
@@ -48,6 +49,8 @@ type vectorSelector struct {
 	shard     int
 	numShards int
 	model.OperatorTelemetry
+
+	limits *limits.Limits
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -57,6 +60,7 @@ func NewVectorSelector(
 	queryOpts *query.Options,
 	offset time.Duration,
 	shard, numShards int,
+	limits *limits.Limits,
 ) model.VectorOperator {
 	o := &vectorSelector{
 		storage:    selector,
@@ -72,6 +76,8 @@ func NewVectorSelector(
 
 		shard:     shard,
 		numShards: numShards,
+
+		limits: limits,
 	}
 	o.OperatorTelemetry = &model.NoopTelemetry{}
 	if queryOpts.EnableAnalysis {
@@ -131,7 +137,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		)
 
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
-			_, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			_, v, h, ok, err := selectPoint(series.samples, o.limits, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return nil, err
 			}
@@ -180,12 +186,15 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-// TODO(fpetkovski): Add max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
+func selectPoint(it *storage.MemoizedSeriesIterator, limits *limits.Limits, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
 	refTime := ts - offset
 	var t int64
 	var v float64
 	var fh *histogram.FloatHistogram
+
+	if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+		return t, v, fh, false, err
+	}
 
 	valueType := it.Seek(refTime)
 	switch valueType {

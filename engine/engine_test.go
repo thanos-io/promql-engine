@@ -2787,8 +2787,8 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "duplicate label set",
 			load: `load 5m
-  testmetric1{src="a",dst="b"} 0
-  testmetric2{src="a",dst="b"} 1`,
+testmetric1{src="a",dst="b"} 0
+testmetric2{src="a",dst="b"} 1`,
 			query: "changes({__name__=~'testmetric1|testmetric2'}[5m])",
 		},
 		{
@@ -3661,7 +3661,7 @@ func TestInstantQuery(t *testing.T) {
 								if hasNaNs(oldResult) {
 									t.Log("Applying comparison with NaN equality.")
 									equalsWithNaNs(t, oldResult, newResult)
-								} else if oldResult.Err != nil {
+								} else if oldResult.Err != nil && newResult.Err != nil {
 									testutil.Equals(t, oldResult.Err.Error(), newResult.Err.Error())
 								} else {
 									testutil.Equals(t, oldResult, newResult)
@@ -3673,6 +3673,56 @@ func TestInstantQuery(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestQueryLimits(t *testing.T) {
+	load := `load 1s
+				example{foo="bar"} 1+0x3600
+				example{foo="baz"} 1+0x3600
+  `
+	test, err := promql.NewTest(t, load)
+	testutil.Ok(t, err)
+	defer test.Close()
+	testutil.Ok(t, test.Run())
+
+	ctx := test.Context()
+
+	newEngine := engine.New(engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			MaxSamples: 10,
+			Timeout:    10 * time.Second,
+		}})
+
+	t.Run("one series too many samples", func(t *testing.T) {
+		query := `sum_over_time(example{foo="bar"}[20s])`
+		q1, err := newEngine.NewInstantQuery(ctx, test.Queryable(), nil, query, time.Unix(20, 0))
+		testutil.Ok(t, err)
+
+		newResult := q1.Exec(ctx)
+		testutil.NotOk(t, newResult.Err)
+		testutil.Equals(t, "query processing would load too many samples into memory in query execution", newResult.Err.Error())
+	})
+	t.Run("two series too many samples", func(t *testing.T) {
+		query := `sum_over_time(example[10s])`
+		q1, err := newEngine.NewInstantQuery(ctx, test.Queryable(), nil, query, time.Unix(5, 0))
+		testutil.Ok(t, err)
+
+		newResult := q1.Exec(ctx)
+		testutil.NotOk(t, newResult.Err)
+		testutil.Equals(t, "query processing would load too many samples into memory in query execution", newResult.Err.Error())
+	})
+	t.Run("range query should only account for samples at each step", func(t *testing.T) {
+		query := `sum(example)`
+		start := time.Unix(0, 0)
+		end := start.Add(time.Hour)
+		step := time.Second
+
+		q1, err := newEngine.NewRangeQuery(ctx, test.Queryable(), nil, query, start, end, step)
+		testutil.Ok(t, err)
+
+		newResult := q1.Exec(ctx)
+		testutil.Ok(t, newResult.Err)
+	})
 }
 
 func TestQueryCancellation(t *testing.T) {
