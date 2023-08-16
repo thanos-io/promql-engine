@@ -276,6 +276,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				if testing.Short() && (tc.test == largeSixHourDataset || tc.test == sevenDaysAndTwoHoursDataset) {
 					b.Skip()
 				}
+				b.ResetTimer()
 				b.ReportAllocs()
 				b.Run("old_engine", func(b *testing.B) {
 					opts := promql.EngineOpts{
@@ -324,6 +325,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 
 		for _, tc := range cases {
 			b.Run(tc.name, func(b *testing.B) {
+				b.ResetTimer()
 				b.ReportAllocs()
 				b.Run("old_engine", func(b *testing.B) {
 					opts := promql.EngineOpts{
