@@ -1913,6 +1913,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 									return
 								}
 
+								testutil.Equals(t, newResult.Warnings, oldResult.Warnings)
 								testutil.Ok(t, newResult.Err)
 								if hasNaNs(oldResult) {
 									t.Log("Applying comparison with NaN equality.")
@@ -2002,6 +2003,54 @@ func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
 		sset = append(sset, s)
 	}
 	return sset
+}
+
+func TestWarnings(t *testing.T) {
+	querier := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return newWarningsSeriesSet(storage.Warnings{fmt.Errorf("test warning")})
+			},
+		},
+	}
+
+	var (
+		start = time.UnixMilli(0)
+		end   = time.UnixMilli(600)
+		step  = 30 * time.Second
+	)
+
+	cases := []struct {
+		name          string
+		query         string
+		expectedWarns storage.Warnings
+	}{
+		{
+			name:          "single select call",
+			query:         "http_requests_total",
+			expectedWarns: storage.Warnings{fmt.Errorf("test warning")},
+		},
+		{
+			name:  "multiple select calls",
+			query: `sum(http_requests_total) / sum(http_responses_total)`,
+			expectedWarns: storage.Warnings{
+				fmt.Errorf("test warning"),
+				fmt.Errorf("test warning"),
+			},
+		},
+	}
+	
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
+			q1, err := newEngine.NewRangeQuery(context.Background(), querier, nil, tc.query, start, end, step)
+			testutil.Ok(t, err)
+
+			newResult := q1.Exec(context.Background())
+			testutil.Ok(t, newResult.Err)
+			testutil.Equals(t, tc.expectedWarns, newResult.Warnings)
+		})
+	}
 }
 
 func TestEdgeCases(t *testing.T) {
@@ -4212,6 +4261,7 @@ func (m *mockIterator) Err() error { return nil }
 type testSeriesSet struct {
 	i      int
 	series []storage.Series
+	warns  storage.Warnings
 }
 
 func newTestSeriesSet(series ...storage.Series) storage.SeriesSet {
@@ -4221,10 +4271,17 @@ func newTestSeriesSet(series ...storage.Series) storage.SeriesSet {
 	}
 }
 
+func newWarningsSeriesSet(warns storage.Warnings) storage.SeriesSet {
+	return &testSeriesSet{
+		i:     -1,
+		warns: warns,
+	}
+}
+
 func (s *testSeriesSet) Next() bool                 { s.i++; return s.i < len(s.series) }
 func (s *testSeriesSet) At() storage.Series         { return s.series[s.i] }
 func (s *testSeriesSet) Err() error                 { return nil }
-func (s *testSeriesSet) Warnings() storage.Warnings { return nil }
+func (s *testSeriesSet) Warnings() storage.Warnings { return s.warns }
 
 type slowSeries struct{}
 
