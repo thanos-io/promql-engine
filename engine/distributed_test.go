@@ -10,9 +10,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
@@ -328,4 +330,33 @@ func TestDistributedAggregations(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestDistributedEngineWarnings(t *testing.T) {
+	querier := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return newWarningsSeriesSet(storage.Warnings{errors.New("test warning")})
+			},
+		},
+	}
+
+	opts := engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			MaxSamples: math.MaxInt64,
+			Timeout:    1 * time.Minute,
+		},
+	}
+	remote := engine.NewRemoteEngine(opts, querier, math.MinInt64, math.MaxInt64, nil)
+	ng := engine.NewDistributedEngine(opts, api.NewStaticEndpoints([]api.RemoteEngine{remote}))
+	var (
+		start = time.UnixMilli(0)
+		end   = time.UnixMilli(600)
+		step  = 30 * time.Second
+	)
+	q, err := ng.NewRangeQuery(context.Background(), nil, nil, "test", start, end, step)
+	testutil.Ok(t, err)
+
+	res := q.Exec(context.Background())
+	testutil.Equals(t, 1, len(res.Warnings))
 }
