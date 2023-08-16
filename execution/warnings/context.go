@@ -7,7 +7,9 @@ import (
 	"github.com/prometheus/prometheus/storage"
 )
 
-const key = "promql-warnings"
+type warningKey string
+
+const key warningKey = "promql-warnings"
 
 type warnings struct {
 	mu    sync.Mutex
