@@ -30,6 +30,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/parser"
 )
@@ -515,6 +516,14 @@ type compatibilityQuery struct {
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
+	ctx = warnings.NewContext(ctx)
+	defer func() {
+		warns := warnings.FromContext(ctx)
+		if len(warns) > 0 {
+			ret.Warnings = warns
+		}
+	}()
+
 	// Handle case with strings early on as this does not need us to process samples.
 	switch e := q.expr.(type) {
 	case *parser.StringLiteral:
