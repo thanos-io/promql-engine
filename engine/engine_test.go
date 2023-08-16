@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	promparser "github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -2009,7 +2010,7 @@ func TestWarnings(t *testing.T) {
 	querier := &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-				return newWarningsSeriesSet(storage.Warnings{fmt.Errorf("test warning")})
+				return newWarningsSeriesSet(storage.Warnings{errors.New("test warning")})
 			},
 		},
 	}
@@ -2026,16 +2027,18 @@ func TestWarnings(t *testing.T) {
 		expectedWarns storage.Warnings
 	}{
 		{
-			name:          "single select call",
-			query:         "http_requests_total",
-			expectedWarns: storage.Warnings{fmt.Errorf("test warning")},
+			name:  "single select call",
+			query: "http_requests_total",
+			expectedWarns: storage.Warnings{
+				errors.New("test warning"),
+			},
 		},
 		{
 			name:  "multiple select calls",
 			query: `sum(http_requests_total) / sum(http_responses_total)`,
 			expectedWarns: storage.Warnings{
-				fmt.Errorf("test warning"),
-				fmt.Errorf("test warning"),
+				errors.New("test warning"),
+				errors.New("test warning"),
 			},
 		},
 	}
@@ -2046,9 +2049,11 @@ func TestWarnings(t *testing.T) {
 			q1, err := newEngine.NewRangeQuery(context.Background(), querier, nil, tc.query, start, end, step)
 			testutil.Ok(t, err)
 
-			newResult := q1.Exec(context.Background())
-			testutil.Ok(t, newResult.Err)
-			testutil.Equals(t, tc.expectedWarns, newResult.Warnings)
+			res := q1.Exec(context.Background())
+			testutil.Ok(t, res.Err)
+			testutil.WithGoCmp(cmp.Comparer(func(err1, err2 error) bool {
+				return err1.Error() == err2.Error()
+			})).Equals(t, tc.expectedWarns, res.Warnings)
 		})
 	}
 }
