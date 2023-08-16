@@ -272,7 +272,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		defer sixHourDataset.Close()
 
 		for _, tc := range cases {
-			b.Run(tc.name, func(b *testing.B) {
+			b.Run(tc.name , func(b *testing.B) {
 				if testing.Short() && (tc.test == largeSixHourDataset || tc.test == sevenDaysAndTwoHoursDataset) {
 					b.Skip()
 				}
