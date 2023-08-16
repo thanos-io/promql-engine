@@ -2039,7 +2039,7 @@ func TestWarnings(t *testing.T) {
 			},
 		},
 	}
-	
+
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
