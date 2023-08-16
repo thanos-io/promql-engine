@@ -369,7 +369,7 @@ type Query struct {
 // Explain returns human-readable explanation of the created executor.
 func (q *Query) Explain() *ExplainOutputNode {
 	// TODO(bwplotka): Explain plan and steps.
-	return explainVector(q.exec)
+	return explainVector(q.exec.Explain())
 }
 
 func (q *Query) Analyze() *AnalyzeOutputNode {
@@ -393,16 +393,14 @@ func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
 	}
 }
 
-func explainVector(v model.VectorOperator) *ExplainOutputNode {
-	name, vectors := v.Explain()
-
+func explainVector(v model.Explanation) *ExplainOutputNode {
 	var children []ExplainOutputNode
-	for _, vector := range vectors {
+	for _, vector := range v.Next {
 		children = append(children, *explainVector(vector))
 	}
 
 	return &ExplainOutputNode{
-		OperatorName: name,
+		OperatorName: v.Operator,
 		Children:     children,
 	}
 }
@@ -748,26 +746,30 @@ func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext s
 }
 
 func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
-	me, next := o.Explain()
-	_, _ = w.Write([]byte(indent))
-	_, _ = w.Write([]byte(me))
-	if len(next) == 0 {
-		_, _ = w.Write([]byte("\n"))
-		return
-	}
+	var writeExplanationRec func(ex model.Explanation, indent, indentNext string)
 
-	if me == "[*CancellableOperator]" {
-		_, _ = w.Write([]byte(": "))
-		explain(w, next[0], "", indentNext)
-		return
-	}
-	_, _ = w.Write([]byte(":\n"))
+	writeExplanationRec = func(ex model.Explanation, indent, indentNext string) {
+		_, _ = w.Write([]byte(indent))
+		_, _ = w.Write([]byte(ex.Operator))
+		if len(ex.Next) == 0 {
+			_, _ = w.Write([]byte("\n"))
+			return
+		}
+		if ex.Operator == "[*CancellableOperator]" {
+			_, _ = w.Write([]byte(": "))
+			writeExplanationRec(ex.Next[0], "", indentNext)
+			return
+		}
+		_, _ = w.Write([]byte(":\n"))
 
-	for i, n := range next {
-		if i == len(next)-1 {
-			explain(w, n, indentNext+"└──", indentNext+"   ")
-		} else {
-			explain(w, n, indentNext+"├──", indentNext+"│  ")
+		for i, n := range ex.Next {
+			if i == len(ex.Next)-1 {
+				writeExplanationRec(n, indentNext+"└──", indentNext+"   ")
+			} else {
+				writeExplanationRec(n, indentNext+"├──", indentNext+"│  ")
+			}
 		}
 	}
+
+	writeExplanationRec(o.Explain(), indent, indentNext)
 }

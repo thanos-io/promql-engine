@@ -173,8 +173,14 @@ func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.Observabl
 	return o, obsOperators
 }
 
-func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*functionOperator] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
+func (o *functionOperator) Explain() model.Explanation {
+	res := model.Explanation{
+		Operator: fmt.Sprintf("[*functionOperator] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args),
+	}
+	for _, op := range o.nextOps {
+		res.Next = append(res.Next, op.Explain())
+	}
+	return res
 }
 
 func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {

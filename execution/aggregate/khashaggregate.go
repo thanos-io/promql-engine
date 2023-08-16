@@ -159,11 +159,18 @@ func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVecto
 	return a, next
 }
 
-func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
-	if a.by {
-		return fmt.Sprintf("[*kaggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
+func (a *kAggregate) Explain() model.Explanation {
+	res := model.Explanation{
+		Next: []model.Explanation{a.paramOp.Explain(), a.next.Explain()},
 	}
-	return fmt.Sprintf("[*kaggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
+
+	if a.by {
+		res.Operator = fmt.Sprintf("[*kaggregate] %v by (%v)", a.aggregation.String(), a.labels)
+	} else {
+		res.Operator = fmt.Sprintf("[*kaggregate] %v without (%v)", a.aggregation.String(), a.labels)
+	}
+
+	return res
 }
 
 func (a *kAggregate) init(ctx context.Context) error {

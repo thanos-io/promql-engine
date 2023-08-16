@@ -55,8 +55,10 @@ func (o *numberLiteralSelector) Analyze() (model.OperatorTelemetry, []model.Obse
 	return o, nil
 }
 
-func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*numberLiteralSelector] %v", o.val), nil
+func (o *numberLiteralSelector) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: fmt.Sprintf("[*numberLiteralSelector] %v", o.val),
+	}
 }
 
 func (o *numberLiteralSelector) Series(context.Context) ([]labels.Labels, error) {

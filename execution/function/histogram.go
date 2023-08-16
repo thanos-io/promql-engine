@@ -60,9 +60,11 @@ func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.Observab
 	return o, next
 }
 
-func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
-	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
-	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
+func (o *histogramOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs),
+		Next:     []model.Explanation{o.scalarOp.Explain(), o.vectorOp.Explain()},
+	}
 }
 
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {

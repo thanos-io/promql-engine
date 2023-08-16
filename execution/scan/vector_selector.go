@@ -85,8 +85,10 @@ func (o *vectorSelector) Analyze() (model.OperatorTelemetry, []model.ObservableV
 	return o, nil
 }
 
-func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards), nil
+func (o *vectorSelector) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: fmt.Sprintf("[*vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards),
+	}
 }
 
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
