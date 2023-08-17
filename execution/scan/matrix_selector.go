@@ -59,7 +59,7 @@ type matrixSelector struct {
 	extLookbackDelta int64
 	model.OperatorTelemetry
 
-	limits *limits.Limits
+	acc *limits.Accounter
 }
 
 // NewMatrixSelector creates operator which selects vector of series over time.
@@ -99,7 +99,7 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 
-		limits: limits,
+		acc: limits.Accounter(),
 	}
 	m.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
@@ -144,6 +144,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
+	o.acc.StartNewBatch()
 
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
@@ -172,9 +173,9 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			var err error
 
 			if !o.isExtFunction {
-				rangeSamples, err = selectPoints(series.samples, o.limits, seriesTs, mint, maxt, o.scanners[i].previousSamples)
+				rangeSamples, err = selectPoints(series.samples, o.acc, seriesTs, mint, maxt, o.scanners[i].previousSamples)
 			} else {
-				rangeSamples, err = selectExtPoints(series.samples, o.limits, seriesTs, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
+				rangeSamples, err = selectExtPoints(series.samples, o.acc, seriesTs, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
 			}
 
 			if err != nil {
@@ -277,7 +278,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // values). Any such points falling before mint are discarded; points that fall
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
-func selectPoints(it *storage.BufferedSeriesIterator, limits *limits.Limits, ts, mint, maxt int64, out []sample) ([]sample, error) {
+func selectPoints(it *storage.BufferedSeriesIterator, acc *limits.Accounter, ts, mint, maxt int64, out []sample) ([]sample, error) {
 	if len(out) > 0 && out[len(out)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
@@ -314,7 +315,7 @@ loop:
 				continue loop
 			}
 			if t >= mint {
-				if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+				if err := acc.AddSample(); err != nil {
 					return out, err
 				}
 				out = append(out, sample{T: t, H: fh})
@@ -326,7 +327,7 @@ loop:
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+				if err := acc.AddSample(); err != nil {
 					return out, err
 				}
 				out = append(out, sample{T: t, F: v})
@@ -339,7 +340,7 @@ loop:
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
-			if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+			if err := acc.AddSample(); err != nil {
 				return out, err
 			}
 			out = append(out, sample{T: t, H: fh})
@@ -347,7 +348,7 @@ loop:
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
-			if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+			if err := acc.AddSample(); err != nil {
 				return out, err
 			}
 			out = append(out, sample{T: t, F: v})
@@ -365,7 +366,7 @@ loop:
 // values). Any such points falling before mint are discarded; points that fall
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
-func selectExtPoints(it *storage.BufferedSeriesIterator, limits *limits.Limits, ts, mint, maxt int64, out []sample, extLookbackDelta int64, metricAppearedTs **int64) ([]sample, error) {
+func selectExtPoints(it *storage.BufferedSeriesIterator, acc *limits.Accounter, ts, mint, maxt int64, out []sample, extLookbackDelta int64, metricAppearedTs **int64) ([]sample, error) {
 	extMint := mint - extLookbackDelta
 
 	if len(out) > 0 && out[len(out)-1].T >= mint {
@@ -418,7 +419,7 @@ loop:
 				*metricAppearedTs = &t
 			}
 			if t >= mint {
-				if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+				if err := acc.AddSample(); err != nil {
 					return out, err
 				}
 				out = append(out, sample{T: t, H: fh})
@@ -436,13 +437,13 @@ loop:
 			// exists at or before range start, add it and then keep replacing
 			// it with later points while not yet (strictly) inside the range.
 			if t >= mint || !appendedPointBeforeMint {
-				if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+				if err := acc.AddSample(); err != nil {
 					return out, err
 				}
 				out = append(out, sample{T: t, F: v})
 				appendedPointBeforeMint = true
 			} else {
-				if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+				if err := acc.AddSample(); err != nil {
 					return out, err
 				}
 				out[len(out)-1] = sample{T: t, F: v}
@@ -459,7 +460,7 @@ loop:
 			if *metricAppearedTs == nil {
 				*metricAppearedTs = &t
 			}
-			if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+			if err := acc.AddSample(); err != nil {
 				return out, err
 			}
 			out = append(out, sample{T: t, H: fh})
@@ -470,7 +471,7 @@ loop:
 			if *metricAppearedTs == nil {
 				*metricAppearedTs = &t
 			}
-			if err := limits.AccountSamplesForTimestamp(ts, 1); err != nil {
+			if err := acc.AddSample(); err != nil {
 				return out, err
 			}
 			out = append(out, sample{T: t, F: v})

@@ -68,7 +68,7 @@ func New(ctx context.Context, expr parser.Expr, queryable storage.Queryable, min
 		// TODO(fpetkovski): Adjust the step for sub-queries once they are supported.
 		Step: step.Milliseconds(),
 	}
-	limits := limits.NewLimits(maxSamples)
+	limits := limits.NewLimits(maxSamples, opts)
 
 	return newOperator(expr, selectorPool, opts, hints, limits)
 }
