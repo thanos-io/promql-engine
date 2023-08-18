@@ -14,6 +14,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/execution/tracking"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -48,6 +49,8 @@ type vectorSelector struct {
 	shard     int
 	numShards int
 	model.OperatorTelemetry
+
+	lim *tracking.Limiter
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -57,6 +60,7 @@ func NewVectorSelector(
 	queryOpts *query.Options,
 	offset time.Duration,
 	shard, numShards int,
+	tracker *tracking.Tracker,
 ) model.VectorOperator {
 	o := &vectorSelector{
 		storage:    selector,
@@ -72,6 +76,8 @@ func NewVectorSelector(
 
 		shard:     shard,
 		numShards: numShards,
+
+		lim: tracker.Limiter(),
 	}
 	o.OperatorTelemetry = &model.NoopTelemetry{}
 	if queryOpts.EnableAnalysis {
@@ -110,6 +116,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
+	o.lim.StartNewBatch()
 
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
@@ -133,6 +140,9 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
 			_, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
+				return nil, err
+			}
+			if err := o.lim.AddSample(); err != nil {
 				return nil, err
 			}
 			if ok {
@@ -180,7 +190,6 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-// TODO(fpetkovski): Add max samples limit.
 func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
 	refTime := ts - offset
 	var t int64

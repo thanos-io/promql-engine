@@ -15,6 +15,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/scan"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/execution/tracking"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -28,14 +29,14 @@ type Execution struct {
 	model.OperatorTelemetry
 }
 
-func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart time.Time, opts *query.Options) *Execution {
+func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart time.Time, opts *query.Options, tracker *tracking.Tracker) *Execution {
 	storage := newStorageFromQuery(query, opts)
 	e := &Execution{
 		storage:         storage,
 		query:           query,
 		opts:            opts,
 		queryRangeStart: queryRangeStart,
-		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, 1),
+		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, 1, tracker),
 	}
 	e.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
