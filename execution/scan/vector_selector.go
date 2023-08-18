@@ -12,9 +12,9 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-io/promql-engine/execution/limits"
 	"github.com/thanos-io/promql-engine/execution/model"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
+	"github.com/thanos-io/promql-engine/execution/tracking"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -50,7 +50,7 @@ type vectorSelector struct {
 	numShards int
 	model.OperatorTelemetry
 
-	acc *limits.Accounter
+	lim *tracking.Limiter
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -60,7 +60,7 @@ func NewVectorSelector(
 	queryOpts *query.Options,
 	offset time.Duration,
 	shard, numShards int,
-	limits *limits.Limits,
+	tracker *tracking.Tracker,
 ) model.VectorOperator {
 	o := &vectorSelector{
 		storage:    selector,
@@ -77,7 +77,7 @@ func NewVectorSelector(
 		shard:     shard,
 		numShards: numShards,
 
-		acc: limits.Accounter(),
+		lim: tracker.Limiter(),
 	}
 	o.OperatorTelemetry = &model.NoopTelemetry{}
 	if queryOpts.EnableAnalysis {
@@ -116,7 +116,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
-	o.acc.StartNewBatch()
+	o.lim.StartNewBatch()
 
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
@@ -142,7 +142,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if err != nil {
 				return nil, err
 			}
-			if err := o.acc.AddSample(); err != nil {
+			if err := o.lim.AddSample(); err != nil {
 				return nil, err
 			}
 			if ok {
