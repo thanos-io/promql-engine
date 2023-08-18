@@ -16,6 +16,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/scan"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/execution/tracking"
+	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -103,6 +104,7 @@ func (s *storageAdapter) GetSeries(ctx context.Context, _, _ int) ([]engstore.Si
 
 func (s *storageAdapter) executeQuery(ctx context.Context) {
 	result := s.query.Exec(ctx)
+	warnings.AddToContext(result.Warnings, ctx)
 	if result.Err != nil {
 		s.err = result.Err
 		return
