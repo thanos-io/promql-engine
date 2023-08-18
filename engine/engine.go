@@ -30,9 +30,11 @@ import (
 	"github.com/thanos-io/promql-engine/execution"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/tracking"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type QueryType int
@@ -47,6 +49,8 @@ const (
 	subsystem    string    = "engine"
 	InstantQuery QueryType = 1
 	RangeQuery   QueryType = 2
+
+	stepsBatch = 10
 )
 
 type Opts struct {
@@ -270,7 +274,20 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta, e.extLookbackDelta, e.maxSamples, e.enableAnalysis)
+	qopts := &query.Options{
+		Context:          ctx,
+		Start:            ts,
+		End:              ts,
+		Step:             1,
+		LookbackDelta:    e.lookbackDelta,
+		StepsBatch:       stepsBatch,
+		ExtLookbackDelta: e.extLookbackDelta,
+		EnableAnalysis:   e.enableAnalysis,
+	}
+
+	tracker := tracking.NewTracker(e.maxSamples, qopts)
+
+	exec, err := execution.New(ctx, tracker, lplan.Expr(), q, qopts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -322,7 +339,20 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	})
 	lplan = lplan.Optimize(e.logicalOptimizers)
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta, e.extLookbackDelta, e.maxSamples, e.enableAnalysis)
+	qopts := &query.Options{
+		Context:          ctx,
+		Start:            start,
+		End:              end,
+		Step:             step,
+		LookbackDelta:    e.lookbackDelta,
+		StepsBatch:       stepsBatch,
+		ExtLookbackDelta: e.extLookbackDelta,
+		EnableAnalysis:   e.enableAnalysis,
+	}
+
+	tracker := tracking.NewTracker(e.maxSamples, qopts)
+
+	exec, err := execution.New(ctx, tracker, lplan.Expr(), q, qopts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
