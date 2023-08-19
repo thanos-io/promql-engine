@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/promql-engine/api"
@@ -63,17 +64,14 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			EnableAtModifier:     true,
 		}
 
-		test, err := promql.NewTest(t, load)
-		testutil.Ok(t, err)
-		defer test.Close()
-
-		testutil.Ok(t, test.Run())
+		storage := promql.LoadedStorage(t, load)
+		defer storage.Close()
 
 		start := time.Unix(int64(startTS), 0)
 		end := time.Unix(int64(endTS), 0)
 		interval := time.Duration(intervalSeconds) * time.Second
 
-		seriesSet, err := getSeries(context.Background(), test.Storage())
+		seriesSet, err := getSeries(context.Background(), storage)
 		require.NoError(t, err)
 		rnd := rand.New(rand.NewSource(time.Now().Unix()))
 		psOpts := []promqlsmith.Option{
@@ -96,7 +94,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			for {
 				expr := ps.WalkRangeQuery()
 				query = expr.Pretty(0)
-				q1, err = newEngine.NewRangeQuery(test.Context(), test.Storage(), nil, query, start, end, interval)
+				q1, err = newEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
 				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
 					continue
 				} else {
@@ -107,7 +105,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
 
-			q2, err := oldEngine.NewRangeQuery(test.Context(), test.Storage(), nil, query, start, end, interval)
+			q2, err := oldEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
 			testutil.Ok(t, err)
 
 			oldResult := q2.Exec(context.Background())
@@ -160,10 +158,8 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			EnableAtModifier:     true,
 		}
 
-		test, err := promql.NewTest(t, load)
-		testutil.Ok(t, err)
-		defer test.Close()
-		testutil.Ok(t, test.Run())
+		storage := promql.LoadedStorage(t, load)
+		defer storage.Close()
 
 		queryTime := time.Unix(int64(ts), 0)
 		newEngine := engine.New(engine.Opts{
@@ -173,7 +169,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		})
 		oldEngine := promql.NewEngine(opts)
 
-		seriesSet, err := getSeries(context.Background(), test.Storage())
+		seriesSet, err := getSeries(context.Background(), storage)
 		require.NoError(t, err)
 		rnd := rand.New(rand.NewSource(time.Now().Unix()))
 		psOpts := []promqlsmith.Option{
@@ -194,7 +190,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			for {
 				expr := ps.WalkInstantQuery()
 				query = expr.Pretty(0)
-				q1, err = newEngine.NewInstantQuery(test.Context(), test.Storage(), nil, query, queryTime)
+				q1, err = newEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
 				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
 					continue
 				} else {
@@ -205,7 +201,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
 
-			q2, err := oldEngine.NewInstantQuery(test.Context(), test.Storage(), nil, query, queryTime)
+			q2, err := oldEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
 			testutil.Ok(t, err)
 
 			oldResult := q2.Exec(context.Background())
@@ -256,18 +252,14 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 			LogicalOptimizers: logicalplan.AllOptimizers,
 		}
 
-		queryables := []*promql.Test{}
-		test, err := promql.NewTest(t, load)
-		testutil.Ok(t, err)
-		defer test.Close()
-		testutil.Ok(t, test.Run())
-		queryables = append(queryables, test)
+		queryables := []*teststorage.TestStorage{}
+		storage1 := promql.LoadedStorage(t, load)
+		defer storage1.Close()
+		queryables = append(queryables, storage1)
 
-		test2, err := promql.NewTest(t, load2)
-		testutil.Ok(t, err)
-		defer test2.Close()
-		testutil.Ok(t, test2.Run())
-		queryables = append(queryables, test2)
+		storage2 := promql.LoadedStorage(t, load2)
+		defer storage2.Close()
+		queryables = append(queryables, storage1)
 
 		start := time.Unix(int64(startTS), 0)
 		end := time.Unix(int64(endTS), 0)
@@ -281,9 +273,9 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 		for i := 0; i < 2; i++ {
 			e := engine.NewRemoteEngine(
 				engineOpts,
-				queryables[i].Storage(),
-				queryables[i].TSDB().Head().MinTime(),
-				queryables[i].TSDB().Head().MaxTime(),
+				queryables[i],
+				queryables[i].DB.Head().MinTime(),
+				queryables[i].DB.Head().MaxTime(),
 				partitionLabels[i],
 			)
 			remoteEngines = append(remoteEngines, e)
@@ -291,7 +283,7 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 		distEngine := engine.NewDistributedEngine(engineOpts, api.NewStaticEndpoints(remoteEngines))
 		oldEngine := promql.NewEngine(opts)
 
-		mergeStore := storage.NewFanout(nil, test.Storage(), test2.Storage())
+		mergeStore := storage.NewFanout(nil, storage1, storage2)
 		seriesSet, err := getSeries(context.Background(), mergeStore)
 		require.NoError(t, err)
 		rnd := rand.New(rand.NewSource(time.Now().Unix()))
@@ -364,18 +356,14 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 		}
 		engineOpts := engine.Opts{EngineOpts: opts, DisableFallback: true}
 
-		queryables := []*promql.Test{}
-		test, err := promql.NewTest(t, load)
-		testutil.Ok(t, err)
-		defer test.Close()
-		testutil.Ok(t, test.Run())
-		queryables = append(queryables, test)
+		queryables := []*teststorage.TestStorage{}
+		storage1 := promql.LoadedStorage(t, load)
+		defer storage1.Close()
+		queryables = append(queryables, storage1)
 
-		test2, err := promql.NewTest(t, load2)
-		testutil.Ok(t, err)
-		defer test2.Close()
-		testutil.Ok(t, test2.Run())
-		queryables = append(queryables, test2)
+		storage2 := promql.LoadedStorage(t, load2)
+		defer storage2.Close()
+		queryables = append(queryables, storage1)
 
 		partitionLabels := [][]labels.Labels{
 			{labels.FromStrings("zone", "west-1")},
@@ -386,9 +374,9 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 		for i := 0; i < 2; i++ {
 			e := engine.NewRemoteEngine(
 				engineOpts,
-				queryables[i].Storage(),
-				queryables[i].TSDB().Head().MinTime(),
-				queryables[i].TSDB().Head().MaxTime(),
+				queryables[i],
+				queryables[i].DB.Head().MinTime(),
+				queryables[i].DB.Head().MaxTime(),
 				partitionLabels[i],
 			)
 			remoteEngines = append(remoteEngines, e)
@@ -396,7 +384,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 		distEngine := engine.NewDistributedEngine(engineOpts, api.NewStaticEndpoints(remoteEngines))
 		oldEngine := promql.NewEngine(opts)
 
-		mergeStore := storage.NewFanout(nil, test.Storage(), test2.Storage())
+		mergeStore := storage.NewFanout(nil, storage1, storage2)
 		seriesSet, err := getSeries(context.Background(), mergeStore)
 		require.NoError(t, err)
 		rnd := rand.New(rand.NewSource(time.Now().Unix()))

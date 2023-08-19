@@ -29,10 +29,8 @@ load 30s
 	http_requests_total{container="a"} 1x30
 	http_requests_total{container="b"} 2x30`
 
-	test, err := promql.NewTest(t, load)
-	testutil.Ok(t, err)
-	defer test.Close()
-	testutil.Ok(t, test.Run())
+	storage := promql.LoadedStorage(t, load)
+	defer storage.Close()
 
 	newEngine := engine.New(engine.Opts{
 		EngineOpts:      opts,
@@ -42,7 +40,7 @@ load 30s
 		},
 	})
 	query := "sum(http_requests_total)"
-	qry, err := newEngine.NewRangeQuery(test.Context(), test.Storage(), nil, query, time.Unix(0, 0), time.Unix(90, 0), 30*time.Second)
+	qry, err := newEngine.NewRangeQuery(context.Background(), storage, nil, query, time.Unix(0, 0), time.Unix(90, 0), 30*time.Second)
 	testutil.Ok(t, err)
 
 	result := qry.Exec(context.Background())

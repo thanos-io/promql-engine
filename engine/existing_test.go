@@ -4,6 +4,7 @@
 package engine_test
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -125,16 +126,13 @@ func TestRangeQuery(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
-			test, err := promql.NewTest(t, c.Load)
-			testutil.Ok(t, err)
-			defer test.Close()
+			storage := promql.LoadedStorage(t, c.Load)
+			defer storage.Close()
 
-			err = test.Run()
-			testutil.Ok(t, err)
-			qry, err := ng.NewRangeQuery(test.Context(), test.Queryable(), nil, c.Query, c.Start, c.End, c.Interval)
+			qry, err := ng.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)
 			testutil.Ok(t, err)
 
-			res := qry.Exec(test.Context())
+			res := qry.Exec(context.Background())
 			testutil.Ok(t, res.Err)
 			testutil.Equals(t, c.Result, res.Value)
 		})

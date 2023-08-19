@@ -16,20 +16,21 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/teststorage"
 
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
-	test := setupStorage(b, 1000, 3, 720)
-	defer test.Close()
+	storage := setupStorage(b, 1000, 3, 720)
+	defer storage.Close()
 
 	start := time.Unix(0, 0)
 	end := start.Add(6 * time.Hour)
 	step := time.Second * 30
 
-	querier, err := test.Storage().Querier(test.Context(), start.UnixMilli(), end.UnixMilli())
+	querier, err := storage.Querier(context.Background(), start.UnixMilli(), end.UnixMilli())
 	testutil.Ok(b, err)
 
 	matcher, err := labels.NewMatcher(labels.MatchEqual, labels.MetricName, "http_requests_total")
@@ -116,159 +117,159 @@ func BenchmarkRangeQuery(b *testing.B) {
 	step := time.Second * 30
 
 	cases := []struct {
-		name  string
-		query string
-		test  *promql.Test
+		name    string
+		query   string
+		storage *teststorage.TestStorage
 	}{
 		{
-			name:  "vector selector",
-			query: "http_requests_total",
-			test:  sixHourDataset,
+			name:    "vector selector",
+			query:   "http_requests_total",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "sum",
-			query: "sum(http_requests_total)",
-			test:  sixHourDataset,
+			name:    "sum",
+			query:   "sum(http_requests_total)",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "sum by pod",
-			query: "sum by (pod) (http_requests_total)",
-			test:  sixHourDataset,
+			name:    "sum by pod",
+			query:   "sum by (pod) (http_requests_total)",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "topk",
-			query: "topk(2,http_requests_total)",
-			test:  sixHourDataset,
+			name:    "topk",
+			query:   "topk(2,http_requests_total)",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "bottomk",
-			query: "bottomk(2,http_requests_total)",
-			test:  sixHourDataset,
+			name:    "bottomk",
+			query:   "bottomk(2,http_requests_total)",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "rate",
-			query: "rate(http_requests_total[1m])",
-			test:  sixHourDataset,
+			name:    "rate",
+			query:   "rate(http_requests_total[1m])",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "rate with large range selection",
-			query: "rate(http_requests_total[7d])",
-			test:  sevenDaysAndTwoHoursDataset,
+			name:    "rate with large range selection",
+			query:   "rate(http_requests_total[7d])",
+			storage: sevenDaysAndTwoHoursDataset,
 		},
 		{
-			name:  "rate with large number of series, 1m range",
-			query: "rate(http_requests_total[1m])",
-			test:  largeSixHourDataset,
+			name:    "rate with large number of series, 1m range",
+			query:   "rate(http_requests_total[1m])",
+			storage: largeSixHourDataset,
 		},
 		{
-			name:  "rate with large number of series, 5m range",
-			query: "rate(http_requests_total[5m])",
-			test:  largeSixHourDataset,
+			name:    "rate with large number of series, 5m range",
+			query:   "rate(http_requests_total[5m])",
+			storage: largeSixHourDataset,
 		},
 		{
-			name:  "sum rate",
-			query: "sum(rate(http_requests_total[1m]))",
-			test:  sixHourDataset,
+			name:    "sum rate",
+			query:   "sum(rate(http_requests_total[1m]))",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "sum by rate",
-			query: "sum by (pod) (rate(http_requests_total[1m]))",
-			test:  sixHourDataset,
+			name:    "sum by rate",
+			query:   "sum by (pod) (rate(http_requests_total[1m]))",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "quantile with variable parameter",
-			query: "quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)",
-			test:  sixHourDataset,
+			name:    "quantile with variable parameter",
+			query:   "quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "binary operation with one to one",
-			query: `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
-			test:  sixHourDataset,
+			name:    "binary operation with one to one",
+			query:   `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "binary operation with many to one",
-			query: `http_requests_total / on (pod) group_left http_responses_total`,
-			test:  sixHourDataset,
+			name:    "binary operation with many to one",
+			query:   `http_requests_total / on (pod) group_left http_responses_total`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "binary operation with vector and scalar",
-			query: `http_requests_total * 10`,
-			test:  sixHourDataset,
+			name:    "binary operation with vector and scalar",
+			query:   `http_requests_total * 10`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "unary negation",
-			query: `-http_requests_total`,
-			test:  sixHourDataset,
+			name:    "unary negation",
+			query:   `-http_requests_total`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "vector and scalar comparison",
-			query: `http_requests_total > 10`,
-			test:  sixHourDataset,
+			name:    "vector and scalar comparison",
+			query:   `http_requests_total > 10`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "positive offset vector",
-			query: "http_requests_total offset 5m",
-			test:  sixHourDataset,
+			name:    "positive offset vector",
+			query:   "http_requests_total offset 5m",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "at modifier ",
-			query: "http_requests_total @ 600",
-			test:  sixHourDataset,
+			name:    "at modifier ",
+			query:   "http_requests_total @ 600",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "at modifier with positive offset vector",
-			query: "http_requests_total @ 600 offset 5m",
-			test:  sixHourDataset,
+			name:    "at modifier with positive offset vector",
+			query:   "http_requests_total @ 600 offset 5m",
+			storage: sixHourDataset,
 		},
 		{
-			name:  "clamp",
-			query: `clamp(http_requests_total, 5, 10)`,
-			test:  sixHourDataset,
+			name:    "clamp",
+			query:   `clamp(http_requests_total, 5, 10)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "clamp_min",
-			query: `clamp_min(http_requests_total, 10)`,
-			test:  sixHourDataset,
+			name:    "clamp_min",
+			query:   `clamp_min(http_requests_total, 10)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "complex func query",
-			query: `clamp(1 - http_requests_total, 10 - 5, 10)`,
-			test:  sixHourDataset,
+			name:    "complex func query",
+			query:   `clamp(1 - http_requests_total, 10 - 5, 10)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "func within func query",
-			query: `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
-			test:  sixHourDataset,
+			name:    "func within func query",
+			query:   `clamp(irate(http_requests_total[30s]), 10 - 5, 10)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "aggr within func query",
-			query: `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
-			test:  sixHourDataset,
+			name:    "aggr within func query",
+			query:   `clamp(rate(http_requests_total[30s]), 10 - 5, 10)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "histogram_quantile",
-			query: `histogram_quantile(0.9, http_response_seconds_bucket)`,
-			test:  sixHourDataset,
+			name:    "histogram_quantile",
+			query:   `histogram_quantile(0.9, http_response_seconds_bucket)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "sort",
-			query: `sort(http_requests_total)`,
-			test:  sixHourDataset,
+			name:    "sort",
+			query:   `sort(http_requests_total)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "sort_desc",
-			query: `sort_desc(http_requests_total)`,
-			test:  sixHourDataset,
+			name:    "sort_desc",
+			query:   `sort_desc(http_requests_total)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "absent and exists",
-			query: `absent(http_requests_total)`,
-			test:  sixHourDataset,
+			name:    "absent and exists",
+			query:   `absent(http_requests_total)`,
+			storage: sixHourDataset,
 		},
 		{
-			name:  "absent and doesnt exist",
-			query: `absent(nonexistent)`,
-			test:  sixHourDataset,
+			name:    "absent and doesnt exist",
+			query:   `absent(nonexistent)`,
+			storage: sixHourDataset,
 		},
 	}
 
@@ -289,10 +290,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(tc.test.Context(), tc.test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := engine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
-					oldResult := qry.Exec(tc.test.Context())
+					oldResult := qry.Exec(context.Background())
 					testutil.Ok(b, oldResult.Err)
 				}
 			})
@@ -301,7 +302,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					newResult := executeRangeQuery(b, tc.query, tc.test, start, end, step)
+					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step)
 					testutil.Ok(b, newResult.Err)
 				}
 			})
@@ -310,14 +311,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 }
 
 func BenchmarkNativeHistograms(b *testing.B) {
-	test, err := promql.NewTest(b, "")
-	testutil.Ok(b, err)
-	defer test.Close()
+	storage := teststorage.New(b)
+	defer storage.Close()
 
-	app := test.Storage().Appender(context.TODO())
+	app := storage.Appender(context.TODO())
 	testutil.Ok(b, generateNativeHistogramSeries(app, 3000, false))
 	testutil.Ok(b, app.Commit())
-	testutil.Ok(b, test.Run())
 
 	start := time.Unix(0, 0)
 	end := start.Add(2 * time.Hour)
@@ -377,10 +376,10 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
-					oldResult := qry.Exec(test.Context())
+					oldResult := qry.Exec(context.Background())
 					testutil.Ok(b, oldResult.Err)
 				}
 			})
@@ -391,7 +390,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				for i := 0; i < b.N; i++ {
 					ng := engine.New(engine.Opts{EngineOpts: opts})
 
-					qry, err := ng.NewRangeQuery(test.Context(), test.Queryable(), nil, tc.query, start, end, step)
+					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
 					newResult := qry.Exec(context.Background())
@@ -403,8 +402,8 @@ func BenchmarkNativeHistograms(b *testing.B) {
 }
 
 func BenchmarkInstantQuery(b *testing.B) {
-	test := setupStorage(b, 1000, 3, 720)
-	defer test.Close()
+	storage := setupStorage(b, 1000, 3, 720)
+	defer storage.Close()
 
 	queryTime := time.Unix(50, 0)
 
@@ -490,10 +489,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewInstantQuery(test.Context(), test.Queryable(), nil, tc.query, queryTime)
+					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 					testutil.Ok(b, err)
 
-					res := qry.Exec(test.Context())
+					res := qry.Exec(context.Background())
 					testutil.Ok(b, res.Err)
 				}
 			})
@@ -503,7 +502,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					qry, err := ng.NewInstantQuery(test.Context(), test.Queryable(), nil, tc.query, queryTime)
+					qry, err := ng.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 					testutil.Ok(b, err)
 
 					res := qry.Exec(context.Background())
@@ -555,26 +554,22 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 
 }
 
-func executeRangeQuery(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration) *promql.Result {
-	return executeRangeQueryWithOpts(b, q, test, start, end, step, engine.Opts{DisableFallback: true, EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
+func executeRangeQuery(b *testing.B, q string, storage *teststorage.TestStorage, start time.Time, end time.Time, step time.Duration) *promql.Result {
+	return executeRangeQueryWithOpts(b, q, storage, start, end, step, engine.Opts{DisableFallback: true, EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 }
 
-func executeRangeQueryWithOpts(b *testing.B, q string, test *promql.Test, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
+func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.TestStorage, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
 	ng := engine.New(opts)
 	ctx := context.Background()
-	qry, err := ng.NewRangeQuery(ctx, test.Queryable(), nil, q, start, end, step)
+	qry, err := ng.NewRangeQuery(ctx, storage, nil, q, start, end, step)
 	testutil.Ok(b, err)
 
 	return qry.Exec(ctx)
 }
 
-func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *promql.Test {
+func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *teststorage.TestStorage {
 	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
-	test, err := promql.NewTest(b, load)
-	testutil.Ok(b, err)
-	testutil.Ok(b, test.Run())
-
-	return test
+	return promql.LoadedStorage(b, load)
 }
 
 func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *tsdb.DB {
