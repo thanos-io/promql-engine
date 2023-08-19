@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/efficientgo/core/errors"
-
 	"github.com/prometheus/prometheus/promql/parser"
 )
 

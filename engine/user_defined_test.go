@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
