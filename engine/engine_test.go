@@ -18,8 +18,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
-
-	promparser "github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -2184,6 +2183,23 @@ func TestDisabledXFunction(t *testing.T) {
 		_, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 		testutil.NotOk(t, err)
 	}
+}
+
+func TestXFunctionsWhenDisabled(t *testing.T) {
+	var (
+		query = "xincrease(http_requests[50s])"
+		start = time.Unix(0, 0)
+		end   = time.Unix(100, 0)
+		step  = time.Second * 10
+	)
+	ng := engine.New(engine.Opts{})
+	_, err := ng.NewRangeQuery(context.Background(), nil, nil, query, start, end, step)
+	testutil.NotOk(t, err)
+	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
+
+	_, err = ng.NewInstantQuery(context.Background(), nil, nil, query, start)
+	testutil.NotOk(t, err)
+	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
 }
 
 func TestXFunctions(t *testing.T) {
@@ -4796,11 +4812,11 @@ func sortByLabels(r *promql.Result) {
 		return
 	}
 	switch r.Value.Type() {
-	case promparser.ValueTypeVector:
+	case parser.ValueTypeVector:
 		m, _ := r.Vector()
 		sort.Sort(samplesByLabels(m))
 		r.Value = m
-	case promparser.ValueTypeMatrix:
+	case parser.ValueTypeMatrix:
 		m, _ := r.Matrix()
 		sort.Sort(seriesByLabels(m))
 		r.Value = m

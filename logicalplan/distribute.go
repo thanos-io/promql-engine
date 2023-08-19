@@ -12,8 +12,9 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
+	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/thanos-io/promql-engine/api"
-	"github.com/thanos-io/promql-engine/parser"
 	"github.com/thanos-io/promql-engine/query"
 )
 

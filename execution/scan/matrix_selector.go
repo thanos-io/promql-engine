@@ -14,11 +14,12 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
+	"github.com/prometheus/prometheus/promql/parser"
+
+	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/execution/parse"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/extlabels"
-	"github.com/thanos-io/promql-engine/parser"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -71,9 +72,9 @@ func NewMatrixSelector(
 ) (model.VectorOperator, error) {
 	call, ok := rangeVectorFuncs[funcExpr.Func.Name]
 	if !ok {
-		return nil, parse.UnknownFunctionError(funcExpr.Func)
+		return nil, function.UnknownFunctionError(funcExpr.Func)
 	}
-	isExtFunction := parse.IsExtFunction(funcExpr.Func.Name)
+	isExtFunction := function.IsExtFunction(funcExpr.Func.Name)
 	m := &matrixSelector{
 		storage:    selector,
 		call:       call,

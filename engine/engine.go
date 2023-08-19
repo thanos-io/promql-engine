@@ -20,19 +20,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	promparser "github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/execution"
+	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/parser"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -181,10 +181,14 @@ func New(opts Opts) *compatibilityEngine {
 		level.Debug(opts.Logger).Log("msg", "externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
 
+	functions := make(map[string]*parser.Function, len(parser.Functions))
+	for k, v := range parser.Functions {
+		functions[k] = v
+	}
 	if opts.EnableXFunctions {
-		parser.Functions["xdelta"] = parse.XFunctions["xdelta"]
-		parser.Functions["xincrease"] = parse.XFunctions["xincrease"]
-		parser.Functions["xrate"] = parse.XFunctions["xrate"]
+		functions["xdelta"] = function.XFunctions["xdelta"]
+		functions["xincrease"] = function.XFunctions["xincrease"]
+		functions["xrate"] = function.XFunctions["xrate"]
 	}
 
 	metrics := &engineMetrics{
@@ -214,7 +218,8 @@ func New(opts Opts) *compatibilityEngine {
 	}
 
 	return &compatibilityEngine{
-		prom: engine,
+		prom:      engine,
+		functions: functions,
 
 		debugWriter:       opts.DebugWriter,
 		disableFallback:   opts.DisableFallback,
@@ -233,7 +238,8 @@ func New(opts Opts) *compatibilityEngine {
 }
 
 type compatibilityEngine struct {
-	prom v1.QueryEngine
+	prom      v1.QueryEngine
+	functions map[string]*parser.Function
 
 	debugWriter io.Writer
 
@@ -255,7 +261,7 @@ func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
 }
 
 func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	expr, err := parser.ParseExpr(qs)
+	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
 	}
@@ -312,7 +318,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 }
 
 func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
-	expr, err := parser.ParseExpr(qs)
+	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
 	}
@@ -641,7 +647,7 @@ loop:
 		return ret
 	}
 
-	var result promparser.Value
+	var result parser.Value
 	switch q.expr.Type() {
 	case parser.ValueTypeMatrix:
 		result = promql.Matrix(series)
@@ -694,7 +700,7 @@ func newErrResult(r *promql.Result, err error) *promql.Result {
 	return r
 }
 
-func (q *compatibilityQuery) Statement() promparser.Statement { return nil }
+func (q *compatibilityQuery) Statement() parser.Statement { return nil }
 
 // Stats always returns empty query stats for now to avoid panic.
 func (q *compatibilityQuery) Stats() *stats.Statistics {
