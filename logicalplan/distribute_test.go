@@ -14,6 +14,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 func TestDistributedExecution(t *testing.T) {
@@ -203,7 +204,7 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, &Opts{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
+			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 			optimizedPlan := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
@@ -306,7 +307,7 @@ dedup(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, &Opts{Start: queryStart, End: queryEnd, Step: queryStep})
+			plan := New(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep})
 			optimizedPlan := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())

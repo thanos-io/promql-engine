@@ -33,6 +33,7 @@ import (
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type QueryType int
@@ -47,6 +48,7 @@ const (
 	subsystem    string    = "engine"
 	InstantQuery QueryType = 1
 	RangeQuery   QueryType = 2
+	stepsBatch             = 10
 )
 
 type Opts struct {
@@ -71,6 +73,10 @@ type Opts struct {
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
+
+	// EnableSubqueries enables the engine to handle subqueries without falling back to prometheus.
+	// This will default to false.
+	EnableSubqueries bool
 
 	// FallbackEngine
 	Engine v1.QueryEngine
@@ -219,6 +225,10 @@ func New(opts Opts) *compatibilityEngine {
 		metrics:           metrics,
 		extLookbackDelta:  opts.ExtLookbackDelta,
 		enableAnalysis:    opts.EnableAnalysis,
+		enableSubqueries:  opts.EnableSubqueries,
+		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
+			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
+		},
 	}
 }
 
@@ -234,8 +244,10 @@ type compatibilityEngine struct {
 	timeout           time.Duration
 	metrics           *engineMetrics
 
-	extLookbackDelta time.Duration
-	enableAnalysis   bool
+	extLookbackDelta         time.Duration
+	enableAnalysis           bool
+	enableSubqueries         bool
+	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
 func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
@@ -260,15 +272,21 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	// the presentation layer and not when computing the results.
 	resultSort := newResultSort(expr)
 
-	lplan := logicalplan.New(expr, &logicalplan.Opts{
-		Start:         ts,
-		End:           ts,
-		Step:          1,
-		LookbackDelta: opts.LookbackDelta(),
-	})
-	lplan = lplan.Optimize(e.logicalOptimizers)
+	qOpts := &query.Options{
+		Context:                  ctx,
+		Start:                    ts,
+		End:                      ts,
+		Step:                     0,
+		StepsBatch:               stepsBatch,
+		LookbackDelta:            opts.LookbackDelta(),
+		ExtLookbackDelta:         e.extLookbackDelta,
+		EnableAnalysis:           e.enableAnalysis,
+		EnableSubqueries:         e.enableSubqueries,
+		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+	}
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, ts, ts, 0, opts.LookbackDelta(), e.extLookbackDelta, e.enableAnalysis)
+	lplan := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
+	exec, err := execution.New(lplan.Expr(), q, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -311,15 +329,21 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
 	}
 
-	lplan := logicalplan.New(expr, &logicalplan.Opts{
-		Start:         start,
-		End:           end,
-		Step:          step,
-		LookbackDelta: opts.LookbackDelta(),
-	})
-	lplan = lplan.Optimize(e.logicalOptimizers)
+	qOpts := &query.Options{
+		Context:                  ctx,
+		Start:                    start,
+		End:                      end,
+		Step:                     step,
+		StepsBatch:               stepsBatch,
+		LookbackDelta:            opts.LookbackDelta(),
+		ExtLookbackDelta:         e.extLookbackDelta,
+		EnableAnalysis:           e.enableAnalysis,
+		EnableSubqueries:         false, // not yet implemented for range queries.
+		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+	}
 
-	exec, err := execution.New(ctx, lplan.Expr(), q, start, end, step, opts.LookbackDelta(), e.extLookbackDelta, e.enableAnalysis)
+	lplan := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
+	exec, err := execution.New(lplan.Expr(), q, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)

@@ -13,6 +13,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 func TestPassthrough(t *testing.T) {
@@ -25,7 +26,7 @@ func TestPassthrough(t *testing.T) {
 		}
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
-		plan := New(expr, &Opts{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
+		plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 		optimizedPlan := plan.Optimize(optimizers)
 
 		testutil.Equals(t, "remote(time())", optimizedPlan.Expr().String())
@@ -38,7 +39,7 @@ func TestPassthrough(t *testing.T) {
 		}
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
-		plan := New(expr, &Opts{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
+		plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 		optimizedPlan := plan.Optimize(optimizers)
 
 		testutil.Equals(t, "time()", optimizedPlan.Expr().String())

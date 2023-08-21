@@ -471,6 +471,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 			name:  "sort_desc",
 			query: `sort_desc(http_requests_total)`,
 		},
+		{
+			name:  "subquery sum_over_time",
+			query: `sum_over_time(count(http_requests_total)[1h:10s])`,
+		},
 	}
 
 	for _, tc := range cases {
@@ -497,7 +501,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 				}
 			})
 			b.Run("new_engine", func(b *testing.B) {
-				ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
+				ng := engine.New(engine.Opts{
+					EngineOpts:       promql.EngineOpts{Timeout: 100 * time.Second},
+					EnableSubqueries: true,
+				})
 				b.ResetTimer()
 				b.ReportAllocs()
 

@@ -59,7 +59,7 @@ load 30s
 
 type injectVectorSelector struct{}
 
-func (i injectVectorSelector) Optimize(expr parser.Expr, _ *logicalplan.Opts) parser.Expr {
+func (i injectVectorSelector) Optimize(expr parser.Expr, _ *query.Options) parser.Expr {
 	logicalplan.TraverseBottomUp(nil, &expr, func(_, current *parser.Expr) bool {
 		switch (*current).(type) {
 		case *parser.VectorSelector:
@@ -76,9 +76,9 @@ type logicalVectorSelector struct {
 	*parser.VectorSelector
 }
 
-func (c logicalVectorSelector) MakeExecutionOperator(stepsBatch int, vectors *model.VectorPool, selectors *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, selectors *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	return &vectorSelectorOperator{
-		stepsBatch: stepsBatch,
+		stepsBatch: opts.StepsBatch,
 		vectors:    vectors,
 
 		mint:        opts.Start.UnixMilli(),
