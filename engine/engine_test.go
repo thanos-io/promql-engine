@@ -4541,12 +4541,10 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "histogram_count",
 			query: "histogram_count(native_histogram_series)",
 		},
-		// TODO(mhoffm): fails after bumping to github.com/prometheus/prometheus v0.46.1-0.20230818184859-4d8e380269da.
-		// Investigate in followup PR.
-		// {
-		// 	name:  "histogram_quantile",
-		// 	query: "histogram_quantile(0.7, native_histogram_series)",
-		// },
+		{
+			name:  "histogram_quantile",
+			query: "histogram_quantile(0.7, native_histogram_series)",
+		},
 		{
 			name:  "histogram_fraction",
 			query: "histogram_fraction(0, 0.2, native_histogram_series)",
