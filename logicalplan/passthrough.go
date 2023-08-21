@@ -59,32 +59,23 @@ func (m PassthroughOptimizer) Optimize(plan parser.Expr, opts *query.Options) pa
 		return plan
 	}
 
-	// Check matchers of each selector. If all of them match only one engine
-	// then pass the query to it.
-	var matchingEngine int = -1
-	var matchingFound bool
+	matchingLabelsEngines := make([]api.RemoteEngine, 0, len(engines))
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		if vs, ok := (*current).(*parser.VectorSelector); ok {
-			for i, e := range engines {
+			for _, e := range engines {
 				if !labelSetsMatch(vs.LabelMatchers, e.LabelSets()...) {
 					continue
 				}
 
-				if matchingEngine == -1 {
-					matchingEngine = i
-					matchingFound = true
-				} else if matchingEngine != i {
-					matchingFound = false
-					return true
-				}
+				matchingLabelsEngines = append(matchingLabelsEngines, e)
 			}
 		}
 		return false
 	})
 
-	if matchingFound && matchingEngineTime(engines[matchingEngine], opts) {
+	if len(matchingLabelsEngines) == 1 && matchingEngineTime(matchingLabelsEngines[0], opts) {
 		return RemoteExecution{
-			Engine:          engines[matchingEngine],
+			Engine:          matchingLabelsEngines[0],
 			Query:           plan.String(),
 			QueryRangeStart: opts.Start,
 		}
