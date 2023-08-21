@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -59,16 +58,6 @@ func (lrs labelSetRanges) minOverlap() time.Duration {
 	return minLabelsetOverlap
 }
 
-type RemoteExecutions []RemoteExecution
-
-func (rs RemoteExecutions) String() string {
-	parts := make([]string, len(rs))
-	for i, r := range rs {
-		parts[i] = r.String()
-	}
-	return strings.Join(parts, ", ")
-}
-
 // RemoteExecution is a logical plan that describes a
 // remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
@@ -94,11 +83,11 @@ func (r RemoteExecution) PromQLExpr() {}
 
 // Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
 type Deduplicate struct {
-	Expressions RemoteExecutions
+	Expressions []parser.Expr
 }
 
 func (r Deduplicate) String() string {
-	return fmt.Sprintf("dedup(%s)", r.Expressions.String())
+	return fmt.Sprintf("dedup(%s)", exprSliceToString(r.Expressions))
 }
 
 func (r Deduplicate) Pretty(level int) string { return r.String() }
@@ -245,7 +234,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 		}
 	}
 
-	remoteQueries := make(RemoteExecutions, 0, len(engines))
+	remoteQueries := make([]parser.Expr, 0, len(engines))
 	for _, e := range engines {
 		if !matchesExternalLabelSet(*expr, e.LabelSets()) {
 			continue
@@ -266,6 +255,13 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 	if len(remoteQueries) == 0 {
 		return Noop{}
 	}
+	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
+	// Sorting engines by MaxT ensures that samples produced due to
+	// staleness will be overwritten and corrected by samples coming from
+	// engines with a higher max time.
+	sort.Slice(remoteQueries, func(i, j int) bool {
+		return remoteQueries[i].(RemoteExecution).Engine.MaxT() < remoteQueries[j].(RemoteExecution).Engine.MaxT()
+	})
 
 	return Deduplicate{
 		Expressions: remoteQueries,
@@ -273,7 +269,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 }
 
 func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engines []api.RemoteEngine, opts *query.Options) parser.Expr {
-	queries := make(RemoteExecutions, 0, len(engines))
+	queries := make([]parser.Expr, 0, len(engines))
 	for i := range engines {
 		queries = append(queries, RemoteExecution{
 			Engine:          engines[i],

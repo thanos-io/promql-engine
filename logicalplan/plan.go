@@ -6,6 +6,7 @@ package logicalplan
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -88,9 +89,20 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		traverse(&node.Expr, transform)
 	case *parser.SubqueryExpr:
 		traverse(&node.Expr, transform)
+	case Concurrent:
+		transform(expr)
+		traverse(&node.Expr, transform)
+	case Deduplicate:
+		transform(expr)
+		for i := range node.Expressions {
+			traverse(&(node.Expressions[i]), transform)
+		}
+	case RemoteExecution:
+		transform(expr)
 	}
 }
 
+// TODO: handle Deduplicate, RemoteExecution and Concurrent
 func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(parent *parser.Expr, node *parser.Expr) bool) bool {
 	switch node := (*current).(type) {
 	case *parser.NumberLiteral:
@@ -316,4 +328,12 @@ func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 		}
 		return nil
 	})
+}
+
+func exprSliceToString(rs []parser.Expr) string {
+	parts := make([]string, len(rs))
+	for i, r := range rs {
+		parts[i] = r.String()
+	}
+	return strings.Join(parts, ", ")
 }

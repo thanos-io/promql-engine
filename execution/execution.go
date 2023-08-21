@@ -18,7 +18,6 @@ package execution
 
 import (
 	"runtime"
-	"sort"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -114,17 +113,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		}
 
 		if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
-			next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
+			return aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 		} else {
-			next, err = aggregate.NewHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
+			return aggregate.NewHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		return exchange.NewConcurrent(next, 2), nil
-
 	case *parser.BinaryExpr:
 		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
 			return newScalarBinaryOperator(e, storage, opts, hints)
@@ -163,13 +155,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(opts.StepsBatch, 1), next, e.Expr, opts)
 
 	case logicalplan.Deduplicate:
-		// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
-		// Sorting engines by MaxT ensures that samples produced due to
-		// staleness will be overwritten and corrected by samples coming from
-		// engines with a higher max time.
-		sort.Slice(e.Expressions, func(i, j int) bool {
-			return e.Expressions[i].Engine.MaxT() < e.Expressions[j].Engine.MaxT()
-		})
 
 		operators := make([]model.VectorOperator, len(e.Expressions))
 		for i, expr := range e.Expressions {
@@ -180,8 +165,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			operators[i] = operator
 		}
 		coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, operators...)
-		dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce)
-		return exchange.NewConcurrent(dedup, 2), nil
+		return exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce), nil
 
 	case logicalplan.RemoteExecution:
 		// Create a new remote query scoped to the calculated start time.
@@ -195,12 +179,17 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
 		selectorOpts := *opts
 		selectorOpts.LookbackDelta = 0
-		remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts)
-		return exchange.NewConcurrent(remoteExec, 2), nil
+		return remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts), nil
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
 	case logicalplan.UserDefinedExpr:
 		return e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
+	case logicalplan.Concurrent:
+		next, err := newOperator(e.Expr, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewConcurrent(next, e.Concurrency), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}
