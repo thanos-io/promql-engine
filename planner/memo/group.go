@@ -1,10 +1,10 @@
 package memo
 
 import (
-	"github.com/thanos-io/promql-engine/cascades/cost"
-	"github.com/thanos-io/promql-engine/cascades/logicalplan"
-	"github.com/thanos-io/promql-engine/cascades/physicalplan"
-	"github.com/thanos-io/promql-engine/cascades/utils"
+	"github.com/thanos-io/promql-engine/planner/cost"
+	"github.com/thanos-io/promql-engine/planner/logicalplan"
+	"github.com/thanos-io/promql-engine/planner/physicalplan"
+	"github.com/thanos-io/promql-engine/planner/utils"
 	"sync/atomic"
 )
 
@@ -38,7 +38,7 @@ type Group struct {
 type GroupImplementation struct {
 	SelectedExpr   *GroupExpr
 	Cost           cost.Cost
-	Implementation physicalplan.Implementation
+	Implementation physicalplan.PhysicalPlan
 }
 
 type GroupExpr struct {

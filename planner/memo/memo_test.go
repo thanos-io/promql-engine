@@ -2,8 +2,8 @@ package memo
 
 import (
 	"github.com/stretchr/testify/assert"
-	"github.com/thanos-io/promql-engine/cascades/logicalplan"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/planner/logicalplan"
 	"golang.org/x/exp/maps"
 	"reflect"
 	"testing"

@@ -1,15 +1,15 @@
-package cascades
+package planner
 
 import (
-	"github.com/thanos-io/promql-engine/cascades/cost"
-	"github.com/thanos-io/promql-engine/cascades/logicalplan"
-	"github.com/thanos-io/promql-engine/cascades/memo"
-	"github.com/thanos-io/promql-engine/cascades/physicalplan"
 	"github.com/thanos-io/promql-engine/parser"
+	"github.com/thanos-io/promql-engine/planner/cost"
+	"github.com/thanos-io/promql-engine/planner/logicalplan"
+	"github.com/thanos-io/promql-engine/planner/memo"
+	"github.com/thanos-io/promql-engine/planner/physicalplan"
 	"golang.org/x/exp/maps"
 )
 
-type Optimize struct {
+type Planner struct {
 	expr parser.Expr
 	memo memo.Memo
 	// root
@@ -17,19 +17,19 @@ type Optimize struct {
 	rootGroup *memo.Group
 }
 
-func New(expr parser.Expr) *Optimize {
-	return &Optimize{
-		expr: expr,
+func New() *Planner {
+	return &Planner{
 		memo: memo.NewMemo(),
 	}
 }
 
-func (o *Optimize) SetRoot(root logicalplan.LogicalPlan) {
-	o.root = root
-	o.rootGroup = o.memo.GetOrCreateGroup(root)
+func (o *Planner) MakeRoot(expr parser.Expr) {
+	o.expr = expr
+	o.root = logicalplan.NewLogicalPlan(&expr)
+	o.rootGroup = o.memo.GetOrCreateGroup(o.root)
 }
 
-func (o *Optimize) exploreGroup(rules []memo.TransformationRule, group *memo.Group, round memo.ExplorationRound) {
+func (o *Planner) exploreGroup(rules []memo.TransformationRule, group *memo.Group, round memo.ExplorationRound) {
 	for {
 		if group.IsExplored(round) {
 			break
@@ -50,9 +50,9 @@ func (o *Optimize) exploreGroup(rules []memo.TransformationRule, group *memo.Gro
 			}
 			// fire rules for more equivalent expressions
 			for _, rule := range rules {
-				if !equivalentExpr.AppliedTransformations.Contains(rule) {
-					if rule.Match(equivalentExpr) {
-						transformedExpr := rule.Transform(equivalentExpr)
+				if rule.Match(equivalentExpr) {
+					if !equivalentExpr.AppliedTransformations.Contains(rule) {
+						transformedExpr := rule.Transform(o.memo, equivalentExpr)
 						group.Equivalents[transformedExpr.ID] = transformedExpr
 						equivalentExpr.AppliedTransformations.Add(rule)
 						// reset group exploration state
@@ -70,23 +70,23 @@ func (o *Optimize) exploreGroup(rules []memo.TransformationRule, group *memo.Gro
 	}
 }
 
-func (o *Optimize) Explore(rules []memo.TransformationRule, round memo.ExplorationRound) {
+func (o *Planner) Explore(rules []memo.TransformationRule, round memo.ExplorationRound) {
 	o.exploreGroup(rules, o.rootGroup, round)
 }
 
-func (o *Optimize) findBestImpl(costModel cost.CostModel, rules []memo.ImplementationRule, group *memo.Group) *memo.GroupImplementation {
+func (o *Planner) findBestImpl(costModel cost.CostModel, rules []memo.ImplementationRule, group *memo.Group) *memo.GroupImplementation {
 	if group.Implementation != nil {
 		return group.Implementation
 	} else {
 		var groupImpl *memo.GroupImplementation
 		for _, expr := range group.Equivalents {
 			// fire rules to find implementations for each equiv expr, returning un-calculated implementations
-			var possibleImpls []physicalplan.Implementation
+			var possibleImpls []physicalplan.PhysicalPlan
 			for _, rule := range rules {
 				possibleImpls = append(possibleImpls, rule.ListImplementations(expr)...)
 			}
 			// get the implementation of child groups
-			var childImpls []physicalplan.Implementation
+			var childImpls []physicalplan.PhysicalPlan
 			for _, child := range expr.Children {
 				childImpl := o.findBestImpl(costModel, rules, child)
 				child.Implementation = childImpl
@@ -94,9 +94,10 @@ func (o *Optimize) findBestImpl(costModel cost.CostModel, rules []memo.Implement
 			}
 			// calculate the implementation, and update the best cost for group
 			for _, impl := range possibleImpls {
-				calculatedCost := impl.CalculateCost(childImpls)
+				impl.SetChildren(childImpls)
+				calculatedCost := impl.Cost()
 				if groupImpl != nil {
-					if costModel.IsBetter(groupImpl, calculatedCost) {
+					if costModel.IsBetter(groupImpl.Cost, calculatedCost) {
 						groupImpl.SelectedExpr = expr
 						groupImpl.Implementation = impl
 						groupImpl.Cost = calculatedCost
@@ -114,6 +115,6 @@ func (o *Optimize) findBestImpl(costModel cost.CostModel, rules []memo.Implement
 	}
 }
 
-func (o *Optimize) FindBestImplementation(costModel cost.CostModel, rules []memo.ImplementationRule) {
+func (o *Planner) FindBestImplementation(costModel cost.CostModel, rules []memo.ImplementationRule) {
 	o.rootGroup.Implementation = o.findBestImpl(costModel, rules, o.rootGroup)
 }

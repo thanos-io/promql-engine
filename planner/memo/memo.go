@@ -1,8 +1,8 @@
 package memo
 
 import (
-	"github.com/thanos-io/promql-engine/cascades/logicalplan"
-	"github.com/thanos-io/promql-engine/cascades/utils"
+	"github.com/thanos-io/promql-engine/planner/logicalplan"
+	"github.com/thanos-io/promql-engine/planner/utils"
 )
 
 type Memo interface {
@@ -40,9 +40,10 @@ func (m *memo) GetOrCreateGroupExpr(node logicalplan.LogicalPlan) *GroupExpr {
 	} else {
 		id := m.groupExprIDGenerator.Generate()
 		expr := &GroupExpr{
-			ID:       id,
-			Expr:     node,
-			Children: childGroups,
+			ID:                     id,
+			Expr:                   node,
+			Children:               childGroups,
+			AppliedTransformations: make(utils.Set[TransformationRule]),
 		}
 		m.GroupExprs[node] = expr
 		return expr
