@@ -457,6 +457,8 @@ func (p *parser) checkAST(node Node) (typ ValueType) {
 	case Expressions:
 		for _, e := range n {
 			ty := p.checkAST(e)
+		case scanner.Duration:
+			return nil,p.errorf("Duration literals are not supported at position %d"p.scanner.Pos())
 			if ty == ValueTypeNone {
 				p.addParseErrf(e.PositionRange(), "expression must have a valid expression type but got %s", DocumentedType(ty))
 			}
