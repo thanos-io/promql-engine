@@ -283,10 +283,13 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 		EnableAnalysis:           e.enableAnalysis,
 		EnableSubqueries:         e.enableSubqueries,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+		Queryable:                q,
 	}
 
-	lplan := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Expr(), q, qOpts)
+	lplan := logicalplan.New(expr, qOpts).Optimize(append(e.logicalOptimizers, logicalplan.CountValuesExecutionRewriter{Engine: e}))
+	expr = lplan.Expr()
+
+	exec, err := execution.New(expr, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -340,10 +343,13 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		EnableAnalysis:           e.enableAnalysis,
 		EnableSubqueries:         false, // not yet implemented for range queries.
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+		Queryable:                q,
 	}
 
-	lplan := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Expr(), q, qOpts)
+	lplan := logicalplan.New(expr, qOpts).Optimize(append(e.logicalOptimizers, logicalplan.CountValuesExecutionRewriter{Engine: e}))
+	expr = lplan.Expr()
+
+	exec, err := execution.New(expr, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -679,9 +685,53 @@ loop:
 	default:
 		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.expr.Type()))
 	}
-
 	ret.Value = result
+
+	// TODO: something good
+	switch te := q.expr.(type) {
+	case logicalplan.CountValues:
+		ret.Value = countValues(te.Param, ret.Value, q.ts.UnixMilli())
+	default:
+	}
 	return ret
+}
+
+// TODO: just to get started, this is wrong
+func countValues(param string, val promparser.Value, T int64) promparser.Value {
+	m := make(map[float64]int)
+	switch tval := val.(type) {
+	case promql.Vector:
+		for i := range tval {
+			m[tval[i].F]++
+		}
+		res := make(promql.Vector, 0, len(m))
+		for k, v := range m {
+			res = append(res, promql.Sample{
+				Metric: labels.FromStrings(param, strconv.FormatFloat(float64(k), 'f', -1, 64)),
+				T:      T,
+				F:      float64(v),
+			})
+		}
+		return res
+	case promql.Matrix:
+		for i := range tval {
+			m[tval[i].Floats[0].F]++
+		}
+		res := make(promql.Matrix, 0, len(m))
+		for k, v := range m {
+			res = append(res, promql.Series{
+				Metric: labels.FromStrings(param, strconv.FormatFloat(float64(k), 'f', -1, 64)),
+				Floats: []promql.FPoint{
+					{T: T,
+						F: float64(v),
+					},
+				},
+			})
+		}
+		return res
+	default:
+		return val
+	}
 }
 
 func newErrResult(r *promql.Result, err error) *promql.Result {
