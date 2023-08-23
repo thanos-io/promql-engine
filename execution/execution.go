@@ -45,8 +45,8 @@ import (
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(expr parser.Expr, queryable storage.Queryable, opts *query.Options) (model.VectorOperator, error) {
-	selectorPool := engstore.NewSelectorPool(queryable)
+func New(expr parser.Expr, opts *query.Options) (model.VectorOperator, error) {
+	selectorPool := engstore.NewSelectorPool(opts.Queryable)
 	hints := storage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
@@ -196,6 +196,14 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		selectorOpts := *opts
 		selectorOpts.LookbackDelta = 0
 		remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts)
+		return exchange.NewConcurrent(remoteExec, 2), nil
+	case logicalplan.CountValues:
+		// count_values will be evaluated by treating its inner query as a remote execution and aggregating later on the presentation level
+		qry, err := e.Engine.NewRangeQuery(opts.Context, opts.Queryable, promql.NewPrometheusQueryOpts(false, opts.LookbackDelta), e.Query, opts.Start, opts.End, opts.Step)
+		if err != nil {
+			return nil, err
+		}
+		remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), opts.Start, opts)
 		return exchange.NewConcurrent(remoteExec, 2), nil
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil

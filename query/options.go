@@ -7,6 +7,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/prometheus/storage"
 	"github.com/thanos-io/promql-engine/parser"
 )
 
@@ -21,6 +22,8 @@ type Options struct {
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableSubqueries         bool
 	EnableAnalysis           bool
+
+	Queryable storage.Queryable
 }
 
 func (o *Options) NumSteps() int {
