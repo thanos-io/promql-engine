@@ -78,9 +78,6 @@ type Opts struct {
 	// This will default to false.
 	EnableSubqueries bool
 
-	// FallbackEngine
-	Engine v1.QueryEngine
-
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
 }
@@ -206,15 +203,8 @@ func New(opts Opts) *compatibilityEngine {
 		),
 	}
 
-	var engine v1.QueryEngine
-	if opts.Engine == nil {
-		engine = promql.NewEngine(opts.EngineOpts)
-	} else {
-		engine = opts.Engine
-	}
-
 	return &compatibilityEngine{
-		prom: engine,
+		prom: promql.NewEngine(opts.EngineOpts),
 
 		debugWriter:       opts.DebugWriter,
 		disableFallback:   opts.DisableFallback,
