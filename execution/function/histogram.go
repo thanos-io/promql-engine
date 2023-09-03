@@ -183,8 +183,8 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if extlabels.ContainsDuplicateLabelSetAfterDroppingName(series) {
-		return extlabels.ErrDuplicateLabelSet
+	if err := extlabels.CheckContainsDuplicateLabelSetAfterDroppingName(series); err != nil {
+		return err
 	}
 
 	var (
