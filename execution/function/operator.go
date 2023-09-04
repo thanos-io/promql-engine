@@ -91,7 +91,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := noArgFuncs[funcExpr.Func.Name]
 	if !ok {
-		return nil, UnknownFunctionError(funcExpr.Func)
+		return nil, UnknownFunctionError(funcExpr.Func.Name)
 	}
 
 	interval := opts.Step.Milliseconds()
@@ -129,7 +129,7 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := instantVectorFuncs[funcExpr.Func.Name]
 	if !ok {
-		return nil, UnknownFunctionError(funcExpr.Func)
+		return nil, UnknownFunctionError(funcExpr.Func.Name)
 	}
 
 	scalarPoints := make([][]float64, stepsBatch)
