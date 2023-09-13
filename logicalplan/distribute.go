@@ -90,7 +90,7 @@ func (r RemoteExecution) PositionRange() parser.PositionRange { return parser.Po
 
 func (r RemoteExecution) Type() parser.ValueType { return parser.ValueTypeMatrix }
 
-func (r RemoteExecution) PromQLExpr() {}
+//func (r RemoteExecution) PromQLExpr() {}
 
 // Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
 type Deduplicate struct {
@@ -107,7 +107,7 @@ func (r Deduplicate) PositionRange() parser.PositionRange { return parser.Positi
 
 func (r Deduplicate) Type() parser.ValueType { return parser.ValueTypeMatrix }
 
-func (r Deduplicate) PromQLExpr() {}
+//func (r Deduplicate) PromQLExpr() {}
 
 type Noop struct{}
 
@@ -119,7 +119,7 @@ func (r Noop) PositionRange() parser.PositionRange { return parser.PositionRange
 
 func (r Noop) Type() parser.ValueType { return parser.ValueTypeMatrix }
 
-func (r Noop) PromQLExpr() {}
+//func (r Noop) PromQLExpr() {}
 
 // distributiveAggregations are all PromQL aggregations which support
 // distributed execution.

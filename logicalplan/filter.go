@@ -26,4 +26,4 @@ func (f FilteredSelector) PositionRange() parser.PositionRange { return parser.P
 
 func (f FilteredSelector) Type() parser.ValueType { return parser.ValueTypeVector }
 
-func (f FilteredSelector) PromQLExpr() {}
+//func (f FilteredSelector) PromQLExpr() {}
