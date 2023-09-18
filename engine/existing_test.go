@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	promparser "github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/engine"
 
@@ -22,7 +22,7 @@ func TestRangeQuery(t *testing.T) {
 		Name     string
 		Load     string
 		Query    string
-		Result   promparser.Value
+		Result   parser.Value
 		Start    time.Time
 		End      time.Time
 		Interval time.Duration

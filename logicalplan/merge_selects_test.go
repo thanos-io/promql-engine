@@ -8,7 +8,8 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 
-	"github.com/thanos-io/promql-engine/parser"
+	"github.com/prometheus/prometheus/promql/parser"
+
 	"github.com/thanos-io/promql-engine/query"
 )
 
