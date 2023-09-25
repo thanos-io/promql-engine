@@ -260,9 +260,9 @@ func IsExtFunction(functionName string) bool {
 	return ok
 }
 
-func UnknownFunctionError(f *parser.Function) error {
-	msg := fmt.Sprintf("unknown function: %s", f.Name)
-	if _, ok := parser.Functions[f.Name]; ok {
+func UnknownFunctionError(name string) error {
+	msg := fmt.Sprintf("unknown function: %s", name)
+	if _, ok := parser.Functions[name]; ok {
 		return errors.Wrap(parse.ErrNotImplemented, msg)
 	}
 
