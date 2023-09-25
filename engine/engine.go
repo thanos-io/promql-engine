@@ -577,9 +577,6 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	if err != nil {
 		return newErrResult(ret, err)
 	}
-	if extlabels.ContainsDuplicateLabelSet(resultSeries) {
-		return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
-	}
 
 	series := make([]promql.Series, len(resultSeries))
 	for i := 0; i < len(resultSeries); i++ {
@@ -640,6 +637,9 @@ loop:
 			resultMatrix = append(resultMatrix, s)
 		}
 		sort.Sort(resultMatrix)
+		if resultMatrix.ContainsSameLabelset() {
+			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+		}
 		ret.Value = resultMatrix
 		if q.debugWriter != nil {
 			analyze(q.debugWriter, q.exec.(model.ObservableVectorOperator), "", "")
@@ -650,7 +650,11 @@ loop:
 	var result parser.Value
 	switch q.expr.Type() {
 	case parser.ValueTypeMatrix:
-		result = promql.Matrix(series)
+		matrix := promql.Matrix(series)
+		if matrix.ContainsSameLabelset() {
+			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+		}
+		result = matrix
 	case parser.ValueTypeVector:
 		// Convert matrix with one value per series into vector.
 		vector := make(promql.Vector, 0, len(resultSeries))
@@ -675,6 +679,9 @@ loop:
 			}
 		}
 		sort.Slice(vector, q.resultSort.comparer(&vector))
+		if vector.ContainsSameLabelset() {
+			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+		}
 		result = vector
 	case parser.ValueTypeScalar:
 		v := math.NaN()

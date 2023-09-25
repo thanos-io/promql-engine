@@ -3360,6 +3360,64 @@ func TestInstantQuery(t *testing.T) {
 			query: `sum(foo) by (method) % sum(bar) by (method)`,
 		},
 		{
+			name: "vector binary op and 1",
+			load: `load 30s
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) and sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op and 2",
+			load: `load 30s
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (code) and sum(bar) by (code)`,
+		},
+		{
+			name: "vector binary op unless 1",
+			load: `load 30s
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (method) unless sum(bar) by (method)`,
+		},
+		{
+			name: "vector binary op unless 2",
+			load: `load 30s
+					foo{method="get", code="500"} 1+2x40
+					bar{method="get", code="404"} 1+1x30`,
+			query: `sum(foo) by (code) unless sum(bar) by (code)`,
+		},
+		{
+			name: "vector binary op unless 3",
+			load: `load 30s
+					foo{method="get", code="500"} 1+2x40`,
+			query: `sum(foo) by (code) unless nonexistent`,
+		},
+		{
+			name: "vector binary op or 1",
+			load: `load 30s
+            			foo{A="1"} 1+1x40
+            			foo{A="2"} 2+2x40`,
+			query: `sinh(foo or exp(foo))`,
+		},
+		{
+			name: "vector binary op one-to-one left multiple matches",
+			load: `load 30s
+					foo{method="get", code="500"} 1
+					foo{method="get", code="200"} 1
+					bar{method="get", code="200"} 1`,
+			query: `foo / ignoring (code) bar`,
+		},
+		{
+			name: "vector binary operation with many-to-many matching rhs high card",
+			load: `load 30s
+				foo{code="200", method="get"} 1+1x20
+				foo{code="200", method="post"} 1+1x20
+				bar{code="200", method="get"} 1+1x20
+				bar{code="200", method="post"} 1+1x20`,
+			query: `foo + on(code) group_right bar`,
+		},
+		{
 			name: "vector binary op > scalar",
 			load: `load 30s
 					foo{method="get", code="500"} 1+2x40
@@ -3774,7 +3832,7 @@ func TestInstantQuery(t *testing.T) {
 								if hasNaNs(oldResult) {
 									t.Log("Applying comparison with NaN equality.")
 									equalsWithNaNs(t, oldResult, newResult)
-								} else if oldResult.Err != nil {
+								} else if oldResult.Err != nil && newResult.Err != nil {
 									testutil.Equals(t, oldResult.Err.Error(), newResult.Err.Error())
 								} else {
 									testutil.Equals(t, oldResult, newResult)
