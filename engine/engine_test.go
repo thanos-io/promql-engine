@@ -1907,6 +1907,8 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 									EngineOpts:        opts,
 									DisableFallback:   disableFallback,
 									LogicalOptimizers: optimizers,
+									// Set to 1 to make sure batching is tested.
+									SelectorBatchSize: 1,
 								})
 								ctx := context.Background()
 								q1, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
@@ -1920,7 +1922,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								defer q2.Close()
 								oldResult := q2.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult)
+								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
 							})
 						}
 					})
@@ -4667,7 +4669,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							testutil.Assert(t, len(promVector) == 0)
 						}
 
-						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult)
+						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult)
 					})
 
 					t.Run("range", func(t *testing.T) {

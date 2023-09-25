@@ -18,42 +18,64 @@ import (
 	"github.com/thanos-io/promql-engine/execution/parse"
 )
 
+// aggregateTable is a table that aggregates input samples into
+// output samples for a single step.
 type aggregateTable interface {
-	aggregate(arg float64, vector model.StepVector)
+	// timestamp returns the timestamp of the table.
+	// If the table is empty, it returns math.MinInt64.
+	timestamp() int64
+	// aggregate aggregates the given vector into the table.
+	aggregate(vector model.StepVector)
+	// toVector writes out the accumulated result to the given vector and
+	// resets the table.
 	toVector(pool *model.VectorPool) model.StepVector
-	size() int
+	// reset resets the table with a new aggregation argument.
+	// The argument is currently used for quantile aggregation.
+	reset(arg float64)
 }
 
 type scalarTable struct {
-	timestamp    int64
+	ts           int64
 	inputs       []uint64
 	outputs      []*model.Series
 	accumulators []accumulator
 }
 
-func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, newAccumulator newAccumulatorFunc) []aggregateTable {
+func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, aggregation parser.ItemType) ([]aggregateTable, error) {
 	tables := make([]aggregateTable, stepsBatch)
 	for i := 0; i < len(tables); i++ {
-		tables[i] = newScalarTable(inputCache, outputCache, newAccumulator)
+		table, err := newScalarTable(inputCache, outputCache, aggregation)
+		if err != nil {
+			return nil, err
+		}
+		tables[i] = table
 	}
-	return tables
+	return tables, nil
 }
 
-func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, newAccumulator newAccumulatorFunc) *scalarTable {
+func (t *scalarTable) timestamp() int64 {
+	return t.ts
+}
+
+func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, aggregation parser.ItemType) (*scalarTable, error) {
 	accumulators := make([]accumulator, len(outputs))
 	for i := 0; i < len(accumulators); i++ {
-		accumulators[i] = newAccumulator()
+		acc, err := newScalarAccumulator(aggregation)
+		if err != nil {
+			return nil, err
+		}
+		accumulators[i] = acc
 	}
 	return &scalarTable{
+		ts:           math.MinInt64,
 		inputs:       inputSampleIDs,
 		outputs:      outputs,
 		accumulators: accumulators,
-	}
+	}, nil
 }
 
-func (t *scalarTable) aggregate(arg float64, vector model.StepVector) {
-	t.reset(arg)
-	t.timestamp = vector.T
+func (t *scalarTable) aggregate(vector model.StepVector) {
+	t.ts = vector.T
 
 	for i := range vector.Samples {
 		t.addSample(vector.SampleIDs[i], vector.Samples[i])
@@ -81,10 +103,11 @@ func (t *scalarTable) reset(arg float64) {
 	for i := range t.outputs {
 		t.accumulators[i].Reset(arg)
 	}
+	t.ts = math.MinInt64
 }
 
 func (t *scalarTable) toVector(pool *model.VectorPool) model.StepVector {
-	result := pool.GetStepVector(t.timestamp)
+	result := pool.GetStepVector(t.ts)
 	for i, v := range t.outputs {
 		if t.accumulators[i].HasValue() {
 			f, h := t.accumulators[i].Value()
@@ -141,27 +164,27 @@ func hashMetric(
 	return key, string(bytes), builder.Labels()
 }
 
-func makeAccumulatorFunc(expr parser.ItemType) (newAccumulatorFunc, error) {
+func newScalarAccumulator(expr parser.ItemType) (accumulator, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
-		return newSumAcc, nil
+		return newSumAcc(), nil
 	case "max":
-		return newMaxAcc, nil
+		return newMaxAcc(), nil
 	case "min":
-		return newMinAcc, nil
+		return newMinAcc(), nil
 	case "count":
-		return newCountAcc, nil
+		return newCountAcc(), nil
 	case "avg":
-		return newAvgAcc, nil
+		return newAvgAcc(), nil
 	case "group":
-		return newGroupAcc, nil
+		return newGroupAcc(), nil
 	case "stddev":
-		return newStdDevAcc, nil
+		return newStdDevAcc(), nil
 	case "stdvar":
-		return newStdVarAcc, nil
+		return newStdVarAcc(), nil
 	case "quantile":
-		return newQuantileAcc, nil
+		return newQuantileAcc(), nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)

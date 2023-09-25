@@ -70,8 +70,13 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		transform(&node.Expr)
 	case *parser.VectorSelector:
 		transform(expr)
+	case *VectorSelector:
+		var x parser.Expr = node.VectorSelector
+		transform(expr)
+		traverse(&x, transform)
 	case *parser.MatrixSelector:
-		transform(&node.VectorSelector)
+		transform(expr)
+		traverse(&node.VectorSelector, transform)
 	case *parser.AggregateExpr:
 		transform(expr)
 		traverse(&node.Expr, transform)
@@ -100,6 +105,10 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 		return TraverseBottomUp(current, &node.Expr, transform)
 	case *parser.VectorSelector:
 		return transform(parent, current)
+	case *VectorSelector:
+		transform(parent, current)
+		var x parser.Expr = node.VectorSelector
+		return TraverseBottomUp(current, &x, transform)
 	case *parser.MatrixSelector:
 		return transform(current, &node.VectorSelector)
 	case *parser.AggregateExpr:

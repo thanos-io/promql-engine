@@ -83,6 +83,9 @@ type Opts struct {
 
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
+
+	// SelectorBatchSize specifies the maximum number of samples to be returned by selectors in a single batch.
+	SelectorBatchSize int64
 }
 
 func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
@@ -179,6 +182,12 @@ func New(opts Opts) *compatibilityEngine {
 	if opts.ExtLookbackDelta == 0 {
 		opts.ExtLookbackDelta = 1 * time.Hour
 		level.Debug(opts.Logger).Log("msg", "externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
+	}
+	if opts.SelectorBatchSize != 0 {
+		opts.LogicalOptimizers = append(
+			[]logicalplan.Optimizer{logicalplan.SelectorBatchSize{Size: opts.SelectorBatchSize}},
+			opts.LogicalOptimizers...,
+		)
 	}
 
 	functions := make(map[string]*parser.Function, len(parser.Functions))

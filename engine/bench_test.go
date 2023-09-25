@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,6 +87,10 @@ func BenchmarkChunkDecoding(b *testing.B) {
 }
 
 func BenchmarkSingleQuery(b *testing.B) {
+	b.StopTimer()
+	memProfileRate := runtime.MemProfileRate
+	runtime.MemProfileRate = 0
+
 	test := setupStorage(b, 5000, 3, 720)
 	defer test.Close()
 
@@ -94,10 +99,16 @@ func BenchmarkSingleQuery(b *testing.B) {
 	step := time.Second * 30
 
 	query := "sum(rate(http_requests_total[2m]))"
-	b.ResetTimer()
+	opts := engine.Opts{
+		EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+		DisableFallback:   true,
+		SelectorBatchSize: 256,
+	}
 	b.ReportAllocs()
+	b.StartTimer()
+	runtime.MemProfileRate = memProfileRate
 	for i := 0; i < b.N; i++ {
-		result := executeRangeQuery(b, query, test, start, end, step)
+		result := executeRangeQuery(b, query, test, start, end, step, opts)
 		testutil.Ok(b, result.Err)
 	}
 }
@@ -274,24 +285,29 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 	}
 
+	opts := engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			Logger:               nil,
+			Reg:                  nil,
+			MaxSamples:           50000000,
+			Timeout:              100 * time.Second,
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
+		},
+		SelectorBatchSize: 256,
+	}
+
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.Run("old_engine", func(b *testing.B) {
-				opts := promql.EngineOpts{
-					Logger:               nil,
-					Reg:                  nil,
-					MaxSamples:           50000000,
-					Timeout:              100 * time.Second,
-					EnableAtModifier:     true,
-					EnableNegativeOffset: true,
-				}
-				engine := promql.NewEngine(opts)
+
+				promEngine := promql.NewEngine(opts.EngineOpts)
 
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
+					qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
 
 					oldResult := qry.Exec(context.Background())
@@ -303,7 +319,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step)
+					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step, opts)
 					testutil.Ok(b, newResult.Err)
 				}
 			})
@@ -562,8 +578,8 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 
 }
 
-func executeRangeQuery(b *testing.B, q string, storage *teststorage.TestStorage, start time.Time, end time.Time, step time.Duration) *promql.Result {
-	return executeRangeQueryWithOpts(b, q, storage, start, end, step, engine.Opts{DisableFallback: true, EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
+func executeRangeQuery(b *testing.B, q string, storage *teststorage.TestStorage, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
+	return executeRangeQueryWithOpts(b, q, storage, start, end, step, opts)
 }
 
 func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.TestStorage, start time.Time, end time.Time, step time.Duration, opts engine.Opts) *promql.Result {
