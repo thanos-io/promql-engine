@@ -9,11 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 )
 
-var (
-	ErrDuplicateLabelSet = errors.New("vector cannot contain metrics with the same labelset")
-)
-
-func ContainsDuplicateLabelSet(series []labels.Labels) bool {
+func CheckContainsDuplicateLabelSet(series []labels.Labels) error {
 	var (
 		buf  = make([]byte, 0, 256)
 		seen = make(map[uint64]struct{}, len(series))
@@ -25,14 +21,14 @@ func ContainsDuplicateLabelSet(series []labels.Labels) bool {
 		buf = s.Bytes(buf)
 		h := xxhash.Sum64(s.Bytes(buf))
 		if _, ok := seen[h]; ok {
-			return true
+			return errors.Newf("vector cannot contain metrics with the same labelset (%s)", s.String())
 		}
 		seen[h] = struct{}{}
 	}
-	return false
+	return nil
 }
 
-func ContainsDuplicateLabelSetAfterDroppingName(series []labels.Labels) bool {
+func CheckContainsDuplicateLabelSetAfterDroppingName(series []labels.Labels) error {
 	var (
 		buf  = make([]byte, 0, 256)
 		seen = make(map[uint64]struct{}, len(series))
@@ -48,11 +44,11 @@ func ContainsDuplicateLabelSetAfterDroppingName(series []labels.Labels) bool {
 
 		h := xxhash.Sum64(lbls.Bytes(buf))
 		if _, ok := seen[h]; ok {
-			return true
+			return errors.Newf("vector cannot contain metrics with the same labelset (%s)", s.String())
 		}
 		seen[h] = struct{}{}
 	}
-	return false
+	return nil
 }
 
 // DropMetricName removes the __name__ label and returns the dropped name and remaining labels.

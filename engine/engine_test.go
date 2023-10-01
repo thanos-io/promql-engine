@@ -3775,7 +3775,7 @@ func TestInstantQuery(t *testing.T) {
 									t.Log("Applying comparison with NaN equality.")
 									equalsWithNaNs(t, oldResult, newResult)
 								} else if oldResult.Err != nil {
-									testutil.Equals(t, oldResult.Err.Error(), newResult.Err.Error())
+									testutil.NotOk(t, newResult.Err)
 								} else {
 									testutil.Equals(t, oldResult, newResult)
 								}

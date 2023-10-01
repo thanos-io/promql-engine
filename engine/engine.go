@@ -577,8 +577,8 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	if err != nil {
 		return newErrResult(ret, err)
 	}
-	if extlabels.ContainsDuplicateLabelSet(resultSeries) {
-		return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+	if err := extlabels.CheckContainsDuplicateLabelSet(resultSeries); err != nil {
+		return newErrResult(ret, err)
 	}
 
 	series := make([]promql.Series, len(resultSeries))
