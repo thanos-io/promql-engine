@@ -547,8 +547,7 @@ type compatibilityQuery struct {
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	ctx = warnings.NewContext(ctx)
 	defer func() {
-		warns := warnings.FromContext(ctx)
-		if len(warns) > 0 {
+		if warns := warnings.FromContext(ctx); len(warns) > 0 {
 			ret.Warnings = warns
 		}
 	}()
