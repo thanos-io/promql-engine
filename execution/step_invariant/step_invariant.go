@@ -142,7 +142,7 @@ func (u *stepInvariantOperator) cacheInputVector(ctx context.Context) error {
 		}
 		defer u.next.GetPool().PutVectors(in)
 
-		if len(in) == 0 || len(in[0].Samples) == 0 {
+		if len(in) == 0 || (len(in[0].Samples) == 0 && len(in[0].Histograms) == 0) {
 			return
 		}
 
