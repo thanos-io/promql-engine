@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
@@ -289,14 +290,7 @@ func TestDistributedAggregations(t *testing.T) {
 											testutil.Ok(t, err)
 											promResult := promQry.Exec(ctx)
 
-											roundValues(promResult)
-											roundValues(distResult)
-
-											// Instant queries have no guarantees on result ordering.
-											sortByLabels(promResult)
-											sortByLabels(distResult)
-
-											testutil.Equals(t, promResult, distResult)
+											testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
 										})
 									}
 
@@ -316,9 +310,7 @@ func TestDistributedAggregations(t *testing.T) {
 										testutil.Ok(t, err)
 										promResult := promQry.Exec(ctx)
 
-										roundValues(promResult)
-										roundValues(distResult)
-										testutil.Equals(t, promResult, distResult)
+										testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
 									})
 								})
 							}
@@ -334,7 +326,7 @@ func TestDistributedEngineWarnings(t *testing.T) {
 	querier := &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-				return newWarningsSeriesSet(storage.Warnings{errors.New("test warning")})
+				return newWarningsSeriesSet(annotations.New().Add(errors.New("test warning")))
 			},
 		},
 	}

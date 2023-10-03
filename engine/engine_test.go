@@ -7,18 +7,19 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"os"
 	"reflect"
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
-	"github.com/prometheus/prometheus/promql/parser"
+	"go.uber.org/goleak"
+	"golang.org/x/exp/maps"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
@@ -26,17 +27,17 @@ import (
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
-	"github.com/go-kit/log"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
-	"go.uber.org/goleak"
 )
 
 func TestMain(m *testing.M) {
@@ -236,8 +237,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	oldResult := q2.Exec(context.Background())
 	testutil.Ok(t, oldResult.Err)
 
-	testutil.Equals(t, oldResult, newResult)
-
+	testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
 }
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
@@ -248,7 +248,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	// since Prometheus v2.33.0 so we also enable them.
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
-		Logger:               log.NewLogfmtLogger(os.Stderr),
 		MaxSamples:           1e10,
 		EnableNegativeOffset: true,
 		EnableAtModifier:     true,
@@ -1919,21 +1918,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 								defer q2.Close()
 								oldResult := q2.Exec(ctx)
 
-								if oldResult.Err != nil {
-									testutil.NotOk(t, newResult.Err, "expected error "+oldResult.Err.Error())
-									return
-								}
-
-								testutil.Equals(t, newResult.Warnings, oldResult.Warnings)
-								testutil.Ok(t, newResult.Err)
-								if hasNaNs(oldResult) {
-									t.Log("Applying comparison with NaN equality.")
-									equalsWithNaNs(t, oldResult, newResult)
-								} else {
-									emptyLabelsToNil(oldResult)
-									emptyLabelsToNil(newResult)
-									testutil.Equals(t, oldResult, newResult)
-								}
+								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult)
 							})
 						}
 					})
@@ -1941,37 +1926,6 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			})
 		}
 	}
-}
-
-func equalsWithNaNs(t *testing.T, oldResult, newResult interface{}) {
-	if reflect.TypeOf(labels.Labels{}).Kind() == reflect.Struct {
-		testutil.WithGoCmp(cmpopts.EquateNaNs(), cmp.AllowUnexported(labels.Labels{})).Equals(t, oldResult, newResult)
-	} else {
-		testutil.WithGoCmp(cmpopts.EquateNaNs()).Equals(t, oldResult, newResult)
-	}
-}
-
-func hasNaNs(result *promql.Result) bool {
-	switch result := result.Value.(type) {
-	case promql.Matrix:
-		for _, series := range result {
-			for _, point := range series.Floats {
-				if math.IsNaN(point.F) {
-					return true
-				}
-			}
-		}
-	case promql.Vector:
-		for _, sample := range result {
-			if math.IsNaN(sample.F) {
-				return true
-			}
-		}
-	case promql.Scalar:
-		return math.IsNaN(result.V)
-	}
-
-	return false
 }
 
 // mergeWithSampleDedup merges samples from series with the same labels,
@@ -2020,7 +1974,7 @@ func TestWarnings(t *testing.T) {
 	querier := &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-				return newWarningsSeriesSet(storage.Warnings{errors.New("test warning")})
+				return newWarningsSeriesSet(annotations.New().Add(errors.New("test warning")))
 			},
 		},
 	}
@@ -2034,22 +1988,21 @@ func TestWarnings(t *testing.T) {
 	cases := []struct {
 		name          string
 		query         string
-		expectedWarns storage.Warnings
+		expectedWarns annotations.Annotations
 	}{
 		{
 			name:  "single select call",
 			query: "http_requests_total",
-			expectedWarns: storage.Warnings{
+			expectedWarns: annotations.New().Add(
 				errors.New("test warning"),
-			},
+			),
 		},
 		{
 			name:  "multiple select calls",
 			query: `sum(http_requests_total) / sum(http_responses_total)`,
-			expectedWarns: storage.Warnings{
+			expectedWarns: annotations.New().Add(
 				errors.New("test warning"),
-				errors.New("test warning"),
-			},
+			),
 		},
 	}
 
@@ -2135,7 +2088,7 @@ func TestEdgeCases(t *testing.T) {
 			oldResult := q1.Exec(ctx)
 			newResult := q2.Exec(ctx)
 
-			testutil.Equals(t, oldResult, newResult)
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
 		})
 	}
 }
@@ -3824,19 +3777,7 @@ func TestInstantQuery(t *testing.T) {
 
 								oldResult := q2.Exec(ctx)
 
-								if tc.sortByLabels {
-									sortByLabels(oldResult)
-									sortByLabels(newResult)
-								}
-
-								if hasNaNs(oldResult) {
-									t.Log("Applying comparison with NaN equality.")
-									equalsWithNaNs(t, oldResult, newResult)
-								} else if oldResult.Err != nil && newResult.Err != nil {
-									testutil.Equals(t, oldResult.Err.Error(), newResult.Err.Error())
-								} else {
-									testutil.Equals(t, oldResult, newResult)
-								}
+								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult)
 							})
 						}
 					})
@@ -3910,7 +3851,7 @@ type hintRecordingQuerier struct {
 
 func (h *hintRecordingQuerier) Close() error { return nil }
 
-func (h *hintRecordingQuerier) Select(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+func (h *hintRecordingQuerier) Select(_ context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	h.mux.Lock()
 	defer h.mux.Unlock()
 	h.hints = append(h.hints, hints)
@@ -4423,7 +4364,7 @@ func (m *mockIterator) Err() error { return nil }
 type testSeriesSet struct {
 	i      int
 	series []storage.Series
-	warns  storage.Warnings
+	warns  annotations.Annotations
 }
 
 func newTestSeriesSet(series ...storage.Series) storage.SeriesSet {
@@ -4433,17 +4374,17 @@ func newTestSeriesSet(series ...storage.Series) storage.SeriesSet {
 	}
 }
 
-func newWarningsSeriesSet(warns storage.Warnings) storage.SeriesSet {
+func newWarningsSeriesSet(warns annotations.Annotations) storage.SeriesSet {
 	return &testSeriesSet{
 		i:     -1,
 		warns: warns,
 	}
 }
 
-func (s *testSeriesSet) Next() bool                 { s.i++; return s.i < len(s.series) }
-func (s *testSeriesSet) At() storage.Series         { return s.series[s.i] }
-func (s *testSeriesSet) Err() error                 { return nil }
-func (s *testSeriesSet) Warnings() storage.Warnings { return s.warns }
+func (s *testSeriesSet) Next() bool                        { s.i++; return s.i < len(s.series) }
+func (s *testSeriesSet) At() storage.Series                { return s.series[s.i] }
+func (s *testSeriesSet) Err() error                        { return nil }
+func (s *testSeriesSet) Warnings() annotations.Annotations { return s.warns }
 
 type slowSeries struct{}
 
@@ -4673,8 +4614,6 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						testutil.Ok(t, err)
 						newResult := qry.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
-						newVector, err := newResult.Vector()
-						testutil.Ok(t, err)
 
 						qry, err = promEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
@@ -4688,43 +4627,28 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							testutil.Assert(t, len(promVector) == 0)
 						}
 
-						sortByLabels(promResult)
-						sortByLabels(newResult)
-						if hasNaNs(promResult) {
-							t.Log("Applying comparison with NaN equality.")
-							equalsWithNaNs(t, promVector, newVector)
-						} else {
-							testutil.Equals(t, promVector, newVector)
-						}
+						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult)
 					})
 
 					t.Run("range", func(t *testing.T) {
 						ctx := context.Background()
 						qry, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
-						res := qry.Exec(ctx)
-						testutil.Ok(t, res.Err)
-						actual, err := res.Matrix()
-						testutil.Ok(t, err)
+						newResult := qry.Exec(ctx)
+						testutil.Ok(t, newResult.Err)
 
 						qry, err = promEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
-						res = qry.Exec(ctx)
-						testutil.Ok(t, res.Err)
-						expected, err := res.Matrix()
+						promResult := qry.Exec(ctx)
+						testutil.Ok(t, promResult.Err)
+						promMatrix, err := promResult.Matrix()
 						testutil.Ok(t, err)
 
 						// Make sure we're not getting back empty results.
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
-							testutil.Assert(t, len(expected) == 0)
+							testutil.Assert(t, len(promMatrix) == 0)
 						}
-						testutil.Equals(t, len(expected), len(actual))
-						if hasNaNs(res) {
-							t.Log("Applying comparison with NaN equality.")
-							equalsWithNaNs(t, expected, actual)
-						} else {
-							testutil.Equals(t, expected, actual)
-						}
+						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult)
 					})
 				})
 			}
@@ -4922,3 +4846,144 @@ func emptyLabelsToNil(result *promql.Result) {
 		}
 	}
 }
+
+// comparer should be used to compare promql results between engines.
+var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
+	compareFloats := func(l, r float64) bool {
+		const epsilon = 1e-6
+		return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
+	}
+	compareHistograms := func(l, r *histogram.FloatHistogram) bool {
+		if l == nil && r == nil {
+			return true
+		}
+		return l.Equals(r)
+	}
+	compareAnnotations := func(l, r annotations.Annotations) bool {
+		// TODO: discard promql annotations for now, once we support them we should add them back
+		discardPromqlAnnotations := func(k string, _ error) bool {
+			hasInfoPrefix := strings.HasPrefix(k, annotations.PromQLInfo.Error())
+			hasWarnPrefix := strings.HasPrefix(k, annotations.PromQLWarning.Error())
+			return hasInfoPrefix || hasWarnPrefix
+		}
+		maps.DeleteFunc(l, discardPromqlAnnotations)
+		maps.DeleteFunc(r, discardPromqlAnnotations)
+
+		if len(l) != len(r) {
+			return false
+		}
+		for k, v := range l {
+			if !cmp.Equal(r[k], v) {
+				return false
+			}
+		}
+		for k, v := range r {
+			if !cmp.Equal(l[k], v) {
+				return false
+			}
+		}
+		return true
+	}
+	compareMetrics := func(l, r labels.Labels) bool {
+		return l.Hash() == r.Hash()
+	}
+
+	if x.Err != nil && y.Err != nil {
+		return cmp.Equal(x.Err.Error(), y.Err.Error())
+	} else if x.Err != nil || y.Err != nil {
+		return false
+	}
+
+	if !compareAnnotations(x.Warnings, y.Warnings) {
+		return false
+	}
+
+	vx, xvec := x.Value.(promql.Vector)
+	vy, yvec := y.Value.(promql.Vector)
+
+	if xvec && yvec {
+		if len(vx) != len(vy) {
+			return false
+		}
+
+		// Sort vector before comparing.
+		sort.Sort(samplesByLabels(vx))
+		sort.Sort(samplesByLabels(vy))
+
+		for i := 0; i < len(vx); i++ {
+			if !compareMetrics(vx[i].Metric, vy[i].Metric) {
+				return false
+			}
+			if vx[i].T != vy[i].T {
+				return false
+			}
+			if !compareFloats(vx[i].F, vy[i].F) {
+				return false
+			}
+			if !compareHistograms(vx[i].H, vy[i].H) {
+				return false
+			}
+		}
+		return true
+	}
+
+	mx, xmat := x.Value.(promql.Matrix)
+	my, ymat := y.Value.(promql.Matrix)
+
+	if xmat && ymat {
+		if len(mx) != len(my) {
+			return false
+		}
+		// Sort matrix before comparing.
+		sort.Sort(seriesByLabels(mx))
+		sort.Sort(seriesByLabels(my))
+		for i := 0; i < len(mx); i++ {
+			mxs := mx[i]
+			mys := my[i]
+
+			if !compareMetrics(mxs.Metric, mys.Metric) {
+				return false
+			}
+
+			xps := mxs.Floats
+			yps := mys.Floats
+
+			if len(xps) != len(yps) {
+				return false
+			}
+			for j := 0; j < len(xps); j++ {
+				if xps[j].T != yps[j].T {
+					return false
+				}
+				if !compareFloats(xps[j].F, yps[j].F) {
+					return false
+				}
+			}
+			xph := mxs.Histograms
+			yph := mys.Histograms
+
+			if len(xph) != len(yph) {
+				return false
+			}
+			for j := 0; j < len(xph); j++ {
+				if xph[j].T != yph[j].T {
+					return false
+				}
+				if !compareHistograms(xph[j].H, yph[j].H) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+
+	sx, xscalar := x.Value.(promql.Scalar)
+	sy, yscalar := y.Value.(promql.Scalar)
+	if xscalar && yscalar {
+		if sx.T != sy.T {
+			return false
+		}
+		return compareFloats(sx.V, sy.V)
+	}
+	return false
+})

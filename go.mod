@@ -10,11 +10,11 @@ require (
 	github.com/google/go-cmp v0.5.9
 	github.com/prometheus/client_golang v1.16.0
 	github.com/prometheus/common v0.44.0
-	github.com/prometheus/prometheus v0.46.1-0.20230818184859-4d8e380269da
+	github.com/prometheus/prometheus v0.47.1-0.20231002142425-1492031ef2e0
 	github.com/stretchr/testify v1.8.4
 	github.com/zhangyunhao116/umap v0.0.0-20221211160557-cb7705fafa39
 	go.uber.org/goleak v1.2.1
-	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
+	golang.org/x/exp v0.0.0-20230801115018-d63ba01acd4b
 	gonum.org/v1/gonum v0.12.0
 )
 
@@ -67,7 +67,7 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
-	github.com/prometheus/alertmanager v0.25.0 // indirect
+	github.com/prometheus/alertmanager v0.26.0 // indirect
 	github.com/prometheus/client_model v0.4.0 // indirect
 	github.com/prometheus/common/sigv4 v0.1.0 // indirect
 	github.com/prometheus/procfs v0.11.1 // indirect

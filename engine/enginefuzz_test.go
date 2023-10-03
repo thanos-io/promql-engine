@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"reflect"
-	"sort"
 	"testing"
 	"time"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
-	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -435,100 +432,13 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 	})
 }
 
-var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
-	compareFloats := func(l, r float64) bool {
-		const epsilon = 1e-6
-		return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
-	}
-
-	if x.Err != nil && y.Err != nil {
-		return cmp.Equal(x.Err.Error(), y.Err.Error())
-	} else if x.Err != nil || y.Err != nil {
-		return false
-	}
-
-	vx, xvec := x.Value.(promql.Vector)
-	vy, yvec := y.Value.(promql.Vector)
-
-	if xvec && yvec {
-		if len(vx) != len(vy) {
-			return false
-		}
-		// Sort vector before comparing.
-		sort.Slice(vx, func(i, j int) bool {
-			return labels.Compare(vx[i].Metric, vx[j].Metric) < 0
-		})
-		sort.Slice(vy, func(i, j int) bool {
-			return labels.Compare(vy[i].Metric, vy[j].Metric) < 0
-		})
-		for i := 0; i < len(vx); i++ {
-			if !equal(vx[i].Metric, vy[i].Metric) {
-				return false
-			}
-			if vx[i].T != vy[i].T {
-				return false
-			}
-			if !compareFloats(vx[i].F, vy[i].F) {
-				return false
-			}
-		}
-		return true
-	}
-
-	mx, xmat := x.Value.(promql.Matrix)
-	my, ymat := y.Value.(promql.Matrix)
-
-	if xmat && ymat {
-		if len(mx) != len(my) {
-			return false
-		}
-		// Sort matrix before comparing.
-		sort.Sort(mx)
-		sort.Sort(my)
-		for i := 0; i < len(mx); i++ {
-			mxs := mx[i]
-			mys := my[i]
-
-			if !equal(mxs.Metric, mys.Metric) {
-				return false
-			}
-
-			xps := mxs.Floats
-			yps := mys.Floats
-
-			if len(xps) != len(yps) {
-				return false
-			}
-			for j := 0; j < len(xps); j++ {
-				if xps[j].T != yps[j].T {
-					return false
-				}
-				if !compareFloats(xps[j].F, yps[j].F) {
-					return false
-				}
-			}
-		}
-		return true
-	}
-
-	sx, xscalar := x.Value.(promql.Scalar)
-	sy, yscalar := y.Value.(promql.Scalar)
-	if xscalar && yscalar {
-		if sx.T != sy.T {
-			return false
-		}
-		return compareFloats(sx.V, sy.V)
-	}
-	return false
-})
-
 func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error) {
-	querier, err := q.Querier(ctx, 0, time.Now().Unix())
+	querier, err := q.Querier(0, time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
 	res := make([]labels.Labels, 0)
-	ss := querier.Select(false, &storage.SelectHints{Func: "series"}, labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"))
+	ss := querier.Select(ctx, false, &storage.SelectHints{Func: "series"}, labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"))
 	for ss.Next() {
 		lbls := ss.At().Labels()
 		res = append(res, lbls)
@@ -537,12 +447,4 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 		return nil, err
 	}
 	return res, nil
-}
-
-func equal(oldResult, newResult interface{}) bool {
-	if reflect.TypeOf(labels.Labels{}).Kind() == reflect.Struct {
-		return cmp.Equal(oldResult, newResult, cmp.AllowUnexported(labels.Labels{}))
-	} else {
-		return cmp.Equal(oldResult, newResult)
-	}
 }
