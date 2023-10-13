@@ -9,9 +9,19 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	promstg "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/promql-engine/execution/storage"
 )
+
+func TestFilter_MultipleMatcherWithSameName(t *testing.T) {
+	f := storage.NewFilter([]*labels.Matcher{
+		labels.MustNewMatcher(labels.MatchNotEqual, "phase", "Running"),
+		labels.MustNewMatcher(labels.MatchNotEqual, "phase", "Succeeded"),
+	})
+
+	require.Equal(t, false, f.Matches(&mockLabelSeries{labels: labels.FromStrings("phase", "Running")}))
+}
 
 func TestFilter_Matches(t *testing.T) {
 	testCases := []struct {
