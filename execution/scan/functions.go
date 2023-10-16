@@ -381,6 +381,11 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram.
 func histogramRate(points []Sample, isCounter bool) *histogram.FloatHistogram {
+	// safeguard against empty ranges coming from extended function evaluation.
+	if len(points) < 2 {
+		return nil
+	}
+
 	prev := points[0].H // We already know that this is a histogram.
 	last := points[len(points)-1].H
 	if last == nil {
