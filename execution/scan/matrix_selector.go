@@ -172,7 +172,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if !o.isExtFunction {
 				rangeSamples, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousSamples)
 			} else {
-				rangeSamples, err = selectExtPoints(ctx, series.samples, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
+				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
 			}
 
 			if err != nil {
@@ -353,7 +353,7 @@ loop:
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectExtPoints(ctx context.Context, it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]Sample, error) {
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]Sample, error) {
 	extMint := mint - extLookbackDelta
 	selectsNativeHistograms := false
 
