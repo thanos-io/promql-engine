@@ -234,7 +234,7 @@ func (a *aggregate) initializeScalarTables(ctx context.Context) ([]aggregateTabl
 		labelsMap[lblName] = struct{}{}
 	}
 	for i := 0; i < len(series); i++ {
-		hash, _, lbls := hashMetric(builder, series[i], !a.by, a.labels, labelsMap, hashingBuf)
+		hash, lbls := hashMetric(builder, series[i], !a.by, a.labels, labelsMap, hashingBuf)
 		output, ok := outputMap[hash]
 		if !ok {
 			output = &model.Series{

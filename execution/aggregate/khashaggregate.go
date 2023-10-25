@@ -184,7 +184,7 @@ func (a *kAggregate) init(ctx context.Context) error {
 		labelsMap[lblName] = struct{}{}
 	}
 	for i := 0; i < len(series); i++ {
-		hash, _, _ := hashMetric(builder, series[i], !a.by, a.labels, labelsMap, hashingBuf)
+		hash, _ := hashMetric(builder, series[i], !a.by, a.labels, labelsMap, hashingBuf)
 		h, ok := heapsHash[hash]
 		if !ok {
 			h = &samplesHeap{compare: a.compare}
