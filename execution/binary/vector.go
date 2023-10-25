@@ -505,7 +505,7 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 
 // Lifted from: https://github.com/prometheus/prometheus/blob/a38179c4e183d9b50b271167bf90050eda8ec3d1/promql/engine.go#L2430.
 // TODO: call with histogram values in followup PR.
-func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool) {
+func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool) { //nolint:unparam
 	switch op {
 	case parser.ADD:
 		if hlhs != nil && hrhs != nil {

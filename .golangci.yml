@@ -32,7 +32,6 @@ output:
 linters:
   enable:
     # Sorted alphabetically.
-    - deadcode
     - errcheck
     - goconst
     - godot
@@ -43,11 +42,9 @@ linters:
     - ineffassign
     - misspell
     - staticcheck
-    - structcheck
     - typecheck
     - unparam
     - unused
-    - varcheck
     - exportloopref
     - promlinter
 
