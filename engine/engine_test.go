@@ -16,6 +16,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"go.uber.org/goleak"
@@ -2136,6 +2138,44 @@ func TestDisabledXFunction(t *testing.T) {
 		_, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 		testutil.NotOk(t, err)
 	}
+}
+
+func TestXFunctionsWithNativeHistograms(t *testing.T) {
+	defaultQueryTime := time.Unix(50, 0)
+
+	expr := "sum(xincrease(native_histogram_series[50s]))"
+
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	lStorage := teststorage.New(t)
+	defer lStorage.Close()
+
+	app := lStorage.Appender(context.TODO())
+	testutil.Ok(t, generateFloatHistogramSeries(app, 3000, false))
+	testutil.Ok(t, app.Commit())
+
+	optimizers := logicalplan.AllOptimizers
+
+	ctx := context.Background()
+	newEngine := engine.New(engine.Opts{
+		EngineOpts:        opts,
+		DisableFallback:   true,
+		LogicalOptimizers: optimizers,
+		EnableXFunctions:  true,
+	})
+	query, err := newEngine.NewInstantQuery(ctx, lStorage, nil, expr, defaultQueryTime)
+	testutil.Ok(t, err)
+	defer query.Close()
+
+	engineResult := query.Exec(ctx)
+	require.Error(t, engineResult.Err)
 }
 
 func TestXFunctionsWhenDisabled(t *testing.T) {

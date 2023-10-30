@@ -9,12 +9,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -59,6 +59,8 @@ type matrixSelector struct {
 	extLookbackDelta int64
 	model.OperatorTelemetry
 }
+
+var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
@@ -353,6 +355,7 @@ loop:
 // TODO(fpetkovski): Add max samples limit.
 func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]Sample, error) {
 	extMint := mint - extLookbackDelta
+	selectsNativeHistograms := false
 
 	if len(out) > 0 && out[len(out)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
@@ -396,6 +399,7 @@ loop:
 		case chunkenc.ValNone:
 			break loop
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			selectsNativeHistograms = true
 			t, fh := buf.AtFloatHistogram()
 			if value.IsStaleNaN(fh.Sum) {
 				continue loop
@@ -431,6 +435,7 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+		selectsNativeHistograms = true
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
 			if *metricAppearedTs == nil {
@@ -446,6 +451,10 @@ loop:
 			}
 			out = append(out, Sample{T: t, F: v})
 		}
+	}
+
+	if selectsNativeHistograms {
+		return nil, ErrNativeHistogramsNotSupported
 	}
 
 	return out, nil
