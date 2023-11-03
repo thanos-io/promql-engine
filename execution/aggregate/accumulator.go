@@ -97,8 +97,8 @@ func newGroupAcc() accumulator {
 	return &genericAcc{aggregate: groupAggregate}
 }
 
-func (g *genericAcc) Add(v float64, h *histogram.FloatHistogram) {
-	if !g.hasValue || math.IsNaN(g.value) || g.value < v {
+func (g *genericAcc) Add(v float64, _ *histogram.FloatHistogram) {
+	if !g.hasValue || math.IsNaN(g.value) {
 		g.value = v
 	}
 	g.hasValue = true
