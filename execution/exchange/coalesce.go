@@ -72,9 +72,12 @@ func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorO
 	return c, obsOperators
 }
 
-func (c *coalesce) Explain() (me string, next []model.VectorOperator) {
-
-	return "[*coalesce]", c.operators
+func (c *coalesce) Explain() model.Explanation {
+	res := model.Explanation{Operator: "[*coalesce]", Next: make([]model.Explanation, 0)}
+	for _, op := range c.operators {
+		res.Next = append(res.Next, op.Explain())
+	}
+	return res
 }
 
 func (c *coalesce) GetPool() *model.VectorPool {

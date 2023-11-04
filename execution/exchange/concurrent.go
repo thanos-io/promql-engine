@@ -46,8 +46,11 @@ func (c *concurrencyOperator) Analyze() (model.OperatorTelemetry, []model.Observ
 	return c, next
 }
 
-func (c *concurrencyOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*concurrencyOperator(buff=%v)]", c.bufferSize), []model.VectorOperator{c.next}
+func (c *concurrencyOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: fmt.Sprintf("[*concurrencyOperator(buff=%v)]", c.bufferSize),
+		Next:     []model.Explanation{c.next.Explain()},
+	}
 }
 
 func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, error) {

@@ -58,6 +58,12 @@ type ObservableVectorOperator interface {
 	Analyze() (OperatorTelemetry, []ObservableVectorOperator)
 }
 
+type Explanation struct {
+	Operator string
+
+	Next []Explanation
+}
+
 // VectorOperator performs operations on series in step by step fashion.
 type VectorOperator interface {
 	// Next yields vectors of samples from all series for one or more execution steps.
@@ -71,6 +77,6 @@ type VectorOperator interface {
 	// GetPool returns pool of vectors that can be shared across operators.
 	GetPool() *VectorPool
 
-	// Explain returns human-readable explanation of the current operator and optional nested operators.
-	Explain() (me string, next []VectorOperator)
+	// Explain returns an explanation of the current operator and optional nested operators.
+	Explain() Explanation
 }

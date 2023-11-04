@@ -28,8 +28,10 @@ func (o *scalarFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Obs
 	return o, next
 }
 
-func (o *scalarFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*scalarFunctionOperator]", []model.VectorOperator{}
+func (o *scalarFunctionOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: "[*scalarFunctionOperator]",
+	}
 }
 
 func (o *scalarFunctionOperator) Series(ctx context.Context) ([]labels.Labels, error) {

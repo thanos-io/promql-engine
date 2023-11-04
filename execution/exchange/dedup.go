@@ -123,8 +123,11 @@ func (d *dedupOperator) GetPool() *model.VectorPool {
 	return d.pool
 }
 
-func (d *dedupOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*dedup]", []model.VectorOperator{d.next}
+func (d *dedupOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: "[*dedup]",
+		Next:     []model.Explanation{d.next.Explain()},
+	}
 }
 
 func (d *dedupOperator) loadSeries(ctx context.Context) error {

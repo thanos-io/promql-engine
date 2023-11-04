@@ -89,16 +89,21 @@ func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVector
 	return a, ops
 }
 
-func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
-	var ops []model.VectorOperator
+func (a *aggregate) Explain() model.Explanation {
+	res := model.Explanation{
+		Next: make([]model.Explanation, 0),
+	}
 	if a.paramOp != nil {
-		ops = append(ops, a.paramOp)
+		res.Next = append(res.Next, a.paramOp.Explain())
 	}
-	ops = append(ops, a.next)
+	res.Next = append(res.Next, a.next.Explain())
+
 	if a.by {
-		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
+		res.Operator = fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels)
+	} else {
+		res.Operator = fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels)
 	}
-	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), ops
+	return res
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {

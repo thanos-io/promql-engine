@@ -21,4 +21,4 @@ func (o operator) Series(ctx context.Context) ([]labels.Labels, error) { return 
 
 func (o operator) GetPool() *model.VectorPool { return nil }
 
-func (o operator) Explain() (me string, next []model.VectorOperator) { return "noop", nil }
+func (o operator) Explain() model.Explanation { return model.Explanation{Operator: "noop"} }

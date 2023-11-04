@@ -22,8 +22,11 @@ type unaryNegation struct {
 	model.OperatorTelemetry
 }
 
-func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
-	return "[*unaryNegation]", []model.VectorOperator{u.next}
+func (u *unaryNegation) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: "[*unaryNegation]",
+		Next:     []model.Explanation{u.next.Explain()},
+	}
 }
 
 func NewUnaryNegation(

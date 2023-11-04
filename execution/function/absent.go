@@ -33,8 +33,10 @@ func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 	return o, next
 }
 
-func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*absentOperator]", []model.VectorOperator{}
+func (o *absentOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: "[*absentOperator]",
+	}
 }
 
 func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {

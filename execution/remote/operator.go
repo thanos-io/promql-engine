@@ -70,8 +70,10 @@ func (e *Execution) GetPool() *model.VectorPool {
 	return e.vectorSelector.GetPool()
 }
 
-func (e *Execution) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*remoteExec] %s (%d, %d)", e.query, e.opts.Start.Unix(), e.opts.End.Unix()), nil
+func (e *Execution) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: fmt.Sprintf("[*remoteExec] %s (%d, %d)", e.query, e.opts.Start.Unix(), e.opts.End.Unix()),
+	}
 }
 
 type storageAdapter struct {

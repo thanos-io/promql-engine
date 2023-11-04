@@ -36,8 +36,10 @@ func (o *relabelFunctionOperator) Analyze() (model.OperatorTelemetry, []model.Ob
 	return o, next
 }
 
-func (o *relabelFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*relabelFunctionOperator]", []model.VectorOperator{}
+func (o *relabelFunctionOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: "[*relabelFunctionOperator]",
+	}
 }
 
 func (o *relabelFunctionOperator) Series(ctx context.Context) ([]labels.Labels, error) {

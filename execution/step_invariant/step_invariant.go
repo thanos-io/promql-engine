@@ -44,8 +44,11 @@ func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.Obse
 	return u, next
 }
 
-func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*stepInvariantOperator]", []model.VectorOperator{u.next}
+func (u *stepInvariantOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: "[*stepInvariantOperator]",
+		Next:     []model.Explanation{u.next.Explain()},
+	}
 }
 
 func NewStepInvariantOperator(

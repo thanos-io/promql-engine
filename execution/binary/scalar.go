@@ -102,8 +102,11 @@ func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 	return o, next
 }
 
-func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
+func (o *scalarOperator) Explain() model.Explanation {
+	return model.Explanation{
+		Operator: fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]),
+		Next:     []model.Explanation{o.next.Explain(), o.scalar.Explain()},
+	}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {

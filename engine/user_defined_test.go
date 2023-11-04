@@ -125,6 +125,6 @@ func (c *vectorSelectorOperator) GetPool() *model.VectorPool {
 	return c.vectors
 }
 
-func (c *vectorSelectorOperator) Explain() (me string, next []model.VectorOperator) {
-	return "vectorSelectorOperator", nil
+func (c *vectorSelectorOperator) Explain() model.Explanation {
+	return model.Explanation{Operator: "[*vectorSelectorOperator]"}
 }

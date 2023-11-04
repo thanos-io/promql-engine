@@ -96,11 +96,16 @@ func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 	return o, next
 }
 
-func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
-	if o.matching.On {
-		return fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+func (o *vectorOperator) Explain() model.Explanation {
+	res := model.Explanation{
+		Next: []model.Explanation{o.lhs.Explain(), o.rhs.Explain()},
 	}
-	return fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+	if o.matching.On {
+		res.Operator = fmt.Sprintf("[*vectorOperator] %s %v on %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include)
+	} else {
+		res.Operator = fmt.Sprintf("[*vectorOperator] %s %v ignoring %v group %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include)
+	}
+	return res
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
