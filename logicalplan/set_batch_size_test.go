@@ -87,7 +87,7 @@ func TestSetBatchSize(t *testing.T) {
 		},
 	}
 
-	optimizers := append(append([]Optimizer{SelectorBatchSize{Size: 10}}, DefaultOptimizers...))
+	optimizers := append([]Optimizer{SelectorBatchSize{Size: 10}}, DefaultOptimizers...)
 	for _, tcase := range cases {
 		t.Run(tcase.expr, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)

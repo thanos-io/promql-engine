@@ -132,8 +132,13 @@ func newGroupAcc() *genericAcc {
 }
 
 func (g *genericAcc) Add(v float64, _ *histogram.FloatHistogram) {
-	if !g.hasValue || math.IsNaN(g.value) {
+	if math.IsNaN(v) {
+		return
+	}
+	if !g.hasValue {
 		g.value = v
+		g.hasValue = true
+		return
 	}
 	g.hasValue = true
 	g.value = g.aggregate(g.value, v)
@@ -213,8 +218,13 @@ func newAvgAcc() *avgAcc {
 
 func (a *avgAcc) Add(v float64, _ *histogram.FloatHistogram) {
 	a.count++
-	a.hasValue = true
+	if !a.hasValue {
+		a.hasValue = true
+		a.avg = v
+		return
+	}
 
+	a.hasValue = true
 	if math.IsInf(a.avg, 0) {
 		if math.IsInf(v, 0) && (a.avg > 0) == (v > 0) {
 			// The `avg` and `v` values are `Inf` of the same sign.  They
