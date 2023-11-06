@@ -1103,9 +1103,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		{
 			name: "group",
 			load: `load 30s
-					http_requests_total{pod="nginx-1"} 1+1x15
-					http_requests_total{pod="nginx-2"} 1+2x18`,
+					http_requests_total{pod="nginx-1"} 2+1x15
+					http_requests_total{pod="nginx-2"} 2+2x18`,
 			query: `group(http_requests_total)`,
+		},
+		{
+			name: "group by ",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 2+1x15
+					http_requests_total{pod="nginx-2"} 2+2x18`,
+			query: `group by (pod) (http_requests_total)`,
 		},
 		{
 			name: "resets",

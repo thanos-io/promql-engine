@@ -79,6 +79,7 @@ func (s *sumAcc) Reset(_ float64) {
 }
 
 type genericAcc struct {
+	zeroVal         float64
 	value           float64
 	hasValue        bool
 	aggregate       func(float64, float64) float64
@@ -112,6 +113,7 @@ func groupVecAggregate(_ []float64, _ []*histogram.FloatHistogram) float64 {
 
 func newMaxAcc() *genericAcc {
 	return &genericAcc{
+		zeroVal:         math.MinInt64,
 		aggregate:       maxAggregate,
 		vectorAggregate: maxVecAggregate,
 	}
@@ -119,6 +121,7 @@ func newMaxAcc() *genericAcc {
 
 func newMinAcc() *genericAcc {
 	return &genericAcc{
+		zeroVal:         math.MaxInt64,
 		aggregate:       minAggregate,
 		vectorAggregate: minVecAggregate,
 	}
@@ -126,6 +129,7 @@ func newMinAcc() *genericAcc {
 
 func newGroupAcc() *genericAcc {
 	return &genericAcc{
+		zeroVal:         1,
 		aggregate:       groupAggregate,
 		vectorAggregate: groupVecAggregate,
 	}
@@ -136,7 +140,7 @@ func (g *genericAcc) Add(v float64, _ *histogram.FloatHistogram) {
 		return
 	}
 	if !g.hasValue {
-		g.value = v
+		g.value = g.aggregate(g.zeroVal, v)
 		g.hasValue = true
 		return
 	}
