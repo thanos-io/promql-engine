@@ -106,7 +106,9 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	case *parser.VectorSelector:
 		return transform(parent, current)
 	case *VectorSelector:
-		transform(parent, current)
+		if stop := transform(parent, current); stop {
+			return stop
+		}
 		var x parser.Expr = node.VectorSelector
 		return TraverseBottomUp(current, &x, transform)
 	case *parser.MatrixSelector:
