@@ -121,10 +121,6 @@ func (t *scalarTable) toVector(pool *model.VectorPool) model.StepVector {
 	return result
 }
 
-func (t *scalarTable) size() int {
-	return len(t.outputs)
-}
-
 func hashMetric(
 	builder labels.ScratchBuilder,
 	metric labels.Labels,
