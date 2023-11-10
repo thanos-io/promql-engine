@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type SeriesSelector interface {
@@ -30,12 +31,14 @@ type seriesSelector struct {
 	step     int64
 	matchers []*labels.Matcher
 	hints    storage.SelectHints
+	opts     *query.Options
+	//hintsCollector
 
 	once   sync.Once
 	series []SignedSeries
 }
 
-func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) *seriesSelector {
+func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints, opts *query.Options) *seriesSelector {
 	return &seriesSelector{
 		storage:  storage,
 		maxt:     maxt,
@@ -43,6 +46,7 @@ func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matche
 		step:     step,
 		matchers: matchers,
 		hints:    hints,
+		opts:     opts,
 	}
 }
 
