@@ -19,6 +19,8 @@ import (
 type SeriesSelector interface {
 	GetSeries(ctx context.Context, shard, numShards int) ([]SignedSeries, error)
 	Matchers() []*labels.Matcher
+	// TODO: add a method to get hints. Return nil if there are no hints.
+	// Hints() map[string][]hintspb.Hints.
 }
 
 type SignedSeries struct {
