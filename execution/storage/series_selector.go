@@ -12,6 +12,8 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
+	tquery "github.com/thanos-io/thanos/pkg/query"
+	tstore "github.com/thanos-io/thanos/pkg/store"
 )
 
 type SeriesSelector interface {
@@ -25,14 +27,14 @@ type SignedSeries struct {
 }
 
 type seriesSelector struct {
-	storage  storage.Queryable
-	mint     int64
-	maxt     int64
-	step     int64
-	matchers []*labels.Matcher
-	hints    storage.SelectHints
-	opts     *query.Options
-	//hintsCollector
+	storage        storage.Queryable
+	mint           int64
+	maxt           int64
+	step           int64
+	matchers       []*labels.Matcher
+	hints          storage.SelectHints
+	opts           *query.Options
+	hintsCollector *tstore.HintsCollector
 
 	once   sync.Once
 	series []SignedSeries
@@ -71,7 +73,20 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	}
 	defer querier.Close()
 
-	seriesSet := querier.Select(ctx, false, &o.hints, o.matchers...)
+	var seriesSet storage.SeriesSet
+	var h *tstore.HintsCollector
+
+	if o.opts.EnableAnalysis {
+		if qwh, ok := querier.(tquery.QuerierWithHints); ok {
+			seriesSet, h = qwh.SelectWithHints(ctx, false, &o.hints, o.matchers...)
+
+			o.hintsCollector = h
+		}
+	}
+	if seriesSet == nil {
+		seriesSet = querier.Select(ctx, false, &o.hints, o.matchers...)
+	}
+
 	i := 0
 	for seriesSet.Next() {
 		s := seriesSet.At()
