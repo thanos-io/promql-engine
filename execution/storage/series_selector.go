@@ -7,6 +7,7 @@ import (
 	"context"
 	"sync"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
@@ -14,13 +15,15 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 	tquery "github.com/thanos-io/thanos/pkg/query"
 	tstore "github.com/thanos-io/thanos/pkg/store"
+	"github.com/thanos-io/thanos/pkg/store/hintspb"
 )
 
 type SeriesSelector interface {
 	GetSeries(ctx context.Context, shard, numShards int) ([]SignedSeries, error)
 	Matchers() []*labels.Matcher
 	// TODO: add a method to get hints. Return nil if there are no hints.
-	// Hints() map[string][]hintspb.Hints.
+	// Hints() map[string][]hintspb.SeriesHintsResponse
+	GetSeriesHints() (map[string][]hintspb.SeriesResponseHints,error)
 }
 
 type SignedSeries struct {
@@ -101,6 +104,24 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 
 	warnings.AddToContext(seriesSet.Warnings(), ctx)
 	return seriesSet.Err()
+}
+
+func(o *seriesSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints,error){
+	if o.hintsCollector == nil{
+		return nil,nil
+	}
+
+	hints := make(map[string][]hintspb.SeriesResponseHints)
+
+	for key,value :=  range o.hintsCollector{
+		h := hintspb.SeriesResponseHints{}
+		if err := types.UnmarshalAny(value.GetHints(),&h); err != nil {
+			return nil,err
+		}
+
+		hints[key] = append(hints[key],h)
+	}
+	return hints,nil
 }
 
 func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries {

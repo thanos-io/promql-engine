@@ -7,15 +7,38 @@ import (
 	"context"
 	"sync"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/labels"
+	tstore "github.com/thanos-io/thanos/pkg/store"
+	"github.com/thanos-io/thanos/pkg/store/hintspb"
 )
 
 type filteredSelector struct {
-	selector *seriesSelector
-	filter   Filter
+	selector       *seriesSelector
+	filter         Filter
+	hintsCollector *tstore.HintsCollector
 
 	once   sync.Once
 	series []SignedSeries
+}
+
+// GetSeriesHints implements SeriesSelector.
+func (f *filteredSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints,error) {
+	if f.hintsCollector == nil {
+		return nil, nil
+	}
+
+	hints := make(map[string][]hintspb.SeriesResponseHints)
+
+	for key, value := range f.hintsCollector {
+		h := hintspb.SeriesResponseHints{}
+		if err := types.UnmarshalAny(value.GetHints(), &h); err != nil {
+			return nil, err
+		}
+
+		hints[key] = append(hints[key], h)
+	}
+	return hints, nil
 }
 
 func NewFilteredSelector(selector *seriesSelector, filter Filter) SeriesSelector {

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 
@@ -17,6 +18,8 @@ import (
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/thanos/pkg/store/hintspb"
+	tstore "github.com/thanos-io/thanos/pkg/store"
 )
 
 type Execution struct {
@@ -77,6 +80,7 @@ func (e *Execution) Explain() (me string, next []model.VectorOperator) {
 type storageAdapter struct {
 	query promql.Query
 	opts  *query.Options
+	hintsCollector tstore.HintsCollector
 
 	once   sync.Once
 	err    error
@@ -99,6 +103,24 @@ func (s *storageAdapter) GetSeries(ctx context.Context, _, _ int) ([]engstore.Si
 	}
 
 	return s.series, nil
+}
+
+func (s *storageAdapter) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints, error) {
+	if s.hintsCollector == nil {
+		return nil, nil
+	}
+
+	hints := make(map[string][]hintspb.SeriesResponseHints)
+
+	for key, value := range s.hintsCollector {
+		h := hintspb.SeriesResponseHints{}
+		if err := types.UnmarshalAny(value.GetHints(), &h); err != nil {
+			return nil, err
+		}
+
+		hints[key] = append(hints[key], h)
+	}
+	return hints, nil
 }
 
 func (s *storageAdapter) executeQuery(ctx context.Context) {
