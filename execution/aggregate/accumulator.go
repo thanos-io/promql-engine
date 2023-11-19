@@ -4,6 +4,7 @@ import (
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"gonum.org/v1/gonum/floats"
 )
 
 type accumulator interface {
@@ -13,7 +14,12 @@ type accumulator interface {
 	Reset(float64)
 }
 
-type newAccumulatorFunc func() accumulator
+type vectorAccumulator interface {
+	AddVector(vs []float64, hs []*histogram.FloatHistogram)
+	Value() (float64, *histogram.FloatHistogram)
+	HasValue() bool
+	Reset(float64)
+}
 
 type sumAcc struct {
 	value       float64
@@ -21,8 +27,19 @@ type sumAcc struct {
 	hasFloatVal bool
 }
 
-func newSumAcc() accumulator {
+func newSumAcc() *sumAcc {
 	return &sumAcc{}
+}
+
+func (s *sumAcc) AddVector(float64s []float64, histograms []*histogram.FloatHistogram) {
+	if len(float64s) > 0 {
+		s.value += floats.Sum(float64s)
+		s.hasFloatVal = true
+	}
+
+	if len(histograms) > 0 {
+		s.histSum = histogramSum(s.histSum, histograms)
+	}
 }
 
 func (s *sumAcc) Add(v float64, h *histogram.FloatHistogram) {
@@ -62,9 +79,11 @@ func (s *sumAcc) Reset(_ float64) {
 }
 
 type genericAcc struct {
-	value     float64
-	hasValue  bool
-	aggregate func(float64, float64) float64
+	zeroVal         float64
+	value           float64
+	hasValue        bool
+	aggregate       func(float64, float64) float64
+	vectorAggregate func([]float64, []*histogram.FloatHistogram) float64
 }
 
 func maxAggregate(a, b float64) float64 {
@@ -73,36 +92,75 @@ func maxAggregate(a, b float64) float64 {
 	}
 	return b
 }
+func maxVecAggregate(fs []float64, _ []*histogram.FloatHistogram) float64 {
+	return floats.Max(fs)
+}
+
 func minAggregate(a, b float64) float64 {
 	if a < b {
 		return a
 	}
 	return b
 }
+func minVecAggregate(fs []float64, _ []*histogram.FloatHistogram) float64 {
+	return floats.Min(fs)
+}
+
 func groupAggregate(_, _ float64) float64 { return 1 }
-
-func newMaxAcc() accumulator {
-	return &genericAcc{aggregate: maxAggregate}
+func groupVecAggregate(_ []float64, _ []*histogram.FloatHistogram) float64 {
+	return 1
 }
 
-func newMinAcc() accumulator {
-	return &genericAcc{aggregate: minAggregate}
+func newMaxAcc() *genericAcc {
+	return &genericAcc{
+		zeroVal:         math.MinInt64,
+		aggregate:       maxAggregate,
+		vectorAggregate: maxVecAggregate,
+	}
 }
 
-func newCountAcc() accumulator {
-	return &countAcc{}
+func newMinAcc() *genericAcc {
+	return &genericAcc{
+		zeroVal:         math.MaxInt64,
+		aggregate:       minAggregate,
+		vectorAggregate: minVecAggregate,
+	}
 }
 
-func newGroupAcc() accumulator {
-	return &genericAcc{aggregate: groupAggregate}
+func newGroupAcc() *genericAcc {
+	return &genericAcc{
+		zeroVal:         1,
+		aggregate:       groupAggregate,
+		vectorAggregate: groupVecAggregate,
+	}
 }
 
 func (g *genericAcc) Add(v float64, _ *histogram.FloatHistogram) {
-	if !g.hasValue || math.IsNaN(g.value) {
-		g.value = v
+	if math.IsNaN(v) {
+		return
+	}
+	if !g.hasValue {
+		g.value = g.aggregate(g.zeroVal, v)
+		g.hasValue = true
+		return
 	}
 	g.hasValue = true
 	g.value = g.aggregate(g.value, v)
+}
+
+func (g *genericAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) {
+	if len(vs) == 0 && len(hs) == 0 {
+		return
+	}
+
+	if !g.hasValue || math.IsNaN(g.value) {
+		g.value = g.vectorAggregate(vs, hs)
+		g.hasValue = true
+		return
+	}
+	current := g.value
+	g.value = g.aggregate(current, g.vectorAggregate(vs, hs))
+	g.hasValue = true
 }
 
 func (g *genericAcc) Value() (float64, *histogram.FloatHistogram) {
@@ -121,6 +179,17 @@ func (g *genericAcc) Reset(_ float64) {
 type countAcc struct {
 	value    float64
 	hasValue bool
+}
+
+func newCountAcc() *countAcc {
+	return &countAcc{}
+}
+
+func (c *countAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) {
+	if len(vs) > 0 || len(hs) > 0 {
+		c.hasValue = true
+		c.value += float64(len(vs)) + float64(len(hs))
+	}
 }
 
 func (c *countAcc) Add(v float64, h *histogram.FloatHistogram) {
@@ -142,23 +211,53 @@ func (c *countAcc) Reset(_ float64) {
 }
 
 type avgAcc struct {
-	count    float64
-	sum      float64
+	avg      float64
+	count    int64
 	hasValue bool
 }
 
-func newAvgAcc() accumulator {
+func newAvgAcc() *avgAcc {
 	return &avgAcc{}
 }
 
-func (a *avgAcc) Add(v float64, h *histogram.FloatHistogram) {
+func (a *avgAcc) Add(v float64, _ *histogram.FloatHistogram) {
+	a.count++
+	if !a.hasValue {
+		a.hasValue = true
+		a.avg = v
+		return
+	}
+
 	a.hasValue = true
-	a.count += 1
-	a.sum += v
+	if math.IsInf(a.avg, 0) {
+		if math.IsInf(v, 0) && (a.avg > 0) == (v > 0) {
+			// The `avg` and `v` values are `Inf` of the same sign.  They
+			// can't be subtracted, but the value of `avg` is correct
+			// already.
+			return
+		}
+		if !math.IsInf(v, 0) && !math.IsNaN(v) {
+			// At this stage, the avg is an infinite. If the added
+			// value is neither an Inf or a Nan, we can keep that avg
+			// value.
+			// This is required because our calculation below removes
+			// the avg value, which would look like Inf += x - Inf and
+			// end up as a NaN.
+			return
+		}
+	}
+
+	a.avg += v/float64(a.count) - a.avg/float64(a.count)
+}
+
+func (a *avgAcc) AddVector(vs []float64, _ []*histogram.FloatHistogram) {
+	for _, v := range vs {
+		a.Add(v, nil)
+	}
 }
 
 func (a *avgAcc) Value() (float64, *histogram.FloatHistogram) {
-	return a.sum / a.count, nil
+	return a.avg, nil
 }
 
 func (a *avgAcc) HasValue() bool {
@@ -167,7 +266,6 @@ func (a *avgAcc) HasValue() bool {
 
 func (a *avgAcc) Reset(_ float64) {
 	a.hasValue = false
-	a.sum = 0
 	a.count = 0
 }
 

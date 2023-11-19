@@ -42,15 +42,17 @@ type matrixSelector struct {
 
 	vectorPool *model.VectorPool
 
-	numSteps    int
-	mint        int64
-	maxt        int64
-	step        int64
-	selectRange int64
-	offset      int64
-	currentStep int64
-
+	numSteps      int
+	mint          int64
+	maxt          int64
+	step          int64
+	selectRange   int64
+	offset        int64
 	isExtFunction bool
+
+	currentStep     int64
+	currentSeries   int64
+	seriesBatchSize int64
 
 	shard     int
 	numShards int
@@ -69,14 +71,13 @@ func NewMatrixSelector(
 	funcExpr *parser.Call,
 	opts *query.Options,
 	selectRange, offset time.Duration,
+	batchSize int64,
 	shard, numShard int,
-
 ) (model.VectorOperator, error) {
 	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err
 	}
-
 	isExtFunction := function.IsExtFunction(funcExpr.Func.Name)
 	m := &matrixSelector{
 		storage:    selector,
@@ -90,9 +91,10 @@ func NewMatrixSelector(
 		step:          opts.Step.Milliseconds(),
 		isExtFunction: isExtFunction,
 
-		selectRange: selectRange.Milliseconds(),
-		offset:      offset.Milliseconds(),
-		currentStep: opts.Start.UnixMilli(),
+		selectRange:     selectRange.Milliseconds(),
+		offset:          offset.Milliseconds(),
+		currentStep:     opts.Start.UnixMilli(),
+		seriesBatchSize: batchSize,
 
 		shard:     shard,
 		numShards: numShard,
@@ -102,6 +104,11 @@ func NewMatrixSelector(
 	m.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {
 		m.OperatorTelemetry = &model.TrackedTelemetry{}
+	}
+	// For instant queries, set the step to a positive value
+	// so that the operator can terminate.
+	if m.step == 0 {
+		m.step = 1
 	}
 
 	return m, nil
@@ -138,6 +145,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	default:
 	}
 	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
@@ -156,9 +164,10 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	// Reset the current timestamp.
 	ts = o.currentStep
-	for i := 0; i < len(o.scanners); i++ {
+	firstSeries := o.currentSeries
+	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
-			series   = &o.scanners[i]
+			series   = &o.scanners[o.currentSeries]
 			seriesTs = ts
 		)
 
@@ -170,9 +179,9 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			var err error
 
 			if !o.isExtFunction {
-				rangeSamples, err = selectPoints(series.samples, mint, maxt, o.scanners[i].previousSamples)
+				rangeSamples, err = selectPoints(series.samples, mint, maxt, series.previousSamples)
 			} else {
-				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, o.scanners[i].previousSamples, o.extLookbackDelta, &o.scanners[i].metricAppearedTs)
+				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, series.previousSamples, o.extLookbackDelta, &series.metricAppearedTs)
 			}
 
 			if err != nil {
@@ -188,7 +197,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
-				MetricAppearedTs: o.scanners[i].metricAppearedTs,
+				MetricAppearedTs: series.metricAppearedTs,
 			})
 
 			if ok {
@@ -200,28 +209,25 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				}
 			}
 
-			o.scanners[i].previousSamples = rangeSamples
+			series.previousSamples = rangeSamples
 
-			// Only buffer stepRange milliseconds from the second step on.
-			stepRange := o.selectRange
-			if stepRange > o.step {
-				stepRange = o.step
+			// Only buffer bufferRange milliseconds from the second step on.
+			bufferRange := o.selectRange
+			if bufferRange > o.step {
+				bufferRange = o.step
 			}
 			if !series.deltaReduced {
-				series.samples.ReduceDelta(stepRange)
+				series.samples.ReduceDelta(bufferRange)
 				series.deltaReduced = true
 			}
 
 			seriesTs += o.step
 		}
 	}
-	// For instant queries, set the step to a positive value
-	// so that the operator can terminate.
-	if o.step == 0 {
-		o.step = 1
+	if o.currentSeries == int64(len(o.scanners)) {
+		o.currentStep += o.step * int64(o.numSteps)
+		o.currentSeries = 0
 	}
-	o.currentStep += o.step * int64(o.numSteps)
-	o.AddExecutionTimeTaken(time.Since(start))
 	return vectors, nil
 }
 
@@ -262,7 +268,11 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			}
 			o.series[i] = lbls
 		}
-		o.vectorPool.SetStepSize(len(series))
+		numSeries := int64(len(o.series))
+		if o.seriesBatchSize == 0 || numSeries < o.seriesBatchSize {
+			o.seriesBatchSize = numSeries
+		}
+		o.vectorPool.SetStepSize(int(o.seriesBatchSize))
 	})
 	return err
 }

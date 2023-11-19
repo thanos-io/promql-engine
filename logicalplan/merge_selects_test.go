@@ -34,6 +34,10 @@ func TestMergeSelects(t *testing.T) {
 			expr:     `X{a="b"}/floor(X)`,
 			expected: `filter([a="b"], X) / floor(X)`,
 		},
+		{
+			expr:     `quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)`,
+			expected: `quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)`,
+		},
 	}
 	optimizers := []Optimizer{MergeSelectsOptimizer{}}
 	for _, tcase := range cases {
