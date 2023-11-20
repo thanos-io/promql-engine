@@ -38,11 +38,6 @@ func (m SelectorBatchSize) Optimize(expr parser.Expr, _ *query.Options) parser.E
 				e.BatchSize = m.Size
 			}
 			canBatch = false
-		case *parser.VectorSelector:
-			if canBatch {
-				*current = &VectorSelector{VectorSelector: e, BatchSize: m.Size}
-			}
-			canBatch = false
 		}
 	})
 	return expr

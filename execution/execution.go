@@ -62,13 +62,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 
-	case *parser.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e, opts, 0)
-		hints.Start = start
-		hints.End = end
-		filter := storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
-		return newShardedVectorSelector(filter, opts, e.Offset, 0)
-
 	case *logicalplan.VectorSelector:
 		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
 		hints.Start = start
@@ -209,8 +202,6 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 func unpackVectorSelector(t *parser.MatrixSelector) (int64, *parser.VectorSelector, []*labels.Matcher, error) {
 	switch t := t.VectorSelector.(type) {
-	case *parser.VectorSelector:
-		return 0, t, nil, nil
 	case *logicalplan.VectorSelector:
 		return t.BatchSize, t.VectorSelector, t.Filters, nil
 	default:

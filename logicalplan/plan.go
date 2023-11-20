@@ -46,6 +46,14 @@ func New(expr parser.Expr, opts *query.Options) Plan {
 	setOffsetForAtModifier(opts.Start.UnixMilli(), expr)
 	setOffsetForInnerSubqueries(expr, opts)
 
+	// replace all vector selectors by our internal ones so we only need to handle them
+	traverse(&expr, func(e *parser.Expr) {
+		switch node := (*e).(type) {
+		case *parser.VectorSelector:
+			*e = &VectorSelector{VectorSelector: node}
+		}
+	})
+
 	return &plan{
 		expr: expr,
 		opts: opts,
@@ -67,19 +75,20 @@ func (p *plan) Expr() parser.Expr {
 func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	switch node := (*expr).(type) {
 	case *parser.StepInvariantExpr:
-		transform(&node.Expr)
-	case *parser.VectorSelector:
-		transform(expr)
+		traverse(&node.Expr, transform)
 	case *VectorSelector:
 		var x parser.Expr = node.VectorSelector
 		transform(expr)
 		traverse(&x, transform)
+	case *parser.VectorSelector:
+		transform(expr)
 	case *parser.MatrixSelector:
 		transform(expr)
 		traverse(&node.VectorSelector, transform)
 	case *parser.AggregateExpr:
 		transform(expr)
 		traverse(&node.Expr, transform)
+		traverse(&node.Param, transform)
 	case *parser.Call:
 		for i := range node.Args {
 			traverse(&(node.Args[i]), transform)
@@ -103,8 +112,6 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 		return false
 	case *parser.StepInvariantExpr:
 		return TraverseBottomUp(current, &node.Expr, transform)
-	case *parser.VectorSelector:
-		return transform(parent, current)
 	case *VectorSelector:
 		if stop := transform(parent, current); stop {
 			return stop

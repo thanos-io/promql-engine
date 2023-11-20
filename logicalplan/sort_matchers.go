@@ -18,7 +18,7 @@ type SortMatchers struct{}
 
 func (m SortMatchers) Optimize(expr parser.Expr, _ *query.Options) parser.Expr {
 	traverse(&expr, func(node *parser.Expr) {
-		e, ok := (*node).(*parser.VectorSelector)
+		e, ok := (*node).(*VectorSelector)
 		if !ok {
 			return
 		}

@@ -13,8 +13,6 @@ import (
 )
 
 // VectorSelector is vector selector with additional configuration set by optimizers.
-// TODO(fpetkovski): Consider replacing all VectorSelector nodes with this one as the first step in the plan.
-// This should help us avoid dealing with both types in the entire codebase.
 type VectorSelector struct {
 	*parser.VectorSelector
 	Filters   []*labels.Matcher
@@ -33,7 +31,9 @@ func (f VectorSelector) String() string {
 
 func (f VectorSelector) Pretty(level int) string { return f.String() }
 
-func (f VectorSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+func (f VectorSelector) PositionRange() posrange.PositionRange {
+	return f.VectorSelector.PositionRange()
+}
 
 func (f VectorSelector) Type() parser.ValueType { return parser.ValueTypeVector }
 
