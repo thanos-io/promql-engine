@@ -1115,6 +1115,15 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `group by (pod) (http_requests_total)`,
 		},
 		{
+			// Issue https://github.com/thanos-io/promql-engine/issues/326.
+			name: "group by with NaN values",
+			load: `
+load 30s
+	http_requests_total{pod="nginx-1", route="/"} 1.00+1.00x4
+	http_requests_total{pod="nginx-2", route="/"}  1+2.00x4`,
+			query: `group by (pod, route) (atanh(-{__name__="http_requests_total"} offset -3m4s))`,
+		},
+		{
 			name: "resets",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 100-1x15
