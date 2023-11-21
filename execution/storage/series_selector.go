@@ -23,7 +23,7 @@ type SeriesSelector interface {
 	Matchers() []*labels.Matcher
 	// TODO: add a method to get hints. Return nil if there are no hints.
 	// Hints() map[string][]hintspb.SeriesHintsResponse
-	GetSeriesHints() (map[string][]hintspb.SeriesResponseHints,error)
+	GetSeriesHints() (map[string][]hintspb.SeriesResponseHints, error)
 }
 
 type SignedSeries struct {
@@ -106,22 +106,25 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	return seriesSet.Err()
 }
 
-func(o *seriesSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints,error){
-	if o.hintsCollector == nil{
-		return nil,nil
+func (o *seriesSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints, error) {
+	if o.hintsCollector == nil {
+		return nil, nil
 	}
 
 	hints := make(map[string][]hintspb.SeriesResponseHints)
 
-	for key,value :=  range o.hintsCollector{
-		h := hintspb.SeriesResponseHints{}
-		if err := types.UnmarshalAny(value.GetHints(),&h); err != nil {
-			return nil,err
-		}
+	for key, value := range o.hintsCollector.Hints {
+		
+		for _,v := range value {
+			h := hintspb.SeriesResponseHints{}
+			if err := types.UnmarshalAny(v.GetHints(), &h); err != nil {
+				return nil, err
+			}
 
-		hints[key] = append(hints[key],h)
+			hints[key] = append(hints[key], h)
+		}
 	}
-	return hints,nil
+	return hints, nil
 }
 
 func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries {

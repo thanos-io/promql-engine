@@ -23,20 +23,22 @@ type filteredSelector struct {
 }
 
 // GetSeriesHints implements SeriesSelector.
-func (f *filteredSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints,error) {
+func (f *filteredSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints, error) {
 	if f.hintsCollector == nil {
 		return nil, nil
 	}
 
 	hints := make(map[string][]hintspb.SeriesResponseHints)
 
-	for key, value := range f.hintsCollector {
-		h := hintspb.SeriesResponseHints{}
-		if err := types.UnmarshalAny(value.GetHints(), &h); err != nil {
-			return nil, err
-		}
+	for key, value := range f.hintsCollector.Hints {
+		for _, v := range value {
+			h := hintspb.SeriesResponseHints{}
+			if err := types.UnmarshalAny(v.GetHints(), &h); err != nil {
+				return nil, err
+			}
 
-		hints[key] = append(hints[key], h)
+			hints[key] = append(hints[key], h)
+		}
 	}
 	return hints, nil
 }

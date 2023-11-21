@@ -18,8 +18,8 @@ import (
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
-	"github.com/thanos-io/thanos/pkg/store/hintspb"
 	tstore "github.com/thanos-io/thanos/pkg/store"
+	"github.com/thanos-io/thanos/pkg/store/hintspb"
 )
 
 type Execution struct {
@@ -78,9 +78,9 @@ func (e *Execution) Explain() (me string, next []model.VectorOperator) {
 }
 
 type storageAdapter struct {
-	query promql.Query
-	opts  *query.Options
-	hintsCollector tstore.HintsCollector
+	query          promql.Query
+	opts           *query.Options
+	hintsCollector *tstore.HintsCollector
 
 	once   sync.Once
 	err    error
@@ -112,13 +112,15 @@ func (s *storageAdapter) GetSeriesHints() (map[string][]hintspb.SeriesResponseHi
 
 	hints := make(map[string][]hintspb.SeriesResponseHints)
 
-	for key, value := range s.hintsCollector {
-		h := hintspb.SeriesResponseHints{}
-		if err := types.UnmarshalAny(value.GetHints(), &h); err != nil {
-			return nil, err
-		}
+	for key, value := range s.hintsCollector.Hints {
+		for _, v := range value {
+			h := hintspb.SeriesResponseHints{}
+			if err := types.UnmarshalAny(v.GetHints(), &h); err != nil {
+				return nil, err
+			}
 
-		hints[key] = append(hints[key], h)
+			hints[key] = append(hints[key], h)
+		}
 	}
 	return hints, nil
 }
