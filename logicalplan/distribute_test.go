@@ -55,12 +55,48 @@ sum without (pod, region) (
 		},
 		{
 			name: "avg",
+			expr: `avg(http_requests_total)`,
+			expected: `
+sum(
+  dedup(
+    remote(sum by (region) (http_requests_total)),
+    remote(sum by (region) (http_requests_total))
+  )
+) /
+sum(
+  dedup(
+    remote(count by (region) (http_requests_total)),
+    remote(count by (region) (http_requests_total))
+  )
+)`,
+		},
+		{
+			name: "avg with grouping",
 			expr: `avg by (pod) (http_requests_total)`,
 			expected: `
-avg by (pod) (
+sum by (pod) (
   dedup(
-    remote(http_requests_total),
-    remote(http_requests_total)
+    remote(sum by (pod, region) (http_requests_total)),
+    remote(sum by (pod, region) (http_requests_total))
+  )
+) /
+sum by (pod) (
+  dedup(
+    remote(count by (pod, region) (http_requests_total)),
+    remote(count by (pod, region) (http_requests_total))
+  )
+)`,
+		},
+		{
+			name: "avg with prior aggregation",
+			expr: `avg by (pod) (sum by (pod) (http_requests_total))`,
+			expected: `
+avg by (pod) (
+  sum by (pod) (
+	dedup(
+      remote(sum by (pod, region) (http_requests_total)),
+	  remote(sum by (pod, region) (http_requests_total))
+	)
   )
 )`,
 		},
@@ -90,9 +126,9 @@ max by (pod) (
 		},
 		{
 			name: "unsupported aggregation in the operand path",
-			expr: `max by (pod) (sort(avg(http_requests_total)))`,
+			expr: `max by (pod) (sort(quantile(0.9, http_requests_total)))`,
 			expected: `
-max by (pod) (sort(avg(
+max by (pod) (sort(quantile(0.9,
   dedup(
     remote(http_requests_total),
     remote(http_requests_total)
@@ -193,7 +229,10 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 		newEngineMock(math.MinInt64, math.MinInt64, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
 		newEngineMock(math.MinInt64, math.MinInt64, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
-	optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
+	optimizers := []Optimizer{
+		DistributeAvgOptimizer{},
+		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+	}
 	replacements := map[string]*regexp.Regexp{
 		" ": spaces,
 		"(": openParenthesis,
@@ -303,7 +342,10 @@ dedup(
 				newEngineMock(tcase.firstEngineOpts.mint(), tcase.firstEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
 				newEngineMock(tcase.secondEngineOpts.mint(), tcase.secondEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
 			}
-			optimizers := []Optimizer{DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
+			optimizers := []Optimizer{
+				DistributeAvgOptimizer{},
+				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+			}
 
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)

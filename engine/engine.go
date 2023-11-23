@@ -142,6 +142,7 @@ type distributedEngine struct {
 func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngine {
 	opts.LogicalOptimizers = []logicalplan.Optimizer{
 		logicalplan.PassthroughOptimizer{Endpoints: endpoints},
+		logicalplan.DistributeAvgOptimizer{},
 		logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
 	}
 
