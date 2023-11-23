@@ -17,7 +17,7 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) par
 			return true
 		}
 
-		// If the current node is an aggregation, distribute the operation and
+		// If the current node is avg(), distribute the operation and
 		// stop the traversal.
 		if aggr, ok := (*current).(*parser.AggregateExpr); ok {
 			if aggr.Op != parser.AVG {
