@@ -129,6 +129,7 @@ var distributiveAggregations = map[parser.ItemType]struct{}{
 	parser.SUM:     {},
 	parser.MIN:     {},
 	parser.MAX:     {},
+	parser.AVG:     {},
 	parser.GROUP:   {},
 	parser.COUNT:   {},
 	parser.BOTTOMK: {},
