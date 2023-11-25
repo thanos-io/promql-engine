@@ -128,22 +128,22 @@ max by (pod) (
 			name: "unsupported aggregation in the operand path",
 			expr: `max by (pod) (sort(quantile(0.9, http_requests_total)))`,
 			expected: `
-max by (pod) (sort(quantile(0.9,
+max by (pod) (quantile(0.9,
   dedup(
     remote(http_requests_total),
     remote(http_requests_total)
   )
-)))`,
+))`,
 		},
 		{
 			name: "binary operation in the operand path",
-			expr: `max by (pod) (sort(metric_a / metric_b))`,
+			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
-max by (pod) (sort(
+max by (pod) (
   dedup(remote(metric_a), remote(metric_a)) 
   / 
   dedup(remote(metric_b), remote(metric_b))
-))`,
+)`,
 		},
 		{
 			name: "binary operation with aggregations",

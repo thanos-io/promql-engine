@@ -97,7 +97,7 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 		optimizers = make([]logicalplan.Optimizer, len(o.LogicalOptimizers))
 		copy(optimizers, o.LogicalOptimizers)
 	}
-	return append(optimizers, logicalplan.TrimSortFunctions{})
+	return optimizers
 }
 
 type remoteEngine struct {
