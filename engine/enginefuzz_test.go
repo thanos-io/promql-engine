@@ -430,9 +430,6 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 func validateTestCases(t *testing.T, cases []*testCase) {
 	failures := 0
 	for i, c := range cases {
-		emptyLabelsToNil(c.newRes)
-		emptyLabelsToNil(c.oldRes)
-
 		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
 			t.Logf(c.load)
 			t.Logf(c.query)
