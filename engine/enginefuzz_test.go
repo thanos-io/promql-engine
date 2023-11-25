@@ -118,25 +118,6 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 	})
 }
 
-func validateTestCases(t *testing.T, cases []*testCase) {
-	failures := 0
-	for i, c := range cases {
-		emptyLabelsToNil(c.newRes)
-		emptyLabelsToNil(c.oldRes)
-
-		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
-			t.Logf(c.load)
-			t.Logf(c.query)
-
-			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
-			failures++
-		}
-	}
-	if failures > 0 {
-		t.Fatalf("failed %d test cases", failures)
-	}
-}
-
 func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 	f.Add(uint32(0), 1.0, 1.0, 1.0, 2.0)
 
@@ -202,9 +183,6 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			testutil.Ok(t, err)
 
 			oldResult := q2.Exec(context.Background())
-
-			sortByLabels(newResult)
-			sortByLabels(oldResult)
 
 			cases[i] = &testCase{
 				query:  query,
@@ -447,4 +425,23 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 		return nil, err
 	}
 	return res, nil
+}
+
+func validateTestCases(t *testing.T, cases []*testCase) {
+	failures := 0
+	for i, c := range cases {
+		emptyLabelsToNil(c.newRes)
+		emptyLabelsToNil(c.oldRes)
+
+		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
+			t.Logf(c.load)
+			t.Logf(c.query)
+
+			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
+			failures++
+		}
+	}
+	if failures > 0 {
+		t.Fatalf("failed %d test cases", failures)
+	}
 }
