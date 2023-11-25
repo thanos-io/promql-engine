@@ -292,7 +292,7 @@ func TestDistributedAggregations(t *testing.T) {
 											testutil.Ok(t, err)
 											promResult := promQry.Exec(ctx)
 
-											testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
+											testutil.WithGoCmp(comparer).Equals(t, promResult, distResult, queryExplanation(distQry))
 										})
 									}
 
@@ -312,7 +312,7 @@ func TestDistributedAggregations(t *testing.T) {
 										testutil.Ok(t, err)
 										promResult := promQry.Exec(ctx)
 
-										testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
+										testutil.WithGoCmp(comparer).Equals(t, promResult, distResult, queryExplanation(distQry))
 									})
 								})
 							}

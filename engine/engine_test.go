@@ -4,8 +4,10 @@
 package engine_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"runtime"
@@ -93,7 +95,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	oldResult := q2.Exec(context.Background())
 	testutil.Ok(t, oldResult.Err)
 
-	testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
+	testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 }
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
@@ -1792,7 +1794,7 @@ load 30s
 								defer q2.Close()
 								oldResult := q2.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
+								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 							})
 						}
 					})
@@ -1962,7 +1964,7 @@ func TestEdgeCases(t *testing.T) {
 			oldResult := q1.Exec(ctx)
 			newResult := q2.Exec(ctx)
 
-			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 		})
 	}
 }
@@ -2286,7 +2288,7 @@ func TestXFunctions(t *testing.T) {
 			testutil.Ok(t, engineResult.Err)
 			expectedResult := createVectorResult(tc.expected)
 
-			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult)
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult, queryExplanation(query))
 		})
 	}
 }
@@ -2599,7 +2601,7 @@ func TestRateVsXRate(t *testing.T) {
 			engineResult := query.Exec(context.Background())
 			expectedResult := createVectorResult(tc.expected)
 
-			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult)
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult, queryExplanation(query))
 		})
 	}
 }
@@ -3700,7 +3702,7 @@ min without () (
 
 								oldResult := q2.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult)
+								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult, queryExplanation(q1))
 							})
 						}
 					})
@@ -4533,14 +4535,14 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 
 					t.Run("instant", func(t *testing.T) {
 						ctx := context.Background()
-						qry, err := thanosEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
+						q1, err := thanosEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
-						newResult := qry.Exec(ctx)
+						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
 
-						qry, err = promEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
+						q2, err := promEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
-						promResult := qry.Exec(ctx)
+						promResult := q2.Exec(ctx)
 						testutil.Ok(t, promResult.Err)
 						promVector, err := promResult.Vector()
 						testutil.Ok(t, err)
@@ -4550,19 +4552,19 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							testutil.Assert(t, len(promVector) == 0)
 						}
 
-						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult)
+						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult, queryExplanation(q1))
 					})
 
 					t.Run("range", func(t *testing.T) {
 						ctx := context.Background()
-						qry, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						q1, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
-						newResult := qry.Exec(ctx)
+						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
 
-						qry, err = promEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						q2, err := promEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
-						promResult := qry.Exec(ctx)
+						promResult := q2.Exec(ctx)
 						testutil.Ok(t, promResult.Err)
 						promMatrix, err := promResult.Matrix()
 						testutil.Ok(t, err)
@@ -4571,7 +4573,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
 							testutil.Assert(t, len(promMatrix) == 0)
 						}
-						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult)
+						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult, queryExplanation(q1))
 					})
 				})
 			}
@@ -4724,18 +4726,6 @@ func (b samplesByLabels) Len() int           { return len(b) }
 func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
 
-// emptyLabelsToNil sets empty labelsets to nil to work around inconsistent
-// results from the old engine depending on the literal type (e.g. number vs. compare).
-func emptyLabelsToNil(result *promql.Result) {
-	if value, ok := result.Value.(promql.Matrix); ok {
-		for i, s := range value {
-			if s.Metric.IsEmpty() {
-				result.Value.(promql.Matrix)[i].Metric = labels.EmptyLabels()
-			}
-		}
-	}
-}
-
 // comparer should be used to compare promql results between engines.
 var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 	compareFloats := func(l, r float64) bool {
@@ -4876,3 +4866,44 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 	}
 	return false
 })
+
+func queryExplanation(q promql.Query) string {
+	eq, ok := q.(engine.ExplainableQuery)
+	if !ok {
+		return ""
+	}
+
+	var explain func(w io.Writer, n engine.ExplainOutputNode, indent, indentNext string)
+
+	explain = func(w io.Writer, n engine.ExplainOutputNode, indent, indentNext string) {
+		next := n.Children
+		me := n.OperatorName
+
+		_, _ = w.Write([]byte(indent))
+		_, _ = w.Write([]byte(me))
+		if len(next) == 0 {
+			_, _ = w.Write([]byte("\n"))
+			return
+		}
+
+		if me == "[*CancellableOperator]" {
+			_, _ = w.Write([]byte(": "))
+			explain(w, next[0], "", indentNext)
+			return
+		}
+		_, _ = w.Write([]byte(":\n"))
+
+		for i, n := range next {
+			if i == len(next)-1 {
+				explain(w, n, indentNext+"└──", indentNext+"   ")
+			} else {
+				explain(w, n, indentNext+"├──", indentNext+"│  ")
+			}
+		}
+	}
+
+	var b bytes.Buffer
+	explain(&b, *eq.Explain(), "", "")
+
+	return fmt.Sprintf("Query: %s\nExplanation:\n%s\n", q.String(), b.String())
+}
