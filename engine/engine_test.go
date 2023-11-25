@@ -33,7 +33,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -2088,15 +2087,14 @@ func TestXFunctions(t *testing.T) {
 	http_requests{path="/bar"}	200 150 300 50 0`
 
 	cases := []struct {
-		name         string
-		load         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
-		expected     []promql.Sample
-		rangeQuery   bool
-		startTime    time.Time
-		endTime      time.Time
+		name       string
+		load       string
+		query      string
+		queryTime  time.Time
+		expected   []promql.Sample
+		rangeQuery bool
+		startTime  time.Time
+		endTime    time.Time
 	}{
 		// Tests for xIncrease
 		{
@@ -2288,20 +2286,7 @@ func TestXFunctions(t *testing.T) {
 			testutil.Ok(t, engineResult.Err)
 			expectedResult := createVectorResult(tc.expected)
 
-			testutil.Equals(t, expectedResult.Err, engineResult.Err)
-
-			exR := expectedResult.Value.(promql.Vector)
-			erR := engineResult.Value.(promql.Vector)
-
-			sort.Slice(exR, func(i, j int) bool {
-				return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
-			})
-
-			sort.Slice(erR, func(i, j int) bool {
-				return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
-			})
-
-			testutil.Equals(t, exR, erR)
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult)
 		})
 	}
 }
@@ -2322,15 +2307,14 @@ func TestRateVsXRate(t *testing.T) {
 	http_requests{path="/bar"}  1 2 3 4 5 6 7 8 9 10 11`
 
 	cases := []struct {
-		name         string
-		load         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
-		expected     promql.Vector
-		rangeQuery   bool
-		startTime    time.Time
-		endTime      time.Time
+		name       string
+		load       string
+		query      string
+		queryTime  time.Time
+		expected   promql.Vector
+		rangeQuery bool
+		startTime  time.Time
+		endTime    time.Time
 	}{
 		// ### Timeseries starts insice range, (presumably) goes on after range end. ###
 		// 1. Reference eval
@@ -2613,25 +2597,9 @@ func TestRateVsXRate(t *testing.T) {
 			defer query.Close()
 
 			engineResult := query.Exec(context.Background())
-			testutil.Ok(t, engineResult.Err)
-			// Round engine result.
-			roundValues(engineResult)
 			expectedResult := createVectorResult(tc.expected)
 
-			testutil.Equals(t, expectedResult.Err, engineResult.Err)
-
-			exR := expectedResult.Value.(promql.Vector)
-			erR := engineResult.Value.(promql.Vector)
-
-			sort.Slice(exR, func(i, j int) bool {
-				return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
-			})
-
-			sort.Slice(erR, func(i, j int) bool {
-				return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
-			})
-
-			testutil.Equals(t, exR, erR)
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult)
 		})
 	}
 }
@@ -2666,11 +2634,10 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load         string
-		name         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		load      string
+		name      string
+		query     string
+		queryTime time.Time
 	}{
 		{
 			name: "fuzz - min with NaN",
@@ -2726,9 +2693,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:1m])",
 		},
 		{
 			name: "sum_over_time with subquery with default step",
@@ -2738,9 +2704,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:])",
 		},
 		{
 			name: "sum_over_time with subquery with resolution that doesnt divide step length",
@@ -2750,9 +2715,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:22s])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:22s])",
 		},
 		{
 			name: "sum_over_time with subquery with offset",
@@ -2762,9 +2726,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:1m] offset 1m)",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:1m] offset 1m)",
 		},
 		{
 			name: "sum_over_time with subquery with inner offset",
@@ -2774,9 +2737,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total offset 1m)[5m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total offset 1m)[5m:1m])",
 		},
 		{
 			name: "sum_over_time with subquery with inner @ modifier",
@@ -2786,9 +2748,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total @ 10)[5m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total @ 10)[5m:1m])",
 		},
 		{
 			name: "sum_over_time with nested subqueries with inner @ modifier",
@@ -2798,18 +2759,16 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(rate(sum by (series) (http_requests_total @ 10)[5m:1m] @0)[10m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(rate(sum by (series) (http_requests_total @ 10)[5m:1m] @0)[10m:1m])",
 		},
 		{
 			name: "sum_over_time with subquery should drop name label",
 			load: `load 10s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
 				       http_requests_total{pod="nginx-2", series="1"} 2+2x50`,
-			queryTime:    time.Unix(0, 0),
-			query:        `sum_over_time(http_requests_total{series="1"} offset 7s[1h:1m] @ 119.800)`,
-			sortByLabels: true,
+			queryTime: time.Unix(0, 0),
+			query:     `sum_over_time(http_requests_total{series="1"} offset 7s[1h:1m] @ 119.800)`,
 		},
 		{
 			name: "duplicate label set",
@@ -3070,8 +3029,7 @@ min without () (
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:        "topk(2, http_requests_total) by (series)",
-			sortByLabels: true,
+			query: "topk(2, http_requests_total) by (series)",
 		},
 		{
 			name: "bottomK",
@@ -3099,8 +3057,7 @@ min without () (
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:        "bottomk(2, http_requests_total) by (series)",
-			sortByLabels: true,
+			query: "bottomk(2, http_requests_total) by (series)",
 		},
 		{
 			name: "max",
@@ -4755,22 +4712,6 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 	})
 }
 
-func sortByLabels(r *promql.Result) {
-	if r.Err != nil {
-		return
-	}
-	switch r.Value.Type() {
-	case parser.ValueTypeVector:
-		m, _ := r.Vector()
-		sort.Sort(samplesByLabels(m))
-		r.Value = m
-	case parser.ValueTypeMatrix:
-		m, _ := r.Matrix()
-		sort.Sort(seriesByLabels(m))
-		r.Value = m
-	}
-}
-
 type seriesByLabels []promql.Series
 
 func (b seriesByLabels) Len() int           { return len(b) }
@@ -4782,24 +4723,6 @@ type samplesByLabels []promql.Sample
 func (b samplesByLabels) Len() int           { return len(b) }
 func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
-
-// roundValues rounds all values to 10 decimal points and
-// can be used to eliminate floating point division errors
-// when comparing two promql results.
-func roundValues(r *promql.Result) {
-	switch result := r.Value.(type) {
-	case promql.Matrix:
-		for i := range result {
-			for j := range result[i].Floats {
-				result[i].Floats[j].F = math.Floor(result[i].Floats[j].F*1e10) / 1e10
-			}
-		}
-	case promql.Vector:
-		for i := range result {
-			result[i].F = math.Floor(result[i].F*10e10) / 10e10
-		}
-	}
-}
 
 // emptyLabelsToNil sets empty labelsets to nil to work around inconsistent
 // results from the old engine depending on the literal type (e.g. number vs. compare).
