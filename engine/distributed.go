@@ -7,12 +7,13 @@ import (
 	"context"
 	"time"
 
+	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/logicalplan"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
-	"github.com/thanos-io/promql-engine/api"
-	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type remoteEngine struct {

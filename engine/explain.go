@@ -5,6 +5,7 @@ package engine
 
 import (
 	"github.com/prometheus/prometheus/promql"
+
 	"github.com/thanos-io/promql-engine/execution/model"
 )
 
