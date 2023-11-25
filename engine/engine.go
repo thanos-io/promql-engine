@@ -6,11 +6,9 @@ package engine
 import (
 	"context"
 
-	"io"
 	"math"
 	"runtime"
 	"sort"
-	"strconv"
 	"time"
 
 	"github.com/efficientgo/core/errors"
@@ -519,50 +517,5 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 
 		level.Error(logger).Log("msg", "runtime panic in engine", "expr", expr.String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
-	}
-}
-
-func analyze(w io.Writer, o model.ObservableVectorOperator, indent, indentNext string) {
-	telemetry, next := o.Analyze()
-	_, _ = w.Write([]byte(indent))
-	_, _ = w.Write([]byte("Operator Time :"))
-	_, _ = w.Write([]byte(strconv.FormatInt(int64(telemetry.ExecutionTimeTaken()), 10)))
-	if len(next) == 0 {
-		_, _ = w.Write([]byte("\n"))
-		return
-	}
-	_, _ = w.Write([]byte(":\n"))
-
-	for i, n := range next {
-		if i == len(next)-1 {
-			analyze(w, n, indentNext+"└──", indentNext+"   ")
-		} else {
-			analyze(w, n, indentNext+"└──", indentNext+"   ")
-		}
-	}
-}
-
-func explain(w io.Writer, o model.VectorOperator, indent, indentNext string) {
-	me, next := o.Explain()
-	_, _ = w.Write([]byte(indent))
-	_, _ = w.Write([]byte(me))
-	if len(next) == 0 {
-		_, _ = w.Write([]byte("\n"))
-		return
-	}
-
-	if me == "[*CancellableOperator]" {
-		_, _ = w.Write([]byte(": "))
-		explain(w, next[0], "", indentNext)
-		return
-	}
-	_, _ = w.Write([]byte(":\n"))
-
-	for i, n := range next {
-		if i == len(next)-1 {
-			explain(w, n, indentNext+"└──", indentNext+"   ")
-		} else {
-			explain(w, n, indentNext+"├──", indentNext+"│  ")
-		}
 	}
 }
