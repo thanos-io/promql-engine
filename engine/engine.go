@@ -305,7 +305,8 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	exec, err := execution.New(lplan.Expr(), q, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
+		query, err := e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
+		return fallbackAnnotatedQuery(query), err
 	}
 	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
@@ -362,7 +363,8 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	exec, err := execution.New(lplan.Expr(), q, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
+		query, err := e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
+		return fallbackAnnotatedQuery(query), err
 	}
 	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
