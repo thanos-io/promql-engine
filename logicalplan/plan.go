@@ -67,7 +67,7 @@ func (p *plan) Expr() parser.Expr {
 func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	switch node := (*expr).(type) {
 	case *parser.StepInvariantExpr:
-		transform(&node.Expr)
+		traverse(&node.Expr, transform)
 	case *parser.VectorSelector:
 		transform(expr)
 	case *VectorSelector:
