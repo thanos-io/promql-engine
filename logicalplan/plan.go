@@ -46,6 +46,9 @@ func New(expr parser.Expr, opts *query.Options) Plan {
 	setOffsetForAtModifier(opts.Start.UnixMilli(), expr)
 	setOffsetForInnerSubqueries(expr, opts)
 
+	// the engine handles sorting at the presentation layer
+	expr = trimSorts(expr)
+
 	return &plan{
 		expr: expr,
 		opts: opts,
@@ -141,6 +144,23 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	}
 
 	return true
+}
+
+func trimSorts(expr parser.Expr) parser.Expr {
+	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
+		if current == nil || parent == nil {
+			return true
+		}
+		switch e := (*parent).(type) {
+		case *parser.Call:
+			switch e.Func.Name {
+			case "sort", "sort_desc":
+				*parent = *current
+			}
+		}
+		return false
+	})
+	return expr
 }
 
 // preprocessExpr wraps all possible step invariant parts of the given expression with
