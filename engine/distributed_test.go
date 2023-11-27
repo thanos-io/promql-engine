@@ -206,6 +206,7 @@ func TestDistributedAggregations(t *testing.T) {
 		expectFallback bool
 	}{
 		{name: "sum", query: `sum by (pod) (bar)`},
+		{name: "parenthesis", query: `sum by (pod) ((bar))`},
 		{name: "avg", query: `avg(bar)`},
 		{name: "avg with grouping", query: `avg by (pod) (bar)`},
 		{name: "count", query: `count by (pod) (bar)`},
