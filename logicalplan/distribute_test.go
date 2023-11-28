@@ -106,6 +106,11 @@ avg by (pod) (
 )`,
 		},
 		{
+			name:     "avg with prior binary expression",
+			expr:     `avg by (pod) (metric_a / metric_b)`,
+			expected: `avg by (pod) (dedup(remote(metric_a), remote(metric_a)) / dedup(remote(metric_b), remote(metric_b)))`,
+		},
+		{
 			name: "two-level aggregation",
 			expr: `max by (pod) (sum by (pod) (http_requests_total))`,
 			expected: `
