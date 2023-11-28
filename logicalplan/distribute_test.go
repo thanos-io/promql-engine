@@ -231,8 +231,8 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 	}
 
 	engines := []api.RemoteEngine{
-		newEngineMock(math.MinInt64, math.MinInt64, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
-		newEngineMock(math.MinInt64, math.MinInt64, []labels.Labels{labels.FromStrings("region", "west")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
 	optimizers := []Optimizer{
 		DistributeAvgOptimizer{},
@@ -356,6 +356,80 @@ dedup(
 			testutil.Ok(t, err)
 
 			plan := New(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep})
+			optimizedPlan := plan.Optimize(optimizers)
+			expectedPlan := cleanUp(replacements, tcase.expected)
+			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+		})
+	}
+}
+
+func TestDistributedExecutionPruningByTime(t *testing.T) {
+	replacements := map[string]*regexp.Regexp{
+		" ": spaces,
+		"(": openParenthesis,
+		")": closedParenthesis,
+	}
+
+	firstEngineOpts := engineOpts{
+		minTime: time.Unix(0, 0),
+		maxTime: time.Unix(0, 0).Add(6 * time.Hour),
+	}
+	secondEngineOpts := engineOpts{
+		minTime: time.Unix(0, 0).Add(4 * time.Hour),
+		maxTime: time.Unix(0, 0).Add(8 * time.Hour),
+	}
+
+	cases := []struct {
+		name       string
+		expr       string
+		expected   string
+		queryStart time.Time
+		queryEnd   time.Time
+	}{
+		{
+			name:       "1 hour query at the end of the range prunes the first engine",
+			expr:       `sum(metric)`,
+			queryStart: time.Unix(0, 0).Add(7 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(8 * time.Hour),
+			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 07:00:00 +0000 UTC]))`,
+		},
+		{
+			name:       "1 hour range query at the start of the range prunes the second engine",
+			expr:       `sum(metric)`,
+			queryStart: time.Unix(0, 0).Add(1 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(2 * time.Hour),
+			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 01:00:00 +0000 UTC]))`,
+		},
+		{
+			name:       "instant query in the overlapping range queries both engines",
+			expr:       `sum(metric)`,
+			queryStart: time.Unix(0, 0).Add(6 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(6 * time.Hour),
+			expected: `
+sum(
+  dedup(
+    remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC],
+    remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC]
+  )
+)`,
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			engines := []api.RemoteEngine{
+				newEngineMock(firstEngineOpts.mint(), firstEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
+				newEngineMock(secondEngineOpts.mint(), secondEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
+			}
+			optimizers := []Optimizer{
+				DistributeAvgOptimizer{},
+				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+			}
+
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			plan := New(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute})
 			optimizedPlan := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())

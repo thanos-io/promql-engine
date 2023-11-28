@@ -237,7 +237,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 	}
 
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
-	if allowedStartOffset < maxDuration(opts.LookbackDelta, startOffset) {
+	if allowedStartOffset < startOffset {
 		return *expr
 	}
 
@@ -251,6 +251,12 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 	remoteQueries := make(RemoteExecutions, 0, len(engines))
 	for _, e := range engines {
 		if !matchesExternalLabelSet(*expr, e.LabelSets()) {
+			continue
+		}
+		if e.MinT() > opts.End.UnixMilli() {
+			continue
+		}
+		if e.MaxT() < opts.Start.UnixMilli()-startOffset.Milliseconds() {
 			continue
 		}
 
