@@ -12,11 +12,9 @@ type DistributeAvgOptimizer struct{}
 
 func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) parser.Expr {
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
-		// If the current operation is not distributive, stop the traversal.
-		if !isDistributive(current) {
+		if !isDistributiveOrAverage(current) {
 			return true
 		}
-
 		// If the current node is avg(), distribute the operation and
 		// stop the traversal.
 		if aggr, ok := (*current).(*parser.AggregateExpr); ok {
@@ -36,9 +34,18 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) par
 			}
 			return true
 		}
-
-		// If the parent operation is distributive, continue the traversal.
-		return !isDistributive(parent)
+		return !isDistributiveOrAverage(parent)
 	})
 	return plan
+}
+
+func isDistributiveOrAverage(expr *parser.Expr) bool {
+	if expr == nil {
+		return false
+	}
+	var isAvg bool
+	if aggr, ok := (*expr).(*parser.AggregateExpr); ok {
+		isAvg = aggr.Op == parser.AVG
+	}
+	return isDistributive(expr) || isAvg
 }
