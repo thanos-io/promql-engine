@@ -3011,6 +3011,13 @@ min without () (
 			query:     "sort_desc(http_requests_total)",
 		},
 		{
+			name: "histogram_quantile with mock duplicate labels",
+			load: `load 30s
+               http_requests_total{pod="nginx-2", route="/"}  0+0.14x40`,
+			queryTime: time.Unix(600, 0),
+			query:     `histogram_quantile(10, -http_requests_total or http_requests_total)`,
+		},
+		{
 			name: "quantile by pod",
 			load: `load 30s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
