@@ -2818,6 +2818,36 @@ func TestInstantQuery(t *testing.T) {
 		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
 	}{
 		{
+			name: "fuzz - min with NaN",
+			load: `load 30s
+              http_requests_total{pod="nginx-1", route="/"} 124.00+1.00x40
+              http_requests_total{pod="nginx-2", route="/"}  0+0.29x40`,
+			query: "min by (route, pod) (sqrt(-http_requests_total))",
+		},
+		{
+			name: "fuzz - min with Inf",
+			load: `load 30s
+               http_requests_total{pod="nginx-1", route="/"} 483.00+6035.00x40
+            	 http_requests_total{pod="nginx-2", route="/"}  2+47.14x40`,
+			query: `
+min without () (
+              (
+                  {__name__="http_requests_total"} @ start() offset -2m40s
+                ^
+                  {__name__="http_requests_total"} @ start() offset -2m49s
+              )
+            )`,
+		},
+		/*
+		   This is a known issue, we lose the signed 0 in the sum because we add to a
+		   default element. Prometheus assigns the first element to the sum and preserves
+		   the sign.
+		       {
+		         name:  "fuzz - signed zero",
+		         query: `1/sum(-(absent(X)-1))`,
+		       },
+		*/
+		{
 			name: "sum_over_time with subquery",
 			load: `load 10s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
