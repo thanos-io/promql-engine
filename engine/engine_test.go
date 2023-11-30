@@ -2820,6 +2820,22 @@ func TestInstantQuery(t *testing.T) {
 		{
 			name: "fuzz - min with NaN",
 			load: `load 30s
+              http_requests_total{pod="nginx-1", route="/"} 0
+            	http_requests_total{pod="nginx-2", route="/"}  NaN`,
+			query:     `min without (__name__, pod) (http_requests_total)`,
+			queryTime: time.Unix(0, 0),
+		},
+		{
+			name: "fuzz - max with NaN",
+			load: `load 30s
+              http_requests_total{pod="nginx-1", route="/"} 0
+            	http_requests_total{pod="nginx-2", route="/"}  NaN`,
+			query:     `max without (__name__, pod) (http_requests_total)`,
+			queryTime: time.Unix(0, 0),
+		},
+		{
+			name: "fuzz - min with NaN",
+			load: `load 30s
               http_requests_total{pod="nginx-1", route="/"} 124.00+1.00x40
               http_requests_total{pod="nginx-2", route="/"}  0+0.29x40`,
 			query: "min by (route, pod) (sqrt(-http_requests_total))",
