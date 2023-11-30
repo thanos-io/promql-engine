@@ -242,6 +242,12 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		numShards = 1
 	}
 
+	isAbsentOverTime := e.Func.Name == "absent_over_time"
+
+	if isAbsentOverTime {
+		e = &parser.Call{Func: &parser.Function{Name: "last_over_time"}}
+	}
+
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
 		operator, err := scan.NewMatrixSelector(model.NewVectorPool(opts.StepsBatch), filter, e, opts, t.Range, vs.Offset, batchSize, i, numShards)
@@ -251,7 +257,21 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		operators = append(operators, exchange.NewConcurrent(operator, 2))
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...), nil
+	res := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...)
+
+	if isAbsentOverTime {
+		f := &parser.Call{
+			Func: &parser.Function{Name: "absent"},
+			Args: []parser.Expr{
+				&parser.MatrixSelector{
+					VectorSelector: t.VectorSelector,
+				},
+			},
+		}
+		return function.NewFunctionOperator(f, []model.VectorOperator{res}, opts.StepsBatch, opts)
+	}
+
+	return res, nil
 }
 
 func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {

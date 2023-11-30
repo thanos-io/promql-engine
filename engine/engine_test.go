@@ -2818,6 +2818,29 @@ func TestInstantQuery(t *testing.T) {
 		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
 	}{
 		{
+			name:  "absent_over_time - absent",
+			query: "absent_over_time(non_existent[10m])",
+		},
+		{
+			name: "absent_over_time - present",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(X{a="b"}[10m])`,
+		},
+		{
+			name: "absent_over_time - present but out of range",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query:     `absent_over_time(X{a="b"}[1m])`,
+			queryTime: time.Unix(600, 0),
+		},
+		{
+			name: "absent_over_time - absent because of label",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(X{a!="b"}[1m])`,
+		},
+		{
 			name: "fuzz - min with NaN",
 			load: `load 30s
               http_requests_total{pod="nginx-1", route="/"} 0
