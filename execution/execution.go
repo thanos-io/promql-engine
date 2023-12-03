@@ -135,10 +135,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 			return newScalarBinaryOperator(e, storage, opts, hints)
 		}
 
-		if e.LHS.Type() == parser.ValueTypeVector && e.RHS.Type() == parser.ValueTypeVector {
-			return newVectorBinaryOperator(e, storage, opts, hints)
-		}
-		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		return newVectorBinaryOperator(e, storage, opts, hints)
 
 	case *parser.ParenExpr:
 		return newOperator(e.Expr, storage, opts, hints)
