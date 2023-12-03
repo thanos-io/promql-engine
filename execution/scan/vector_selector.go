@@ -79,13 +79,14 @@ func NewVectorSelector(
 		shard:     shard,
 		numShards: numShards,
 	}
-	if opts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
+
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
-	if o.step == 0 {
+	if opts.IsInstantQuery() {
 		o.step = 1
+	}
+	if opts.EnableAnalysis {
+		o.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	return o

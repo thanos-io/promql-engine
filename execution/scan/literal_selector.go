@@ -33,6 +33,8 @@ type numberLiteralSelector struct {
 
 func NewNumberLiteralSelector(opts *query.Options, val float64) *numberLiteralSelector {
 	op := &numberLiteralSelector{
+		OperatorTelemetry: &model.NoopTelemetry{},
+
 		vectorPool:  model.NewVectorPool(opts.StepsBatch),
 		numSteps:    opts.NumSteps(),
 		mint:        opts.Start.UnixMilli(),
@@ -42,7 +44,11 @@ func NewNumberLiteralSelector(opts *query.Options, val float64) *numberLiteralSe
 		val:         val,
 	}
 
-	op.OperatorTelemetry = &model.NoopTelemetry{}
+	// For instant queries, set the step to a positive value
+	// so that the operator can terminate.
+	if opts.IsInstantQuery() {
+		op.step = 1
+	}
 	if opts.EnableAnalysis {
 		op.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
@@ -92,11 +98,6 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		ts += o.step
 	}
 
-	// For instant queries, set the step to a positive value
-	// so that the operator can terminate.
-	if o.step == 0 {
-		o.step = 1
-	}
 	o.currentStep += o.step * int64(o.numSteps)
 	o.AddExecutionTimeTaken(time.Since(start))
 

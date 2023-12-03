@@ -79,6 +79,8 @@ func NewMatrixSelector(
 	}
 	isExtFunction := function.IsExtFunction(funcExpr.Func.Name)
 	m := &matrixSelector{
+		OperatorTelemetry: &model.NoopTelemetry{},
+
 		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
@@ -100,14 +102,14 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		m.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
-	if m.step == 0 {
+	if opts.IsInstantQuery() {
 		m.step = 1
+	}
+
+	if opts.EnableAnalysis {
+		m.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	return m, nil
