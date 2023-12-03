@@ -44,6 +44,10 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 )
 
+var (
+	numShards = calculateNumShards()
+)
+
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(expr parser.Expr, queryable storage.Queryable, opts *query.Options) (model.VectorOperator, error) {
@@ -237,11 +241,6 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 	hints.Range = milliSecondRange
 	filter := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), vs.LabelMatchers, filters, hints)
 
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
-
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
 		operator, err := scan.NewMatrixSelector(filter, e, opts, t.Range, vs.Offset, batchSize, i, numShards)
@@ -250,7 +249,6 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		}
 		operators = append(operators, exchange.NewConcurrent(operator, 2))
 	}
-
 	return exchange.NewCoalesce(opts, batchSize*int64(numShards), operators...), nil
 }
 
@@ -294,10 +292,6 @@ func newInstantVectorFunction(e *parser.Call, storage *engstore.SelectorPool, op
 }
 
 func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Options, offset time.Duration, batchSize int64) (model.VectorOperator, error) {
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
 		operator := exchange.NewConcurrent(scan.NewVectorSelector(selector, opts, offset, batchSize, i, numShards), 2)
@@ -355,4 +349,12 @@ func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Option
 	}
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset
+}
+
+func calculateNumShards() int {
+	res := runtime.GOMAXPROCS(0) / 2
+	if res < 1 {
+		res = 1
+	}
+	return res
 }
