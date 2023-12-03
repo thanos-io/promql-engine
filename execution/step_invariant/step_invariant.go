@@ -49,7 +49,6 @@ func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperato
 }
 
 func NewStepInvariantOperator(
-	pool *model.VectorPool,
 	next model.VectorOperator,
 	expr parser.Expr,
 	opts *query.Options,
@@ -60,7 +59,7 @@ func NewStepInvariantOperator(
 		interval = 1
 	}
 	u := &stepInvariantOperator{
-		vectorPool:  pool,
+		vectorPool:  model.NewVectorPoolWithSize(opts.StepsBatch, 1),
 		next:        next,
 		currentStep: opts.Start.UnixMilli(),
 		mint:        opts.Start.UnixMilli(),

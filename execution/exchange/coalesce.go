@@ -49,9 +49,9 @@ type coalesce struct {
 	model.OperatorTelemetry
 }
 
-func NewCoalesce(pool *model.VectorPool, opts *query.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
+func NewCoalesce(opts *query.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
 	c := &coalesce{
-		pool:          pool,
+		pool:          model.NewVectorPool(opts.StepsBatch),
 		sampleOffsets: make([]uint64, len(operators)),
 		operators:     operators,
 		inVectors:     make([][]model.StepVector, len(operators)),

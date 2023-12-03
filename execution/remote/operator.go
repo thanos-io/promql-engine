@@ -28,14 +28,14 @@ type Execution struct {
 	model.OperatorTelemetry
 }
 
-func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart time.Time, opts *query.Options) *Execution {
+func NewExecution(query promql.Query, queryRangeStart time.Time, opts *query.Options) *Execution {
 	storage := newStorageFromQuery(query, opts)
 	e := &Execution{
 		storage:         storage,
 		query:           query,
 		opts:            opts,
 		queryRangeStart: queryRangeStart,
-		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, 0, 1),
+		vectorSelector:  scan.NewVectorSelector(storage, opts, 0, 0, 0, 1),
 	}
 	e.OperatorTelemetry = &model.NoopTelemetry{}
 	if opts.EnableAnalysis {

@@ -49,7 +49,6 @@ type scalarOperator struct {
 }
 
 func NewScalar(
-	pool *model.VectorPool,
 	next model.VectorOperator,
 	scalar model.VectorOperator,
 	op parser.ItemType,
@@ -71,7 +70,7 @@ func NewScalar(
 	}
 
 	o := &scalarOperator{
-		pool:          pool,
+		pool:          model.NewVectorPool(opts.StepsBatch),
 		next:          next,
 		scalar:        scalar,
 		floatOp:       binaryOperation,

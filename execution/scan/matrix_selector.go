@@ -66,7 +66,6 @@ var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supp
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
-	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
 	funcExpr *parser.Call,
 	opts *query.Options,
@@ -83,7 +82,7 @@ func NewMatrixSelector(
 		storage:    selector,
 		call:       call,
 		funcExpr:   funcExpr,
-		vectorPool: pool,
+		vectorPool: model.NewVectorPool(opts.StepsBatch),
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),

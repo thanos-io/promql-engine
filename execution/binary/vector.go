@@ -59,7 +59,6 @@ type vectorOperator struct {
 }
 
 func NewVectorOperator(
-	pool *model.VectorPool,
 	lhs model.VectorOperator,
 	rhs model.VectorOperator,
 	matching *parser.VectorMatching,
@@ -68,7 +67,7 @@ func NewVectorOperator(
 	opts *query.Options,
 ) (model.VectorOperator, error) {
 	o := &vectorOperator{
-		pool:       pool,
+		pool:       model.NewVectorPool(opts.StepsBatch),
 		lhs:        lhs,
 		rhs:        rhs,
 		matching:   matching,

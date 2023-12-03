@@ -56,9 +56,8 @@ type vectorSelector struct {
 
 // NewVectorSelector creates operator which selects vector of series.
 func NewVectorSelector(
-	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
-	queryOpts *query.Options,
+	opts *query.Options,
 	offset time.Duration,
 	batchSize int64,
 	shard, numShards int,
@@ -66,21 +65,21 @@ func NewVectorSelector(
 	o := &vectorSelector{
 		OperatorTelemetry: &model.NoopTelemetry{},
 		storage:           selector,
-		vectorPool:        pool,
+		vectorPool:        model.NewVectorPool(opts.StepsBatch),
 
-		mint:            queryOpts.Start.UnixMilli(),
-		maxt:            queryOpts.End.UnixMilli(),
-		step:            queryOpts.Step.Milliseconds(),
-		currentStep:     queryOpts.Start.UnixMilli(),
-		lookbackDelta:   queryOpts.LookbackDelta.Milliseconds(),
+		mint:            opts.Start.UnixMilli(),
+		maxt:            opts.End.UnixMilli(),
+		step:            opts.Step.Milliseconds(),
+		currentStep:     opts.Start.UnixMilli(),
+		lookbackDelta:   opts.LookbackDelta.Milliseconds(),
 		offset:          offset.Milliseconds(),
-		numSteps:        queryOpts.NumSteps(),
+		numSteps:        opts.NumSteps(),
 		seriesBatchSize: batchSize,
 
 		shard:     shard,
 		numShards: numShards,
 	}
-	if queryOpts.EnableAnalysis {
+	if opts.EnableAnalysis {
 		o.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 	// For instant queries, set the step to a positive value

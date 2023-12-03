@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type dedupSample struct {
@@ -41,10 +42,10 @@ type dedupOperator struct {
 	model.OperatorTelemetry
 }
 
-func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator) model.VectorOperator {
+func NewDedupOperator(opts *query.Options, next model.VectorOperator) model.VectorOperator {
 	d := &dedupOperator{
 		next: next,
-		pool: pool,
+		pool: model.NewVectorPool(opts.StepsBatch),
 	}
 	d.OperatorTelemetry = &model.TrackedTelemetry{}
 	return d

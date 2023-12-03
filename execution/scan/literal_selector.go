@@ -31,9 +31,9 @@ type numberLiteralSelector struct {
 	model.OperatorTelemetry
 }
 
-func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
+func NewNumberLiteralSelector(opts *query.Options, val float64) *numberLiteralSelector {
 	op := &numberLiteralSelector{
-		vectorPool:  pool,
+		vectorPool:  model.NewVectorPool(opts.StepsBatch),
 		numSteps:    opts.NumSteps(),
 		mint:        opts.Start.UnixMilli(),
 		maxt:        opts.End.UnixMilli(),

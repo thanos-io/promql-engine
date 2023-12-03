@@ -42,14 +42,14 @@ func SetTelemetry(opts *query.Options) model.OperatorTelemetry {
 	return &model.NoopTelemetry{}
 }
 
-func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, opts *query.Options) (model.VectorOperator, error) {
 	// Some functions need to be handled in special operators
 
 	switch funcExpr.Func.Name {
 	case "scalar":
 		return &scalarFunctionOperator{
 			next:              nextOps[0],
-			pool:              model.NewVectorPoolWithSize(stepsBatch, 1),
+			pool:              model.NewVectorPoolWithSize(opts.StepsBatch, 1),
 			OperatorTelemetry: SetTelemetry(opts),
 		}, nil
 
@@ -63,32 +63,32 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 	case "absent":
 		return &absentOperator{
 			next:              nextOps[0],
-			pool:              model.NewVectorPool(stepsBatch),
+			pool:              model.NewVectorPool(opts.StepsBatch),
 			funcExpr:          funcExpr,
 			OperatorTelemetry: SetTelemetry(opts),
 		}, nil
 
 	case "histogram_quantile":
 		return &histogramOperator{
-			pool:              model.NewVectorPool(stepsBatch),
+			pool:              model.NewVectorPool(opts.StepsBatch),
 			funcArgs:          funcExpr.Args,
 			once:              sync.Once{},
 			scalarOp:          nextOps[0],
 			vectorOp:          nextOps[1],
-			scalarPoints:      make([]float64, stepsBatch),
+			scalarPoints:      make([]float64, opts.StepsBatch),
 			OperatorTelemetry: SetTelemetry(opts),
 		}, nil
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
 	if len(nextOps) == 0 {
-		return newNoArgsFunctionOperator(funcExpr, stepsBatch, opts)
+		return newNoArgsFunctionOperator(funcExpr, opts)
 	}
 	// All remaining functions
-	return newInstantVectorFunctionOperator(funcExpr, nextOps, stepsBatch, opts)
+	return newInstantVectorFunctionOperator(funcExpr, nextOps, opts)
 }
 
-func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newNoArgsFunctionOperator(funcExpr *parser.Call, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := noArgFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, UnknownFunctionError(funcExpr.Func.Name)
@@ -105,10 +105,10 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 		mint:        opts.Start.UnixMilli(),
 		maxt:        opts.End.UnixMilli(),
 		step:        interval,
-		stepsBatch:  stepsBatch,
+		stepsBatch:  opts.StepsBatch,
 		funcExpr:    funcExpr,
 		call:        call,
-		vectorPool:  model.NewVectorPool(stepsBatch),
+		vectorPool:  model.NewVectorPool(opts.StepsBatch),
 	}
 	switch funcExpr.Func.Name {
 	case "pi", "time":
@@ -126,14 +126,14 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 	return op, nil
 }
 
-func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := instantVectorFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, UnknownFunctionError(funcExpr.Func.Name)
 	}
 
-	scalarPoints := make([][]float64, stepsBatch)
-	for i := 0; i < stepsBatch; i++ {
+	scalarPoints := make([][]float64, opts.StepsBatch)
+	for i := 0; i < opts.StepsBatch; i++ {
 		scalarPoints[i] = make([]float64, len(nextOps)-1)
 	}
 	f := &functionOperator{

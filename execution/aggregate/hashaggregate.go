@@ -43,7 +43,6 @@ type aggregate struct {
 }
 
 func NewHashAggregate(
-	points *model.VectorPool,
 	next model.VectorOperator,
 	paramOp model.VectorOperator,
 	aggregation parser.ItemType,
@@ -65,7 +64,7 @@ func NewHashAggregate(
 		next:        next,
 		paramOp:     paramOp,
 		params:      make([]float64, opts.StepsBatch),
-		vectorPool:  points,
+		vectorPool:  model.NewVectorPool(opts.StepsBatch),
 		by:          by,
 		aggregation: aggregation,
 		labels:      labels,

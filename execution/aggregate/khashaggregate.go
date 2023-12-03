@@ -43,7 +43,6 @@ type kAggregate struct {
 }
 
 func NewKHashAggregate(
-	points *model.VectorPool,
 	next model.VectorOperator,
 	paramOp model.VectorOperator,
 	aggregation parser.ItemType,
@@ -68,7 +67,7 @@ func NewKHashAggregate(
 
 	a := &kAggregate{
 		next:        next,
-		vectorPool:  points,
+		vectorPool:  model.NewVectorPool(opts.StepsBatch),
 		by:          by,
 		aggregation: aggregation,
 		labels:      labels,

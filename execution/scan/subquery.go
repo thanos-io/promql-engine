@@ -33,7 +33,7 @@ type subqueryOperator struct {
 	acc        [][]Sample
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *parser.Call, subQuery *parser.SubqueryExpr) (model.VectorOperator, error) {
+func NewSubqueryOperator(next model.VectorOperator, opts *query.Options, funcExpr *parser.Call, subQuery *parser.SubqueryExpr) (model.VectorOperator, error) {
 	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 	return &subqueryOperator{
 		next:        next,
 		call:        call,
-		pool:        pool,
+		pool:        model.NewVectorPool(opts.StepsBatch),
 		funcExpr:    funcExpr,
 		subQuery:    subQuery,
 		mint:        opts.Start.UnixMilli(),
