@@ -77,6 +77,8 @@ type RemoteExecution struct {
 	Engine          api.RemoteEngine
 	Query           string
 	QueryRangeStart time.Time
+
+	valueType parser.ValueType
 }
 
 func (r RemoteExecution) String() string {
@@ -90,7 +92,7 @@ func (r RemoteExecution) Pretty(level int) string { return r.String() }
 
 func (r RemoteExecution) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
 
-func (r RemoteExecution) Type() parser.ValueType { return parser.ValueTypeMatrix }
+func (r RemoteExecution) Type() parser.ValueType { return r.valueType }
 
 func (r RemoteExecution) PromQLExpr() {}
 
@@ -107,7 +109,7 @@ func (r Deduplicate) Pretty(level int) string { return r.String() }
 
 func (r Deduplicate) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
 
-func (r Deduplicate) Type() parser.ValueType { return parser.ValueTypeMatrix }
+func (r Deduplicate) Type() parser.ValueType { return r.Expressions[0].Type() }
 
 func (r Deduplicate) PromQLExpr() {}
 
@@ -119,7 +121,7 @@ func (r Noop) Pretty(level int) string { return r.String() }
 
 func (r Noop) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
 
-func (r Noop) Type() parser.ValueType { return parser.ValueTypeMatrix }
+func (r Noop) Type() parser.ValueType { return parser.ValueTypeNone }
 
 func (r Noop) PromQLExpr() {}
 
@@ -268,6 +270,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 			Engine:          e,
 			Query:           (*expr).String(),
 			QueryRangeStart: start,
+			valueType:       (*expr).Type(),
 		})
 	}
 
@@ -287,6 +290,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 			Engine:          engines[i],
 			Query:           expr.String(),
 			QueryRangeStart: opts.Start,
+			valueType:       expr.Type(),
 		})
 	}
 

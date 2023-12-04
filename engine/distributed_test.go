@@ -220,6 +220,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
 		{name: "binary expression with constant operand", query: `sum by (region) (bar * 60)`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
+		{name: "binary nested with constants", query: `(1 + 2) + (1 atan2 (-1 % -1))`},
 		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
 		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
 		{name: "absent_over_time for non-existing metric", query: `absent_over_time(foo[2m])`},
