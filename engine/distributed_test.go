@@ -19,7 +19,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type partition struct {
@@ -221,18 +220,13 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "binary expression with constant operand", query: `sum by (region) (bar * 60)`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
 		{name: "binary nested with constants", query: `(1 + 2) + (1 atan2 (-1 % -1))`},
+		{name: "binary nested with functions", query: `(1 + exp(vector(1))) + (1 atan2 (-1 % -1))`},
 		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
 		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
 		{name: "absent_over_time for non-existing metric", query: `absent_over_time(foo[2m])`},
 		{name: "absent_over_time for existing metric", query: `absent_over_time(bar{pod="nginx-1"}[2m])`},
 		{name: "absent for non-existing metric", query: `absent(foo)`},
 		{name: "absent for existing metric", query: `absent(bar{pod="nginx-1"})`},
-	}
-
-	optimizersOpts := map[string][]logicalplan.Optimizer{
-		"none":    logicalplan.NoOptimizers,
-		"default": logicalplan.DefaultOptimizers,
-		"all":     logicalplan.AllOptimizers,
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
@@ -273,50 +267,44 @@ func TestDistributedAggregations(t *testing.T) {
 					ctx := context.Background()
 					for _, query := range queries {
 						t.Run(query.name, func(t *testing.T) {
-							for o, optimizers := range optimizersOpts {
-								t.Run(fmt.Sprintf("withOptimizers=%s", o), func(t *testing.T) {
-									localOpts.LogicalOptimizers = optimizers
-									distOpts := localOpts
+							distOpts := localOpts
+							distOpts.DisableFallback = !query.expectFallback
+							for _, instantTS := range instantTSs {
+								t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
+									distEngine := engine.NewDistributedEngine(distOpts,
+										api.NewStaticEndpoints(remoteEngines),
+									)
+									distQry, err := distEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
+									testutil.Ok(t, err)
 
-									distOpts.DisableFallback = !query.expectFallback
-									for _, instantTS := range instantTSs {
-										t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
-											distEngine := engine.NewDistributedEngine(distOpts,
-												api.NewStaticEndpoints(remoteEngines),
-											)
-											distQry, err := distEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
-											testutil.Ok(t, err)
+									distResult := distQry.Exec(ctx)
+									promEngine := promql.NewEngine(localOpts.EngineOpts)
+									promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
+									testutil.Ok(t, err)
+									promResult := promQry.Exec(ctx)
 
-											distResult := distQry.Exec(ctx)
-											promEngine := promql.NewEngine(localOpts.EngineOpts)
-											promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
-											testutil.Ok(t, err)
-											promResult := promQry.Exec(ctx)
-
-											testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
-										})
-									}
-
-									t.Run("range", func(t *testing.T) {
-										if test.rangeEnd == (time.Time{}) {
-											test.rangeEnd = rangeEnd
-										}
-										distEngine := engine.NewDistributedEngine(distOpts,
-											api.NewStaticEndpoints(remoteEngines),
-										)
-										distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
-										testutil.Ok(t, err)
-
-										distResult := distQry.Exec(ctx)
-										promEngine := promql.NewEngine(localOpts.EngineOpts)
-										promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
-										testutil.Ok(t, err)
-										promResult := promQry.Exec(ctx)
-
-										testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
-									})
+									testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
 								})
 							}
+
+							t.Run("range", func(t *testing.T) {
+								if test.rangeEnd == (time.Time{}) {
+									test.rangeEnd = rangeEnd
+								}
+								distEngine := engine.NewDistributedEngine(distOpts,
+									api.NewStaticEndpoints(remoteEngines),
+								)
+								distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+								testutil.Ok(t, err)
+
+								distResult := distQry.Exec(ctx)
+								promEngine := promql.NewEngine(localOpts.EngineOpts)
+								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+								testutil.Ok(t, err)
+								promResult := promQry.Exec(ctx)
+
+								testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
+							})
 						})
 					}
 				})

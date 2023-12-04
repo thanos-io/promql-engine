@@ -121,7 +121,7 @@ func (r Noop) Pretty(level int) string { return r.String() }
 
 func (r Noop) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
 
-func (r Noop) Type() parser.ValueType { return parser.ValueTypeNone }
+func (r Noop) Type() parser.ValueType { return parser.ValueTypeVector }
 
 func (r Noop) PromQLExpr() {}
 
@@ -403,9 +403,9 @@ func isDistributive(expr *parser.Expr) bool {
 		// data set. This is why we cannot push down aggregations where
 		// the operand is a binary expression.
 		// The only exception currently is pushing down binary expressions with a constant operand.
-		lhsConstant := isNumberLiteral(aggr.LHS)
-		rhsConstant := isNumberLiteral(aggr.RHS)
-		return lhsConstant || rhsConstant
+		lhsConstant := isConstantExpr(aggr.LHS)
+		rhsConstant := isConstantExpr(aggr.RHS)
+		return (lhsConstant || rhsConstant)
 	case *parser.AggregateExpr:
 		// Certain aggregations are currently not supported.
 		if _, ok := distributiveAggregations[aggr.Op]; !ok {
@@ -459,17 +459,20 @@ func matchesExternalLabels(ms []*labels.Matcher, externalLabels labels.Labels) b
 	return true
 }
 
-func isNumberLiteral(expr parser.Expr) bool {
-	if _, ok := expr.(*parser.NumberLiteral); ok {
+func isConstantExpr(expr parser.Expr) bool {
+	// TODO: there are more possibilities for constant expressions
+	switch texpr := expr.(type) {
+	case *parser.NumberLiteral:
 		return true
-	}
-
-	stepInvariant, ok := expr.(*parser.StepInvariantExpr)
-	if !ok {
+	case *parser.StepInvariantExpr:
+		return isConstantExpr(texpr.Expr)
+	case *parser.ParenExpr:
+		return isConstantExpr(texpr.Expr)
+	case *parser.BinaryExpr:
+		return isConstantExpr(texpr.LHS) && isConstantExpr(texpr.RHS)
+	default:
 		return false
 	}
-
-	return isNumberLiteral(stepInvariant.Expr)
 }
 
 func maxTime(a, b time.Time) time.Time {
