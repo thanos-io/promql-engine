@@ -4,8 +4,10 @@
 package engine_test
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"reflect"
 	"runtime"
@@ -33,7 +35,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -57,151 +58,6 @@ func TestPromqlAcceptance(t *testing.T) {
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 		}})
 	promql.RunBuiltinTests(t, engine)
-}
-
-func TestQueryExplain(t *testing.T) {
-	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
-	series := storage.MockSeries(
-		[]int64{240, 270, 300, 600, 630, 660},
-		[]float64{1, 2, 3, 4, 5, 6},
-		[]string{labels.MetricName, "foo"},
-	)
-
-	start := time.Unix(0, 0)
-	end := time.Unix(1000, 0)
-
-	// Calculate concurrencyOperators according to max available CPUs.
-	totalOperators := runtime.GOMAXPROCS(0) / 2
-	concurrencyOperators := []engine.ExplainOutputNode{}
-	for i := 0; i < totalOperators; i++ {
-		concurrencyOperators = append(concurrencyOperators, engine.ExplainOutputNode{
-			OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-				{OperatorName: fmt.Sprintf("[*vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
-			},
-		})
-	}
-
-	for _, tc := range []struct {
-		query    string
-		expected *engine.ExplainOutputNode
-	}{
-		{
-			query:    "time()",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*noArgFunctionOperator] time()"},
-		},
-		{
-			query:    "foo",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*coalesce]", Children: concurrencyOperators},
-		},
-		{
-			query: "sum(foo) by (job)",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-				{OperatorName: "[*aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*coalesce]", Children: concurrencyOperators},
-				},
-				},
-			},
-			},
-		},
-	} {
-		{
-			t.Run(tc.query, func(t *testing.T) {
-				ng := engine.New(engine.Opts{EngineOpts: opts})
-				ctx := context.Background()
-
-				var (
-					query promql.Query
-					err   error
-				)
-
-				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
-				testutil.Ok(t, err)
-
-				explainableQuery := query.(engine.ExplainableQuery)
-				testutil.Equals(t, tc.expected, explainableQuery.Explain())
-
-				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
-				testutil.Ok(t, err)
-
-				explainableQuery = query.(engine.ExplainableQuery)
-				testutil.Equals(t, tc.expected, explainableQuery.Explain())
-			})
-		}
-	}
-}
-
-func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
-	if got != nil {
-		if got.OperatorTelemetry.ExecutionTimeTaken() <= 0 {
-			t.Errorf("expected non-zero ExecutionTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
-			return false
-		}
-		for i := range got.Children {
-			child := got.Children[i]
-			return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, &child)
-		}
-	}
-	return true
-}
-
-func TestQueryAnalyze(t *testing.T) {
-	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
-	series := storage.MockSeries(
-		[]int64{240, 270, 300, 600, 630, 660},
-		[]float64{1, 2, 3, 4, 5, 6},
-		[]string{labels.MetricName, "foo"},
-	)
-
-	start := time.Unix(0, 0)
-	end := time.Unix(1000, 0)
-
-	for _, tc := range []struct {
-		query string
-	}{
-		{
-			query: "foo",
-		},
-		{
-			query: "time()",
-		},
-		{
-			query: "sum(foo) by (job)",
-		},
-		{
-			query: "rate(http_requests_total[30s]) > bool 0",
-		},
-	} {
-		{
-			t.Run(tc.query, func(t *testing.T) {
-				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
-				ctx := context.Background()
-
-				var (
-					query promql.Query
-					err   error
-				)
-
-				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
-				testutil.Ok(t, err)
-
-				queryResults := query.Exec(context.Background())
-				testutil.Ok(t, queryResults.Err)
-
-				explainableQuery := query.(engine.ExplainableQuery)
-
-				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
-
-				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
-				testutil.Ok(t, err)
-
-				queryResults = query.Exec(context.Background())
-				testutil.Ok(t, queryResults.Err)
-
-				explainableQuery = query.(engine.ExplainableQuery)
-				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
-			})
-		}
-	}
 }
 
 func TestVectorSelectorWithGaps(t *testing.T) {
@@ -239,7 +95,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	oldResult := q2.Exec(context.Background())
 	testutil.Ok(t, oldResult.Err)
 
-	testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
+	testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 }
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
@@ -1938,7 +1794,7 @@ load 30s
 								defer q2.Close()
 								oldResult := q2.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
+								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 							})
 						}
 					})
@@ -2108,7 +1964,7 @@ func TestEdgeCases(t *testing.T) {
 			oldResult := q1.Exec(ctx)
 			newResult := q2.Exec(ctx)
 
-			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 		})
 	}
 }
@@ -2233,15 +2089,14 @@ func TestXFunctions(t *testing.T) {
 	http_requests{path="/bar"}	200 150 300 50 0`
 
 	cases := []struct {
-		name         string
-		load         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
-		expected     []promql.Sample
-		rangeQuery   bool
-		startTime    time.Time
-		endTime      time.Time
+		name       string
+		load       string
+		query      string
+		queryTime  time.Time
+		expected   []promql.Sample
+		rangeQuery bool
+		startTime  time.Time
+		endTime    time.Time
 	}{
 		// Tests for xIncrease
 		{
@@ -2433,20 +2288,7 @@ func TestXFunctions(t *testing.T) {
 			testutil.Ok(t, engineResult.Err)
 			expectedResult := createVectorResult(tc.expected)
 
-			testutil.Equals(t, expectedResult.Err, engineResult.Err)
-
-			exR := expectedResult.Value.(promql.Vector)
-			erR := engineResult.Value.(promql.Vector)
-
-			sort.Slice(exR, func(i, j int) bool {
-				return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
-			})
-
-			sort.Slice(erR, func(i, j int) bool {
-				return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
-			})
-
-			testutil.Equals(t, exR, erR)
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult, queryExplanation(query))
 		})
 	}
 }
@@ -2467,15 +2309,14 @@ func TestRateVsXRate(t *testing.T) {
 	http_requests{path="/bar"}  1 2 3 4 5 6 7 8 9 10 11`
 
 	cases := []struct {
-		name         string
-		load         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
-		expected     promql.Vector
-		rangeQuery   bool
-		startTime    time.Time
-		endTime      time.Time
+		name       string
+		load       string
+		query      string
+		queryTime  time.Time
+		expected   promql.Vector
+		rangeQuery bool
+		startTime  time.Time
+		endTime    time.Time
 	}{
 		// ### Timeseries starts insice range, (presumably) goes on after range end. ###
 		// 1. Reference eval
@@ -2758,25 +2599,9 @@ func TestRateVsXRate(t *testing.T) {
 			defer query.Close()
 
 			engineResult := query.Exec(context.Background())
-			testutil.Ok(t, engineResult.Err)
-			// Round engine result.
-			roundValues(engineResult)
 			expectedResult := createVectorResult(tc.expected)
 
-			testutil.Equals(t, expectedResult.Err, engineResult.Err)
-
-			exR := expectedResult.Value.(promql.Vector)
-			erR := engineResult.Value.(promql.Vector)
-
-			sort.Slice(exR, func(i, j int) bool {
-				return labels.Compare(exR[i].Metric, exR[j].Metric) < 0
-			})
-
-			sort.Slice(erR, func(i, j int) bool {
-				return labels.Compare(erR[i].Metric, erR[j].Metric) < 0
-			})
-
-			testutil.Equals(t, exR, erR)
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult, queryExplanation(query))
 		})
 	}
 }
@@ -2811,11 +2636,10 @@ func TestInstantQuery(t *testing.T) {
 	}
 
 	cases := []struct {
-		load         string
-		name         string
-		query        string
-		queryTime    time.Time
-		sortByLabels bool // if true, the series in the result between the old and new engine should be sorted before compared
+		load      string
+		name      string
+		query     string
+		queryTime time.Time
 	}{
 		{
 			name: "fuzz - min with NaN",
@@ -2871,9 +2695,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:1m])",
 		},
 		{
 			name: "sum_over_time with subquery with default step",
@@ -2883,9 +2706,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:])",
 		},
 		{
 			name: "sum_over_time with subquery with resolution that doesnt divide step length",
@@ -2895,9 +2717,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:22s])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:22s])",
 		},
 		{
 			name: "sum_over_time with subquery with offset",
@@ -2907,9 +2728,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total)[5m:1m] offset 1m)",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total)[5m:1m] offset 1m)",
 		},
 		{
 			name: "sum_over_time with subquery with inner offset",
@@ -2919,9 +2739,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total offset 1m)[5m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total offset 1m)[5m:1m])",
 		},
 		{
 			name: "sum_over_time with subquery with inner @ modifier",
@@ -2931,9 +2750,8 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(sum by (series) (http_requests_total @ 10)[5m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(sum by (series) (http_requests_total @ 10)[5m:1m])",
 		},
 		{
 			name: "sum_over_time with nested subqueries with inner @ modifier",
@@ -2943,18 +2761,16 @@ min without () (
 				       http_requests_total{pod="nginx-4", series="3"} 5+2x50
 				       http_requests_total{pod="nginx-5", series="1"} 8+4x50
 				       http_requests_total{pod="nginx-6", series="2"} 2+3x50`,
-			queryTime:    time.Unix(600, 0),
-			query:        "sum_over_time(rate(sum by (series) (http_requests_total @ 10)[5m:1m] @0)[10m:1m])",
-			sortByLabels: true,
+			queryTime: time.Unix(600, 0),
+			query:     "sum_over_time(rate(sum by (series) (http_requests_total @ 10)[5m:1m] @0)[10m:1m])",
 		},
 		{
 			name: "sum_over_time with subquery should drop name label",
 			load: `load 10s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
 				       http_requests_total{pod="nginx-2", series="1"} 2+2x50`,
-			queryTime:    time.Unix(0, 0),
-			query:        `sum_over_time(http_requests_total{series="1"} offset 7s[1h:1m] @ 119.800)`,
-			sortByLabels: true,
+			queryTime: time.Unix(0, 0),
+			query:     `sum_over_time(http_requests_total{series="1"} offset 7s[1h:1m] @ 119.800)`,
 		},
 		{
 			name: "duplicate label set",
@@ -3215,8 +3031,7 @@ min without () (
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:        "topk(2, http_requests_total) by (series)",
-			sortByLabels: true,
+			query: "topk(2, http_requests_total) by (series)",
 		},
 		{
 			name: "bottomK",
@@ -3244,8 +3059,7 @@ min without () (
 						http_requests_total{pod="nginx-7", series="3"} 11
 						http_requests_total{pod="nginx-8", series="4"} 22
 						http_requests_total{pod="nginx-9", series="4"} 89`,
-			query:        "bottomk(2, http_requests_total) by (series)",
-			sortByLabels: true,
+			query: "bottomk(2, http_requests_total) by (series)",
 		},
 		{
 			name: "max",
@@ -3888,7 +3702,7 @@ min without () (
 
 								oldResult := q2.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult)
+								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult, queryExplanation(q1))
 							})
 						}
 					})
@@ -4721,14 +4535,14 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 
 					t.Run("instant", func(t *testing.T) {
 						ctx := context.Background()
-						qry, err := thanosEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
+						q1, err := thanosEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
-						newResult := qry.Exec(ctx)
+						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
 
-						qry, err = promEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
+						q2, err := promEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
 						testutil.Ok(t, err)
-						promResult := qry.Exec(ctx)
+						promResult := q2.Exec(ctx)
 						testutil.Ok(t, promResult.Err)
 						promVector, err := promResult.Vector()
 						testutil.Ok(t, err)
@@ -4738,19 +4552,19 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 							testutil.Assert(t, len(promVector) == 0)
 						}
 
-						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult)
+						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult, queryExplanation(q1))
 					})
 
 					t.Run("range", func(t *testing.T) {
 						ctx := context.Background()
-						qry, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						q1, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
-						newResult := qry.Exec(ctx)
+						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
 
-						qry, err = promEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						q2, err := promEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
-						promResult := qry.Exec(ctx)
+						promResult := q2.Exec(ctx)
 						testutil.Ok(t, promResult.Err)
 						promMatrix, err := promResult.Matrix()
 						testutil.Ok(t, err)
@@ -4759,7 +4573,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
 							testutil.Assert(t, len(promMatrix) == 0)
 						}
-						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult)
+						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult, queryExplanation(q1))
 					})
 				})
 			}
@@ -4900,22 +4714,6 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 	})
 }
 
-func sortByLabels(r *promql.Result) {
-	if r.Err != nil {
-		return
-	}
-	switch r.Value.Type() {
-	case parser.ValueTypeVector:
-		m, _ := r.Vector()
-		sort.Sort(samplesByLabels(m))
-		r.Value = m
-	case parser.ValueTypeMatrix:
-		m, _ := r.Matrix()
-		sort.Sort(seriesByLabels(m))
-		r.Value = m
-	}
-}
-
 type seriesByLabels []promql.Series
 
 func (b seriesByLabels) Len() int           { return len(b) }
@@ -4927,36 +4725,6 @@ type samplesByLabels []promql.Sample
 func (b samplesByLabels) Len() int           { return len(b) }
 func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
-
-// roundValues rounds all values to 10 decimal points and
-// can be used to eliminate floating point division errors
-// when comparing two promql results.
-func roundValues(r *promql.Result) {
-	switch result := r.Value.(type) {
-	case promql.Matrix:
-		for i := range result {
-			for j := range result[i].Floats {
-				result[i].Floats[j].F = math.Floor(result[i].Floats[j].F*1e10) / 1e10
-			}
-		}
-	case promql.Vector:
-		for i := range result {
-			result[i].F = math.Floor(result[i].F*10e10) / 10e10
-		}
-	}
-}
-
-// emptyLabelsToNil sets empty labelsets to nil to work around inconsistent
-// results from the old engine depending on the literal type (e.g. number vs. compare).
-func emptyLabelsToNil(result *promql.Result) {
-	if value, ok := result.Value.(promql.Matrix); ok {
-		for i, s := range value {
-			if s.Metric.IsEmpty() {
-				result.Value.(promql.Matrix)[i].Metric = labels.EmptyLabels()
-			}
-		}
-	}
-}
 
 // comparer should be used to compare promql results between engines.
 var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
@@ -5098,3 +4866,44 @@ var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 	}
 	return false
 })
+
+func queryExplanation(q promql.Query) string {
+	eq, ok := q.(engine.ExplainableQuery)
+	if !ok {
+		return ""
+	}
+
+	var explain func(w io.Writer, n engine.ExplainOutputNode, indent, indentNext string)
+
+	explain = func(w io.Writer, n engine.ExplainOutputNode, indent, indentNext string) {
+		next := n.Children
+		me := n.OperatorName
+
+		_, _ = w.Write([]byte(indent))
+		_, _ = w.Write([]byte(me))
+		if len(next) == 0 {
+			_, _ = w.Write([]byte("\n"))
+			return
+		}
+
+		if me == "[*CancellableOperator]" {
+			_, _ = w.Write([]byte(": "))
+			explain(w, next[0], "", indentNext)
+			return
+		}
+		_, _ = w.Write([]byte(":\n"))
+
+		for i, n := range next {
+			if i == len(next)-1 {
+				explain(w, n, indentNext+"└──", indentNext+"   ")
+			} else {
+				explain(w, n, indentNext+"├──", indentNext+"│  ")
+			}
+		}
+	}
+
+	var b bytes.Buffer
+	explain(&b, *eq.Explain(), "", "")
+
+	return fmt.Sprintf("Query: %s\nExplanation:\n%s\n", q.String(), b.String())
+}
