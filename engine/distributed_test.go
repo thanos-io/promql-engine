@@ -205,8 +205,10 @@ func TestDistributedAggregations(t *testing.T) {
 		expectFallback bool
 	}{
 		{name: "sum", query: `sum by (pod) (bar)`},
+		{name: "sum by __name__", query: `sum by (__name__) ({__name__=~".+"})`},
 		{name: "parenthesis", query: `sum by (pod) ((bar))`},
 		{name: "avg", query: `avg(bar)`},
+		{name: "avg by __name__", query: `avg by (__name__) ({__name__=~".+"})`},
 		{name: "avg with grouping", query: `avg by (pod) (bar)`},
 		{name: "count", query: `count by (pod) (bar)`},
 		{name: "count by __name__", query: `count by (__name__) ({__name__=~".+"})`},
@@ -283,7 +285,7 @@ func TestDistributedAggregations(t *testing.T) {
 									testutil.Ok(t, err)
 									promResult := promQry.Exec(ctx)
 
-									testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
+									testutil.WithGoCmp(comparer).Equals(t, promResult, distResult, queryExplanation(distQry))
 								})
 							}
 
@@ -303,7 +305,7 @@ func TestDistributedAggregations(t *testing.T) {
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, promResult, distResult)
+								testutil.WithGoCmp(comparer).Equals(t, promResult, distResult, queryExplanation(distQry))
 							})
 						})
 					}
