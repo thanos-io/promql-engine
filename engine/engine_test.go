@@ -182,6 +182,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: "stdvar_over_time(http_requests_total[30s])",
 		},
 		{
+			name: "quantile_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "quantile_over_time(0.9, http_requests_total[1m])",
+		},
+		{
 			name: "changes",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -4115,8 +4122,21 @@ func TestFallback(t *testing.T) {
 	end := time.Unix(120, 0)
 	step := time.Second * 30
 
-	// TODO(fpetkovski): Update this expression once we add support for predict_linear.
-	query := `predict_linear(http_requests_total{pod="nginx-1"}[5m], 10)`
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			// TODO(fpetkovski): Update this expression once we add support for predict_linear.
+			name:  "unsupported function",
+			query: `predict_linear(http_requests_total{pod="nginx-1"}[5m], 10)`,
+		},
+		{
+			name:  "unsupported function with scalar",
+			query: `quantile_over_time(scalar(sum(http_requests_total)), http_requests_total[2m])`,
+		},
+	}
+
 	load := `load 30s
 				http_requests_total{pod="nginx-1"} 1+1x1
 				http_requests_total{pod="nginx-2"} 1+2x40`
@@ -4124,20 +4144,24 @@ func TestFallback(t *testing.T) {
 	storage := promql.LoadedStorage(t, load)
 	defer storage.Close()
 
-	for _, disableFallback := range []bool{true, false} {
-		t.Run(fmt.Sprintf("disableFallback=%t", disableFallback), func(t *testing.T) {
-			opts := promql.EngineOpts{
-				Timeout:    2 * time.Second,
-				MaxSamples: math.MaxInt64,
-			}
-			newEngine := engine.New(engine.Opts{DisableFallback: disableFallback, EngineOpts: opts})
-			q1, err := newEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
-			if disableFallback {
-				testutil.NotOk(t, err)
-			} else {
-				testutil.Ok(t, err)
-				newResult := q1.Exec(context.Background())
-				testutil.Ok(t, newResult.Err)
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			for _, disableFallback := range []bool{true, false} {
+				t.Run(fmt.Sprintf("disableFallback=%t", disableFallback), func(t *testing.T) {
+					opts := promql.EngineOpts{
+						Timeout:    2 * time.Second,
+						MaxSamples: math.MaxInt64,
+					}
+					newEngine := engine.New(engine.Opts{DisableFallback: disableFallback, EngineOpts: opts})
+					q1, err := newEngine.NewRangeQuery(context.Background(), storage, nil, tcase.query, start, end, step)
+					if disableFallback {
+						testutil.NotOk(t, err)
+					} else {
+						testutil.Ok(t, err)
+						newResult := q1.Exec(context.Background())
+						testutil.Ok(t, newResult.Err)
+					}
+				})
 			}
 		})
 	}
