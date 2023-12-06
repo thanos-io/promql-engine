@@ -98,17 +98,30 @@ sum by (pod) (
 			expected: `
 avg by (pod) (
   sum by (pod) (
-	dedup(
-      remote(sum by (pod, region) (http_requests_total)),
-	  remote(sum by (pod, region) (http_requests_total))
-	)
+    dedup(
+        remote(sum by (pod, region) (http_requests_total)),
+        remote(sum by (pod, region) (http_requests_total))
+    )
   )
 )`,
 		},
 		{
-			name:     "avg with prior binary expression",
-			expr:     `avg by (pod) (metric_a / metric_b)`,
-			expected: `avg by (pod) (dedup(remote(metric_a), remote(metric_a)) / dedup(remote(metric_b), remote(metric_b)))`,
+			name: "avg with prior binary expression",
+			expr: `avg by (pod) (metric_a / metric_b)`,
+			expected: `
+sum by (pod) (
+  dedup(
+    remote(sum by (pod, region) (metric_a / metric_b)),
+    remote(sum by (pod, region) (metric_a / metric_b))
+  )
+)
+/ on (pod)
+sum by (pod) (
+  dedup(
+    remote(count by (pod, region) (metric_a / metric_b)),
+    remote(count by (pod, region) (metric_a / metric_b))
+  )
+)`,
 		},
 		{
 			name: "two-level aggregation",
@@ -128,9 +141,10 @@ max by (pod) (
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
 max by (pod) (
-  dedup(remote(metric_a), remote(metric_a)) 
-  / 
-  dedup(remote(metric_b), remote(metric_b))
+  dedup(
+    remote(max by (pod, region) (metric_a / metric_b)),
+    remote(max by (pod, region) (metric_a / metric_b))
+  )
 )
 `,
 		},
@@ -150,10 +164,12 @@ max by (pod) (quantile(0.9,
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
 max by (pod) (
-  dedup(remote(metric_a), remote(metric_a)) 
-  / 
-  dedup(remote(metric_b), remote(metric_b))
-)`,
+  dedup(
+    remote(max by (pod, region) (metric_a / metric_b)),
+    remote(max by (pod, region) (metric_a / metric_b))
+  )
+)
+`,
 		},
 		{
 			name: "binary operation with aggregations",

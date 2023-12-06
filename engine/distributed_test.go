@@ -220,6 +220,8 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
 		{name: "aggregation with function operand", query: `sum by (pod) (rate(bar[1m]))`},
 		{name: "binary expression with constant operand", query: `sum by (region) (bar * 60)`},
+		{name: "binary expression with distributable pairing", query: `sum by (pod) (bar * bar)`},
+		{name: "binary expression with non-distributable pairing", query: `sum by (pod) (foo * ignoring (region, zone) xyz)`},
 		{name: "binary aggregation", query: `sum by (region) (bar) / sum by (pod) (bar)`},
 		{name: "binary nested with constants", query: `(1 + 2) + (1 atan2 (-1 % -1))`},
 		{name: "binary nested with functions", query: `(1 + exp(vector(1))) + (1 atan2 (-1 % -1))`},
