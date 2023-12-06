@@ -67,7 +67,7 @@ sum(
     remote(sum by (region) (http_requests_total)),
     remote(sum by (region) (http_requests_total))
   )
-) /
+) / on ()
 sum(
   dedup(
     remote(count by (region) (http_requests_total)),
@@ -84,7 +84,7 @@ sum by (pod) (
     remote(sum by (pod, region) (http_requests_total)),
     remote(sum by (pod, region) (http_requests_total))
   )
-) /
+) / on (pod)
 sum by (pod) (
   dedup(
     remote(count by (pod, region) (http_requests_total)),

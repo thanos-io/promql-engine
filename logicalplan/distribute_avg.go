@@ -27,10 +27,14 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) par
 			count := *(*current).(*parser.AggregateExpr)
 			count.Op = parser.COUNT
 			*current = &parser.BinaryExpr{
-				Op:             parser.DIV,
-				LHS:            &sum,
-				RHS:            &count,
-				VectorMatching: &parser.VectorMatching{},
+				Op:  parser.DIV,
+				LHS: &sum,
+				RHS: &count,
+				VectorMatching: &parser.VectorMatching{
+					Include:        aggr.Grouping,
+					MatchingLabels: aggr.Grouping,
+					On:             true,
+				},
 			}
 			return true
 		}
