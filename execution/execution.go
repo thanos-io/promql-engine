@@ -242,7 +242,7 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		numShards = 1
 	}
 	var arg float64
-	if len(e.Args) > 0 {
+	if e.Func.Name == "quantile_over_time" {
 		constVal, err := unwrapConstVal(e.Args[0])
 		if err != nil {
 			return nil, err
