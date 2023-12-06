@@ -7,15 +7,23 @@ import (
 	"context"
 	"sync"
 
+	"github.com/gogo/protobuf/types"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/query"
+	tquery "github.com/thanos-io/thanos/pkg/query"
+	tstore "github.com/thanos-io/thanos/pkg/store"
+	"github.com/thanos-io/thanos/pkg/store/hintspb"
 )
 
 type SeriesSelector interface {
 	GetSeries(ctx context.Context, shard, numShards int) ([]SignedSeries, error)
 	Matchers() []*labels.Matcher
+	// TODO: add a method to get hints. Return nil if there are no hints.
+	// Hints() map[string][]hintspb.SeriesHintsResponse
+	GetSeriesHints() (map[string][]hintspb.SeriesResponseHints, error)
 }
 
 type SignedSeries struct {
@@ -24,18 +32,20 @@ type SignedSeries struct {
 }
 
 type seriesSelector struct {
-	storage  storage.Queryable
-	mint     int64
-	maxt     int64
-	step     int64
-	matchers []*labels.Matcher
-	hints    storage.SelectHints
+	storage        storage.Queryable
+	mint           int64
+	maxt           int64
+	step           int64
+	matchers       []*labels.Matcher
+	hints          storage.SelectHints
+	opts           *query.Options
+	hintsCollector *tstore.HintsCollector
 
 	once   sync.Once
 	series []SignedSeries
 }
 
-func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) *seriesSelector {
+func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints, opts *query.Options) *seriesSelector {
 	return &seriesSelector{
 		storage:  storage,
 		maxt:     maxt,
@@ -43,6 +53,7 @@ func newSeriesSelector(storage storage.Queryable, mint, maxt, step int64, matche
 		step:     step,
 		matchers: matchers,
 		hints:    hints,
+		opts:     opts,
 	}
 }
 
@@ -67,7 +78,20 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	}
 	defer querier.Close()
 
-	seriesSet := querier.Select(ctx, false, &o.hints, o.matchers...)
+	var seriesSet storage.SeriesSet
+	var h *tstore.HintsCollector
+
+	if o.opts.EnableAnalysis {
+		if qwh, ok := querier.(tquery.QuerierWithHints); ok {
+			seriesSet, h = qwh.SelectWithHints(ctx, false, &o.hints, o.matchers...)
+
+			o.hintsCollector = h
+		}
+	}
+	if seriesSet == nil {
+		seriesSet = querier.Select(ctx, false, &o.hints, o.matchers...)
+	}
+
 	i := 0
 	for seriesSet.Next() {
 		s := seriesSet.At()
@@ -80,6 +104,27 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 
 	warnings.AddToContext(seriesSet.Warnings(), ctx)
 	return seriesSet.Err()
+}
+
+func (o *seriesSelector) GetSeriesHints() (map[string][]hintspb.SeriesResponseHints, error) {
+	if o.hintsCollector == nil {
+		return nil, nil
+	}
+
+	hints := make(map[string][]hintspb.SeriesResponseHints)
+
+	for key, value := range o.hintsCollector.Hints {
+		
+		for _,v := range value {
+			h := hintspb.SeriesResponseHints{}
+			if err := types.UnmarshalAny(v.GetHints(), &h); err != nil {
+				return nil, err
+			}
+
+			hints[key] = append(hints[key], h)
+		}
+	}
+	return hints, nil
 }
 
 func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries {

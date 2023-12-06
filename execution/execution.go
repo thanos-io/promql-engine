@@ -47,7 +47,7 @@ import (
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(expr parser.Expr, queryable storage.Queryable, opts *query.Options) (model.VectorOperator, error) {
-	selectorPool := engstore.NewSelectorPool(queryable)
+	selectorPool := engstore.NewSelectorPool(queryable,opts)
 	hints := storage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
