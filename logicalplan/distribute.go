@@ -301,6 +301,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 	// We need to make sure that absent is at least evaluated against one engine.
 	// Otherwise, we will end up with an empty result (not absent) when no engine matches the query.
 	// For practicality, we choose the latest one since it likely has data in memory or on disk.
+	// TODO(fpetkovski): This could also solved by a synthetic node which acts as a number literal but has specific labels.
 	if len(queries) == 0 && len(engines) > 0 {
 		return RemoteExecution{
 			Engine:          engines[len(engines)-1],
