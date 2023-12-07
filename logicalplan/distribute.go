@@ -233,11 +233,10 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 // For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
 func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) parser.Expr {
-	if isAbsent(*expr) {
-		return m.distributeAbsent(*expr, engines, opts)
-	}
-
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
+	if isAbsent(*expr) {
+		return m.distributeAbsent(*expr, engines, startOffset, opts)
+	}
 	if allowedStartOffset < startOffset {
 		return *expr
 	}
@@ -283,15 +282,33 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 	}
 }
 
-func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engines []api.RemoteEngine, opts *query.Options) parser.Expr {
+func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engines []api.RemoteEngine, startOffset time.Duration, opts *query.Options) parser.Expr {
 	queries := make(RemoteExecutions, 0, len(engines))
-	for i := range engines {
+	for i, e := range engines {
+		if e.MaxT() < opts.Start.UnixMilli()-startOffset.Milliseconds() {
+			continue
+		}
+		if e.MinT() > opts.End.UnixMilli() {
+			continue
+		}
 		queries = append(queries, RemoteExecution{
 			Engine:          engines[i],
 			Query:           expr.String(),
 			QueryRangeStart: opts.Start,
 			valueType:       expr.Type(),
 		})
+	}
+	// We need to make sure that absent is at least evaluated against one engine.
+	// Otherwise, we will end up with an empty result (not absent) when no engine matches the query.
+	// For practicality, we choose the latest one since it likely has data in memory or on disk.
+	// TODO(fpetkovski): This could also solved by a synthetic node which acts as a number literal but has specific labels.
+	if len(queries) == 0 && len(engines) > 0 {
+		return RemoteExecution{
+			Engine:          engines[len(engines)-1],
+			Query:           expr.String(),
+			QueryRangeStart: opts.Start,
+			valueType:       expr.Type(),
+		}
 	}
 
 	var rootExpr parser.Expr = queries[0]
