@@ -234,11 +234,11 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
 func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) parser.Expr {
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
-	if allowedStartOffset < startOffset {
-		return *expr
-	}
 	if isAbsent(*expr) {
 		return m.distributeAbsent(*expr, engines, startOffset, opts)
+	}
+	if allowedStartOffset < startOffset {
+		return *expr
 	}
 
 	var globalMinT int64 = math.MaxInt64
@@ -297,6 +297,16 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 			QueryRangeStart: opts.Start,
 			valueType:       expr.Type(),
 		})
+	}
+	// We need to make sure that absent is at least evaluated against one engine.
+	// Otherwise, we will end up with an empty result (not absent) when no engine matches the query.
+	if len(queries) == 0 && len(engines) > 0 {
+		return RemoteExecution{
+			Engine:          engines[0],
+			Query:           expr.String(),
+			QueryRangeStart: opts.Start,
+			valueType:       expr.Type(),
+		}
 	}
 
 	var rootExpr parser.Expr = queries[0]
