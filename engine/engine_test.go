@@ -1754,6 +1754,29 @@ load 30s
 			load:  `load 30s`,
 			query: `absent(nonexistent{job="myjob"})`,
 		},
+		{
+			name:  "absent_over_time with no data in range",
+			query: "absent_over_time(non_existent[10m])",
+		},
+		{
+			name: "absent_over_time with data in range",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(X{a="b"}[10m])`,
+		},
+		{
+			name: "absent_over_time - present but out of range",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(X{a="b"}[1m])`,
+			start: time.Unix(600, 0),
+		},
+		{
+			name: "absent_over_time - absent because of label",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(X{a!="b"}[1m])`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -3664,16 +3687,29 @@ min without () (
 				existent{job="myjob"} 1`,
 			query: `absent(absent(existent{job="myjob"}))`,
 		},
+		{
+			name: "absent_over_time with subquery - present data",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(sum_over_time(X{a="b"}[1m])[1m:30s])`,
+		},
+		{
+			name: "absent_over_time with subquery - missing data",
+			load: `load 30s
+              X{a="b"}  1x10`,
+			query: `absent_over_time(sum_over_time(X{a!="b"}[1m])[1m:30s])`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
-	for _, disableOptimizers := range disableOptimizerOpts {
-		t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
-			for _, lookbackDelta := range lookbackDeltas {
-				opts.LookbackDelta = lookbackDelta
-				for _, tc := range cases {
-					t.Run(tc.name, func(t *testing.T) {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, disableOptimizers := range disableOptimizerOpts {
+				t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
+					for _, lookbackDelta := range lookbackDeltas {
+						opts.LookbackDelta = lookbackDelta
+
 						storage := promql.LoadedStorage(t, tc.load)
 						defer storage.Close()
 
@@ -3712,8 +3748,8 @@ min without () (
 								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult, queryExplanation(q1))
 							})
 						}
-					})
-				}
+					}
+				})
 			}
 		})
 	}
