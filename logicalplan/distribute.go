@@ -399,13 +399,7 @@ func isDistributive(expr *parser.Expr) bool {
 
 	switch aggr := (*expr).(type) {
 	case *parser.BinaryExpr:
-		// Binary expressions are joins and need to be done across the entire
-		// data set. This is why we cannot push down aggregations where
-		// the operand is a binary expression.
-		// The only exception currently is pushing down binary expressions with a constant operand.
-		lhsConstant := isConstantExpr(aggr.LHS)
-		rhsConstant := isConstantExpr(aggr.RHS)
-		return (lhsConstant || rhsConstant)
+		return isBinaryExpressionWithOneConstantSide(aggr) || isBinaryExpressionWithDistributableMatching(aggr)
 	case *parser.AggregateExpr:
 		// Certain aggregations are currently not supported.
 		if _, ok := distributiveAggregations[aggr.Op]; !ok {
@@ -416,6 +410,22 @@ func isDistributive(expr *parser.Expr) bool {
 	}
 
 	return true
+}
+
+func isBinaryExpressionWithOneConstantSide(expr *parser.BinaryExpr) bool {
+	lhsConstant := isConstantExpr(expr.LHS)
+	rhsConstant := isConstantExpr(expr.RHS)
+	return (lhsConstant || rhsConstant)
+}
+
+func isBinaryExpressionWithDistributableMatching(expr *parser.BinaryExpr) bool {
+	if expr.VectorMatching == nil {
+		return false
+	}
+
+	// we can distribute if the vector matching contains the external labels so that
+	// all potential matching partners are contained in one engine
+	return !expr.VectorMatching.On && len(expr.VectorMatching.MatchingLabels) == 0
 }
 
 // matchesExternalLabels returns false if given matchers are not matching external labels.
