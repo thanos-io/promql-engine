@@ -241,10 +241,29 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 	if numShards < 1 {
 		numShards = 1
 	}
+	var arg float64
+	if e.Func.Name == "quantile_over_time" {
+		constVal, err := unwrapConstVal(e.Args[0])
+		if err != nil {
+			return nil, err
+		}
+		arg = constVal
+	}
 
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		operator, err := scan.NewMatrixSelector(model.NewVectorPool(opts.StepsBatch), filter, e, opts, t.Range, vs.Offset, batchSize, i, numShards)
+		operator, err := scan.NewMatrixSelector(
+			model.NewVectorPool(opts.StepsBatch),
+			filter,
+			e,
+			arg,
+			opts,
+			t.Range,
+			vs.Offset,
+			batchSize,
+			i,
+			numShards,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -357,4 +376,15 @@ func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Option
 	}
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset
+}
+
+func unwrapConstVal(e parser.Expr) (float64, error) {
+	switch c := e.(type) {
+	case *parser.NumberLiteral:
+		return c.Val, nil
+	case *parser.StepInvariantExpr:
+		return unwrapConstVal(c.Expr)
+	}
+
+	return 0, errors.Wrap(parse.ErrNotSupportedExpr, "matrix selector argument must be a constant")
 }

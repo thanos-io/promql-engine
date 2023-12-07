@@ -369,7 +369,7 @@ func (q *quantileAcc) Add(v float64, h *histogram.FloatHistogram) {
 }
 
 func (q *quantileAcc) Value() (float64, *histogram.FloatHistogram) {
-	return quantile(q.arg, q.points), nil
+	return Quantile(q.arg, q.points), nil
 }
 
 func (q *quantileAcc) HasValue() bool {

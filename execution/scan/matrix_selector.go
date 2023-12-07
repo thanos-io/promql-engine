@@ -33,14 +33,14 @@ type matrixScanner struct {
 }
 
 type matrixSelector struct {
-	funcExpr *parser.Call
-	storage  engstore.SeriesSelector
-	call     FunctionCall
-	scanners []matrixScanner
-	series   []labels.Labels
-	once     sync.Once
-
 	vectorPool *model.VectorPool
+	funcExpr   *parser.Call
+	storage    engstore.SeriesSelector
+	arg        float64
+	call       FunctionCall
+	scanners   []matrixScanner
+	series     []labels.Labels
+	once       sync.Once
 
 	numSteps      int
 	mint          int64
@@ -69,6 +69,7 @@ func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
 	funcExpr *parser.Call,
+	arg float64,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	batchSize int64,
@@ -84,6 +85,7 @@ func NewMatrixSelector(
 		call:       call,
 		funcExpr:   funcExpr,
 		vectorPool: pool,
+		arg:        arg,
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
@@ -150,7 +152,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
-
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -197,6 +198,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
+				ScalarPoints:     []float64{o.arg},
 				MetricAppearedTs: series.metricAppearedTs,
 			})
 
