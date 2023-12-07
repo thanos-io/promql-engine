@@ -418,6 +418,34 @@ sum(
   )
 )`,
 		},
+		{
+			name:       "1 hour range query with absent at the start of the range prunes the second engine",
+			expr:       `absent_over_time(metric[1h])`,
+			queryStart: time.Unix(0, 0).Add(1 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(2 * time.Hour),
+			expected:   `remote(absent_over_time(metric[1h])) [1970-01-01 01:00:00 +0000 UTC]`,
+		},
+		{
+			name:       "1 hour absent_over_time with 30m window at the end of the range prunes the first engine",
+			expr:       `absent_over_time(metric[30m])`,
+			queryStart: time.Unix(0, 0).Add(7 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(8 * time.Hour),
+			expected:   `remote(absent_over_time(metric[30m])) [1970-01-01 07:00:00 +0000 UTC]`,
+		},
+		{
+			name:       "1 hour absent_over_time with 1h window covering both engine ranges does not prune an engine",
+			expr:       `absent_over_time(metric[1h])`,
+			queryStart: time.Unix(0, 0).Add(7 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(8 * time.Hour),
+			expected:   `remote(absent_over_time(metric[1h])) [1970-01-01 07:00:00 +0000 UTC] * remote(absent_over_time(metric[1h])) [1970-01-01 07:00:00 +0000 UTC]`,
+		},
+		{
+			name:       "absent_over_time with 3h window cannot be distributed due to insufficient engine overlap",
+			expr:       `absent_over_time(metric[3h])`,
+			queryStart: time.Unix(0, 0).Add(7 * time.Hour),
+			queryEnd:   time.Unix(0, 0).Add(8 * time.Hour),
+			expected:   `absent_over_time(metric[3h])`,
+		},
 	}
 
 	for _, tcase := range cases {
