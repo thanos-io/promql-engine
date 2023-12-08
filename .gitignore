@@ -15,4 +15,3 @@ examples/tmp/
 # Ignore benchmarking output
 benchmarks/
 engine.test
-engine/testdata/
