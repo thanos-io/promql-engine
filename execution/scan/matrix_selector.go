@@ -12,7 +12,6 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
@@ -33,14 +32,14 @@ type matrixScanner struct {
 }
 
 type matrixSelector struct {
-	vectorPool *model.VectorPool
-	funcExpr   *parser.Call
-	storage    engstore.SeriesSelector
-	arg        float64
-	call       FunctionCall
-	scanners   []matrixScanner
-	series     []labels.Labels
-	once       sync.Once
+	vectorPool   *model.VectorPool
+	functionName string
+	storage      engstore.SeriesSelector
+	arg          float64
+	call         FunctionCall
+	scanners     []matrixScanner
+	series       []labels.Labels
+	once         sync.Once
 
 	numSteps      int
 	mint          int64
@@ -68,24 +67,24 @@ var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supp
 func NewMatrixSelector(
 	pool *model.VectorPool,
 	selector engstore.SeriesSelector,
-	funcExpr *parser.Call,
+	functionName string,
 	arg float64,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	batchSize int64,
 	shard, numShard int,
 ) (model.VectorOperator, error) {
-	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
+	call, err := NewRangeVectorFunc(functionName)
 	if err != nil {
 		return nil, err
 	}
-	isExtFunction := function.IsExtFunction(funcExpr.Func.Name)
+	isExtFunction := function.IsExtFunction(functionName)
 	m := &matrixSelector{
-		storage:    selector,
-		call:       call,
-		funcExpr:   funcExpr,
-		vectorPool: pool,
-		arg:        arg,
+		storage:      selector,
+		call:         call,
+		functionName: functionName,
+		vectorPool:   pool,
+		arg:          arg,
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
@@ -124,7 +123,7 @@ func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableV
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 	r := time.Duration(o.selectRange) * time.Millisecond
 	if o.call != nil {
-		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.funcExpr.Func.Name, o.storage.Matchers(), r, o.shard, o.numShards), nil
+		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.functionName, o.storage.Matchers(), r, o.shard, o.numShards), nil
 	}
 	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
 }
@@ -247,7 +246,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		b := labels.ScratchBuilder{}
 		for i, s := range series {
 			lbls := s.Labels()
-			if o.funcExpr.Func.Name != "last_over_time" {
+			if o.functionName != "last_over_time" {
 				// This modifies the array in place. Because labels.Labels
 				// can be re-used between different Select() calls, it means that
 				// we have to copy it here.

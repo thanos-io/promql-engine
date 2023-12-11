@@ -81,6 +81,10 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		hints.Grouping = nil
 		hints.By = false
 
+		if e.Func.Name == "absent_over_time" {
+			return newAbsentOverTimeOperator(e, storage, opts, hints)
+		}
+
 		// TODO(saswatamcode): Range vector result might need new operator
 		// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 		for i := range e.Args {
@@ -255,7 +259,7 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		operator, err := scan.NewMatrixSelector(
 			model.NewVectorPool(opts.StepsBatch),
 			filter,
-			e,
+			e.Func.Name,
 			arg,
 			opts,
 			t.Range,
@@ -326,6 +330,50 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...), nil
+}
+
+func newAbsentOverTimeOperator(call *parser.Call, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	switch arg := call.Args[0].(type) {
+	case *parser.SubqueryExpr:
+		matrixCall := &parser.Call{
+			Func: &parser.Function{Name: "last_over_time"},
+		}
+		argOp, err := newSubqueryFunction(matrixCall, arg, selectorPool, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		f := &parser.Call{
+			Func: &parser.Function{Name: "absent"},
+			Args: []parser.Expr{matrixCall},
+		}
+		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
+	case *parser.MatrixSelector:
+		matrixCall := &parser.Call{
+			Func: &parser.Function{Name: "last_over_time"},
+			Args: call.Args,
+		}
+		argOp, err := newRangeVectorFunction(matrixCall, arg, selectorPool, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		_, vs, filters, err := unpackVectorSelector(arg)
+		if err != nil {
+			return nil, err
+		}
+		// if we have a filtered selector we need to put the labels back for absent
+		// to compute its series properly
+		vs.LabelMatchers = append(vs.LabelMatchers, filters...)
+		f := &parser.Call{
+			Func: &parser.Function{Name: "absent"},
+			Args: []parser.Expr{&parser.MatrixSelector{
+				VectorSelector: vs,
+				Range:          arg.Range,
+			}},
+		}
+		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
+	default:
+		return nil, parse.ErrNotSupportedExpr
+	}
 }
 
 func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
