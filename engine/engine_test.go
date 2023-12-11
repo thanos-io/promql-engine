@@ -3699,6 +3699,23 @@ min without () (
               X{a="b"}  1x10`,
 			query: `absent_over_time(sum_over_time(X{a!="b"}[1m])[1m:30s])`,
 		},
+		{
+			name: "absent_over_time with subquery and fixed offset",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1"} 1+1x10
+            			http_requests_total{pod="nginx-2"} 1+2x10`,
+			query: `absent_over_time(http_requests_total @ start()[1h:1m])`,
+		},
+		{
+			name: "absent_over_time fuzzer findings",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1", route="/"} 0.02+1.00x40
+            			http_requests_total{pod="nginx-2", route="/"} -24+0.67x40`,
+			query: `
+count without (route, pod) ({__name__="http_requests_total"} @ 153.689)
+>
+absent_over_time({__name__="http_requests_total",route="/"}[3m] offset 1m45s)`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}

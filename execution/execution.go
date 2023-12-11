@@ -335,13 +335,16 @@ func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Opti
 func newAbsentOverTimeOperator(call *parser.Call, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
 	case *parser.SubqueryExpr:
-		f := &parser.Call{
-			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{arg},
+		matrixCall := &parser.Call{
+			Func: &parser.Function{Name: "last_over_time"},
 		}
-		argOp, err := newOperator(arg.Expr, selectorPool, opts, hints)
+		argOp, err := newSubqueryFunction(matrixCall, arg, selectorPool, opts, hints)
 		if err != nil {
 			return nil, err
+		}
+		f := &parser.Call{
+			Func: &parser.Function{Name: "absent"},
+			Args: []parser.Expr{matrixCall},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *parser.MatrixSelector:
@@ -353,10 +356,13 @@ func newAbsentOverTimeOperator(call *parser.Call, selectorPool *engstore.Selecto
 		if err != nil {
 			return nil, err
 		}
-		_, vs, _, err := unpackVectorSelector(arg)
+		_, vs, filters, err := unpackVectorSelector(arg)
 		if err != nil {
 			return nil, err
 		}
+		// if we have a filtered selector we need to put the labels back for absent
+		// to compute its series properly
+		vs.LabelMatchers = append(vs.LabelMatchers, filters...)
 		f := &parser.Call{
 			Func: &parser.Function{Name: "absent"},
 			Args: []parser.Expr{&parser.MatrixSelector{
