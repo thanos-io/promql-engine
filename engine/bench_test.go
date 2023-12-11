@@ -115,15 +115,11 @@ func BenchmarkSingleQuery(b *testing.B) {
 
 func BenchmarkRangeQuery(b *testing.B) {
 	samplesPerHour := 60 * 2
-	sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
-	defer sixHourDataset.Close()
-
-	largeSixHourDataset := setupStorage(b, 10000, 10, 6*samplesPerHour)
-	defer largeSixHourDataset.Close()
-
-	sevenDaysAndTwoHoursDataset := setupStorage(b, 1000, 3, (7*24+2)*samplesPerHour)
-	defer sevenDaysAndTwoHoursDataset.Close()
-
+	var (
+		sixHourDataset              *teststorage.TestStorage
+		largeSixHourDataset         *teststorage.TestStorage
+		sevenDaysAndTwoHoursDataset *teststorage.TestStorage
+	)
 	start := time.Unix(0, 0)
 	end := start.Add(2 * time.Hour)
 	step := time.Second * 30
@@ -296,35 +292,81 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		SelectorBatchSize: 256,
 	}
+	b.Run("fast", func(b *testing.B) {
+		sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
+		defer sixHourDataset.Close()
 
-	for _, tc := range cases {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ReportAllocs()
-			b.Run("old_engine", func(b *testing.B) {
-
-				promEngine := promql.NewEngine(opts.EngineOpts)
-
-				b.ResetTimer()
-				b.ReportAllocs()
-				for i := 0; i < b.N; i++ {
-					qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
-					testutil.Ok(b, err)
-
-					oldResult := qry.Exec(context.Background())
-					testutil.Ok(b, oldResult.Err)
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				if tc.storage != sixHourDataset {
+					b.Skip()
 				}
-			})
-			b.Run("new_engine", func(b *testing.B) {
-				b.ResetTimer()
 				b.ReportAllocs()
+				b.Run("old_engine", func(b *testing.B) {
 
-				for i := 0; i < b.N; i++ {
-					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step, opts)
-					testutil.Ok(b, newResult.Err)
-				}
+					promEngine := promql.NewEngine(opts.EngineOpts)
+
+					b.ResetTimer()
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
+						testutil.Ok(b, err)
+
+						oldResult := qry.Exec(context.Background())
+						testutil.Ok(b, oldResult.Err)
+					}
+				})
+				b.Run("new_engine", func(b *testing.B) {
+					b.ResetTimer()
+					b.ReportAllocs()
+
+					for i := 0; i < b.N; i++ {
+						newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step, opts)
+						testutil.Ok(b, newResult.Err)
+					}
+				})
 			})
-		})
-	}
+		}
+	})
+	b.Run("slow", func(b *testing.B) {
+		sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
+		defer sixHourDataset.Close()
+
+		largeSixHourDataset := setupStorage(b, 10000, 10, 6*samplesPerHour)
+		defer largeSixHourDataset.Close()
+
+		sevenDaysAndTwoHoursDataset := setupStorage(b, 1000, 3, (7*24+2)*samplesPerHour)
+		defer sevenDaysAndTwoHoursDataset.Close()
+
+		for _, tc := range cases {
+			b.Run(tc.name, func(b *testing.B) {
+				b.ReportAllocs()
+				b.Run("old_engine", func(b *testing.B) {
+
+					promEngine := promql.NewEngine(opts.EngineOpts)
+
+					b.ResetTimer()
+					b.ReportAllocs()
+					for i := 0; i < b.N; i++ {
+						qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
+						testutil.Ok(b, err)
+
+						oldResult := qry.Exec(context.Background())
+						testutil.Ok(b, oldResult.Err)
+					}
+				})
+				b.Run("new_engine", func(b *testing.B) {
+					b.ResetTimer()
+					b.ReportAllocs()
+
+					for i := 0; i < b.N; i++ {
+						newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step, opts)
+						testutil.Ok(b, newResult.Err)
+					}
+				})
+			})
+		}
+	})
 }
 
 func BenchmarkNativeHistograms(b *testing.B) {

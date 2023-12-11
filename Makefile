@@ -98,17 +98,28 @@ benchmarks:
 .PHONY: bench-old
 bench-old: benchmarks
 	@echo "Benchmarking old engine"
-	@go test ./... -bench 'BenchmarkRangeQuery/.*/old_engine'  -run none -count 5 | sed -u 's/\/old_engine//' > benchmarks/old.out
+	@go test ./... -bench 'BenchmarkRangeQuery/slow/.*/old_engine'  -run none -count 5 | sed -u 's/\/old_engine//' > benchmarks/old.out
 	@go test ./... -bench 'BenchmarkNativeHistograms/.*/old_engine'  -run none -count 5 | sed -u 's/\/old_engine//' >> benchmarks/old.out
 
 .PHONY: bench-new
 bench-new: benchmarks
 	@echo "Benchmarking new engine"
-	@go test ./... -bench 'BenchmarkRangeQuery/.*/new_engine'  -run none -count 5 | sed -u 's/\/new_engine//' > benchmarks/new.out
+	@go test ./... -bench 'BenchmarkRangeQuery/slow/.*/new_engine'  -run none -count 5 | sed -u 's/\/new_engine//' > benchmarks/new.out
 	@go test ./... -bench 'BenchmarkNativeHistograms/.*/new_engine'  -run none -count 5 | sed -u 's/\/new_engine//' >> benchmarks/new.out
 
 .PHONY: benchmark
 benchmark: bench-old bench-new
+	@benchstat benchmarks/old.out benchmarks/new.out
+
+.PHONY : bench-fast
+bench-fast : benchmarks
+	@mkdir -p benchmarks
+	@echo "Benchmarking old engine"
+	@go test ./... -bench 'BenchmarkRangeQuery/fast/.*/old_engine'  -run none -count 5 | sed -u 's/\/old_engine//' > benchmarks/old.out
+	@go test ./... -bench 'BenchmarkNativeHistograms/.*/old_engine'  -run none -count 5 | sed -u 's/\/old_engine//' >> benchmarks/old.out
+	@echo "Benchmarking new engine"
+	@go test ./... -bench 'BenchmarkRangeQuery/fast/.*/new_engine'  -run none -count 5 | sed -u 's/\/new_engine//' > benchmarks/new.out
+	@go test ./... -bench 'BenchmarkNativeHistograms/.*/new_engine'  -run none -count 5 | sed -u 's/\/new_engine//' >> benchmarks/new.out
 	@benchstat benchmarks/old.out benchmarks/new.out
 
 .PHONY: sync-parser
