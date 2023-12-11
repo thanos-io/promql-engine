@@ -361,7 +361,7 @@ loop:
 			} else {
 				out = append(out, Sample{})
 			}
-			out = append(out, Sample{T: t, H: fh})
+			out[n].T, out[n].H = t, fh
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
