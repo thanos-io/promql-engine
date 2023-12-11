@@ -4474,6 +4474,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 type histogramTestCase struct {
 	name                   string
 	query                  string
+	onlyInstant            bool
 	wantEmptyForMixedTypes bool
 }
 
@@ -4578,6 +4579,11 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "lhs division",
 			query: "native_histogram_series / 2",
 		},
+		{
+			name:        "subqueries",
+			query:       "increase(rate(native_histogram_series[2m])[2m:15s])",
+			onlyInstant: true,
+		},
 	}
 
 	t.Run("integer_histograms", func(t *testing.T) {
@@ -4608,6 +4614,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						EngineOpts:        opts,
 						DisableFallback:   true,
 						LogicalOptimizers: logicalplan.AllOptimizers,
+						EnableSubqueries:  true,
 					})
 
 					t.Run("instant", func(t *testing.T) {
@@ -4633,6 +4640,9 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					})
 
 					t.Run("range", func(t *testing.T) {
+						if tc.onlyInstant {
+							t.Skip()
+						}
 						ctx := context.Background()
 						q1, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
 						testutil.Ok(t, err)
