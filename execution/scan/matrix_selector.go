@@ -35,7 +35,7 @@ type matrixSelector struct {
 	vectorPool   *model.VectorPool
 	functionName string
 	storage      engstore.SeriesSelector
-	arg          float64
+	scalarArgs   []float64
 	call         FunctionCall
 	scanners     []matrixScanner
 	series       []labels.Labels
@@ -84,7 +84,7 @@ func NewMatrixSelector(
 		call:         call,
 		functionName: functionName,
 		vectorPool:   pool,
-		arg:          arg,
+		scalarArgs:   []float64{arg},
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
@@ -197,7 +197,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
-				ScalarPoints:     []float64{o.arg},
+				ScalarPoints:     o.scalarArgs,
 				MetricAppearedTs: series.metricAppearedTs,
 			})
 
@@ -324,7 +324,13 @@ loop:
 				continue loop
 			}
 			if t >= mint {
-				out = append(out, Sample{T: t, H: fh})
+				n := len(out)
+				if cap(out) > n {
+					out = out[:len(out)+1]
+				} else {
+					out = append(out, Sample{})
+				}
+				out[n].T, out[n].H = t, fh
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -333,7 +339,13 @@ loop:
 			}
 			// Values in the buffer are guaranteed to be smaller than maxt.
 			if t >= mint {
-				out = append(out, Sample{T: t, F: v})
+				n := len(out)
+				if cap(out) > n {
+					out = out[:len(out)+1]
+				} else {
+					out = append(out, Sample{})
+				}
+				out[n].T, out[n].F, out[n].H = t, v, nil
 			}
 		}
 	}
@@ -343,12 +355,24 @@ loop:
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 		t, fh := it.AtFloatHistogram()
 		if t == maxt && !value.IsStaleNaN(fh.Sum) {
-			out = append(out, Sample{T: t, H: fh})
+			n := len(out)
+			if cap(out) > n {
+				out = out[:len(out)+1]
+			} else {
+				out = append(out, Sample{})
+			}
+			out[n].T, out[n].H = t, fh
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
 		if t == maxt && !value.IsStaleNaN(v) {
-			out = append(out, Sample{T: t, F: v})
+			n := len(out)
+			if cap(out) > n {
+				out = out[:len(out)+1]
+			} else {
+				out = append(out, Sample{})
+			}
+			out[n].T, out[n].F, out[n].H = t, v, nil
 		}
 	}
 
