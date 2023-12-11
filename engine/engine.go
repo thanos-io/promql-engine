@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-
 	"math"
 	"runtime"
 	"sort"
