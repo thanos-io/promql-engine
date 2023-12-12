@@ -249,7 +249,13 @@ histogram_quantile(0.5, sum by (le) (dedup(
 			name:     "absent",
 			expr:     `absent(foo)`,
 			expected: `remote(absent(foo)) * remote(absent(foo))`,
-		}, {
+		},
+		{
+			name:     "absent with aggregation",
+			expr:     `sum(absent(foo))`,
+			expected: `sum(remote(absent(foo)) * remote(absent(foo)))`,
+		},
+		{
 			name: "binary expression with constant",
 			expr: `sum by (pod) (rate(http_requests_total[2m]) * 60)`,
 			expected: `sum by (pod) (dedup(
