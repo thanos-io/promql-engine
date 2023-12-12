@@ -2,6 +2,7 @@ package logicalplan
 
 import (
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -10,7 +11,7 @@ import (
 // it can be executed in a distributed manner.
 type DistributeAvgOptimizer struct{}
 
-func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) parser.Expr {
+func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		if !isDistributiveOrAverage(current) {
 			return true
@@ -40,7 +41,7 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) par
 		}
 		return !isDistributiveOrAverage(parent)
 	})
-	return plan
+	return plan, nil
 }
 
 func isDistributiveOrAverage(expr *parser.Expr) bool {

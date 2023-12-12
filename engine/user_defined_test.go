@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -60,8 +61,8 @@ load 30s
 
 type injectVectorSelector struct{}
 
-func (i injectVectorSelector) Optimize(expr parser.Expr, _ *query.Options) parser.Expr {
-	logicalplan.TraverseBottomUp(nil, &expr, func(_, current *parser.Expr) bool {
+func (i injectVectorSelector) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *parser.Expr) bool {
 		switch (*current).(type) {
 		case *parser.VectorSelector:
 			*current = &logicalVectorSelector{
@@ -70,14 +71,14 @@ func (i injectVectorSelector) Optimize(expr parser.Expr, _ *query.Options) parse
 		}
 		return false
 	})
-	return expr
+	return plan, nil
 }
 
 type logicalVectorSelector struct {
 	*parser.VectorSelector
 }
 
-func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, selectors *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, _ *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	return &vectorSelectorOperator{
 		stepsBatch: opts.StepsBatch,
 		vectors:    vectors,

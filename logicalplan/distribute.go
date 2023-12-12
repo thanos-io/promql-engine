@@ -10,13 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
+)
+
+var (
+	RewrittenExternalLabelWarning = errors.Newf("%s: rewriting an external label with label_replace could lead to unpredictable results", annotations.PromQLWarning.Error())
 )
 
 type timeRange struct {
@@ -143,13 +149,14 @@ type DistributedExecutionOptimizer struct {
 	Endpoints api.RemoteEndpoints
 }
 
-func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Options) parser.Expr {
+func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
 	engines := m.Endpoints.Engines()
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
 	})
 
 	labelRanges := make(labelSetRanges)
+	engineLabels := make(map[string]struct{})
 	for _, e := range engines {
 		for _, lset := range e.LabelSets() {
 			lsetKey := lset.String()
@@ -157,9 +164,15 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 				start: time.UnixMilli(e.MinT()),
 				end:   time.UnixMilli(e.MaxT()),
 			})
+			lset.Range(func(lbl labels.Label) {
+				engineLabels[lbl.Name] = struct{}{}
+			})
 		}
 	}
 	minEngineOverlap := labelRanges.minOverlap()
+	if rewritesEngineLabels(plan, engineLabels) {
+		return plan, annotations.New().Add(RewrittenExternalLabelWarning)
+	}
 
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
@@ -197,7 +210,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 		return true
 	})
 
-	return plan
+	return plan, nil
 }
 
 func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.RemoteEngine) parser.Expr {
@@ -500,6 +513,23 @@ func isConstantExpr(expr parser.Expr) bool {
 	default:
 		return false
 	}
+}
+
+func rewritesEngineLabels(e parser.Expr, engineLabels map[string]struct{}) bool {
+	var result bool
+	TraverseBottomUp(nil, &e, func(parent *parser.Expr, node *parser.Expr) bool {
+		call, ok := (*node).(*parser.Call)
+		if !ok || call.Func.Name != "label_replace" {
+			return false
+		}
+		targetLabel := call.Args[1].(*parser.StringLiteral).Val
+		if _, ok := engineLabels[targetLabel]; ok {
+			result = true
+			return true
+		}
+		return false
+	})
+	return result
 }
 
 func maxTime(a, b time.Time) time.Time {

@@ -28,7 +28,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, "remote(time())", optimizedPlan.Expr().String())
 	})
@@ -41,7 +41,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, "time()", optimizedPlan.Expr().String())
 	})
@@ -53,7 +53,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, "time()", optimizedPlan.Expr().String())
 	})
@@ -69,7 +69,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(selectorExpr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, `remote({region="east"})`, optimizedPlan.Expr().String())
 	})
@@ -85,7 +85,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(selectorExpr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, `{region=~"east|west"}`, optimizedPlan.Expr().String())
 	})
@@ -101,7 +101,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(selectorExpr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, `remote({region="east"}[5m])`, optimizedPlan.Expr().String())
 	})
@@ -117,7 +117,7 @@ func TestPassthrough(t *testing.T) {
 		optimizers := []Optimizer{PassthroughOptimizer{Endpoints: api.NewStaticEndpoints(engines)}}
 
 		plan := New(selectorExpr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-		optimizedPlan := plan.Optimize(optimizers)
+		optimizedPlan, _ := plan.Optimize(optimizers)
 
 		testutil.Equals(t, `{region="east"}`, optimizedPlan.Expr().String())
 	})

@@ -20,9 +20,10 @@ import (
 
 func TestDistributedExecution(t *testing.T) {
 	cases := []struct {
-		name     string
-		expr     string
-		expected string
+		name       string
+		expr       string
+		expectWarn bool
+		expected   string
 	}{
 		{
 			name:     "selector",
@@ -160,6 +161,32 @@ max by (pod) (quantile(0.9,
 ))`,
 		},
 		{
+			name: "label replace",
+			expr: `label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")`,
+			expected: `
+dedup(
+  remote(label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")), 
+  remote(label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))
+)`,
+		},
+		{
+			name: "label replace with aggregation",
+			expr: `max by (instance) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))`,
+			expected: `
+max by (instance) (
+  dedup(
+    remote(max by (instance, region) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))), 
+    remote(max by (instance, region) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")))
+  )
+)`,
+		},
+		{
+			name:       "label replace rewrites external label",
+			expr:       `max by (location) (label_replace(http_requests_total, "region", "$1", "instance", "(.*)"))`,
+			expected:   `max by (location) (label_replace(http_requests_total, "region", "$1", "instance", "(.*)"))`,
+			expectWarn: true,
+		},
+		{
 			name: "binary operation in the operand path",
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
@@ -271,9 +298,14 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 			testutil.Ok(t, err)
 
 			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
-			optimizedPlan := plan.Optimize(optimizers)
+			optimizedPlan, warns := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+			if tcase.expectWarn {
+				testutil.Assert(t, len(warns) > 0, "expected warnings, got none")
+			} else {
+				testutil.Assert(t, len(warns) == 0, "expected no warnings, got some")
+			}
 		})
 	}
 }
@@ -377,7 +409,7 @@ dedup(
 			testutil.Ok(t, err)
 
 			plan := New(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep})
-			optimizedPlan := plan.Optimize(optimizers)
+			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
 		})
@@ -451,7 +483,7 @@ sum(
 			testutil.Ok(t, err)
 
 			plan := New(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute})
-			optimizedPlan := plan.Optimize(optimizers)
+			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
 		})
