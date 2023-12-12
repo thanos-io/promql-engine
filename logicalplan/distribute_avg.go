@@ -9,11 +9,13 @@ import (
 
 // DistributeAvgOptimizer rewrites an AVG aggregation into a SUM/COUNT aggregation so that
 // it can be executed in a distributed manner.
-type DistributeAvgOptimizer struct{}
+type DistributeAvgOptimizer struct {
+	SkipBinaryPushdown bool
+}
 
 func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
-		if !isDistributiveOrAverage(current) {
+		if !isDistributiveOrAverage(current, r.SkipBinaryPushdown) {
 			return true
 		}
 		// If the current node is avg(), distribute the operation and
@@ -39,12 +41,12 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (pa
 			}
 			return true
 		}
-		return !isDistributiveOrAverage(parent)
+		return !isDistributiveOrAverage(parent, r.SkipBinaryPushdown)
 	})
 	return plan, nil
 }
 
-func isDistributiveOrAverage(expr *parser.Expr) bool {
+func isDistributiveOrAverage(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	if expr == nil {
 		return false
 	}
@@ -52,5 +54,5 @@ func isDistributiveOrAverage(expr *parser.Expr) bool {
 	if aggr, ok := (*expr).(*parser.AggregateExpr); ok {
 		isAvg = aggr.Op == parser.AVG
 	}
-	return isDistributive(expr) || isAvg
+	return isDistributive(expr, skipBinaryPushdown) || isAvg
 }

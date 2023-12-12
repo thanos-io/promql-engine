@@ -146,7 +146,8 @@ var distributiveAggregations = map[parser.ItemType]struct{}{
 // DistributedExecutionOptimizer produces a logical plan suitable for
 // distributed Query execution.
 type DistributedExecutionOptimizer struct {
-	Endpoints api.RemoteEndpoints
+	Endpoints          api.RemoteEndpoints
+	SkipBinaryPushdown bool
 }
 
 func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
@@ -176,7 +177,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
-		if !isDistributive(current) {
+		if !isDistributive(current, m.SkipBinaryPushdown) {
 			return true
 		}
 
@@ -202,7 +203,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 		}
 
 		// If the parent operation is distributive, continue the traversal.
-		if isDistributive(parent) {
+		if isDistributive(parent, m.SkipBinaryPushdown) {
 			return false
 		}
 
@@ -422,14 +423,14 @@ func numSteps(start, end time.Time, step time.Duration) int64 {
 	return (end.UnixMilli()-start.UnixMilli())/step.Milliseconds() + 1
 }
 
-func isDistributive(expr *parser.Expr) bool {
+func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	if expr == nil {
 		return false
 	}
 
 	switch aggr := (*expr).(type) {
 	case *parser.BinaryExpr:
-		return isBinaryExpressionWithOneConstantSide(aggr) || isBinaryExpressionWithDistributableMatching(aggr)
+		return isBinaryExpressionWithOneConstantSide(aggr) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(aggr))
 	case *parser.AggregateExpr:
 		// Certain aggregations are currently not supported.
 		if _, ok := distributiveAggregations[aggr.Op]; !ok {
