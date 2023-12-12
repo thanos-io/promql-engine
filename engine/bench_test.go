@@ -118,11 +118,13 @@ func BenchmarkRangeQuery(b *testing.B) {
 	sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
 	defer sixHourDataset.Close()
 
-	largeSixHourDataset := setupStorage(b, 10000, 10, 6*samplesPerHour)
-	defer largeSixHourDataset.Close()
+	/*
+		largeSixHourDataset := setupStorage(b, 10000, 10, 6*samplesPerHour)
+		defer largeSixHourDataset.Close()
 
-	sevenDaysAndTwoHoursDataset := setupStorage(b, 1000, 3, (7*24+2)*samplesPerHour)
-	defer sevenDaysAndTwoHoursDataset.Close()
+		sevenDaysAndTwoHoursDataset := setupStorage(b, 1000, 3, (7*24+2)*samplesPerHour)
+		defer sevenDaysAndTwoHoursDataset.Close()
+	*/
 
 	start := time.Unix(0, 0)
 	end := start.Add(2 * time.Hour)
@@ -163,21 +165,23 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query:   "rate(http_requests_total[1m])",
 			storage: sixHourDataset,
 		},
-		{
-			name:    "rate with large range selection",
-			query:   "rate(http_requests_total[7d])",
-			storage: sevenDaysAndTwoHoursDataset,
-		},
-		{
-			name:    "rate with large number of series, 1m range",
-			query:   "rate(http_requests_total[1m])",
-			storage: largeSixHourDataset,
-		},
-		{
-			name:    "rate with large number of series, 5m range",
-			query:   "rate(http_requests_total[5m])",
-			storage: largeSixHourDataset,
-		},
+		/*
+			{
+				name:    "rate with large range selection",
+				query:   "rate(http_requests_total[7d])",
+				storage: sevenDaysAndTwoHoursDataset,
+			},
+			{
+				name:    "rate with large number of series, 1m range",
+				query:   "rate(http_requests_total[1m])",
+				storage: largeSixHourDataset,
+			},
+			{
+				name:    "rate with large number of series, 5m range",
+				query:   "rate(http_requests_total[5m])",
+				storage: largeSixHourDataset,
+			},
+		*/
 		{
 			name:    "sum rate",
 			query:   "sum(rate(http_requests_total[1m]))",
@@ -539,6 +543,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 
 func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 	db := createRequestsMetricBlock(b, 10000, 9900)
+	defer db.Close()
 
 	start := time.Unix(0, 0)
 	end := start.Add(6 * time.Hour)
