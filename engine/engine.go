@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
 
@@ -216,7 +217,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 	}
 
-	lplan := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
 	exec, err := execution.New(lplan.Expr(), q, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
@@ -232,6 +233,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 		engine:     e,
 		expr:       expr,
 		ts:         ts,
+		warns:      warns,
 		t:          InstantQuery,
 		resultSort: resultSort,
 	}, nil
@@ -268,7 +270,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 	}
 
-	lplan := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
 	exec, err := execution.New(lplan.Expr(), q, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
@@ -283,6 +285,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
 		expr:   expr,
+		warns:  warns,
 		t:      RangeQuery,
 	}, nil
 }
@@ -307,13 +310,14 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 
 type compatibilityQuery struct {
 	*Query
-	engine     *compatibilityEngine
-	expr       parser.Expr
-	ts         time.Time // Empty for range queries.
+	engine *compatibilityEngine
+	expr   parser.Expr
+	ts     time.Time // Empty for range queries.
+	warns  annotations.Annotations
+
 	t          QueryType
 	resultSort resultSorter
-
-	cancel context.CancelFunc
+	cancel     context.CancelFunc
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
@@ -330,7 +334,8 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
 	ret = &promql.Result{
-		Value: promql.Vector{},
+		Value:    promql.Vector{},
+		Warnings: q.warns,
 	}
 	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
 

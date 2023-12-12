@@ -94,7 +94,7 @@ func TestSetBatchSize(t *testing.T) {
 			testutil.Ok(t, err)
 
 			plan := New(expr, &query.Options{})
-			optimizedPlan := plan.Optimize(optimizers)
+			optimizedPlan, _ := plan.Optimize(optimizers)
 			testutil.Equals(t, tcase.expected, optimizedPlan.Expr().String())
 		})
 	}
