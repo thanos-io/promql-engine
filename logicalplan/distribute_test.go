@@ -160,6 +160,26 @@ max by (pod) (quantile(0.9,
 ))`,
 		},
 		{
+			name: "label replace",
+			expr: `label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")`,
+			expected: `
+dedup(
+  remote(label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")), 
+  remote(label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))
+)`,
+		},
+		{
+			name: "label replace with aggregation",
+			expr: `max by (instance) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))`,
+			expected: `
+max by (instance) (
+  dedup(
+    remote(max by (instance, region) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))), 
+    remote(max by (instance, region) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")))
+  )
+)`,
+		},
+		{
 			name: "binary operation in the operand path",
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `

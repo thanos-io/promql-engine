@@ -210,6 +210,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "avg", query: `avg(bar)`},
 		{name: "avg by __name__", query: `avg by (__name__) ({__name__=~".+"})`},
 		{name: "avg with grouping", query: `avg by (pod) (bar)`},
+		{name: "label_replace", query: `max by (instance) (label_replace(bar, "instance", "$1", "pod", "(.*)"))`},
 		{name: "count", query: `count by (pod) (bar)`},
 		{name: "count by __name__", query: `count by (__name__) ({__name__=~".+"})`},
 		{name: "group", query: `group by (pod) (bar)`},

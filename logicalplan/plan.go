@@ -102,6 +102,8 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 
 func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(parent *parser.Expr, node *parser.Expr) bool) bool {
 	switch node := (*current).(type) {
+	case *parser.StringLiteral:
+		return false
 	case *parser.NumberLiteral:
 		return false
 	case *parser.StepInvariantExpr:
