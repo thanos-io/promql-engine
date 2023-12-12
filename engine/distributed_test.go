@@ -231,7 +231,9 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "absent_over_time for non-existing metric", query: `absent_over_time(foo[2m])`},
 		{name: "absent_over_time for existing metric", query: `absent_over_time(bar{pod="nginx-1"}[2m])`},
 		{name: "absent for non-existing metric", query: `absent(foo)`},
+		{name: "absent for existing metric with aggregation", query: `sum(absent(foo))`},
 		{name: "absent for existing metric", query: `absent(bar{pod="nginx-1"})`},
+		{name: "absent for existing metric with aggregation", query: `sum(absent(bar{pod="nginx-1"}))`},
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}

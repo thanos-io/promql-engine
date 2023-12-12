@@ -201,6 +201,10 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 			}
 			return true
 		}
+		if isAbsent(*current) {
+			*current = m.distributeAbsent(*current, engines, calculateStartOffset(current, opts.LookbackDelta), opts)
+			return true
+		}
 
 		// If the parent operation is distributive, continue the traversal.
 		if isDistributive(parent, m.SkipBinaryPushdown) {
@@ -248,9 +252,6 @@ func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.R
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
 func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) parser.Expr {
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
-	if isAbsent(*expr) {
-		return m.distributeAbsent(*expr, engines, startOffset, opts)
-	}
 	if allowedStartOffset < startOffset {
 		return *expr
 	}
