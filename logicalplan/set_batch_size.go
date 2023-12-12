@@ -20,7 +20,7 @@ type SelectorBatchSize struct {
 // If any aggregate is present in the plan, the batch size is set to the configured value.
 // The two exceptions where this cannot be done is if the aggregate is quantile, or
 // when a binary expression precedes the aggregate.
-func (m SelectorBatchSize) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+func (m SelectorBatchSize) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	canBatch := false
 	traverse(&plan, func(current *parser.Expr) {
 		switch e := (*current).(type) {

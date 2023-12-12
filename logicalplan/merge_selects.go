@@ -23,7 +23,7 @@ import (
 // and apply an additional filter for {c="d"}.
 type MergeSelectsOptimizer struct{}
 
-func (m MergeSelectsOptimizer) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+func (m MergeSelectsOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	heap := make(matcherHeap)
 	extractSelectors(heap, plan)
 	replaceMatchers(heap, &plan)

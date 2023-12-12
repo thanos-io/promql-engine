@@ -11,7 +11,7 @@ import (
 // it can be executed in a distributed manner.
 type DistributeAvgOptimizer struct{}
 
-func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		if !isDistributiveOrAverage(current) {
 			return true

@@ -17,7 +17,7 @@ import (
 // can rely on this property.
 type SortMatchers struct{}
 
-func (m SortMatchers) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+func (m SortMatchers) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	traverse(&plan, func(node *parser.Expr) {
 		e, ok := (*node).(*parser.VectorSelector)
 		if !ok {
