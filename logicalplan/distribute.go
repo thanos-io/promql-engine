@@ -516,21 +516,18 @@ func isConstantExpr(expr parser.Expr) bool {
 }
 
 func rewritesEngineLabels(e parser.Expr, engineLabels map[string]struct{}) bool {
-	if _, ok := e.(RemoteExecution); ok {
-		return false
-	}
-
 	var result bool
-	parser.Inspect(e, func(node parser.Node, nodes []parser.Node) error {
-		call, ok := node.(*parser.Call)
+	TraverseBottomUp(nil, &e, func(parent *parser.Expr, node *parser.Expr) bool {
+		call, ok := (*node).(*parser.Call)
 		if !ok || call.Func.Name != "label_replace" {
-			return nil
+			return false
 		}
 		targetLabel := call.Args[1].(*parser.StringLiteral).Val
 		if _, ok := engineLabels[targetLabel]; ok {
 			result = true
+			return true
 		}
-		return nil
+		return false
 	})
 	return result
 }
