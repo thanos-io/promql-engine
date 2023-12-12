@@ -323,9 +323,7 @@ type compatibilityQuery struct {
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	ctx = warnings.NewContext(ctx)
 	defer func() {
-		if warns := warnings.FromContext(ctx); len(warns) > 0 {
-			ret.Warnings = warns
-		}
+		ret.Warnings = ret.Warnings.Merge(warnings.FromContext(ctx))
 	}()
 
 	// Handle case with strings early on as this does not need us to process samples.
