@@ -350,8 +350,8 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	}
 
 	series := make([]promql.Series, len(resultSeries))
-	for i := 0; i < len(resultSeries); i++ {
-		series[i].Metric = resultSeries[i]
+	for i, s := range resultSeries {
+		series[i].Metric = s
 	}
 loop:
 	for {
@@ -400,18 +400,18 @@ loop:
 
 	// For range Query we expect always a Matrix value type.
 	if q.t == RangeQuery {
-		resultMatrix := make(promql.Matrix, 0, len(series))
+		matrix := make(promql.Matrix, 0, len(series))
 		for _, s := range series {
 			if len(s.Floats)+len(s.Histograms) == 0 {
 				continue
 			}
-			resultMatrix = append(resultMatrix, s)
+			matrix = append(matrix, s)
 		}
-		sort.Sort(resultMatrix)
-		if resultMatrix.ContainsSameLabelset() {
+		sort.Sort(matrix)
+		if matrix.ContainsSameLabelset() {
 			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
 		}
-		ret.Value = resultMatrix
+		ret.Value = matrix
 		return ret
 	}
 
