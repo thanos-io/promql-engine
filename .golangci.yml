@@ -44,7 +44,8 @@ linters:
     - misspell
     - staticcheck
     - structcheck
-    - typecheck
+    # This linter is broken for Go 1.20, and we have the compiler for type checking.
+    # - typecheck
     - unparam
     - unused
     - varcheck
