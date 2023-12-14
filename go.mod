@@ -1,6 +1,6 @@
 module github.com/thanos-io/promql-engine
 
-go 1.19
+go 1.21
 
 require (
 	github.com/cespare/xxhash/v2 v2.2.0
