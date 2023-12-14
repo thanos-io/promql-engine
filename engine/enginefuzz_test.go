@@ -90,11 +90,12 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		for i := 0; i < testRuns; i++ {
 			// Since we disabled fallback, keep trying until we find a query
 			// that can be natively executed by the engine.
+			// Parsing experimental function, like mad_over_time, will lead to a parser.ParseErrors, so we also ignore those.
 			for {
 				expr := ps.WalkRangeQuery()
 				query = expr.Pretty(0)
 				q1, err = newEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
-				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
+				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) || errors.As(err, &parser.ParseErrors{}) {
 					continue
 				} else {
 					break
@@ -170,11 +171,12 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		for i := 0; i < testRuns; i++ {
 			// Since we disabled fallback, keep trying until we find a query
 			// that can be natively execute by the engine.
+			// Parsing experimental function, like mad_over_time, will lead to a parser.ParseErrors, so we also ignore those.
 			for {
 				expr := ps.WalkInstantQuery()
 				query = expr.Pretty(0)
 				q1, err = newEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
-				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
+				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) || errors.As(err, &parser.ParseErrors{}) {
 					continue
 				} else {
 					break
