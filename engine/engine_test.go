@@ -4747,7 +4747,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 	lbls := []string{labels.MetricName, "native_histogram_series"}
 
 	app := storage.Appender(context.TODO())
-	_, err := app.AppendHistogram(0, labels.FromStrings(lbls...), 0, nil, histograms[0].ToFloat())
+	_, err := app.AppendHistogram(0, labels.FromStrings(lbls...), 0, nil, histograms[0].ToFloat(nil))
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
@@ -4780,7 +4780,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 		testutil.Ok(t, err)
 
 		testutil.Equals(t, 1, len(actual), "expected vector with 1 element")
-		expected := histograms[1].ToFloat()
+		expected := histograms[1].ToFloat(nil)
 		expected.CounterResetHint = histogram.UnknownCounterReset
 		testutil.Equals(t, expected, actual[0].H)
 	})
@@ -4795,7 +4795,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
 		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
-		expected := histograms[1].ToFloat().Sub(histograms[0].ToFloat()).Mul(1 / float64(30))
+		expected := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil)).Mul(1 / float64(30))
 		expected.CounterResetHint = histogram.GaugeType
 		testutil.Equals(t, expected, actual[0].Histograms[0].H)
 	})
