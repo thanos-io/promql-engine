@@ -4542,6 +4542,10 @@ func TestNativeHistograms(t *testing.T) {
 			query: "native_histogram_series",
 		},
 		{
+			name:  "rate() with uneven interval",
+			query: "rate(native_histogram_series[1m15s])",
+		},
+		{
 			name:  "irate()",
 			query: "irate(native_histogram_series[1m])",
 		},
@@ -4549,6 +4553,7 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "rate()",
 			query: "rate(native_histogram_series[1m])",
 		},
+
 		{
 			name:  "increase()",
 			query: "increase(native_histogram_series[1m])",
@@ -4708,7 +4713,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
 							testutil.Assert(t, len(promMatrix) == 0)
 						}
-						testutil.WithGoCmp(comparer).Equals(t, newResult, promResult, queryExplanation(q1))
+						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult, queryExplanation(q1))
 					})
 				})
 			}

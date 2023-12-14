@@ -297,7 +297,11 @@ func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sa
 		var drop int
 		for drop = 0; out[drop].T < mint; drop++ {
 		}
+		// Rotate the slice around drop and reduce the length to remove samples.
+		tail := make([]Sample, drop)
+		copy(tail, out[:drop])
 		copy(out, out[drop:])
+		copy(out[len(out)-drop:], tail)
 		out = out[:len(out)-drop]
 		// Only append points with timestamps after the last timestamp we have.
 		mint = out[len(out)-1].T + 1
@@ -319,10 +323,7 @@ loop:
 		case chunkenc.ValNone:
 			break loop
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t, fh := buf.AtFloatHistogram()
-			if value.IsStaleNaN(fh.Sum) {
-				continue loop
-			}
+			t := buf.AtT()
 			if t >= mint {
 				n := len(out)
 				if cap(out) > n {
@@ -330,7 +331,11 @@ loop:
 				} else {
 					out = append(out, Sample{})
 				}
-				out[n].T, out[n].H = t, fh
+				out[n].T, out[n].H = buf.AtFloatHistogram(out[n].H)
+				if value.IsStaleNaN(out[n].H.Sum) {
+					out = out[:n]
+					continue loop
+				}
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()
@@ -353,15 +358,19 @@ loop:
 	// The sought sample might also be in the range.
 	switch soughtValueType {
 	case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-		t, fh := it.AtFloatHistogram()
-		if t == maxt && !value.IsStaleNaN(fh.Sum) {
+		t := it.AtT()
+		if t != maxt {
+			break
+		}
+		_, fh := it.AtFloatHistogram()
+		if !value.IsStaleNaN(fh.Sum) {
 			n := len(out)
 			if cap(out) > n {
 				out = out[:len(out)+1]
 			} else {
 				out = append(out, Sample{})
 			}
-			out[n].T, out[n].H = t, fh
+			out[n].T, out[n].H = t, fh.Copy()
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
@@ -435,15 +444,22 @@ loop:
 			break loop
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			selectsNativeHistograms = true
-			t, fh := buf.AtFloatHistogram()
-			if value.IsStaleNaN(fh.Sum) {
-				continue loop
-			}
-			if *metricAppearedTs == nil {
-				*metricAppearedTs = &t
-			}
+			t := buf.AtT()
 			if t >= mint {
-				out = append(out, Sample{T: t, H: fh})
+				n := len(out)
+				if cap(out) > n {
+					out = out[:len(out)+1]
+				} else {
+					out = append(out, Sample{})
+				}
+				out[n].T, out[n].H = buf.AtFloatHistogram(out[n].H)
+
+				if value.IsStaleNaN(out[n].H.Sum) {
+					continue loop
+				}
+				if *metricAppearedTs == nil {
+					*metricAppearedTs = &t
+				}
 			}
 		case chunkenc.ValFloat:
 			t, v := buf.At()

@@ -294,7 +294,6 @@ func extrapolatedRate(samples []Sample, isCounter, isRate bool, stepTime int64, 
 		resultValue *= factor
 	} else {
 		resultHistogram.Mul(factor)
-
 	}
 
 	return resultValue, resultHistogram
