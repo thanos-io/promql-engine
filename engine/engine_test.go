@@ -2672,6 +2672,36 @@ func TestInstantQuery(t *testing.T) {
 		queryTime time.Time
 	}{
 		{
+			name: "timestamp - offset modifier",
+			load: `load 30s
+              http_requests_total{pod="nginx-0", route="/"} 0x30`,
+			query:     `timestamp(http_requests_total offset 2m)`,
+			queryTime: time.Unix(300, 0),
+		},
+		/*
+		   These functions cannot be handled by pushing timestamp into the scan.
+		   Ultimately those need a new operator to handle them.
+		   {
+		     name: "timestamp - @ modifier",
+		     load: `load 30s
+		             http_requests_total{pod="nginx-0", route="/"} 0x30`,
+		     query:     `timestamp(http_requests_total @ 60)`,
+		     queryTime: time.Unix(300, 0),
+		   },
+		   {
+		     name: "timestamp - nested functions with offset",
+		     load: `load 30s
+		             http_requests_total{pod="nginx-0", route="/"} 0x30`,
+		     query:     `timestamp(timestamp(http_requests_total offset 2m))`,
+		     queryTime: time.Unix(300, 0),
+		   },
+		   {
+		     name:      "timestamp - nested functions without any scan",
+		     query:     `timestamp(vector(1))`,
+		     queryTime: time.Unix(300, 0),
+		   },
+		*/
+		{
 			name: "fuzz - min with NaN",
 			load: `load 30s
               http_requests_total{pod="nginx-1", route="/"} 0

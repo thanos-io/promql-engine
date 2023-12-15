@@ -24,9 +24,8 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/storage"
-
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
 	"github.com/thanos-io/promql-engine/execution/binary"
@@ -62,19 +61,8 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 
-	case *parser.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e, opts, 0)
-		hints.Start = start
-		hints.End = end
-		filter := storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
-		return newShardedVectorSelector(filter, opts, e.Offset, 0)
-
-	case *logicalplan.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
-		hints.Start = start
-		hints.End = end
-		selector := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
-		return newShardedVectorSelector(selector, opts, e.Offset, e.BatchSize)
+	case *parser.VectorSelector, *logicalplan.VectorSelector:
+		return newVectorSelector(expr, storage, opts, hints)
 
 	case *parser.Call:
 		hints.Func = e.Func.Name
@@ -83,6 +71,16 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 
 		if e.Func.Name == "absent_over_time" {
 			return newAbsentOverTimeOperator(e, storage, opts, hints)
+		}
+		if e.Func.Name == "timestamp" {
+			switch e.Args[0].(type) {
+			// Nested weirdness like timestamp(vector(1)) or timestamp(X @start) we defer to
+			// the fallback engine for now.
+			case *logicalplan.VectorSelector, *parser.VectorSelector:
+				// We push down the timestamp function into the scanner through the hints.
+				return newVectorSelector(e.Args[0], storage, opts, hints)
+			}
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 		}
 
 		// TODO(saswatamcode): Range vector result might need new operator
@@ -200,7 +198,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
 		selectorOpts := *opts
 		selectorOpts.LookbackDelta = 0
-		remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts)
+		remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints)
 		return exchange.NewConcurrent(remoteExec, 2), nil
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
@@ -316,20 +314,46 @@ func newInstantVectorFunction(e *parser.Call, storage *engstore.SelectorPool, op
 	return function.NewFunctionOperator(e, nextOperators, opts.StepsBatch, opts)
 }
 
-func newShardedVectorSelector(selector engstore.SeriesSelector, opts *query.Options, offset time.Duration, batchSize int64) (model.VectorOperator, error) {
+func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	var (
+		batchsize int64
+		offset    time.Duration
+		selector  engstore.SeriesSelector
+	)
+	switch e := expr.(type) {
+	case *parser.VectorSelector:
+		start, end := getTimeRangesForVectorSelector(e, opts, 0)
+		hints.Start = start
+		hints.End = end
+		offset = e.Offset
+		batchsize = 0
+		selector = storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
+	case *logicalplan.VectorSelector:
+		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
+		hints.Start = start
+		hints.End = end
+		offset = e.Offset
+		batchsize = e.BatchSize
+		selector = storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
+	default:
+		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+	}
+
 	numShards := runtime.GOMAXPROCS(0) / 2
 	if numShards < 1 {
 		numShards = 1
 	}
+
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
 		operator := exchange.NewConcurrent(
 			scan.NewVectorSelector(
-				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, batchSize, i, numShards), 2)
+				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, i, numShards),
+			2)
 		operators = append(operators, operator)
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...), nil
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...), nil
 }
 
 func newAbsentOverTimeOperator(call *parser.Call, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
