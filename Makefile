@@ -6,7 +6,7 @@ MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
 
-LINT_DIRS = $(shell go list ./... | grep -v "$(go list -m)/parser")
+GOMODULES = $(shell go list ./...)
 
 define require_clean_work_tree
 	@git update-index -q --ignore-submodules --refresh
@@ -34,7 +34,7 @@ test: ## Runs all Go unit tests.
 	@export GOCACHE=/tmp/cache
 	@echo ">> running unit tests (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test -race -timeout=10m $(shell go list ./...);
+	@go test -race -timeout=10m $(GOMODULES);
 
 
 .PHONY: test-stringlabels
@@ -42,7 +42,7 @@ test-stringlabels: ## Runs all Go unit tests with stringlabels flag.
 	@export GOCACHE=/tmp/cache
 	@echo ">> stringlabels: running unit tests (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test -race --tags=stringlabels -timeout=10m $(shell go list ./...);
+	@go test -race --tags=stringlabels -timeout=10m $(GOMODULES);
 
 .PHONY: deps
 deps: ## Ensures fresh go.mod and go.sum.
@@ -78,12 +78,12 @@ lint: format deps $(GOLANGCI_LINT) $(FAILLINT) $(COPYRIGHT) docs
 	@$(FAILLINT) -paths "errors=github.com/efficientgo/core/errors,\
 fmt.{Errorf}=github.com/efficientgo/core/errors.{Wrap,Wrapf},\
 github.com/prometheus/prometheus/pkg/testutils=github.com/efficientgo/core/testutil,\
-github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(LINT_DIRS)
-	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests $(LINT_DIRS)
+github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(GOMODULES)
+	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests $(GOMODULES)
 	@echo ">> linting all of the Go files GOGC=${GOGC}"
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"
-	@$(COPYRIGHT) $(shell echo $LINT_DIRS | xargs -i find "{}" -name "*.go")
+	@$(COPYRIGHT) $(shell find . -name "*.go")
 	$(call require_clean_work_tree,'detected files without copyright, run make lint and commit changes')
 
 .PHONY: white-noise-cleanup

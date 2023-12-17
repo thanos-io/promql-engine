@@ -596,6 +596,7 @@ func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.Test
 	return qry.Exec(ctx)
 }
 
+// nolint: unparam
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *teststorage.TestStorage {
 	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
 	return promql.LoadedStorage(b, load)
