@@ -14,18 +14,20 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"golang.org/x/exp/slices"
 
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/ringbuffer"
 )
 
 type matrixScanner struct {
 	labels           labels.Labels
 	signature        uint64
-	previousSamples  []Sample
+	previousSamples  []ringbuffer.Sample[Value]
 	samples          *storage.BufferedSeriesIterator
 	metricAppearedTs *int64
 	deltaReduced     bool
@@ -38,6 +40,7 @@ type matrixSelector struct {
 	scalarArgs   []float64
 	call         FunctionCall
 	scanners     []matrixScanner
+	bufferTail   []ringbuffer.Sample[Value]
 	series       []labels.Labels
 	once         sync.Once
 
@@ -85,6 +88,7 @@ func NewMatrixSelector(
 		functionName: functionName,
 		vectorPool:   pool,
 		scalarArgs:   []float64{arg},
+		bufferTail:   make([]ringbuffer.Sample[Value], 16),
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
@@ -175,11 +179,11 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			var rangeSamples []Sample
+			var rangeSamples []ringbuffer.Sample[Value]
 			var err error
 
 			if !o.isExtFunction {
-				rangeSamples, err = selectPoints(series.samples, mint, maxt, series.previousSamples)
+				rangeSamples, o.bufferTail, err = selectPoints(series.samples, mint, maxt, series.previousSamples, o.bufferTail)
 			} else {
 				rangeSamples, err = selectExtPoints(series.samples, mint, maxt, series.previousSamples, o.extLookbackDelta, &series.metricAppearedTs)
 			}
@@ -287,7 +291,11 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sample) ([]Sample, error) {
+func selectPoints(
+	it *storage.BufferedSeriesIterator,
+	mint, maxt int64,
+	out, tail []ringbuffer.Sample[Value],
+) ([]ringbuffer.Sample[Value], []ringbuffer.Sample[Value], error) {
 	if len(out) > 0 && out[len(out)-1].T >= mint {
 		// There is an overlap between previous and current ranges, retain common
 		// points. In most such cases:
@@ -298,7 +306,7 @@ func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sa
 		for drop = 0; out[drop].T < mint; drop++ {
 		}
 		// Rotate the slice around drop and reduce the length to remove samples.
-		tail := make([]Sample, drop)
+		tail = slices.Grow(tail, drop)
 		copy(tail, out[:drop])
 		copy(out, out[drop:])
 		copy(out[len(out)-drop:], tail)
@@ -312,7 +320,7 @@ func selectPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sa
 	soughtValueType := it.Seek(maxt)
 	if soughtValueType == chunkenc.ValNone {
 		if it.Err() != nil {
-			return nil, it.Err()
+			return nil, tail, it.Err()
 		}
 	}
 
@@ -329,10 +337,10 @@ loop:
 				if cap(out) > n {
 					out = out[:len(out)+1]
 				} else {
-					out = append(out, Sample{})
+					out = append(out, ringbuffer.Sample[Value]{})
 				}
-				out[n].T, out[n].H = buf.AtFloatHistogram(out[n].H)
-				if value.IsStaleNaN(out[n].H.Sum) {
+				out[n].T, out[n].V.H = buf.AtFloatHistogram(out[n].V.H)
+				if value.IsStaleNaN(out[n].V.H.Sum) {
 					out = out[:n]
 					continue loop
 				}
@@ -348,9 +356,9 @@ loop:
 				if cap(out) > n {
 					out = out[:len(out)+1]
 				} else {
-					out = append(out, Sample{})
+					out = append(out, ringbuffer.Sample[Value]{})
 				}
-				out[n].T, out[n].F, out[n].H = t, v, nil
+				out[n].T, out[n].V.F, out[n].V.H = t, v, nil
 			}
 		}
 	}
@@ -368,9 +376,9 @@ loop:
 			if cap(out) > n {
 				out = out[:len(out)+1]
 			} else {
-				out = append(out, Sample{})
+				out = append(out, ringbuffer.Sample[Value]{})
 			}
-			out[n].T, out[n].H = t, fh.Copy()
+			out[n].T, out[n].V.H = t, fh.Copy()
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
@@ -379,13 +387,13 @@ loop:
 			if cap(out) > n {
 				out = out[:len(out)+1]
 			} else {
-				out = append(out, Sample{})
+				out = append(out, ringbuffer.Sample[Value]{})
 			}
-			out[n].T, out[n].F, out[n].H = t, v, nil
+			out[n].T, out[n].V.F, out[n].V.H = t, v, nil
 		}
 	}
 
-	return out, nil
+	return out, tail, nil
 }
 
 // matrixIterSlice populates a matrix vector covering the requested range for a
@@ -397,7 +405,7 @@ loop:
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []Sample, extLookbackDelta int64, metricAppearedTs **int64) ([]Sample, error) {
+func selectExtPoints(it *storage.BufferedSeriesIterator, mint, maxt int64, out []ringbuffer.Sample[Value], extLookbackDelta int64, metricAppearedTs **int64) ([]ringbuffer.Sample[Value], error) {
 	extMint := mint - extLookbackDelta
 	selectsNativeHistograms := false
 
@@ -450,11 +458,11 @@ loop:
 				if cap(out) > n {
 					out = out[:len(out)+1]
 				} else {
-					out = append(out, Sample{})
+					out = append(out, ringbuffer.Sample[Value]{})
 				}
-				out[n].T, out[n].H = buf.AtFloatHistogram(out[n].H)
+				out[n].T, out[n].V.H = buf.AtFloatHistogram(out[n].V.H)
 
-				if value.IsStaleNaN(out[n].H.Sum) {
+				if value.IsStaleNaN(out[n].V.H.Sum) {
 					continue loop
 				}
 				if *metricAppearedTs == nil {
@@ -474,10 +482,10 @@ loop:
 			// exists at or before range start, add it and then keep replacing
 			// it with later points while not yet (strictly) inside the range.
 			if t >= mint || !appendedPointBeforeMint {
-				out = append(out, Sample{T: t, F: v})
+				out = append(out, ringbuffer.Sample[Value]{T: t, V: Value{F: v}})
 				appendedPointBeforeMint = true
 			} else {
-				out[len(out)-1] = Sample{T: t, F: v}
+				out[len(out)-1] = ringbuffer.Sample[Value]{T: t, V: Value{F: v}}
 			}
 
 		}
@@ -492,7 +500,7 @@ loop:
 			if *metricAppearedTs == nil {
 				*metricAppearedTs = &t
 			}
-			out = append(out, Sample{T: t, H: fh})
+			out = append(out, ringbuffer.Sample[Value]{T: t, V: Value{H: fh}})
 		}
 	case chunkenc.ValFloat:
 		t, v := it.At()
@@ -500,7 +508,7 @@ loop:
 			if *metricAppearedTs == nil {
 				*metricAppearedTs = &t
 			}
-			out = append(out, Sample{T: t, F: v})
+			out = append(out, ringbuffer.Sample[Value]{T: t, V: Value{F: v}})
 		}
 	}
 

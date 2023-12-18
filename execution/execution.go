@@ -145,9 +145,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 	for i := range e.Args {
 		switch t := e.Args[i].(type) {
 		case *parser.SubqueryExpr:
-			if !opts.IsInstantQuery() {
-				return nil, parse.ErrNotImplemented
-			}
 			if !opts.EnableSubqueries {
 				return nil, parse.ErrNotImplemented
 			}
@@ -162,9 +159,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
 	case *parser.SubqueryExpr:
-		if !opts.IsInstantQuery() {
-			return nil, parse.ErrNotImplemented
-		}
 		if !opts.EnableSubqueries {
 			return nil, parse.ErrNotImplemented
 		}
@@ -273,9 +267,6 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engsto
 		return nil, parse.ErrNotImplemented
 	}
 	// TODO: only instant queries for now.
-	if !opts.IsInstantQuery() {
-		return nil, parse.ErrNotImplemented
-	}
 	nOpts := query.NestedOptionsForSubquery(opts, t)
 
 	hints.Start = nOpts.Start.UnixMilli()

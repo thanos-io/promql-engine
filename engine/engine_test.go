@@ -1777,6 +1777,31 @@ load 30s
               X{a="b"}  1x10`,
 			query: `absent_over_time(X{a!="b"}[1m])`,
 		},
+		{
+			name: "sum_over_time subquery with outer step larger than inner step",
+			load: `load 60s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40`,
+			query: "sum_over_time(sum_over_time(http_requests_total[2m])[5m:1m])",
+		},
+		{
+			name: "sum_over_time subquery with outer step equal to inner step",
+			load: `load 60s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40`,
+			query: "sum_over_time(sum_over_time(http_requests_total[2m])[5m:30s])",
+		},
+		{
+			name: "sum_over_time subquery with outer step smaller than inner step",
+			load: `load 60s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40`,
+			query: "sum_over_time(sum_over_time(http_requests_total[2m])[5m:15s])",
+		},
+		{
+			name: "sum_over_time subquery with aggregation",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50`,
+			query: "sum_over_time(sum by (pod) (http_requests_total)[5m:1m])",
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -1808,6 +1833,7 @@ load 30s
 								newEngine := engine.New(engine.Opts{
 									EngineOpts:        opts,
 									DisableFallback:   disableFallback,
+									EnableSubqueries:  true,
 									LogicalOptimizers: optimizers,
 									// Set to 1 to make sure batching is tested.
 									SelectorBatchSize: 1,
