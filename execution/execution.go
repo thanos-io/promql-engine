@@ -52,7 +52,6 @@ func New(expr parser.Expr, queryable storage.Queryable, opts *query.Options) (mo
 		End:   opts.End.UnixMilli(),
 		Step:  opts.Step.Milliseconds(),
 	}
-
 	return newOperator(expr, selectorPool, opts, hints)
 }
 
@@ -60,146 +59,24 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
-
 	case *parser.VectorSelector, *logicalplan.VectorSelector:
 		return newVectorSelector(expr, storage, opts, hints)
-
 	case *parser.Call:
-		hints.Func = e.Func.Name
-		hints.Grouping = nil
-		hints.By = false
-
-		if e.Func.Name == "absent_over_time" {
-			return newAbsentOverTimeOperator(e, storage, opts, hints)
-		}
-		if e.Func.Name == "timestamp" {
-			switch e.Args[0].(type) {
-			// Nested weirdness like timestamp(vector(1)) or timestamp(X @start) we defer to
-			// the fallback engine for now.
-			case *logicalplan.VectorSelector, *parser.VectorSelector:
-				// We push down the timestamp function into the scanner through the hints.
-				return newVectorSelector(e.Args[0], storage, opts, hints)
-			}
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
-		}
-
-		// TODO(saswatamcode): Range vector result might need new operator
-		// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
-		for i := range e.Args {
-			switch t := e.Args[i].(type) {
-			case *parser.SubqueryExpr:
-				if !opts.EnableSubqueries {
-					return nil, parse.ErrNotImplemented
-				}
-				return newSubqueryFunction(e, t, storage, opts, hints)
-			case *parser.MatrixSelector:
-				return newRangeVectorFunction(e, t, storage, opts, hints)
-			}
-		}
-		return newInstantVectorFunction(e, storage, opts, hints)
-
+		return newCall(e, storage, opts, hints)
 	case *parser.AggregateExpr:
-		hints.Func = e.Op.String()
-		hints.Grouping = e.Grouping
-		hints.By = !e.Without
-		var paramOp model.VectorOperator
-
-		next, err := newOperator(e.Expr, storage, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-
-		if e.Param != nil && e.Param.Type() != parser.ValueTypeString {
-			paramOp, err = newOperator(e.Param, storage, opts, hints)
-			if err != nil {
-				return nil, err
-			}
-		}
-
-		if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
-			next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
-		} else {
-			next, err = aggregate.NewHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
-		}
-
-		if err != nil {
-			return nil, err
-		}
-
-		return exchange.NewConcurrent(next, 2), nil
-
+		return newAggregateExpression(e, storage, opts, hints)
 	case *parser.BinaryExpr:
-		if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
-			return newScalarBinaryOperator(e, storage, opts, hints)
-		}
-
-		return newVectorBinaryOperator(e, storage, opts, hints)
-
+		return newBinaryExpression(e, storage, opts, hints)
 	case *parser.ParenExpr:
 		return newOperator(e.Expr, storage, opts, hints)
-
 	case *parser.UnaryExpr:
-		next, err := newOperator(e.Expr, storage, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-		switch e.Op {
-		case parser.ADD:
-			return next, nil
-		case parser.SUB:
-			return unary.NewUnaryNegation(next, opts.StepsBatch)
-		default:
-			// This shouldn't happen as Op was validated when parsing already
-			// https://github.com/prometheus/prometheus/blob/v2.38.0/promql/parser/parse.go#L573.
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
-		}
-
+		return newUnaryExpression(e, storage, opts, hints)
 	case *parser.StepInvariantExpr:
-		switch t := e.Expr.(type) {
-		case *parser.NumberLiteral:
-			return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, t.Val), nil
-		}
-		next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
-		if err != nil {
-			return nil, err
-		}
-		return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(opts.StepsBatch, 1), next, e.Expr, opts)
-
+		return newStepInvariantExpression(e, storage, opts, hints)
 	case logicalplan.Deduplicate:
-		// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
-		// Sorting engines by MaxT ensures that samples produced due to
-		// staleness will be overwritten and corrected by samples coming from
-		// engines with a higher max time.
-		sort.Slice(e.Expressions, func(i, j int) bool {
-			return e.Expressions[i].Engine.MaxT() < e.Expressions[j].Engine.MaxT()
-		})
-
-		operators := make([]model.VectorOperator, len(e.Expressions))
-		for i, expr := range e.Expressions {
-			operator, err := newOperator(expr, storage, opts, hints)
-			if err != nil {
-				return nil, err
-			}
-			operators[i] = operator
-		}
-		coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...)
-		dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce)
-		return exchange.NewConcurrent(dedup, 2), nil
-
+		return newDeduplication(e, storage, opts, hints)
 	case logicalplan.RemoteExecution:
-		// Create a new remote query scoped to the calculated start time.
-		qry, err := e.Engine.NewRangeQuery(opts.Context, promql.NewPrometheusQueryOpts(false, opts.LookbackDelta), e.Query, e.QueryRangeStart, opts.End, opts.Step)
-		if err != nil {
-			return nil, err
-		}
-
-		// The selector uses the original query time to make sure that steps from different
-		// operators have the same timestamps.
-		// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
-		selectorOpts := *opts
-		selectorOpts.LookbackDelta = 0
-		remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints)
-		return exchange.NewConcurrent(remoteExec, 2), nil
+		return newRemoteExecution(e, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
 	case logicalplan.UserDefinedExpr:
@@ -209,14 +86,124 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	}
 }
 
-func unpackVectorSelector(t *parser.MatrixSelector) (int64, *parser.VectorSelector, []*labels.Matcher, error) {
-	switch t := t.VectorSelector.(type) {
+func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	var (
+		batchsize int64
+		offset    time.Duration
+		selector  engstore.SeriesSelector
+	)
+	switch e := expr.(type) {
 	case *parser.VectorSelector:
-		return 0, t, nil, nil
+		start, end := getTimeRangesForVectorSelector(e, opts, 0)
+		hints.Start = start
+		hints.End = end
+		offset = e.Offset
+		batchsize = 0
+		selector = storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
 	case *logicalplan.VectorSelector:
-		return t.BatchSize, t.VectorSelector, t.Filters, nil
+		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
+		hints.Start = start
+		hints.End = end
+		offset = e.Offset
+		batchsize = e.BatchSize
+		selector = storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
 	default:
-		return 0, nil, nil, parse.ErrNotSupportedExpr
+		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+	}
+
+	numShards := runtime.GOMAXPROCS(0) / 2
+	if numShards < 1 {
+		numShards = 1
+	}
+
+	operators := make([]model.VectorOperator, 0, numShards)
+	for i := 0; i < numShards; i++ {
+		operator := exchange.NewConcurrent(
+			scan.NewVectorSelector(
+				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, i, numShards),
+			2)
+		operators = append(operators, operator)
+	}
+
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...), nil
+}
+
+func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	hints.Func = e.Func.Name
+	hints.Grouping = nil
+	hints.By = false
+
+	if e.Func.Name == "absent_over_time" {
+		return newAbsentOverTimeOperator(e, storage, opts, hints)
+	}
+	if e.Func.Name == "timestamp" {
+		switch e.Args[0].(type) {
+		// Nested weirdness like timestamp(vector(1)) or timestamp(X @start) we defer to
+		// the fallback engine for now.
+		case *logicalplan.VectorSelector, *parser.VectorSelector:
+			// We push down the timestamp function into the scanner through the hints.
+			return newVectorSelector(e.Args[0], storage, opts, hints)
+		}
+		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+	}
+
+	// TODO(saswatamcode): Range vector result might need new operator
+	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
+	for i := range e.Args {
+		switch t := e.Args[i].(type) {
+		case *parser.SubqueryExpr:
+			if !opts.EnableSubqueries {
+				return nil, parse.ErrNotImplemented
+			}
+			return newSubqueryFunction(e, t, storage, opts, hints)
+		case *parser.MatrixSelector:
+			return newRangeVectorFunction(e, t, storage, opts, hints)
+		}
+	}
+	return newInstantVectorFunction(e, storage, opts, hints)
+}
+
+func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	switch arg := call.Args[0].(type) {
+	case *parser.SubqueryExpr:
+		matrixCall := &parser.Call{
+			Func: &parser.Function{Name: "last_over_time"},
+		}
+		argOp, err := newSubqueryFunction(matrixCall, arg, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		f := &parser.Call{
+			Func: &parser.Function{Name: "absent"},
+			Args: []parser.Expr{matrixCall},
+		}
+		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
+	case *parser.MatrixSelector:
+		matrixCall := &parser.Call{
+			Func: &parser.Function{Name: "last_over_time"},
+			Args: call.Args,
+		}
+		argOp, err := newRangeVectorFunction(matrixCall, arg, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		_, vs, filters, err := unpackVectorSelector(arg)
+		if err != nil {
+			return nil, err
+		}
+		// if we have a filtered selector we need to put the labels back for absent
+		// to compute its series properly
+		vs.LabelMatchers = append(vs.LabelMatchers, filters...)
+		f := &parser.Call{
+			Func: &parser.Function{Name: "absent"},
+			Args: []parser.Expr{&parser.MatrixSelector{
+				VectorSelector: vs,
+				Range:          arg.Range,
+			}},
+		}
+		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
+	default:
+		return nil, parse.ErrNotSupportedExpr
 	}
 }
 
@@ -314,110 +301,63 @@ func newInstantVectorFunction(e *parser.Call, storage *engstore.SelectorPool, op
 	return function.NewFunctionOperator(e, nextOperators, opts.StepsBatch, opts)
 }
 
-func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	var (
-		batchsize int64
-		offset    time.Duration
-		selector  engstore.SeriesSelector
-	)
-	switch e := expr.(type) {
-	case *parser.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e, opts, 0)
-		hints.Start = start
-		hints.End = end
-		offset = e.Offset
-		batchsize = 0
-		selector = storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
-	case *logicalplan.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
-		hints.Start = start
-		hints.End = end
-		offset = e.Offset
-		batchsize = e.BatchSize
-		selector = storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
-	default:
-		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
-	}
+func newAggregateExpression(e *parser.AggregateExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	hints.Func = e.Op.String()
+	hints.Grouping = e.Grouping
+	hints.By = !e.Without
+	var paramOp model.VectorOperator
 
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
-
-	operators := make([]model.VectorOperator, 0, numShards)
-	for i := 0; i < numShards; i++ {
-		operator := exchange.NewConcurrent(
-			scan.NewVectorSelector(
-				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, i, numShards),
-			2)
-		operators = append(operators, operator)
-	}
-
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...), nil
-}
-
-func newAbsentOverTimeOperator(call *parser.Call, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	switch arg := call.Args[0].(type) {
-	case *parser.SubqueryExpr:
-		matrixCall := &parser.Call{
-			Func: &parser.Function{Name: "last_over_time"},
-		}
-		argOp, err := newSubqueryFunction(matrixCall, arg, selectorPool, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-		f := &parser.Call{
-			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{matrixCall},
-		}
-		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
-	case *parser.MatrixSelector:
-		matrixCall := &parser.Call{
-			Func: &parser.Function{Name: "last_over_time"},
-			Args: call.Args,
-		}
-		argOp, err := newRangeVectorFunction(matrixCall, arg, selectorPool, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-		_, vs, filters, err := unpackVectorSelector(arg)
-		if err != nil {
-			return nil, err
-		}
-		// if we have a filtered selector we need to put the labels back for absent
-		// to compute its series properly
-		vs.LabelMatchers = append(vs.LabelMatchers, filters...)
-		f := &parser.Call{
-			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{&parser.MatrixSelector{
-				VectorSelector: vs,
-				Range:          arg.Range,
-			}},
-		}
-		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
-	default:
-		return nil, parse.ErrNotSupportedExpr
-	}
-}
-
-func newVectorBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	leftOperator, err := newOperator(e.LHS, selectorPool, opts, hints)
+	next, err := newOperator(e.Expr, storage, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rightOperator, err := newOperator(e.RHS, selectorPool, opts, hints)
+
+	if e.Param != nil && e.Param.Type() != parser.ValueTypeString {
+		paramOp, err = newOperator(e.Param, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
+		next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
+	} else {
+		next, err = aggregate.NewHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return exchange.NewConcurrent(next, 2), nil
+
+}
+
+func newBinaryExpression(e *parser.BinaryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
+		return newScalarBinaryOperator(e, storage, opts, hints)
+	}
+	return newVectorBinaryOperator(e, storage, opts, hints)
+}
+
+func newVectorBinaryOperator(e *parser.BinaryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	leftOperator, err := newOperator(e.LHS, storage, opts, hints)
+	if err != nil {
+		return nil, err
+	}
+	rightOperator, err := newOperator(e.RHS, storage, opts, hints)
 	if err != nil {
 		return nil, err
 	}
 	return binary.NewVectorOperator(model.NewVectorPool(opts.StepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	lhs, err := newOperator(e.LHS, selectorPool, opts, hints)
+func newScalarBinaryOperator(e *parser.BinaryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	lhs, err := newOperator(e.LHS, storage, opts, hints)
 	if err != nil {
 		return nil, err
 	}
-	rhs, err := newOperator(e.RHS, selectorPool, opts, hints)
+	rhs, err := newOperator(e.RHS, storage, opts, hints)
 	if err != nil {
 		return nil, err
 	}
@@ -431,6 +371,73 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, selectorPool *engstore.Select
 	}
 
 	return binary.NewScalar(model.NewVectorPoolWithSize(opts.StepsBatch, 1), lhs, rhs, e.Op, scalarSide, e.ReturnBool, opts)
+}
+
+func newUnaryExpression(e *parser.UnaryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	next, err := newOperator(e.Expr, storage, opts, hints)
+	if err != nil {
+		return nil, err
+	}
+	switch e.Op {
+	case parser.ADD:
+		return next, nil
+	case parser.SUB:
+		return unary.NewUnaryNegation(next, opts.StepsBatch)
+	default:
+		// This shouldn't happen as Op was validated when parsing already
+		// https://github.com/prometheus/prometheus/blob/v2.38.0/promql/parser/parse.go#L573.
+		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+	}
+}
+
+func newStepInvariantExpression(e *parser.StepInvariantExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	switch t := e.Expr.(type) {
+	case *parser.NumberLiteral:
+		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, t.Val), nil
+	}
+	next, err := newOperator(e.Expr, storage, opts.WithEndTime(opts.Start), hints)
+	if err != nil {
+		return nil, err
+	}
+	return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(opts.StepsBatch, 1), next, e.Expr, opts)
+}
+
+func newDeduplication(e logicalplan.Deduplicate, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
+	// Sorting engines by MaxT ensures that samples produced due to
+	// staleness will be overwritten and corrected by samples coming from
+	// engines with a higher max time.
+	sort.Slice(e.Expressions, func(i, j int) bool {
+		return e.Expressions[i].Engine.MaxT() < e.Expressions[j].Engine.MaxT()
+	})
+
+	operators := make([]model.VectorOperator, len(e.Expressions))
+	for i, expr := range e.Expressions {
+		operator, err := newOperator(expr, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		operators[i] = operator
+	}
+	coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...)
+	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce)
+	return exchange.NewConcurrent(dedup, 2), nil
+}
+
+func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	// Create a new remote query scoped to the calculated start time.
+	qry, err := e.Engine.NewRangeQuery(opts.Context, promql.NewPrometheusQueryOpts(false, opts.LookbackDelta), e.Query, e.QueryRangeStart, opts.End, opts.Step)
+	if err != nil {
+		return nil, err
+	}
+
+	// The selector uses the original query time to make sure that steps from different
+	// operators have the same timestamps.
+	// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
+	selectorOpts := *opts
+	selectorOpts.LookbackDelta = 0
+	remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints)
+	return exchange.NewConcurrent(remoteExec, 2), nil
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
@@ -459,4 +466,15 @@ func unwrapConstVal(e parser.Expr) (float64, error) {
 	}
 
 	return 0, errors.Wrap(parse.ErrNotSupportedExpr, "matrix selector argument must be a constant")
+}
+
+func unpackVectorSelector(t *parser.MatrixSelector) (int64, *parser.VectorSelector, []*labels.Matcher, error) {
+	switch t := t.VectorSelector.(type) {
+	case *parser.VectorSelector:
+		return 0, t, nil, nil
+	case *logicalplan.VectorSelector:
+		return t.BatchSize, t.VectorSelector, t.Filters, nil
+	default:
+		return 0, nil, nil, parse.ErrNotSupportedExpr
+	}
 }
