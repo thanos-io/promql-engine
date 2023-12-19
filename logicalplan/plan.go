@@ -47,8 +47,9 @@ func New(expr parser.Expr, opts *query.Options) Plan {
 	setOffsetForAtModifier(opts.Start.UnixMilli(), expr)
 	setOffsetForInnerSubqueries(expr, opts)
 
-	// the engine handles sorting at the presentation layer
-	expr = trimSorts(expr)
+	// * the engine handles sorting at the presentation layer
+	// * parens are just annoying and getting rid of them doesnt change the query
+	expr = trimParens(trimSorts(expr))
 
 	return &plan{
 		expr: expr,
@@ -166,6 +167,20 @@ func trimSorts(expr parser.Expr) parser.Expr {
 			case "sort", "sort_desc":
 				*parent = *current
 			}
+		}
+		return false
+	})
+	return expr
+}
+
+func trimParens(expr parser.Expr) parser.Expr {
+	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
+		if current == nil || parent == nil {
+			return true
+		}
+		switch (*parent).(type) {
+		case *parser.ParenExpr:
+			*parent = *current
 		}
 		return false
 	})
