@@ -52,6 +52,11 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 			pool:              model.NewVectorPoolWithSize(stepsBatch, 1),
 			OperatorTelemetry: SetTelemetry(opts),
 		}, nil
+	case "timestamp":
+		return &timestampFunctionOperator{
+			next:              nextOps[0],
+			OperatorTelemetry: SetTelemetry(opts),
+		}, nil
 
 	case "label_join", "label_replace":
 		return &relabelFunctionOperator{

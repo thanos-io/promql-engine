@@ -2672,35 +2672,53 @@ func TestInstantQuery(t *testing.T) {
 		queryTime time.Time
 	}{
 		{
+			name: "offset and @ modifiers",
+			load: `load 30s
+              http_requests_total{pod="nginx-0", route="/"} 1+1x30`,
+			query:     `http_requests_total @end() offset 2m`,
+			queryTime: time.Unix(300, 0),
+		},
+		{
 			name: "timestamp - offset modifier",
 			load: `load 30s
               http_requests_total{pod="nginx-0", route="/"} 0x30`,
 			query:     `timestamp(http_requests_total offset 2m)`,
 			queryTime: time.Unix(300, 0),
 		},
-		/*
-		   These functions cannot be handled by pushing timestamp into the scan.
-		   Ultimately those need a new operator to handle them.
-		   {
-		     name: "timestamp - @ modifier",
-		     load: `load 30s
+		{
+			name: "timestamp - @ modifier",
+			load: `load 30s
 		             http_requests_total{pod="nginx-0", route="/"} 0x30`,
-		     query:     `timestamp(http_requests_total @ 60)`,
-		     queryTime: time.Unix(300, 0),
-		   },
-		   {
-		     name: "timestamp - nested functions with offset",
-		     load: `load 30s
+			query:     `timestamp(http_requests_total @ 60)`,
+			queryTime: time.Unix(300, 0),
+		},
+		{
+			name: "timestamp - nested functions with offset",
+			load: `load 30s
 		             http_requests_total{pod="nginx-0", route="/"} 0x30`,
-		     query:     `timestamp(timestamp(http_requests_total offset 2m))`,
-		     queryTime: time.Unix(300, 0),
-		   },
-		   {
-		     name:      "timestamp - nested functions without any scan",
-		     query:     `timestamp(vector(1))`,
-		     queryTime: time.Unix(300, 0),
-		   },
-		*/
+			query:     `timestamp(timestamp(http_requests_total offset 2m))`,
+			queryTime: time.Unix(300, 0),
+		},
+		{
+			name:      "timestamp - nested functions without any scan",
+			query:     `timestamp(vector(1))`,
+			queryTime: time.Unix(300, 0),
+		},
+		{
+			name: "timestamp - aggregation",
+			load: `load 30s
+		             http_requests_total{pod="nginx-0", route="/"} 0x30`,
+			query:     `timestamp(sum(http_requests_total))`,
+			queryTime: time.Unix(300, 0),
+		},
+		{
+			name: "timestamp - fuzzing failure",
+			load: `load 30s
+			http_requests_total{pod="nginx-1"} 1.00+1.00x15
+			http_requests_total{pod="nginx-2"}  1+2.00x21`,
+			query:     `timestamp(http_requests_total @ end() offset -2m23s)`,
+			queryTime: time.Unix(300, 0),
+		},
 		{
 			name: "fuzz - min with NaN",
 			load: `load 30s
@@ -3792,7 +3810,7 @@ absent_over_time({__name__="http_requests_total",route="/"}[3m] offset 1m45s)`,
 
 								oldResult := q2.Exec(ctx)
 
-								testutil.WithGoCmp(comparer).Equals(t, newResult, oldResult, queryExplanation(q1))
+								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 							})
 						}
 					}

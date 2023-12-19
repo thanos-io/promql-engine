@@ -137,14 +137,30 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 		return newAbsentOverTimeOperator(e, storage, opts, hints)
 	}
 	if e.Func.Name == "timestamp" {
-		switch e.Args[0].(type) {
-		// Nested weirdness like timestamp(vector(1)) or timestamp(X @start) we defer to
-		// the fallback engine for now.
+		switch arg := e.Args[0].(type) {
 		case *logicalplan.VectorSelector, *parser.VectorSelector:
 			// We push down the timestamp function into the scanner through the hints.
 			return newVectorSelector(e.Args[0], storage, opts, hints)
+		case *parser.StepInvariantExpr:
+			// Step invariant expressions on vector selectors need to be unwrapped so that we
+			// can return the original timestamp rather than the step invariant one.
+			switch vs := arg.Expr.(type) {
+			case *parser.VectorSelector:
+				// Prometheus weirdness.
+				if vs.Timestamp != nil {
+					vs.OriginalOffset = 0
+				}
+				return newVectorSelector(vs, storage, opts, hints)
+			case *logicalplan.VectorSelector:
+				// Prometheus weirdness.
+				if vs.Timestamp != nil {
+					vs.OriginalOffset = 0
+				}
+				return newVectorSelector(vs, storage, opts, hints)
+			}
+			return newInstantVectorFunction(e, storage, opts, hints)
 		}
-		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		return newInstantVectorFunction(e, storage, opts, hints)
 	}
 
 	// TODO(saswatamcode): Range vector result might need new operator
