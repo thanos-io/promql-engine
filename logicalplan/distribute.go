@@ -430,6 +430,8 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	}
 
 	switch aggr := (*expr).(type) {
+	case *parser.SubqueryExpr:
+		return false
 	case *parser.BinaryExpr:
 		return isBinaryExpressionWithOneConstantSide(aggr) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(aggr))
 	case *parser.AggregateExpr:

@@ -150,7 +150,10 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 		}
 		return transform(parent, current)
 	case *parser.SubqueryExpr:
-		return TraverseBottomUp(current, &node.Expr, transform)
+		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
 	}
 
 	return true
