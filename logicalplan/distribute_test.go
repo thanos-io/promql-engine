@@ -429,8 +429,8 @@ dedup(
 			},
 			expr: `max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])`,
 			expected: `dedup(
-  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:30m])[15m:30m])), 
-  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:30m])[15m:30m])) [1970-01-01 07:30:00 +0000 UTC])`,
+  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])),
+  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC])`,
 		},
 		{
 			name: "subquery with a total 4h range is cannot be distributed",
