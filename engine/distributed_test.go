@@ -42,7 +42,7 @@ func (p partition) mint() int64 {
 	mint := p.series[0].timestamps[0]
 	for _, s := range p.series {
 		ts := s.timestamps[0]
-		if ts < mint {
+		if ts > mint {
 			mint = ts
 		}
 	}
@@ -234,7 +234,8 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "absent for existing metric with aggregation", query: `sum(absent(foo))`},
 		{name: "absent for existing metric", query: `absent(bar{pod="nginx-1"})`},
 		{name: "absent for existing metric with aggregation", query: `sum(absent(bar{pod="nginx-1"}))`},
-		{name: "subquery", query: `max_over_time(sum_over_time(bar[1m])[10m:1m])`, expectFallback: true},
+		{name: "subquery with window within engine range", query: `max_over_time(sum_over_time(bar[30s])[30s:15s])`, expectFallback: true},
+		{name: "subquery with window outside of engine range", query: `max_over_time(sum_over_time(bar[1m])[10m:1m])`, expectFallback: true},
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}

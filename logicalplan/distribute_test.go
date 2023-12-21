@@ -263,6 +263,21 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60)),
 remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 		},
 		{
+			name:     "subquery",
+			expr:     `sum_over_time(http_requests_total[5m:1m])`,
+			expected: `dedup(remote(sum_over_time(http_requests_total[5m:1m])), remote(sum_over_time(http_requests_total[5m:1m])))`,
+		},
+		{
+			name:     "subquery over range function",
+			expr:     `sum_over_time(rate(http_requests_total[5m])[5m:1m])`,
+			expected: `dedup(remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])), remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])))`,
+		},
+		{
+			name:     "subquery over range aggregation",
+			expr:     `sum_over_time(max(http_requests_total)[5m:1m])`,
+			expected: `sum_over_time(max(dedup(remote(max by (region) (http_requests_total)), remote(max by (region) (http_requests_total))))[5m:1m])`,
+		},
+		{
 			name:     "label based pruning matches one engine",
 			expr:     `sum by (pod) (rate(http_requests_total{region="west"}[2m]))`,
 			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="west"}[2m])))))`,
@@ -384,6 +399,51 @@ dedup(
   remote(sum_over_time(metric[2h])),
   remote(sum_over_time(metric[2h])) [1970-01-01 08:00:00 +0000 UTC]
 )`,
+		},
+		{
+			name: "subquery with a total 2h range is distributed with proper offsets",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr: `sum_over_time(sum_over_time(metric[1h])[1h:30m])`,
+			expected: `
+dedup(
+  remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])), 
+  remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])) [1970-01-01 08:00:00 +0000 UTC]
+)`,
+		},
+		{
+			name: "multiple subqueries with a total 90m range get distributed with proper offsets",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr: `max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])`,
+			expected: `dedup(
+  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])),
+  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC])`,
+		},
+		{
+			name: "subquery with a total 4h range is cannot be distributed",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr:     `sum_over_time(sum_over_time(metric[2h])[2h:30m])`,
+			expected: `sum_over_time(sum_over_time(metric[2h])[2h:30m])`,
 		},
 		{
 			name: "sum over 3h does not distribute the query due to insufficient engine overlap",

@@ -410,11 +410,13 @@ func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.D
 	var selectRange time.Duration
 	var offset time.Duration
 	traverse(expr, func(node *parser.Expr) {
-		if matrixSelector, ok := (*node).(*parser.MatrixSelector); ok {
-			selectRange = matrixSelector.Range
-		}
-		if vectorSelector, ok := (*node).(*parser.VectorSelector); ok {
-			offset = vectorSelector.Offset
+		switch n := (*node).(type) {
+		case *parser.SubqueryExpr:
+			selectRange += n.Range
+		case *parser.MatrixSelector:
+			selectRange += n.Range
+		case *parser.VectorSelector:
+			offset = n.Offset
 		}
 	})
 	return maxDuration(offset+selectRange, lookbackDelta)
@@ -430,8 +432,6 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	}
 
 	switch aggr := (*expr).(type) {
-	case *parser.SubqueryExpr:
-		return false
 	case *parser.BinaryExpr:
 		return isBinaryExpressionWithOneConstantSide(aggr) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(aggr))
 	case *parser.AggregateExpr:

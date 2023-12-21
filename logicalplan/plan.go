@@ -101,6 +101,7 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.ParenExpr:
 		traverse(&node.Expr, transform)
 	case *parser.SubqueryExpr:
+		transform(expr)
 		traverse(&node.Expr, transform)
 	}
 }
