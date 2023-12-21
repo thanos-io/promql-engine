@@ -28,7 +28,7 @@ type ExplainOutputNode struct {
 
 var _ ExplainableQuery = &compatibilityQuery{}
 
-func analyzeVector(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
+func analyzeVector(obsv model.Analyzeable) *AnalyzeOutputNode {
 	telemetry, obsVectors := obsv.Analyze()
 
 	var children []AnalyzeOutputNode

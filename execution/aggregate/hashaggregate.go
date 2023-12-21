@@ -8,12 +8,11 @@ import (
 	"fmt"
 	"math"
 	"sync"
-	"time"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/labels"
 	"golang.org/x/exp/slices"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -22,8 +21,6 @@ import (
 )
 
 type aggregate struct {
-	model.OperatorTelemetry
-
 	next    model.VectorOperator
 	paramOp model.VectorOperator
 	// params holds the aggregate parameter for each step.
@@ -60,8 +57,6 @@ func NewHashAggregate(
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
 	slices.Sort(labels)
 	a := &aggregate{
-		OperatorTelemetry: &model.TrackedTelemetry{},
-
 		next:        next,
 		paramOp:     paramOp,
 		params:      make([]float64, opts.StepsBatch),
@@ -73,18 +68,6 @@ func NewHashAggregate(
 	}
 
 	return a, nil
-}
-
-func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	a.SetName("[*aggregate]")
-	var ops []model.ObservableVectorOperator
-	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
-		ops = append(ops, obsnextParamOp)
-	}
-	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
-		ops = append(ops, obsnext)
-	}
-	return a, ops
 }
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
@@ -119,8 +102,6 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
-	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
 
 	var err error
 	a.once.Do(func() { err = a.initializeTables(ctx) })

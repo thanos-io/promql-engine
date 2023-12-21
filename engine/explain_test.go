@@ -90,15 +90,16 @@ func TestQueryExplain(t *testing.T) {
 }
 
 func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
-	if got != nil {
-		if got.OperatorTelemetry.ExecutionTimeTaken() <= 0 {
-			t.Errorf("expected non-zero ExecutionTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
-			return false
-		}
-		for i := range got.Children {
-			child := got.Children[i]
-			return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, &child)
-		}
+	if got == nil {
+		return false
+	}
+	if got.OperatorTelemetry.ExecutionTimeTaken() <= 0 {
+		t.Errorf("expected non-zero ExecutionTime for Operator, got %s ", got.OperatorTelemetry.ExecutionTimeTaken())
+		return false
+	}
+	for i := range got.Children {
+		child := got.Children[i]
+		return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, &child)
 	}
 	return true
 }
@@ -115,7 +116,8 @@ func TestQueryAnalyze(t *testing.T) {
 	end := time.Unix(1000, 0)
 
 	for _, tc := range []struct {
-		query string
+		query            string
+		onlyInstantQuery bool // TODO: no support yet for range subqueries
 	}{
 		{
 			query: "foo",
@@ -129,35 +131,44 @@ func TestQueryAnalyze(t *testing.T) {
 		{
 			query: "rate(http_requests_total[30s]) > bool 0",
 		},
+		{
+			query:            "max_over_time(rate(foo[10m])[1h:30s])",
+			onlyInstantQuery: true,
+		},
 	} {
 		{
 			t.Run(tc.query, func(t *testing.T) {
-				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, EnableSubqueries: true})
 				ctx := context.Background()
 
-				var (
-					query promql.Query
-					err   error
-				)
+				t.Run("instant", func(t *testing.T) {
+					query, err := ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
+					testutil.Ok(t, err)
 
-				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
-				testutil.Ok(t, err)
+					queryResults := query.Exec(context.Background())
+					testutil.Ok(t, queryResults.Err)
 
-				queryResults := query.Exec(context.Background())
-				testutil.Ok(t, queryResults.Err)
+					t.Log(queryAnalysis(query))
 
-				explainableQuery := query.(engine.ExplainableQuery)
+					explainableQuery := query.(engine.ExplainableQuery)
+					testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				})
 
-				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				t.Run("range", func(t *testing.T) {
+					if tc.onlyInstantQuery {
+						t.Skip()
+					}
+					query, err := ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
+					testutil.Ok(t, err)
 
-				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
-				testutil.Ok(t, err)
+					queryResults := query.Exec(context.Background())
+					testutil.Ok(t, queryResults.Err)
 
-				queryResults = query.Exec(context.Background())
-				testutil.Ok(t, queryResults.Err)
+					t.Log(queryAnalysis(query))
 
-				explainableQuery = query.(engine.ExplainableQuery)
-				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+					explainableQuery := query.(engine.ExplainableQuery)
+					testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				})
 			})
 		}
 	}

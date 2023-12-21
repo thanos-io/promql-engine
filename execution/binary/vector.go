@@ -54,8 +54,6 @@ type vectorOperator struct {
 
 	// If true then 1/0 needs to be returned instead of the value.
 	returnBool bool
-
-	model.OperatorTelemetry
 }
 
 func NewVectorOperator(
@@ -66,8 +64,8 @@ func NewVectorOperator(
 	opType parser.ItemType,
 	returnBool bool,
 	opts *query.Options,
-) (model.VectorOperator, error) {
-	o := &vectorOperator{
+) model.VectorOperator {
+	return &vectorOperator{
 		pool:       pool,
 		lhs:        lhs,
 		rhs:        rhs,
@@ -76,24 +74,6 @@ func NewVectorOperator(
 		returnBool: returnBool,
 		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
 	}
-
-	o.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-	return o, nil
-}
-
-func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*vectorOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 2)
-	if obsnextParamOp, ok := o.lhs.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnextParamOp)
-	}
-	if obsnext, ok := o.rhs.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return o, next
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {

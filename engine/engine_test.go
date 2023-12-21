@@ -5042,3 +5042,48 @@ func queryExplanation(q promql.Query) string {
 
 	return fmt.Sprintf("Query: %s\nExplanation:\n%s\n", q.String(), b.String())
 }
+
+func queryAnalysis(q promql.Query) string {
+	eq, ok := q.(engine.ExplainableQuery)
+	if !ok {
+		return ""
+	}
+
+	var analyze func(w io.Writer, n engine.AnalyzeOutputNode, indent, indentNext string)
+
+	analyze = func(w io.Writer, n engine.AnalyzeOutputNode, indent, indentNext string) {
+		next := n.Children
+		me := n.OperatorTelemetry.Name()
+
+		_, _ = w.Write([]byte(indent))
+		_, _ = w.Write([]byte(me))
+		if len(next) == 0 {
+			_, _ = w.Write([]byte(" - "))
+			_, _ = w.Write([]byte(n.OperatorTelemetry.ExecutionTimeTaken().String()))
+			_, _ = w.Write([]byte("\n"))
+			return
+		}
+
+		if me == "[*CancellableOperator]" {
+			_, _ = w.Write([]byte(": "))
+			analyze(w, next[0], "", indentNext)
+			return
+		}
+		_, _ = w.Write([]byte(" - "))
+		_, _ = w.Write([]byte(n.OperatorTelemetry.ExecutionTimeTaken().String()))
+		_, _ = w.Write([]byte(":\n"))
+
+		for i, n := range next {
+			if i == len(next)-1 {
+				analyze(w, n, indentNext+"└──", indentNext+"   ")
+			} else {
+				analyze(w, n, indentNext+"├──", indentNext+"│  ")
+			}
+		}
+	}
+
+	var b bytes.Buffer
+	analyze(&b, *eq.Analyze(), "", "")
+
+	return fmt.Sprintf("Query: %s\nAnalysis:\n%s\n", q.String(), b.String())
+}

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -28,11 +27,10 @@ type numberLiteralSelector struct {
 	once        sync.Once
 
 	val float64
-	model.OperatorTelemetry
 }
 
 func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) *numberLiteralSelector {
-	op := &numberLiteralSelector{
+	return &numberLiteralSelector{
 		vectorPool:  pool,
 		numSteps:    opts.NumSteps(),
 		mint:        opts.Start.UnixMilli(),
@@ -41,18 +39,6 @@ func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val f
 		currentStep: opts.Start.UnixMilli(),
 		val:         val,
 	}
-
-	op.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		op.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-
-	return op
-}
-
-func (o *numberLiteralSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*numberLiteralSelector] ")
-	return o, nil
 }
 
 func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperator) {
@@ -74,7 +60,6 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
@@ -98,7 +83,6 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
-	o.AddExecutionTimeTaken(time.Since(start))
 
 	return vectors, nil
 }

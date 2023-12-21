@@ -26,7 +26,6 @@ type Execution struct {
 	opts            *query.Options
 	queryRangeStart time.Time
 	vectorSelector  model.VectorOperator
-	model.OperatorTelemetry
 }
 
 func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart time.Time, opts *query.Options, hints storage.SelectHints) *Execution {
@@ -38,26 +37,11 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart ti
 		queryRangeStart: queryRangeStart,
 		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, hints, 0, 0, 1),
 	}
-	e.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		e.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
 	return e
 }
 
-func (e *Execution) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	e.SetName("[*remoteExec]")
-	return e, nil
-}
-
-func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
-	return e.vectorSelector.Series(ctx)
-}
-
 func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
-	start := time.Now()
 	next, err := e.vectorSelector.Next(ctx)
-	e.AddExecutionTimeTaken(time.Since(start))
 	if next == nil {
 		// Closing the storage prematurely can lead to results from the query
 		// engine to be recycled. Because of this, we close the storage only
@@ -65,6 +49,10 @@ func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
 		e.storage.Close()
 	}
 	return next, err
+}
+
+func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
+	return e.vectorSelector.Series(ctx)
 }
 
 func (e *Execution) GetPool() *model.VectorPool {

@@ -52,10 +52,8 @@ func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
 	return ti.ExecutionTime
 }
 
-type ObservableVectorOperator interface {
-	VectorOperator
-	OperatorTelemetry
-	Analyze() (OperatorTelemetry, []ObservableVectorOperator)
+type Analyzeable interface {
+	Analyze() (OperatorTelemetry, []Analyzeable)
 }
 
 // VectorOperator performs operations on series in step by step fashion.

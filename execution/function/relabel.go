@@ -8,7 +8,6 @@ import (
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/efficientgo/core/errors"
 	prommodel "github.com/prometheus/common/model"
@@ -24,16 +23,6 @@ type relabelFunctionOperator struct {
 	funcExpr *parser.Call
 	once     sync.Once
 	series   []labels.Labels
-	model.OperatorTelemetry
-}
-
-func (o *relabelFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*relabelFunctionOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return o, next
 }
 
 func (o *relabelFunctionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -51,9 +40,7 @@ func (o *relabelFunctionOperator) GetPool() *model.VectorPool {
 }
 
 func (o *relabelFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
-	start := time.Now()
 	next, err := o.next.Next(ctx)
-	o.AddExecutionTimeTaken(time.Since(start))
 	return next, err
 }
 

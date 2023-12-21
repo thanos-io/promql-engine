@@ -302,7 +302,7 @@ func (q *Query) Explain() *ExplainOutputNode {
 }
 
 func (q *Query) Analyze() *AnalyzeOutputNode {
-	if observableRoot, ok := q.exec.(model.ObservableVectorOperator); ok {
+	if observableRoot, ok := q.exec.(model.Analyzeable); ok {
 		return analyzeVector(observableRoot)
 	}
 	return nil

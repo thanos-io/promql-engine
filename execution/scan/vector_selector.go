@@ -29,8 +29,6 @@ type vectorScanner struct {
 }
 
 type vectorSelector struct {
-	model.OperatorTelemetry
-
 	storage  engstore.SeriesSelector
 	scanners []vectorScanner
 	series   []labels.Labels
@@ -66,9 +64,8 @@ func NewVectorSelector(
 	shard, numShards int,
 ) model.VectorOperator {
 	o := &vectorSelector{
-		OperatorTelemetry: &model.NoopTelemetry{},
-		storage:           selector,
-		vectorPool:        pool,
+		storage:    selector,
+		vectorPool: pool,
 
 		mint:            queryOpts.Start.UnixMilli(),
 		maxt:            queryOpts.End.UnixMilli(),
@@ -84,9 +81,6 @@ func NewVectorSelector(
 
 		pushedDownTimestampFunction: hints.Func == "timestamp",
 	}
-	if queryOpts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
 	if o.step == 0 {
@@ -94,11 +88,6 @@ func NewVectorSelector(
 	}
 
 	return o
-}
-
-func (o *vectorSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*vectorSelector]")
-	return o, nil
 }
 
 func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
@@ -126,8 +115,6 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, nil
 	}
 
-	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}

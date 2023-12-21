@@ -6,7 +6,6 @@ package step_invariant
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -32,16 +31,6 @@ type stepInvariantOperator struct {
 	step        int64
 	currentStep int64
 	stepsBatch  int
-	model.OperatorTelemetry
-}
-
-func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	u.SetName("[*stepInvariantOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return u, next
 }
 
 func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {
@@ -75,11 +64,6 @@ func NewStepInvariantOperator(
 	case *parser.MatrixSelector, *parser.SubqueryExpr:
 		u.cacheResult = false
 	}
-	u.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		u.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-
 	return u, nil
 }
 
@@ -103,7 +87,6 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 	if u.currentStep > u.maxt {
 		return nil, nil
 	}
-	start := time.Now()
 
 	select {
 	case <-ctx.Done():
@@ -127,7 +110,6 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 		result = append(result, outVector)
 		u.currentStep += u.step
 	}
-	u.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

@@ -55,6 +55,7 @@ func NestedOptionsForSubquery(opts *Options, t *parser.SubqueryExpr) *Options {
 		ExtLookbackDelta:         opts.ExtLookbackDelta,
 		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		EnableSubqueries:         opts.EnableSubqueries,
+		EnableAnalysis:           opts.EnableAnalysis,
 	}
 	if t.Step != 0 {
 		nOpts.Step = t.Step

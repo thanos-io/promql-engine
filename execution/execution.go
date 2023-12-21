@@ -17,6 +17,7 @@
 package execution
 
 import (
+	"context"
 	"runtime"
 	"sort"
 	"time"
@@ -55,35 +56,39 @@ func New(expr parser.Expr, queryable storage.Queryable, opts *query.Options) (mo
 	return newOperator(expr, selectorPool, opts, hints)
 }
 
-func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (op model.VectorOperator, err error) {
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
-		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
+		op = scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val)
 	case *parser.VectorSelector, *logicalplan.VectorSelector:
-		return newVectorSelector(expr, storage, opts, hints)
+		op, err = newVectorSelector(expr, storage, opts, hints)
 	case *parser.Call:
-		return newCall(e, storage, opts, hints)
+		op, err = newCall(e, storage, opts, hints)
 	case *parser.AggregateExpr:
-		return newAggregateExpression(e, storage, opts, hints)
+		op, err = newAggregateExpression(e, storage, opts, hints)
 	case *parser.BinaryExpr:
-		return newBinaryExpression(e, storage, opts, hints)
+		op, err = newBinaryExpression(e, storage, opts, hints)
 	case *parser.ParenExpr:
-		return newOperator(e.Expr, storage, opts, hints)
+		op, err = newOperator(e.Expr, storage, opts, hints)
 	case *parser.UnaryExpr:
-		return newUnaryExpression(e, storage, opts, hints)
+		op, err = newUnaryExpression(e, storage, opts, hints)
 	case *parser.StepInvariantExpr:
-		return newStepInvariantExpression(e, storage, opts, hints)
+		op, err = newStepInvariantExpression(e, storage, opts, hints)
 	case logicalplan.Deduplicate:
-		return newDeduplication(e, storage, opts, hints)
+		op, err = newDeduplication(e, storage, opts, hints)
 	case logicalplan.RemoteExecution:
-		return newRemoteExecution(e, opts, hints)
+		op, err = newRemoteExecution(e, opts, hints)
 	case logicalplan.Noop:
-		return noop.NewOperator(), nil
+		op = noop.NewOperator()
 	case logicalplan.UserDefinedExpr:
-		return e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
+		op, err = e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return withTelemetry(op, opts), nil
 }
 
 func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -118,10 +123,11 @@ func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *q
 
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		operator := exchange.NewConcurrent(
-			scan.NewVectorSelector(
-				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, i, numShards),
-			2)
+		operator := withTelemetry(exchange.NewConcurrent(
+			withTelemetry(scan.NewVectorSelector(
+				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, i, numShards,
+			), opts),
+			2), opts)
 		operators = append(operators, operator)
 	}
 
@@ -281,7 +287,8 @@ func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *e
 		if err != nil {
 			return nil, err
 		}
-		operators = append(operators, exchange.NewConcurrent(operator, 2))
+		operator = withTelemetry(operator, opts)
+		operators = append(operators, withTelemetry(exchange.NewConcurrent(operator, 2), opts))
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...), nil
@@ -354,7 +361,7 @@ func newAggregateExpression(e *parser.AggregateExpr, storage *engstore.SelectorP
 		return nil, err
 	}
 
-	return exchange.NewConcurrent(next, 2), nil
+	return exchange.NewConcurrent(withTelemetry(next, opts), 2), nil
 
 }
 
@@ -374,7 +381,7 @@ func newVectorBinaryOperator(e *parser.BinaryExpr, storage *engstore.SelectorPoo
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(model.NewVectorPool(opts.StepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
+	return binary.NewVectorOperator(model.NewVectorPool(opts.StepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts), nil
 }
 
 func newScalarBinaryOperator(e *parser.BinaryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -444,8 +451,8 @@ func newDeduplication(e logicalplan.Deduplicate, storage *engstore.SelectorPool,
 		}
 		operators[i] = operator
 	}
-	coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...)
-	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce)
+	coalesce := withTelemetry(exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...), opts)
+	dedup := withTelemetry(exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce), opts)
 	return exchange.NewConcurrent(dedup, 2), nil
 }
 
@@ -461,7 +468,7 @@ func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hint
 	// We need to set the lookback for the selector to 0 since the remote query already applies one lookback.
 	selectorOpts := *opts
 	selectorOpts.LookbackDelta = 0
-	remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints)
+	remoteExec := withTelemetry(remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints), opts)
 	return exchange.NewConcurrent(remoteExec, 2), nil
 }
 
@@ -502,4 +509,39 @@ func unpackVectorSelector(t *parser.MatrixSelector) (int64, *parser.VectorSelect
 	default:
 		return 0, nil, nil, parse.ErrNotSupportedExpr
 	}
+}
+
+type telemetryOperator struct {
+	model.VectorOperator
+	model.OperatorTelemetry
+}
+
+func withTelemetry(op model.VectorOperator, opts *query.Options) model.VectorOperator {
+	res := &telemetryOperator{VectorOperator: op}
+	res.OperatorTelemetry = &model.NoopTelemetry{}
+	if opts.EnableAnalysis {
+		res.OperatorTelemetry = &model.TrackedTelemetry{}
+	}
+	return res
+}
+
+func (o *telemetryOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
+
+	return o.VectorOperator.Next(ctx)
+}
+
+func (o *telemetryOperator) Analyze() (model.OperatorTelemetry, []model.Analyzeable) {
+	me, nextOps := o.VectorOperator.Explain()
+
+	obsOperators := make([]model.Analyzeable, 0, len(nextOps))
+	for _, operator := range nextOps {
+		if obsOperator, ok := operator.(model.Analyzeable); ok {
+			obsOperators = append(obsOperators, obsOperator)
+		}
+	}
+
+	o.OperatorTelemetry.SetName(me)
+	return o.OperatorTelemetry, obsOperators
 }

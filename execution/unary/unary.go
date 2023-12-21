@@ -6,7 +6,6 @@ package unary
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"gonum.org/v1/gonum/floats"
@@ -19,7 +18,6 @@ type unaryNegation struct {
 	once sync.Once
 
 	series []labels.Labels
-	model.OperatorTelemetry
 }
 
 func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
@@ -31,21 +29,11 @@ func NewUnaryNegation(
 	stepsBatch int,
 ) (model.VectorOperator, error) {
 	u := &unaryNegation{
-		next:              next,
-		OperatorTelemetry: &model.TrackedTelemetry{},
+		next: next,
 	}
 
 	return u, nil
 }
-func (u *unaryNegation) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	u.SetName("[*unaryNegation]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return u, next
-}
-
 func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := u.loadSeries(ctx); err != nil {
 		return nil, err
@@ -80,7 +68,6 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
 	in, err := u.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -91,6 +78,5 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	for i := range in {
 		floats.Scale(-1, in[i].Samples)
 	}
-	u.AddExecutionTimeTaken(time.Since(start))
 	return in, nil
 }

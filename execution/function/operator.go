@@ -8,11 +8,9 @@ import (
 	"fmt"
 	"math"
 	"sync"
-	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -32,14 +30,6 @@ type functionOperator struct {
 
 	call         functionCall
 	scalarPoints [][]float64
-	model.OperatorTelemetry
-}
-
-func SetTelemetry(opts *query.Options) model.OperatorTelemetry {
-	if opts.EnableAnalysis {
-		return &model.TrackedTelemetry{}
-	}
-	return &model.NoopTelemetry{}
 }
 
 func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
@@ -48,40 +38,35 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 	switch funcExpr.Func.Name {
 	case "scalar":
 		return &scalarFunctionOperator{
-			next:              nextOps[0],
-			pool:              model.NewVectorPoolWithSize(stepsBatch, 1),
-			OperatorTelemetry: SetTelemetry(opts),
+			next: nextOps[0],
+			pool: model.NewVectorPoolWithSize(stepsBatch, 1),
 		}, nil
 	case "timestamp":
 		return &timestampFunctionOperator{
-			next:              nextOps[0],
-			OperatorTelemetry: SetTelemetry(opts),
+			next: nextOps[0],
 		}, nil
 
 	case "label_join", "label_replace":
 		return &relabelFunctionOperator{
-			next:              nextOps[0],
-			funcExpr:          funcExpr,
-			OperatorTelemetry: SetTelemetry(opts),
+			next:     nextOps[0],
+			funcExpr: funcExpr,
 		}, nil
 
 	case "absent":
 		return &absentOperator{
-			next:              nextOps[0],
-			pool:              model.NewVectorPool(stepsBatch),
-			funcExpr:          funcExpr,
-			OperatorTelemetry: SetTelemetry(opts),
+			next:     nextOps[0],
+			pool:     model.NewVectorPool(stepsBatch),
+			funcExpr: funcExpr,
 		}, nil
 
 	case "histogram_quantile":
 		return &histogramOperator{
-			pool:              model.NewVectorPool(stepsBatch),
-			funcArgs:          funcExpr.Args,
-			once:              sync.Once{},
-			scalarOp:          nextOps[0],
-			vectorOp:          nextOps[1],
-			scalarPoints:      make([]float64, stepsBatch),
-			OperatorTelemetry: SetTelemetry(opts),
+			pool:         model.NewVectorPool(stepsBatch),
+			funcArgs:     funcExpr.Args,
+			once:         sync.Once{},
+			scalarOp:     nextOps[0],
+			vectorOp:     nextOps[1],
+			scalarPoints: make([]float64, stepsBatch),
 		}, nil
 	}
 
@@ -90,7 +75,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 		return newNoArgsFunctionOperator(funcExpr, stepsBatch, opts)
 	}
 	// All remaining functions
-	return newInstantVectorFunctionOperator(funcExpr, nextOps, stepsBatch, opts)
+	return newInstantVectorFunctionOperator(funcExpr, nextOps, stepsBatch)
 }
 
 func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
@@ -123,15 +108,10 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 		op.series = []labels.Labels{{}}
 		op.sampleIDs = []uint64{0}
 	}
-	op.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		op.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-
 	return op, nil
 }
 
-func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int) (model.VectorOperator, error) {
 	call, ok := instantVectorFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, UnknownFunctionError(funcExpr.Func.Name)
@@ -155,10 +135,6 @@ func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.Vec
 			break
 		}
 	}
-	f.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		f.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
 
 	// Check selector type.
 	switch funcExpr.Args[f.vectorIndex].Type() {
@@ -167,17 +143,6 @@ func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.Vec
 	default:
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
 	}
-}
-
-func (o *functionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*functionOperator]")
-	obsOperators := make([]model.ObservableVectorOperator, 0, len(o.nextOps))
-	for _, operator := range o.nextOps {
-		if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
-			obsOperators = append(obsOperators, obsOperator)
-		}
-	}
-	return o, obsOperators
 }
 
 func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -206,7 +171,6 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
-	start := time.Now()
 	// Process non-variadic single/multi-arg instant vector and scalar input functions.
 	// Call next on vector input.
 	vectors, err := o.nextOps[o.vectorIndex].Next(ctx)
@@ -265,9 +229,6 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			}
 		}
 	}
-
-	o.AddExecutionTimeTaken(time.Since(start))
-
 	return vectors, nil
 }
 

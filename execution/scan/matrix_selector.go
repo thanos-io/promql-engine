@@ -58,7 +58,6 @@ type matrixSelector struct {
 
 	// Lookback delta for extended range functions.
 	extLookbackDelta int64
-	model.OperatorTelemetry
 }
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
@@ -102,10 +101,6 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		m.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
 	if m.step == 0 {
@@ -113,11 +108,6 @@ func NewMatrixSelector(
 	}
 
 	return m, nil
-}
-
-func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*matrixSelector]")
-	return o, nil
 }
 
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
@@ -145,8 +135,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	if o.currentStep > o.maxt {
 		return nil, nil

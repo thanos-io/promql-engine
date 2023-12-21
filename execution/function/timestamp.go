@@ -5,7 +5,6 @@ package function
 
 import (
 	"context"
-	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 
@@ -14,16 +13,6 @@ import (
 
 type timestampFunctionOperator struct {
 	next model.VectorOperator
-	model.OperatorTelemetry
-}
-
-func (o *timestampFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*timestampFunctionOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return o, next
 }
 
 func (o *timestampFunctionOperator) Explain() (me string, next []model.VectorOperator) {
@@ -44,7 +33,6 @@ func (o *timestampFunctionOperator) Next(ctx context.Context) ([]model.StepVecto
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
 	in, err := o.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -54,6 +42,5 @@ func (o *timestampFunctionOperator) Next(ctx context.Context) ([]model.StepVecto
 			vector.Samples[i] = float64(vector.T / 1000)
 		}
 	}
-	o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start))
 	return in, nil
 }
