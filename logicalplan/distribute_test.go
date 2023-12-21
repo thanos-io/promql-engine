@@ -263,6 +263,21 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60)),
 remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 		},
 		{
+			name:     "subquery",
+			expr:     `sum_over_time(http_requests_total[5m:1m])`,
+			expected: `dedup(remote(sum_over_time(http_requests_total[5m:1m])), remote(sum_over_time(http_requests_total[5m:1m])))`,
+		},
+		{
+			name:     "subquery over range function",
+			expr:     `sum_over_time(rate(http_requests_total[5m])[5m:1m])`,
+			expected: `dedup(remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])), remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])))`,
+		},
+		{
+			name:     "subquery over range aggregation",
+			expr:     `sum_over_time(max(http_requests_total)[5m:1m])`,
+			expected: `sum_over_time(max(dedup(remote(max by (region) (http_requests_total)), remote(max by (region) (http_requests_total))))[5m:1m])`,
+		},
+		{
 			name:     "label based pruning matches one engine",
 			expr:     `sum by (pod) (rate(http_requests_total{region="west"}[2m]))`,
 			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="west"}[2m])))))`,
