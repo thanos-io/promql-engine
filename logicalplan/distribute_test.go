@@ -401,6 +401,36 @@ dedup(
 )`,
 		},
 		{
+			name: "subquery with a total 2h range is distributed with proper offsets",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr: `sum_over_time(sum_over_time(metric[1h])[1h:30m])`,
+			expected: `
+dedup(
+  remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])), 
+  remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])) [1970-01-01 08:00:00 +0000 UTC]
+)`,
+		},
+		{
+			name: "subquery with a total 4h range is cannot be distributed",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr:     `sum_over_time(sum_over_time(metric[2h])[2h:30m])`,
+			expected: `sum_over_time(sum_over_time(metric[2h])[2h:30m])`,
+		},
+		{
 			name: "sum over 3h does not distribute the query due to insufficient engine overlap",
 			firstEngineOpts: engineOpts{
 				minTime: queryStart,
