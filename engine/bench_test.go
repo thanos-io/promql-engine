@@ -136,6 +136,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 		storage *teststorage.TestStorage
 	}{
 		{
+			name:    "experiment",
+			query:   "sum(http_requests_total)",
+			storage: sixHourDataset,
+		},
+		{
 			name:    "vector selector",
 			query:   "http_requests_total",
 			storage: sixHourDataset,
@@ -298,7 +303,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
 		},
-		SelectorBatchSize: 256,
 	}
 
 	for _, tc := range cases {

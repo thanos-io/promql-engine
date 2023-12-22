@@ -46,27 +46,23 @@ func (m ShardedAggregations) Optimize(plan parser.Expr, _ *query.Options) (parse
 			return false
 		}
 		// TODO: only care about sum now
-		if aggr.Op != parser.SUM {
+		if aggr.Op == parser.COUNT {
 			return false
 		}
-		call, ok := (*current).(*parser.Call)
-		if !ok {
-			return false
-		}
-		if len(call.Args) != 1 {
-			return false
-		}
-		vs, ok := call.Args[0].(*parser.VectorSelector)
+		vs, ok := (*current).(*parser.VectorSelector)
 		if !ok {
 			return false
 		}
 
 		coalesce := Coalesce{make([]parser.Expr, m.Shards)}
 		for i := range coalesce.Shards {
-			coalesce.Shards[i] = &parser.Call{
-				Func:     call.Func,
-				PosRange: call.PosRange,
-				Args:     []parser.Expr{vectorSelectorForShard(vs, i, m.Shards)},
+			coalesce.Shards[i] = &parser.AggregateExpr{
+				Op:       aggr.Op,
+				Expr:     vectorSelectorForShard(vs, i, m.Shards),
+				Param:    aggr.Param,
+				Grouping: aggr.Grouping,
+				Without:  aggr.Without,
+				PosRange: aggr.PosRange,
 			}
 		}
 

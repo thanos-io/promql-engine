@@ -19,8 +19,8 @@ func TestShardedAggregations(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "sum exp",
-			expr:     `sum(exp(X))`,
+			name:     "sum",
+			expr:     `topk(10, X)`,
 			expected: ``,
 		},
 	}
