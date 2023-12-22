@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
@@ -19,6 +18,9 @@ type VectorSelector struct {
 	*parser.VectorSelector
 	Filters   []*labels.Matcher
 	BatchSize int64
+
+	N      int
+	Shards int
 }
 
 func (f VectorSelector) String() string {

@@ -11,9 +11,8 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/annotations"
-
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -24,6 +23,7 @@ var (
 )
 
 var DefaultOptimizers = []Optimizer{
+	ShardedAggregations{Shards: 8},
 	SortMatchers{},
 	MergeSelectsOptimizer{},
 }
