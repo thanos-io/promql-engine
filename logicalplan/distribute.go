@@ -413,9 +413,9 @@ func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.D
 		switch n := (*node).(type) {
 		case *parser.SubqueryExpr:
 			selectRange += n.Range
-		case *parser.MatrixSelector:
+		case *MatrixSelector:
 			selectRange += n.Range
-		case *parser.VectorSelector:
+		case *VectorSelector:
 			offset = n.Offset
 		}
 	})
@@ -469,7 +469,7 @@ func matchesExternalLabelSet(expr parser.Expr, externalLabelSet []labels.Labels)
 	}
 	var selectorSet [][]*labels.Matcher
 	traverse(&expr, func(current *parser.Expr) {
-		vs, ok := (*current).(*parser.VectorSelector)
+		vs, ok := (*current).(*VectorSelector)
 		if ok {
 			selectorSet = append(selectorSet, vs.LabelMatchers)
 		}

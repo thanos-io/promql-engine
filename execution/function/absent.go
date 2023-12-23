@@ -13,6 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type absentOperator struct {
@@ -49,10 +50,10 @@ func (o *absentOperator) loadSeries() {
 		// https://github.com/prometheus/prometheus/blob/main/promql/functions.go#L1385
 		var lm []*labels.Matcher
 		switch n := o.funcExpr.Args[0].(type) {
-		case *parser.VectorSelector:
+		case *logicalplan.VectorSelector:
 			lm = n.LabelMatchers
-		case *parser.MatrixSelector:
-			lm = n.VectorSelector.(*parser.VectorSelector).LabelMatchers
+		case *logicalplan.MatrixSelector:
+			lm = n.VectorSelector.(*logicalplan.VectorSelector).LabelMatchers
 		default:
 			o.series = []labels.Labels{labels.EmptyLabels()}
 			return
