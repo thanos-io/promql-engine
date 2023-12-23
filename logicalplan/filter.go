@@ -5,6 +5,7 @@ package logicalplan
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -16,21 +17,39 @@ import (
 // This should help us avoid dealing with both types in the entire codebase.
 type VectorSelector struct {
 	*parser.VectorSelector
+
 	Filters   []*labels.Matcher
 	BatchSize int64
 
-	N      int
 	Shards int
+	N      int
 }
 
 func (f VectorSelector) String() string {
-	if f.BatchSize != 0 && len(f.Filters) != 0 {
-		return fmt.Sprintf("filter(%s, %s[batch=%d])", f.Filters, f.VectorSelector.String(), f.BatchSize)
+	var b strings.Builder
+	var needComma bool
+	b.WriteString(f.VectorSelector.String())
+	b.WriteRune('[')
+	if len(f.Filters) > 0 {
+		b.WriteString(fmt.Sprintf("filters=%s", f.Filters))
+		needComma = true
 	}
-	if f.BatchSize != 0 {
-		return fmt.Sprintf("%s[batch=%d]", f.VectorSelector.String(), f.BatchSize)
+	if f.BatchSize > 0 {
+		if needComma {
+			b.WriteRune(',')
+		}
+		b.WriteString(fmt.Sprintf("batch=%d", f.BatchSize))
+		needComma = true
 	}
-	return fmt.Sprintf("filter(%s, %s)", f.Filters, f.VectorSelector.String())
+	if f.Shards > 0 {
+		if needComma {
+			b.WriteRune(',')
+		}
+		b.WriteString(fmt.Sprintf("shard=%d/%d", f.N, f.Shards))
+	}
+	b.WriteRune(']')
+
+	return b.String()
 }
 
 func (f VectorSelector) Pretty(level int) string { return f.String() }

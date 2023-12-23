@@ -21,7 +21,7 @@ func TestShardedAggregations(t *testing.T) {
 		{
 			name:     "sum",
 			expr:     `topk(10, X)`,
-			expected: ``,
+			expected: `topk(10, coalesce(topk(10, X[shard=0/2]), topk(10, X[shard=1/2])))`,
 		},
 	}
 

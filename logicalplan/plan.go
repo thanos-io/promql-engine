@@ -23,7 +23,6 @@ var (
 )
 
 var DefaultOptimizers = []Optimizer{
-	ShardedAggregations{Shards: 8},
 	SortMatchers{},
 	MergeSelectsOptimizer{},
 }
