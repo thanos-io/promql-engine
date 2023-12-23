@@ -2672,6 +2672,16 @@ func TestInstantQuery(t *testing.T) {
 		queryTime time.Time
 	}{
 		{
+			name: "experiment",
+			load: `load 30s
+              http_requests_total{pod="nginx-0", route="/"} 1+1x30
+              http_requests_total{pod="nginx-1", route="/"} 2+1x30
+              http_requests_total{pod="nginx-2", route="/"} 3+1x30
+              http_requests_total{pod="nginx-3", route="/"} 4+1x30`,
+			query:     `sum(exp(http_requests_total))`,
+			queryTime: time.Unix(300, 0),
+		},
+		{
 			name: "offset and @ modifiers",
 			load: `load 30s
               http_requests_total{pod="nginx-0", route="/"} 1+1x30`,

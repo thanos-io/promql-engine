@@ -79,6 +79,8 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return newRemoteExecution(e, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
+	case logicalplan.Coalesce:
+		return newCoalesce(e, storage, opts, hints)
 	case logicalplan.UserDefinedExpr:
 		return e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
 	default:
@@ -107,6 +109,13 @@ func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *q
 		offset = e.Offset
 		batchsize = e.BatchSize
 		selector = storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
+
+		if e.Shards > 0 {
+			return exchange.NewConcurrent(
+				scan.NewVectorSelector(
+					model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, e.N, e.Shards),
+				2), nil
+		}
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
 	}
@@ -463,6 +472,18 @@ func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hint
 	selectorOpts.LookbackDelta = 0
 	remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints)
 	return exchange.NewConcurrent(remoteExec, 2), nil
+}
+
+func newCoalesce(e logicalplan.Coalesce, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	operators := make([]model.VectorOperator, len(e.Shards))
+	for i, expr := range e.Shards {
+		operator, err := newOperator(expr, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		operators[i] = operator
+	}
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...), nil
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
