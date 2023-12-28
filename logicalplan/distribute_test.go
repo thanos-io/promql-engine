@@ -551,7 +551,7 @@ sum(
 			plan := New(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
-			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
 		})
 	}
 }

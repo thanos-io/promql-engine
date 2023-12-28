@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -19,6 +20,97 @@ import (
 var spaces = regexp.MustCompile(`\s+`)
 var openParenthesis = regexp.MustCompile(`\(\s+`)
 var closedParenthesis = regexp.MustCompile(`\s+\)`)
+
+// renderExprTree renders the expression into a string. It is useful
+// in tests to use strings for assertions in cases where the "String()"
+// method might not yield enough information or would panic because of
+// internal logical expression types. Implementations were largeley taken
+// from upstream prometheus.
+//
+// TODO: maybe its better to traverse the expression here and inject
+// new nodes with prepared String methods? Like replacing MatrixSelector
+// by testMatrixSelector that has a overridden string method?
+func renderExprTree(expr parser.Expr) string {
+	switch t := expr.(type) {
+	case *parser.NumberLiteral:
+		return fmt.Sprint(t.Val)
+	case *VectorSelector:
+		var b strings.Builder
+		base := t.VectorSelector.String()
+		if t.BatchSize > 0 {
+			base += fmt.Sprintf("[batch=%d]", t.BatchSize)
+		}
+		if len(t.Filters) > 0 {
+			b.WriteString("filter(")
+			b.WriteString(fmt.Sprintf("%s", t.Filters))
+			b.WriteString(", ")
+			b.WriteString(base)
+			b.WriteRune(')')
+			return b.String()
+		}
+		return base
+	case *MatrixSelector:
+		return t.String()
+	case *parser.BinaryExpr:
+		var b strings.Builder
+		b.WriteString(renderExprTree(t.LHS))
+		b.WriteString(" ")
+		b.WriteString(t.Op.String())
+		b.WriteString(" ")
+		if vm := t.VectorMatching; vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
+			vmTag := "ignoring"
+			if vm.On {
+				vmTag = "on"
+			}
+			matching := fmt.Sprintf("%s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
+
+			if vm.Card == parser.CardManyToOne || vm.Card == parser.CardOneToMany {
+				vmCard := "right"
+				if vm.Card == parser.CardManyToOne {
+					vmCard = "left"
+				}
+				matching += fmt.Sprintf(" group_%s (%s)", vmCard, strings.Join(vm.Include, ", "))
+			}
+			b.WriteString(matching)
+			b.WriteString(" ")
+		}
+		b.WriteString(renderExprTree(t.RHS))
+		return b.String()
+	case *parser.Call:
+		var b strings.Builder
+		b.Write([]byte(t.Func.Name))
+		b.WriteRune('(')
+		for i := range t.Args {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(renderExprTree(t.Args[i]))
+		}
+		b.WriteRune(')')
+		return b.String()
+	case *parser.AggregateExpr:
+		var b strings.Builder
+		b.Write([]byte(t.Op.String()))
+		switch {
+		case t.Without:
+			b.WriteString(fmt.Sprintf(" without (%s) ", strings.Join(t.Grouping, ", ")))
+		case len(t.Grouping) > 0:
+			b.WriteString(fmt.Sprintf(" by (%s) ", strings.Join(t.Grouping, ", ")))
+		}
+		b.WriteRune('(')
+		if t.Param != nil {
+			b.WriteString(renderExprTree(t.Param))
+			b.WriteString(", ")
+		}
+		b.WriteString(renderExprTree(t.Expr))
+		b.WriteRune(')')
+		return b.String()
+	case *parser.StepInvariantExpr:
+		return renderExprTree(t.Expr)
+	default:
+		return t.String()
+	}
+}
 
 func TestDefaultOptimizers(t *testing.T) {
 	cases := []struct {
@@ -91,7 +183,7 @@ func TestDefaultOptimizers(t *testing.T) {
 			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 			optimizedPlan, _ := plan.Optimize(DefaultOptimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
-			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
 		})
 	}
 }
@@ -133,7 +225,7 @@ func TestMatcherPropagation(t *testing.T) {
 			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
-			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
 		})
 	}
 }

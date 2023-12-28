@@ -9,11 +9,13 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
+
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/util/annotations"
-
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -51,6 +53,9 @@ func New(expr parser.Expr, opts *query.Options) Plan {
 	// * parens are just annoying and getting rid of them doesnt change the query
 	expr = trimParens(trimSorts(expr))
 
+	// replace scanners by our logical nodes
+	expr = replaceSelectors(expr)
+
 	return &plan{
 		expr: expr,
 		opts: opts,
@@ -82,13 +87,19 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		var x parser.Expr = node.VectorSelector
 		transform(expr)
 		traverse(&x, transform)
+	case *MatrixSelector:
+		var x parser.Expr = node.MatrixSelector
+		transform(expr)
+		traverse(&x, transform)
 	case *parser.MatrixSelector:
 		transform(expr)
 		traverse(&node.VectorSelector, transform)
 	case *parser.AggregateExpr:
 		transform(expr)
+		traverse(&node.Param, transform)
 		traverse(&node.Expr, transform)
 	case *parser.Call:
+		transform(expr)
 		for i := range node.Args {
 			traverse(&(node.Args[i]), transform)
 		}
@@ -97,8 +108,10 @@ func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		traverse(&node.LHS, transform)
 		traverse(&node.RHS, transform)
 	case *parser.UnaryExpr:
+		transform(expr)
 		traverse(&node.Expr, transform)
 	case *parser.ParenExpr:
+		transform(expr)
 		traverse(&node.Expr, transform)
 	case *parser.SubqueryExpr:
 		transform(expr)
@@ -121,6 +134,12 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			return stop
 		}
 		var x parser.Expr = node.VectorSelector
+		return TraverseBottomUp(current, &x, transform)
+	case *MatrixSelector:
+		if stop := transform(parent, current); stop {
+			return stop
+		}
+		var x parser.Expr = node.MatrixSelector
 		return TraverseBottomUp(current, &x, transform)
 	case *parser.MatrixSelector:
 		return transform(current, &node.VectorSelector)
@@ -158,6 +177,18 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	}
 
 	return true
+}
+
+func replaceSelectors(plan parser.Expr) parser.Expr {
+	traverse(&plan, func(current *parser.Expr) {
+		switch t := (*current).(type) {
+		case *parser.MatrixSelector:
+			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String()}
+		case *parser.VectorSelector:
+			*current = &VectorSelector{VectorSelector: t}
+		}
+	})
+	return plan
 }
 
 func trimSorts(expr parser.Expr) parser.Expr {
@@ -377,3 +408,43 @@ func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 		return nil
 	})
 }
+
+// VectorSelector is vector selector with additional configuration set by optimizers.
+type VectorSelector struct {
+	*parser.VectorSelector
+	Filters   []*labels.Matcher
+	BatchSize int64
+}
+
+func (f VectorSelector) String() string {
+	return f.VectorSelector.String()
+}
+
+func (f VectorSelector) Pretty(level int) string { return f.String() }
+
+func (f VectorSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+
+func (f VectorSelector) Type() parser.ValueType { return parser.ValueTypeVector }
+
+func (f VectorSelector) PromQLExpr() {}
+
+// MatrixSelector is matrix selector with additional configuration set by optimizers.
+// It is used so we can get rid of VectorSelector in distributed mode too.
+type MatrixSelector struct {
+	*parser.MatrixSelector
+
+	// Needed because this operator is used in the distributed mode
+	OriginalString string
+}
+
+func (f MatrixSelector) String() string {
+	return f.OriginalString
+}
+
+func (f MatrixSelector) Pretty(level int) string { return f.String() }
+
+func (f MatrixSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+
+func (f MatrixSelector) Type() parser.ValueType { return parser.ValueTypeVector }
+
+func (f MatrixSelector) PromQLExpr() {}

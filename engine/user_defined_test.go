@@ -66,10 +66,10 @@ type injectVectorSelector struct{}
 
 func (i injectVectorSelector) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
 	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *parser.Expr) bool {
-		switch (*current).(type) {
-		case *parser.VectorSelector:
+		switch t := (*current).(type) {
+		case *logicalplan.VectorSelector:
 			*current = &logicalVectorSelector{
-				VectorSelector: (*current).(*parser.VectorSelector),
+				VectorSelector: t,
 			}
 		}
 		return false
@@ -78,7 +78,7 @@ func (i injectVectorSelector) Optimize(plan parser.Expr, opts *query.Options) (p
 }
 
 type logicalVectorSelector struct {
-	*parser.VectorSelector
+	*logicalplan.VectorSelector
 }
 
 func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, _ *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {

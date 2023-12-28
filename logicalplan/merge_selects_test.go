@@ -47,7 +47,7 @@ func TestMergeSelects(t *testing.T) {
 
 			plan := New(expr, &query.Options{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
-			testutil.Equals(t, tcase.expected, optimizedPlan.Expr().String())
+			testutil.Equals(t, tcase.expected, renderExprTree(optimizedPlan.Expr()))
 		})
 	}
 }

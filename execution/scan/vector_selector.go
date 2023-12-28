@@ -169,7 +169,6 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.currentStep += o.step * int64(o.numSteps)
 		o.currentSeries = 0
 	}
-
 	return vectors, nil
 }
 

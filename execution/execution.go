@@ -19,7 +19,6 @@ package execution
 import (
 	"runtime"
 	"sort"
-	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -59,8 +58,8 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	switch e := expr.(type) {
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
-	case *parser.VectorSelector, *logicalplan.VectorSelector:
-		return newVectorSelector(expr, storage, opts, hints)
+	case *logicalplan.VectorSelector:
+		return newVectorSelector(e, storage, opts, hints)
 	case *parser.Call:
 		return newCall(e, storage, opts, hints)
 	case *parser.AggregateExpr:
@@ -82,34 +81,18 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case logicalplan.UserDefinedExpr:
 		return e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
 	default:
-		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
+		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
 	}
 }
 
-func newVectorSelector(expr parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	var (
-		batchsize int64
-		offset    time.Duration
-		selector  engstore.SeriesSelector
-	)
-	switch e := expr.(type) {
-	case *parser.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e, opts, 0)
-		hints.Start = start
-		hints.End = end
-		offset = e.Offset
-		batchsize = 0
-		selector = storage.GetSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, hints)
-	case *logicalplan.VectorSelector:
-		start, end := getTimeRangesForVectorSelector(e.VectorSelector, opts, 0)
-		hints.Start = start
-		hints.End = end
-		offset = e.Offset
-		batchsize = e.BatchSize
-		selector = storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
-	default:
-		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s", e)
-	}
+func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	start, end := getTimeRangesForVectorSelector(e, opts, 0)
+	hints.Start = start
+	hints.End = end
+
+	offset := e.Offset
+	batchsize := e.BatchSize
+	selector := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
 
 	numShards := runtime.GOMAXPROCS(0) / 2
 	if numShards < 1 {
@@ -138,19 +121,13 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 	}
 	if e.Func.Name == "timestamp" {
 		switch arg := e.Args[0].(type) {
-		case *logicalplan.VectorSelector, *parser.VectorSelector:
+		case *logicalplan.VectorSelector:
 			// We push down the timestamp function into the scanner through the hints.
-			return newVectorSelector(e.Args[0], storage, opts, hints)
+			return newVectorSelector(arg, storage, opts, hints)
 		case *parser.StepInvariantExpr:
 			// Step invariant expressions on vector selectors need to be unwrapped so that we
 			// can return the original timestamp rather than the step invariant one.
 			switch vs := arg.Expr.(type) {
-			case *parser.VectorSelector:
-				// Prometheus weirdness.
-				if vs.Timestamp != nil {
-					vs.OriginalOffset = 0
-				}
-				return newVectorSelector(vs, storage, opts, hints)
 			case *logicalplan.VectorSelector:
 				// Prometheus weirdness.
 				if vs.Timestamp != nil {
@@ -175,7 +152,7 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 				return nil, parse.ErrNotImplemented
 			}
 			return newSubqueryFunction(e, t, storage, opts, hints)
-		case *parser.MatrixSelector:
+		case *logicalplan.MatrixSelector:
 			return newRangeVectorFunction(e, t, storage, opts, hints)
 		}
 	}
@@ -203,7 +180,7 @@ func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool
 			Args: []parser.Expr{matrixCall},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
-	case *parser.MatrixSelector:
+	case *logicalplan.MatrixSelector:
 		matrixCall := &parser.Call{
 			Func: &parser.Function{Name: "last_over_time"},
 			Args: call.Args,
@@ -221,9 +198,12 @@ func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool
 		vs.LabelMatchers = append(vs.LabelMatchers, filters...)
 		f := &parser.Call{
 			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{&parser.MatrixSelector{
-				VectorSelector: vs,
-				Range:          arg.Range,
+			Args: []parser.Expr{&logicalplan.MatrixSelector{
+				MatrixSelector: &parser.MatrixSelector{
+					VectorSelector: vs,
+					Range:          arg.Range,
+				},
+				OriginalString: arg.String(),
 			}},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
@@ -232,7 +212,7 @@ func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool
 	}
 }
 
-func newRangeVectorFunction(e *parser.Call, t *parser.MatrixSelector, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	batchSize, vs, filters, err := unpackVectorSelector(t)
@@ -466,7 +446,7 @@ func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hint
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
-func getTimeRangesForVectorSelector(n *parser.VectorSelector, opts *query.Options, evalRange int64) (int64, int64) {
+func getTimeRangesForVectorSelector(n *logicalplan.VectorSelector, opts *query.Options, evalRange int64) (int64, int64) {
 	start := opts.Start.UnixMilli()
 	end := opts.End.UnixMilli()
 	if n.Timestamp != nil {
@@ -493,12 +473,10 @@ func unwrapConstVal(e parser.Expr) (float64, error) {
 	return 0, errors.Wrap(parse.ErrNotSupportedExpr, "matrix selector argument must be a constant")
 }
 
-func unpackVectorSelector(t *parser.MatrixSelector) (int64, *parser.VectorSelector, []*labels.Matcher, error) {
+func unpackVectorSelector(t *logicalplan.MatrixSelector) (int64, *logicalplan.VectorSelector, []*labels.Matcher, error) {
 	switch t := t.VectorSelector.(type) {
-	case *parser.VectorSelector:
-		return 0, t, nil, nil
 	case *logicalplan.VectorSelector:
-		return t.BatchSize, t.VectorSelector, t.Filters, nil
+		return t.BatchSize, t, t.Filters, nil
 	default:
 		return 0, nil, nil, parse.ErrNotSupportedExpr
 	}

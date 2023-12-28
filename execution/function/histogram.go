@@ -13,7 +13,6 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -174,8 +173,8 @@ func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]mo
 		out = append(out, step)
 		o.vectorOp.GetPool().PutStepVector(vector)
 	}
-
 	o.vectorOp.GetPool().PutVectors(vectors)
+
 	return out, nil
 }
 
