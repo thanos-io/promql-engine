@@ -10,7 +10,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/prometheus/client_golang v1.17.0
 	github.com/prometheus/common v0.45.0
-	github.com/prometheus/prometheus v0.48.1-0.20231212213830-d0c2d9c0b9cc
+	github.com/prometheus/prometheus v0.48.1-0.20231225214503-6b8e9453881b
 	github.com/stretchr/testify v1.8.4
 	github.com/zhangyunhao116/umap v0.0.0-20221211160557-cb7705fafa39
 	go.uber.org/goleak v1.3.0
@@ -100,6 +100,8 @@ require (
 	k8s.io/klog/v2 v2.110.1 // indirect
 	k8s.io/utils v0.0.0-20230711102312-30195339c3c7 // indirect
 )
+
+replace github.com/prometheus/prometheus => github.com/fpetkovski/prometheus v1.8.2-0.20231214104828-c4a187f37076
 
 exclude (
 	// Exclude erronous modules that cause go mod tidy with go 1.19.1 to fail with
