@@ -1802,6 +1802,19 @@ load 30s
 				       http_requests_total{pod="nginx-2", series="2"} 2+2x50`,
 			query: "sum_over_time(sum by (pod) (http_requests_total)[5m:1m])",
 		},
+		{
+			name: "rate subquery with outer @ modifier",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2x50`,
+			query: "rate(http_requests_total[20s:10s] @ 100)",
+		},
+		{
+			name: "rate subquery with offset",
+			load: `load 10s
+				       http_requests_total{pod="nginx-1", series="1"} 1+2x40`,
+			query: "rate(http_requests_total[20s:10s] offset 20s)",
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}

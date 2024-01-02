@@ -43,6 +43,10 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 	if err != nil {
 		return nil, err
 	}
+	step := opts.Step.Milliseconds()
+	if step == 0 {
+		step = 1
+	}
 	return &subqueryOperator{
 		next:          next,
 		call:          call,
@@ -52,7 +56,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		currentStep:   opts.Start.UnixMilli(),
-		step:          opts.Step.Milliseconds(),
+		step:          step,
 		lastCollected: -1,
 	}, nil
 }
@@ -76,16 +80,17 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		return nil, err
 	}
 
-	mint := o.currentStep - o.subQuery.Range.Milliseconds()
+	mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
+	maxt := o.currentStep - o.subQuery.OriginalOffset.Milliseconds()
 	for _, b := range o.buffers {
 		b.DropBefore(mint)
 	}
 	if len(o.lastVectors) > 0 {
 		for _, v := range o.lastVectors[o.lastCollected+1:] {
-			if v.T > o.currentStep {
+			if v.T > maxt {
 				break
 			}
-			o.collect(v)
+			o.collect(v, mint)
 			o.lastCollected++
 		}
 		if o.lastCollected == len(o.lastVectors)-1 {
@@ -105,11 +110,11 @@ ACC:
 			break ACC
 		}
 		for i, vector := range vectors {
-			if vector.T > o.currentStep {
+			if vector.T > maxt {
 				o.lastVectors = vectors
 				break ACC
 			}
-			o.collect(vector)
+			o.collect(vector, mint)
 			o.lastCollected = i
 		}
 		o.next.GetPool().PutVectors(vectors)
@@ -120,9 +125,8 @@ ACC:
 	for sampleId, rangeSamples := range o.buffers {
 		f, h, ok := o.call(FunctionArgs{
 			Samples:     rangeSamples.Samples(),
-			StepTime:    o.currentStep,
+			StepTime:    maxt,
 			SelectRange: o.subQuery.Range.Milliseconds(),
-			Offset:      o.subQuery.Offset.Milliseconds(),
 		})
 		if ok {
 			if h != nil {
@@ -138,17 +142,17 @@ ACC:
 	return res, nil
 }
 
-func (o *subqueryOperator) collect(v model.StepVector) {
+func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 	for i, s := range v.Samples {
 		buffer := o.buffers[v.SampleIDs[i]]
-		if buffer.Len() > 0 && v.T <= buffer.MaxT() {
+		if buffer.Len() > 0 && v.T <= buffer.MaxT() || v.T < mint {
 			continue
 		}
 		buffer.Push(v.T, Value{F: s})
 	}
 	for i, s := range v.Histograms {
 		buffer := o.buffers[v.SampleIDs[i]]
-		if buffer.Len() > 0 && v.T < buffer.MaxT() {
+		if buffer.Len() > 0 && v.T < buffer.MaxT() || v.T < mint {
 			continue
 		}
 		buffer.Push(v.T, Value{H: s})

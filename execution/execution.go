@@ -19,6 +19,7 @@ package execution
 import (
 	"runtime"
 	"sort"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -277,7 +278,13 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engsto
 	if err != nil {
 		return nil, err
 	}
-	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, opts, e, t)
+
+	outerOpts := *opts
+	if t.Timestamp != nil {
+		outerOpts.Start = time.UnixMilli(*t.Timestamp)
+		outerOpts.End = time.UnixMilli(*t.Timestamp)
+	}
+	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, &outerOpts, e, t)
 }
 
 func newInstantVectorFunction(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
