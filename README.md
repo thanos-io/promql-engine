@@ -14,10 +14,10 @@ The following table shows operations which are currently supported by the engine
 |------------------------|------------------------------------------------------------------------------------------------|----------|
 | Binary expressions     | Full support                                                                                   |          |
 | Histograms             | Full support                                                                                   |          |
+| Subqueries             | Full support                                                                                   |          |
 | Aggregations           | Full support except for `count_values`                                                         | Medium   |
 | Aggregations over time | Full support except for `absent_over_time` and `quantile_over_time` with non-constant argument | Medium   |
 | Functions              | Close to full support (see https://github.com/thanos-io/promql-engine/issues/138)              | Medium   |
-| Subqueries             | Only instant queries (see https://github.com/thanos-io/promql-engine/pull/280)                 | Low      |
 
 ## Design
 

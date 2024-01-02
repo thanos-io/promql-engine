@@ -165,11 +165,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query:   "rate(http_requests_total[1m])",
 			storage: sixHourDataset,
 		},
-		{
-			name:    "subquery",
-			query:   "sum_over_time(rate(http_requests_total[1m])[10m:1m])",
-			storage: sixHourDataset,
-		},
 		/*
 			{
 				name:    "rate with large range selection",

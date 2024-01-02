@@ -143,16 +143,20 @@ ACC:
 }
 
 func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
+	if v.T < mint {
+		o.next.GetPool().PutStepVector(v)
+		return
+	}
 	for i, s := range v.Samples {
 		buffer := o.buffers[v.SampleIDs[i]]
-		if buffer.Len() > 0 && v.T <= buffer.MaxT() || v.T < mint {
+		if buffer.Len() > 0 && v.T <= buffer.MaxT() {
 			continue
 		}
 		buffer.Push(v.T, Value{F: s})
 	}
 	for i, s := range v.Histograms {
 		buffer := o.buffers[v.HistogramIDs[i]]
-		if buffer.Len() > 0 && v.T < buffer.MaxT() || v.T < mint {
+		if buffer.Len() > 0 && v.T < buffer.MaxT() {
 			continue
 		}
 		buffer.Push(v.T, Value{H: s})
@@ -189,6 +193,7 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 			}
 			o.series[i] = lbls
 		}
+		o.pool.SetStepSize(len(o.series))
 	})
 	return err
 }
