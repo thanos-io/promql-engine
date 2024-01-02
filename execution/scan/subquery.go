@@ -26,6 +26,7 @@ type subqueryOperator struct {
 	maxt        int64
 	currentStep int64
 	step        int64
+	stepsBatch  int
 
 	funcExpr *parser.Call
 	subQuery *parser.SubqueryExpr
@@ -57,6 +58,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 		maxt:          opts.End.UnixMilli(),
 		currentStep:   opts.Start.UnixMilli(),
 		step:          step,
+		stepsBatch:    opts.StepsBatch,
 		lastCollected: -1,
 	}, nil
 }
@@ -80,65 +82,67 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		return nil, err
 	}
 
-	mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
-	maxt := o.currentStep - o.subQuery.OriginalOffset.Milliseconds()
-	for _, b := range o.buffers {
-		b.DropBefore(mint)
-	}
-	if len(o.lastVectors) > 0 {
-		for _, v := range o.lastVectors[o.lastCollected+1:] {
-			if v.T > maxt {
-				break
+	res := o.pool.GetVectorBatch()
+	for i := 0; o.currentStep <= o.maxt && i < o.stepsBatch; i++ {
+		mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
+		maxt := o.currentStep - o.subQuery.OriginalOffset.Milliseconds()
+		for _, b := range o.buffers {
+			b.DropBefore(mint)
+		}
+		if len(o.lastVectors) > 0 {
+			for _, v := range o.lastVectors[o.lastCollected+1:] {
+				if v.T > maxt {
+					break
+				}
+				o.collect(v, mint)
+				o.lastCollected++
 			}
-			o.collect(v, mint)
-			o.lastCollected++
+			if o.lastCollected == len(o.lastVectors)-1 {
+				o.next.GetPool().PutVectors(o.lastVectors)
+				o.lastVectors = nil
+				o.lastCollected = -1
+			}
 		}
-		if o.lastCollected == len(o.lastVectors)-1 {
-			o.next.GetPool().PutVectors(o.lastVectors)
-			o.lastVectors = nil
-			o.lastCollected = -1
-		}
-	}
 
-ACC:
-	for len(o.lastVectors) == 0 {
-		vectors, err := o.next.Next(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if len(vectors) == 0 {
-			break ACC
-		}
-		for i, vector := range vectors {
-			if vector.T > maxt {
-				o.lastVectors = vectors
+	ACC:
+		for len(o.lastVectors) == 0 {
+			vectors, err := o.next.Next(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if len(vectors) == 0 {
 				break ACC
 			}
-			o.collect(vector, mint)
-			o.lastCollected = i
+			for j, vector := range vectors {
+				if vector.T > maxt {
+					o.lastVectors = vectors
+					break ACC
+				}
+				o.collect(vector, mint)
+				o.lastCollected = j
+			}
+			o.next.GetPool().PutVectors(vectors)
 		}
-		o.next.GetPool().PutVectors(vectors)
-	}
 
-	res := o.pool.GetVectorBatch()
-	sv := o.pool.GetStepVector(o.currentStep)
-	for sampleId, rangeSamples := range o.buffers {
-		f, h, ok := o.call(FunctionArgs{
-			Samples:     rangeSamples.Samples(),
-			StepTime:    maxt,
-			SelectRange: o.subQuery.Range.Milliseconds(),
-		})
-		if ok {
-			if h != nil {
-				sv.AppendHistogram(o.pool, uint64(sampleId), h)
-			} else {
-				sv.AppendSample(o.pool, uint64(sampleId), f)
+		sv := o.pool.GetStepVector(o.currentStep)
+		for sampleId, rangeSamples := range o.buffers {
+			f, h, ok := o.call(FunctionArgs{
+				Samples:     rangeSamples.Samples(),
+				StepTime:    maxt,
+				SelectRange: o.subQuery.Range.Milliseconds(),
+			})
+			if ok {
+				if h != nil {
+					sv.AppendHistogram(o.pool, uint64(sampleId), h)
+				} else {
+					sv.AppendSample(o.pool, uint64(sampleId), f)
+				}
 			}
 		}
-	}
-	res = append(res, sv)
+		res = append(res, sv)
 
-	o.currentStep += o.step
+		o.currentStep += o.step
+	}
 	return res, nil
 }
 
