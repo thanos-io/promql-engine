@@ -47,7 +47,6 @@ func TestMain(m *testing.M) {
 
 func TestPromqlAcceptance(t *testing.T) {
 	engine := engine.New(engine.Opts{
-		EnableSubqueries: true,
 		EngineOpts: promql.EngineOpts{
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
@@ -1850,7 +1849,6 @@ load 30s
 								newEngine := engine.New(engine.Opts{
 									EngineOpts:        opts,
 									DisableFallback:   disableFallback,
-									EnableSubqueries:  true,
 									LogicalOptimizers: optimizers,
 									// Set to 1 to make sure batching is tested.
 									SelectorBatchSize: 1,
@@ -3836,7 +3834,6 @@ absent_over_time({__name__="http_requests_total",route="/"}[3m] offset 1m45s)`,
 									EngineOpts:        opts,
 									DisableFallback:   disableFallback,
 									LogicalOptimizers: optimizers,
-									EnableSubqueries:  true,
 								})
 
 								ctx := context.Background()
@@ -4709,7 +4706,6 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						EngineOpts:        opts,
 						DisableFallback:   true,
 						LogicalOptimizers: logicalplan.AllOptimizers,
-						EnableSubqueries:  true,
 					})
 
 					t.Run("instant", func(t *testing.T) {

@@ -146,9 +146,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 	for i := range e.Args {
 		switch t := e.Args[i].(type) {
 		case *parser.SubqueryExpr:
-			if !opts.EnableSubqueries {
-				return nil, parse.ErrNotImplemented
-			}
 			return newSubqueryFunction(e, t, storage, opts, hints)
 		case *logicalplan.MatrixSelector:
 			return newRangeVectorFunction(e, t, storage, opts, hints)
@@ -160,9 +157,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
 	case *parser.SubqueryExpr:
-		if !opts.EnableSubqueries {
-			return nil, parse.ErrNotImplemented
-		}
 		matrixCall := &parser.Call{
 			Func: &parser.Function{Name: "last_over_time"},
 		}

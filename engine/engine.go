@@ -65,10 +65,6 @@ type Opts struct {
 	// This will default to false.
 	EnableXFunctions bool
 
-	// EnableSubqueries enables the engine to handle subqueries without falling back to prometheus.
-	// This will default to false.
-	EnableSubqueries bool
-
 	// FallbackEngine
 	Engine v1.QueryEngine
 
@@ -158,7 +154,6 @@ func New(opts Opts) *compatibilityEngine {
 		metrics:           metrics,
 		extLookbackDelta:  opts.ExtLookbackDelta,
 		enableAnalysis:    opts.EnableAnalysis,
-		enableSubqueries:  opts.EnableSubqueries,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
@@ -178,7 +173,6 @@ type compatibilityEngine struct {
 
 	extLookbackDelta         time.Duration
 	enableAnalysis           bool
-	enableSubqueries         bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
@@ -213,7 +207,6 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 		LookbackDelta:            opts.LookbackDelta(),
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
-		EnableSubqueries:         e.enableSubqueries,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 	}
 
@@ -266,7 +259,6 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		LookbackDelta:            opts.LookbackDelta(),
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
-		EnableSubqueries:         e.enableSubqueries,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 	}
 
