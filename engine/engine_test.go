@@ -18,15 +18,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
-
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
-	"go.uber.org/goleak"
-	"golang.org/x/exp/maps"
-
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+	"golang.org/x/exp/maps"
 
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -1776,6 +1774,12 @@ load 30s
 			load: `load 30s
               X{a="b"}  1x10`,
 			query: `absent_over_time(X{a!="b"}[1m])`,
+		},
+		{
+			name: "subquery in binary expression",
+			load: `load 60s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1x40`,
+			query: "http_requests_total * (sum_over_time(http_requests_total[5m:1m]) > 0)",
 		},
 		{
 			name: "sum_over_time subquery with outer step larger than inner step",
