@@ -151,7 +151,7 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 		buffer.Push(v.T, Value{F: s})
 	}
 	for i, s := range v.Histograms {
-		buffer := o.buffers[v.SampleIDs[i]]
+		buffer := o.buffers[v.HistogramIDs[i]]
 		if buffer.Len() > 0 && v.T < buffer.MaxT() || v.T < mint {
 			continue
 		}

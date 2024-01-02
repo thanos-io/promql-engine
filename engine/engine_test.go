@@ -4672,9 +4672,8 @@ func TestNativeHistograms(t *testing.T) {
 			query: "native_histogram_series / 2",
 		},
 		{
-			name:        "subqueries",
-			query:       "increase(rate(native_histogram_series[2m])[2m:15s])",
-			onlyInstant: true,
+			name:  "subqueries",
+			query: "increase(rate(native_histogram_series[2m])[2m:15s])",
 		},
 	}
 
