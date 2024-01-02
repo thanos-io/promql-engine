@@ -19,6 +19,7 @@ package execution
 import (
 	"runtime"
 	"sort"
+	"time"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -145,9 +146,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 	for i := range e.Args {
 		switch t := e.Args[i].(type) {
 		case *parser.SubqueryExpr:
-			if !opts.IsInstantQuery() {
-				return nil, parse.ErrNotImplemented
-			}
 			if !opts.EnableSubqueries {
 				return nil, parse.ErrNotImplemented
 			}
@@ -162,9 +160,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
 	case *parser.SubqueryExpr:
-		if !opts.IsInstantQuery() {
-			return nil, parse.ErrNotImplemented
-		}
 		if !opts.EnableSubqueries {
 			return nil, parse.ErrNotImplemented
 		}
@@ -273,9 +268,6 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engsto
 		return nil, parse.ErrNotImplemented
 	}
 	// TODO: only instant queries for now.
-	if !opts.IsInstantQuery() {
-		return nil, parse.ErrNotImplemented
-	}
 	nOpts := query.NestedOptionsForSubquery(opts, t)
 
 	hints.Start = nOpts.Start.UnixMilli()
@@ -286,7 +278,13 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engsto
 	if err != nil {
 		return nil, err
 	}
-	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, opts, e, t)
+
+	outerOpts := *opts
+	if t.Timestamp != nil {
+		outerOpts.Start = time.UnixMilli(*t.Timestamp)
+		outerOpts.End = time.UnixMilli(*t.Timestamp)
+	}
+	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, &outerOpts, e, t)
 }
 
 func newInstantVectorFunction(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {

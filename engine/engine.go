@@ -266,7 +266,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		LookbackDelta:            opts.LookbackDelta(),
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
-		EnableSubqueries:         false, // not yet implemented for range queries.
+		EnableSubqueries:         e.enableSubqueries,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 	}
 

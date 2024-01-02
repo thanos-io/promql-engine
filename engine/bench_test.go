@@ -165,6 +165,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query:   "rate(http_requests_total[1m])",
 			storage: sixHourDataset,
 		},
+		{
+			name:    "subquery",
+			query:   "sum_over_time(rate(http_requests_total[1m])[10m:1m])",
+			storage: sixHourDataset,
+		},
 		/*
 			{
 				name:    "rate with large range selection",
@@ -299,6 +304,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 			EnableNegativeOffset: true,
 		},
 		SelectorBatchSize: 256,
+		EnableSubqueries:  true,
 	}
 
 	for _, tc := range cases {
@@ -409,7 +415,10 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					ng := engine.New(engine.Opts{EngineOpts: opts})
+					ng := engine.New(engine.Opts{
+						EngineOpts:       opts,
+						EnableSubqueries: true,
+					})
 
 					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
 					testutil.Ok(b, err)
