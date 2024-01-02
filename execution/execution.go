@@ -261,7 +261,10 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engsto
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
 	}
-	// TODO: only instant queries for now.
+	// TODO: We dont pass arguments yet
+	if e.Func.Name == "quantile_over_time" {
+		return nil, parse.ErrNotImplemented
+	}
 	nOpts := query.NestedOptionsForSubquery(opts, t)
 
 	hints.Start = nOpts.Start.UnixMilli()
