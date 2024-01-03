@@ -32,7 +32,7 @@ const testRuns = 100
 
 type testCase struct {
 	query          string
-	load, load2    string
+	loads          []string
 	oldRes, newRes *promql.Result
 }
 
@@ -114,7 +114,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
-				load:   load,
+				loads:  []string{load},
 			}
 		}
 		validateTestCases(t, cases)
@@ -195,7 +195,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
-				load:   load,
+				loads:  []string{load},
 			}
 		}
 		validateTestCases(t, cases)
@@ -309,8 +309,7 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
-				load:   load,
-				load2:  load2,
+				loads:  []string{load, load2},
 			}
 		}
 		validateTestCases(t, cases)
@@ -413,8 +412,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 				query:  query,
 				newRes: newResult,
 				oldRes: oldResult,
-				load:   load,
-				load2:  load2,
+				loads:  []string{load, load2},
 			}
 		}
 		validateTestCases(t, cases)
@@ -442,9 +440,8 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	failures := 0
 	for i, c := range cases {
 		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
-			t.Logf(c.load)
-			if len(c.load2) > 0 {
-				t.Logf(c.load2)
+			for _, load := range c.loads {
+				t.Logf(load)
 			}
 			t.Logf(c.query)
 
