@@ -4,7 +4,7 @@ go 1.20
 
 require (
 	github.com/cespare/xxhash/v2 v2.2.0
-	github.com/cortexproject/promqlsmith v0.0.0-20231206201345-a7d143cf5966
+	github.com/cortexproject/promqlsmith v0.0.0-20240103062231-e3aada49136f
 	github.com/efficientgo/core v1.0.0-rc.2
 	github.com/go-kit/log v0.2.1
 	github.com/google/go-cmp v0.6.0

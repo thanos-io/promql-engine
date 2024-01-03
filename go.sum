@@ -37,8 +37,8 @@ github.com/cespare/xxhash/v2 v2.1.1/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XL
 github.com/cespare/xxhash/v2 v2.2.0 h1:DC2CZ1Ep5Y4k3ZQ899DldepgrayRUGE6BBZ/cd9Cj44=
 github.com/cespare/xxhash/v2 v2.2.0/go.mod h1:VGX0DQ3Q6kWi7AoAeZDth3/j3BFtOZR5XLFGgcrjCOs=
 github.com/cncf/xds/go v0.0.0-20230607035331-e9ce68804cb4 h1:/inchEIKaYC1Akx+H+gqO04wryn5h75LSazbRlnya1k=
-github.com/cortexproject/promqlsmith v0.0.0-20231206201345-a7d143cf5966 h1:KvukHFhAxCBTsWA4CHKVTIZaQ+wHX71ZpqUz2HSOhLw=
-github.com/cortexproject/promqlsmith v0.0.0-20231206201345-a7d143cf5966/go.mod h1:89R0fjNCjntWZFJYjZ906Sh0w9VNIkCHA/GwNQ6Zqk0=
+github.com/cortexproject/promqlsmith v0.0.0-20240103062231-e3aada49136f h1:0IyHUBbWzCxe/dgjBCQcIv4ZIc7Rvlp2jXVYibcoAW8=
+github.com/cortexproject/promqlsmith v0.0.0-20240103062231-e3aada49136f/go.mod h1:by/B++NlNa8Hp+d2054cy3YR4ijhPNGnuWjUWOUppms=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
