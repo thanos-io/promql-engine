@@ -9,11 +9,10 @@ import (
 	"math"
 	"sync"
 
-	"golang.org/x/exp/slices"
-
 	"github.com/cespare/xxhash/v2"
 	"github.com/efficientgo/core/errors"
 	"github.com/zhangyunhao116/umap"
+	"golang.org/x/exp/slices"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"

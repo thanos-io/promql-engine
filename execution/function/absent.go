@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -35,7 +34,7 @@ func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableV
 }
 
 func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*absentOperator]", []model.VectorOperator{}
+	return "[*absentOperator]", []model.VectorOperator{o.next}
 }
 
 func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {

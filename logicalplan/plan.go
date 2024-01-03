@@ -8,8 +8,6 @@ import (
 	"math"
 	"time"
 
-	"github.com/efficientgo/core/errors"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
@@ -397,16 +395,16 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 }
 
 func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
-	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
-		switch n := node.(type) {
-		case *parser.SubqueryExpr:
-			nOpts := query.NestedOptionsForSubquery(opts, n)
-			setOffsetForAtModifier(nOpts.Start.UnixMilli(), n.Expr)
-			setOffsetForInnerSubqueries(n.Expr, nOpts)
-			return errors.New("stop iteration")
+	switch n := expr.(type) {
+	case *parser.SubqueryExpr:
+		nOpts := query.NestedOptionsForSubquery(opts, n)
+		setOffsetForAtModifier(nOpts.Start.UnixMilli(), n.Expr)
+		setOffsetForInnerSubqueries(n.Expr, nOpts)
+	default:
+		for _, c := range parser.Children(n) {
+			setOffsetForInnerSubqueries(c.(parser.Expr), opts)
 		}
-		return nil
-	})
+	}
 }
 
 // VectorSelector is vector selector with additional configuration set by optimizers.
