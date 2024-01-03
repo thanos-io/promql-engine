@@ -116,10 +116,10 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			for j, vector := range vectors {
 				if vector.T > maxt {
 					o.lastVectors = vectors
+					o.lastCollected = j - 1
 					break ACC
 				}
 				o.collect(vector, mint)
-				o.lastCollected = j
 			}
 			o.next.GetPool().PutVectors(vectors)
 		}

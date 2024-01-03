@@ -304,7 +304,6 @@ func BenchmarkRangeQuery(b *testing.B) {
 			EnableNegativeOffset: true,
 		},
 		SelectorBatchSize: 256,
-		EnableSubqueries:  true,
 	}
 
 	for _, tc := range cases {
@@ -416,8 +415,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 				for i := 0; i < b.N; i++ {
 					ng := engine.New(engine.Opts{
-						EngineOpts:       opts,
-						EnableSubqueries: true,
+						EngineOpts: opts,
 					})
 
 					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
@@ -532,8 +530,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 			})
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts:       promql.EngineOpts{Timeout: 100 * time.Second},
-					EnableSubqueries: true,
+					EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second},
 				})
 				b.ResetTimer()
 				b.ReportAllocs()
