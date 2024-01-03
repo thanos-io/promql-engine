@@ -203,8 +203,6 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 }
 
 func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
-	f.Skip("Skip from CI to repair later")
-
 	f.Add(uint32(0), uint32(120), uint32(30), 1.0, 1.0, 1.0, 1.0, 1.0, 2.0, 30)
 
 	f.Fuzz(func(t *testing.T, startTS, endTS, intervalSeconds uint32, initialVal1, initialVal2, initialVal3, initialVal4, inc1, inc2 float64, stepRange int) {
@@ -243,7 +241,7 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 
 		storage2 := promql.LoadedStorage(t, load2)
 		defer storage2.Close()
-		queryables = append(queryables, storage1)
+		queryables = append(queryables, storage2)
 
 		start := time.Unix(int64(startTS), 0)
 		end := time.Unix(int64(endTS), 0)
@@ -319,8 +317,6 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 }
 
 func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
-	f.Skip("Skip from CI to repair later")
-
 	f.Add(uint32(0), 1.0, 1.0, 1.0, 1.0, 1.0, 2.0)
 
 	f.Fuzz(func(t *testing.T, ts uint32, initialVal1, initialVal2, initialVal3, initialVal4, inc1, inc2 float64) {
@@ -349,7 +345,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 
 		storage2 := promql.LoadedStorage(t, load2)
 		defer storage2.Close()
-		queryables = append(queryables, storage1)
+		queryables = append(queryables, storage2)
 
 		partitionLabels := [][]labels.Labels{
 			{labels.FromStrings("zone", "west-1")},
