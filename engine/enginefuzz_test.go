@@ -388,7 +388,9 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 			// Since we disabled fallback, keep trying until we find a query
 			// that can be natively execute by the engine.
 			for {
-				expr := ps.Walk(parser.ValueTypeVector, parser.ValueTypeMatrix)
+				// Matrix value type cannot be supported for now as distributed engine
+				// will execute remote query as range query.
+				expr := ps.Walk(parser.ValueTypeVector)
 				query = expr.Pretty(0)
 				q1, err = distEngine.NewInstantQuery(ctx, mergeStore, nil, query, queryTime)
 				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) {
