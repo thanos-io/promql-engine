@@ -117,6 +117,18 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "subqueries in binary expression",
+			load: `load 30s
+               http_requests_total{pod="nginx-1", route="/"} 1.00+0.20x40
+               http_requests_total{pod="nginx-2", route="/"} -44+2.00x40`,
+			query: `
+     absent_over_time(http_requests_total @end()[1h:1m])
+   or
+     avg_over_time(http_requests_total @end()[1h:1m])
+     `,
+		},
+
+		{
 			name:  "nested unary negation",
 			query: "1/(-(2*2))",
 		},
