@@ -52,7 +52,7 @@ type vectorSelector struct {
 	shard     int
 	numShards int
 
-	pushedDownTimestampFunction bool
+	selectTimestamp bool
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -63,6 +63,7 @@ func NewVectorSelector(
 	offset time.Duration,
 	hints storage.SelectHints,
 	batchSize int64,
+	selectTimestamp bool,
 	shard, numShards int,
 ) model.VectorOperator {
 	o := &vectorSelector{
@@ -82,7 +83,7 @@ func NewVectorSelector(
 		shard:     shard,
 		numShards: numShards,
 
-		pushedDownTimestampFunction: hints.Func == "timestamp",
+		selectTimestamp: selectTimestamp,
 	}
 	if queryOpts.EnableAnalysis {
 		o.OperatorTelemetry = &model.TrackedTelemetry{}
@@ -152,11 +153,11 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if err != nil {
 				return nil, err
 			}
-			if o.pushedDownTimestampFunction {
+			if o.selectTimestamp {
 				v = float64(t) / 1000
 			}
 			if ok {
-				if h != nil && !o.pushedDownTimestampFunction {
+				if h != nil && !o.selectTimestamp {
 					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, h)
 				} else {
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, v)
@@ -193,7 +194,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			b.Reset(s.Labels())
 			// if we have pushed down a timestamp function into the scan we need to drop
 			// the __name__ label
-			if o.pushedDownTimestampFunction {
+			if o.selectTimestamp {
 				b.Del(labels.MetricName)
 			}
 			o.series[i] = b.Labels()

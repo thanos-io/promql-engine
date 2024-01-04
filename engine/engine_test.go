@@ -117,6 +117,18 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "timestamp fuzz",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1", route="/"} 8.00+9.17x40
+            			http_requests_total{pod="nginx-2", route="/"} -12+103.00x40`,
+			query: `timestamp(
+                http_requests_total{pod="nginx-1"}
+                      >= bool
+                (http_requests_total < 2*http_requests_total)
+              )
+     `,
+		},
+		{
 			name: "subqueries in binary expression",
 			load: `load 30s
                http_requests_total{pod="nginx-1", route="/"} 1.00+0.20x40

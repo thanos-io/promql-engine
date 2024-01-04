@@ -263,6 +263,11 @@ func TestTrimSorts(t *testing.T) {
 			expr:     "sort(sort(sqrt(X))/sort(sqrt(Y)))",
 			expected: "sqrt(X) / sqrt(Y)",
 		},
+		{
+			name:     "sort in argument to timestamp function",
+			expr:     "timestamp(sort(X))",
+			expected: "timestamp(sort(X))",
+		},
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
