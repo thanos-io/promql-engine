@@ -109,7 +109,6 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 		s.err = result.Err
 		return
 	}
-
 	switch val := result.Value.(type) {
 	case promql.Matrix:
 		s.series = make([]engstore.SignedSeries, len(val))
