@@ -443,7 +443,7 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 func validateTestCases(t *testing.T, cases []*testCase) {
 	failures := 0
 	for i, c := range cases {
-		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
+		if !cmp.Equal(c.oldRes, c.newRes, comparerFuzzing) {
 			for _, load := range c.loads {
 				t.Logf(load)
 			}
