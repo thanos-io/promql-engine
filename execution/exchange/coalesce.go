@@ -50,9 +50,6 @@ type coalesce struct {
 }
 
 func NewCoalesce(pool *model.VectorPool, opts *query.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
-	if len(operators) == 1 {
-		return operators[0]
-	}
 	c := &coalesce{
 		pool:          pool,
 		sampleOffsets: make([]uint64, len(operators)),
