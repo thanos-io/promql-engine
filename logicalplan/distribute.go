@@ -175,6 +175,12 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 		return plan, annotations.New().Add(RewrittenExternalLabelWarning)
 	}
 
+	// TODO(fpetkovski): Consider changing TraverseBottomUp to pass in a list of parents in the transform function.
+	parents := make(map[*parser.Expr]*parser.Expr)
+	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
+		parents[current] = parent
+		return false
+	})
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current, m.SkipBinaryPushdown) {
@@ -190,7 +196,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 			}
 
 			remoteAggregation := newRemoteAggregation(aggr, engines)
-			subQueries := m.distributeQuery(&remoteAggregation, engines, opts, minEngineOverlap)
+			subQueries := m.distributeQuery(&remoteAggregation, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
 			*current = &parser.AggregateExpr{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -202,7 +208,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 			return true
 		}
 		if isAbsent(*current) {
-			*current = m.distributeAbsent(*current, engines, calculateStartOffset(current, opts.LookbackDelta), opts)
+			*current = m.distributeAbsent(*current, engines, calculateStartOffset(current, opts.LookbackDelta), m.subqueryOpts(parents, current, opts))
 			return true
 		}
 
@@ -211,11 +217,24 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 			return false
 		}
 
-		*current = m.distributeQuery(current, engines, opts, minEngineOverlap)
+		*current = m.distributeQuery(current, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
 		return true
 	})
 
 	return plan, nil
+}
+
+func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*parser.Expr]*parser.Expr, current *parser.Expr, opts *query.Options) *query.Options {
+	subqueryParents := make([]*parser.SubqueryExpr, 0, len(parents))
+	for p := parents[current]; p != nil; p = parents[p] {
+		if subquery, ok := (*p).(*parser.SubqueryExpr); ok {
+			subqueryParents = append(subqueryParents, subquery)
+		}
+	}
+	for i := len(subqueryParents) - 1; i >= 0; i-- {
+		opts = query.NestedOptionsForSubquery(opts, subqueryParents[i])
+	}
+	return opts
 }
 
 func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.RemoteEngine) parser.Expr {

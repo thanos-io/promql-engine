@@ -202,6 +202,7 @@ func TestDistributedAggregations(t *testing.T) {
 	queries := []struct {
 		name           string
 		query          string
+		rangeStart     time.Time
 		expectFallback bool
 	}{
 		{name: "sum", query: `sum by (pod) (bar)`},
@@ -234,8 +235,14 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "absent for existing metric with aggregation", query: `sum(absent(foo))`},
 		{name: "absent for existing metric", query: `absent(bar{pod="nginx-1"})`},
 		{name: "absent for existing metric with aggregation", query: `sum(absent(bar{pod="nginx-1"}))`},
-		{name: "subquery with window within engine range", query: `max_over_time(sum_over_time(bar[30s])[30s:15s])`, expectFallback: true},
-		{name: "subquery with window outside of engine range", query: `max_over_time(sum_over_time(bar[1m])[10m:1m])`, expectFallback: true},
+		{name: "subquery with window within engine range", query: `max_over_time(sum_over_time(bar[30s])[30s:15s])`},
+		{name: "subquery with window outside of engine range", query: `max_over_time(sum_over_time(bar[1m])[10m:1m])`},
+		{name: "subquery with misaligned ranges", rangeStart: time.Unix(7, 0), query: `max_over_time(sum(bar)[30s:15s])`},
+		{name: "subquery with misaligned ranges", rangeStart: time.Unix(7, 0), query: `max_over_time(sum(sum(bar))[30s:15s])`},
+		{name: "nested subqueries",
+			rangeStart: time.Unix(7, 0),
+			query:      `max_over_time(min_over_time(sum(bar)[15s:15s])[15s:15s])`,
+		},
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
@@ -296,16 +303,19 @@ func TestDistributedAggregations(t *testing.T) {
 							}
 
 							t.Run("range", func(t *testing.T) {
+								if query.rangeStart == (time.Time{}) {
+									query.rangeStart = rangeStart
+								}
 								if test.rangeEnd == (time.Time{}) {
 									test.rangeEnd = rangeEnd
 								}
 								distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints(remoteEngines))
-								distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+								distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 
 								distResult := distQry.Exec(ctx)
 								promEngine := promql.NewEngine(localOpts.EngineOpts)
-								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, rangeStart, test.rangeEnd, rangeStep)
+								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(ctx)
 
