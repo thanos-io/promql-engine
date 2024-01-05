@@ -18,7 +18,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
-	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -81,7 +80,7 @@ type logicalVectorSelector struct {
 	*logicalplan.VectorSelector
 }
 
-func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, _ *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	return &vectorSelectorOperator{
 		stepsBatch: opts.StepsBatch,
 		vectors:    vectors,

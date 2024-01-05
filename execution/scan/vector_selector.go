@@ -12,8 +12,8 @@ import (
 	"github.com/efficientgo/core/errors"
 
 	"github.com/thanos-io/promql-engine/execution/model"
-	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/query"
+	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -31,7 +31,7 @@ type vectorScanner struct {
 type vectorSelector struct {
 	model.OperatorTelemetry
 
-	storage  engstore.SeriesSelector
+	storage  promstorage.SeriesSelector
 	scanners []vectorScanner
 	series   []labels.Labels
 
@@ -58,10 +58,9 @@ type vectorSelector struct {
 // NewVectorSelector creates operator which selects vector of series.
 func NewVectorSelector(
 	pool *model.VectorPool,
-	selector engstore.SeriesSelector,
+	selector promstorage.SeriesSelector,
 	queryOpts *query.Options,
 	offset time.Duration,
-	hints storage.SelectHints,
 	batchSize int64,
 	selectTimestamp bool,
 	shard, numShards int,

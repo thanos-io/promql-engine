@@ -17,7 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/storage"
+	promstorage "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
@@ -26,10 +26,12 @@ import (
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/scan"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/storage"
 )
 
 type QueryType int
@@ -92,7 +94,18 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 	return optimizers
 }
 
+// New creates a new query engine with the given options. The query engine will
+// use the storage passed in NewInstantQuery and NewRangeQuery for retrieving
+// data when executing queries.
 func New(opts Opts) *compatibilityEngine {
+	return NewWithScanners(opts, nil)
+}
+
+// NewWithScanners creates a new query engine with the given options and storage.Scanners.
+// When executing queries, the engine will create scanner operators using the storage.Scanners and will ignore the
+// Prometheus storage passed in NewInstantQuery and NewRangeQuery.
+// This method is useful when the data being queried does not easily fit into the Prometheus storage model.
+func NewWithScanners(opts Opts, scanners storage.Scanners) *compatibilityEngine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
 	}
@@ -150,6 +163,7 @@ func New(opts Opts) *compatibilityEngine {
 	return &compatibilityEngine{
 		prom:      engine,
 		functions: functions,
+		scanners:  scanners,
 
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 		disableFallback:             opts.DisableFallback,
@@ -177,6 +191,7 @@ var (
 type compatibilityEngine struct {
 	prom      v1.QueryEngine
 	functions map[string]*parser.Function
+	scanners  storage.Scanners
 
 	disableDuplicateLabelChecks bool
 	disableFallback             bool
@@ -196,7 +211,7 @@ func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
 	e.prom.SetQueryLogger(l)
 }
 
-func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q promstorage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -233,8 +248,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.New(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
-
-	exec, err := execution.New(lplan.Expr(), q, qOpts)
+	exec, err := execution.New(lplan.Expr(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -255,7 +269,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	}, nil
 }
 
-func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q promstorage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -292,7 +306,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.New(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Expr(), q, qOpts)
+	exec, err := execution.New(lplan.Expr(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -309,6 +323,13 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		warns:  warns,
 		t:      RangeQuery,
 	}, nil
+}
+
+func (e *compatibilityEngine) storageScanners(queryable promstorage.Queryable) storage.Scanners {
+	if e.scanners == nil {
+		return scan.NewPrometheusScanners(queryable)
+	}
+	return e.scanners
 }
 
 type Query struct {

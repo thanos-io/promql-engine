@@ -18,10 +18,10 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
-	engstore "github.com/thanos-io/promql-engine/execution/storage"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
+	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 type matrixScanner struct {
@@ -39,7 +39,7 @@ type matrixSelector struct {
 
 	vectorPool   *model.VectorPool
 	functionName string
-	storage      engstore.SeriesSelector
+	storage      promstorage.SeriesSelector
 	scalarArgs   []float64
 	call         FunctionCall
 	scanners     []matrixScanner
@@ -71,7 +71,7 @@ var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supp
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	pool *model.VectorPool,
-	selector engstore.SeriesSelector,
+	selector promstorage.SeriesSelector,
 	functionName string,
 	arg float64,
 	opts *query.Options,

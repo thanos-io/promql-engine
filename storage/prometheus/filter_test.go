@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package storage_test
+package prometheus_test
 
 import (
 	"testing"
@@ -11,7 +11,7 @@ import (
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
 
-	"github.com/thanos-io/promql-engine/execution/storage"
+	storage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 func TestFilter_MultipleMatcherWithSameName(t *testing.T) {
