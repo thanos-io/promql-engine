@@ -86,3 +86,13 @@ jobs:
 
       - name: Run unit tests
         run: make test-stringlabels
+
+  fuzz:
+    name: Run fuzzing
+    runs-on: ubuntu-latest
+    steps:
+      - uses: jidicula/go-fuzz-action@main
+        with:
+          packages: github.com/thanos-io/promql-engine/engine
+          fuzz-time: 1m
+          fuzz-regexp: FuzzEnginePromQLSmithInstantQuery

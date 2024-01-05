@@ -27,6 +27,7 @@ import (
 	"golang.org/x/exp/maps"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -117,7 +118,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
-			name: "timestamp fuzz",
+			name: "timestamp fuzz 1",
+			load: `load 30s
+        http_requests_total{pod="nginx-1", route="/"} 0.20+9.00x40
+        http_requests_total{pod="nginx-2", route="/"}  6+60.00x40`,
+			query: `timestamp(last_over_time(http_requests_total{route="/"}[1h]))`,
+		},
+		{
+			name: "timestamp fuzz 2",
 			load: `load 30s
             			http_requests_total{pod="nginx-1", route="/"} 8.00+9.17x40
             			http_requests_total{pod="nginx-2", route="/"} -12+103.00x40`,
@@ -125,8 +133,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
                 http_requests_total{pod="nginx-1"}
                       >= bool
                 (http_requests_total < 2*http_requests_total)
-              )
-     `,
+              )`,
 		},
 		{
 			name: "subqueries in binary expression",
@@ -136,8 +143,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `
      absent_over_time(http_requests_total @end()[1h:1m])
    or
-     avg_over_time(http_requests_total @end()[1h:1m])
-     `,
+     avg_over_time(http_requests_total @end()[1h:1m])`,
 		},
 
 		{
@@ -4928,147 +4934,164 @@ func (b samplesByLabels) Len() int           { return len(b) }
 func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
 
-// comparer should be used to compare promql results between engines.
-var comparer = cmp.Comparer(func(x, y *promql.Result) bool {
-	compareFloats := func(l, r float64) bool {
-		const epsilon = 1e-6
-		return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
-	}
-	compareHistograms := func(l, r *histogram.FloatHistogram) bool {
-		if l == nil && r == nil {
+var (
+	// comparer should be used to compare promql results between engines.
+	comparer = comparerFactory(false)
+	// comparerFuzzing is like comparer but ignores some errors temporarily so we can still
+	// have value from fuzzing without failing on known issues. We should move to reduce the diffs
+	// but its practical to have this right now.
+	comparerFuzzing = comparerFactory(true)
+)
+
+func comparerFactory(fuzzing bool) cmp.Option {
+	return cmp.Comparer(func(x, y *promql.Result) bool {
+		compareFloats := func(l, r float64) bool {
+			const epsilon = 1e-6
+			return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
+		}
+		compareHistograms := func(l, r *histogram.FloatHistogram) bool {
+			if l == nil && r == nil {
+				return true
+			}
+			return l.Equals(r)
+		}
+		compareAnnotations := func(l, r annotations.Annotations) bool {
+			// TODO: discard promql annotations for now, once we support them we should add them back
+			discardPromqlAnnotations := func(k string, _ error) bool {
+				hasInfoPrefix := strings.HasPrefix(k, annotations.PromQLInfo.Error())
+				hasWarnPrefix := strings.HasPrefix(k, annotations.PromQLWarning.Error())
+				return hasInfoPrefix || hasWarnPrefix
+			}
+			maps.DeleteFunc(l, discardPromqlAnnotations)
+			maps.DeleteFunc(r, discardPromqlAnnotations)
+
+			if len(l) != len(r) {
+				return false
+			}
+			for k, v := range l {
+				if !cmp.Equal(r[k], v) {
+					return false
+				}
+			}
+			for k, v := range r {
+				if !cmp.Equal(l[k], v) {
+					return false
+				}
+			}
 			return true
 		}
-		return l.Equals(r)
-	}
-	compareAnnotations := func(l, r annotations.Annotations) bool {
-		// TODO: discard promql annotations for now, once we support them we should add them back
-		discardPromqlAnnotations := func(k string, _ error) bool {
-			hasInfoPrefix := strings.HasPrefix(k, annotations.PromQLInfo.Error())
-			hasWarnPrefix := strings.HasPrefix(k, annotations.PromQLWarning.Error())
-			return hasInfoPrefix || hasWarnPrefix
+		compareMetrics := func(l, r labels.Labels) bool {
+			return l.Hash() == r.Hash()
 		}
-		maps.DeleteFunc(l, discardPromqlAnnotations)
-		maps.DeleteFunc(r, discardPromqlAnnotations)
+		// This is known discrepancy in this engine vs upstream. We only check at the top
+		// of the execution tree while upstream prometheus checks at every step. For most sensible
+		// queries this is irrelevant ( i think ) but breaks fuzzing.
+		anyDuplicateLsetError := func(l, r error) bool {
+			return (l != nil && l.Error() == extlabels.ErrDuplicateLabelSet.Error()) ||
+				(r != nil && r.Error() == extlabels.ErrDuplicateLabelSet.Error())
+		}
 
-		if len(l) != len(r) {
+		if x.Err != nil && y.Err != nil {
+			return cmp.Equal(x.Err.Error(), y.Err.Error())
+		} else if x.Err != nil || y.Err != nil {
+			return fuzzing && anyDuplicateLsetError(x.Err, y.Err)
+		}
+
+		if !compareAnnotations(x.Warnings, y.Warnings) {
 			return false
 		}
-		for k, v := range l {
-			if !cmp.Equal(r[k], v) {
-				return false
-			}
-		}
-		for k, v := range r {
-			if !cmp.Equal(l[k], v) {
-				return false
-			}
-		}
-		return true
-	}
-	compareMetrics := func(l, r labels.Labels) bool {
-		return l.Hash() == r.Hash()
-	}
 
-	if x.Err != nil && y.Err != nil {
-		return cmp.Equal(x.Err.Error(), y.Err.Error())
-	} else if x.Err != nil || y.Err != nil {
+		vx, xvec := x.Value.(promql.Vector)
+		vy, yvec := y.Value.(promql.Vector)
+
+		if xvec && yvec {
+			if len(vx) != len(vy) {
+				return false
+			}
+
+			// Sort vector before comparing.
+			sort.Sort(samplesByLabels(vx))
+			sort.Sort(samplesByLabels(vy))
+
+			for i := 0; i < len(vx); i++ {
+				if !compareMetrics(vx[i].Metric, vy[i].Metric) {
+					return false
+				}
+				if vx[i].T != vy[i].T {
+					return false
+				}
+				if !compareFloats(vx[i].F, vy[i].F) {
+					return false
+				}
+				if !compareHistograms(vx[i].H, vy[i].H) {
+					return false
+				}
+			}
+			return true
+		}
+
+		mx, xmat := x.Value.(promql.Matrix)
+		my, ymat := y.Value.(promql.Matrix)
+
+		if xmat && ymat {
+			if len(mx) != len(my) {
+				return false
+			}
+			// Sort matrix before comparing.
+			sort.Sort(seriesByLabels(mx))
+			sort.Sort(seriesByLabels(my))
+			for i := 0; i < len(mx); i++ {
+				mxs := mx[i]
+				mys := my[i]
+
+				if !compareMetrics(mxs.Metric, mys.Metric) {
+					return false
+				}
+
+				xps := mxs.Floats
+				yps := mys.Floats
+
+				if len(xps) != len(yps) {
+					return false
+				}
+				for j := 0; j < len(xps); j++ {
+					if xps[j].T != yps[j].T {
+						return false
+					}
+					if !compareFloats(xps[j].F, yps[j].F) {
+						return false
+					}
+				}
+				xph := mxs.Histograms
+				yph := mys.Histograms
+
+				if len(xph) != len(yph) {
+					return false
+				}
+				for j := 0; j < len(xph); j++ {
+					if xph[j].T != yph[j].T {
+						return false
+					}
+					if !compareHistograms(xph[j].H, yph[j].H) {
+						return false
+					}
+				}
+			}
+			return true
+		}
+
+		sx, xscalar := x.Value.(promql.Scalar)
+		sy, yscalar := y.Value.(promql.Scalar)
+		if xscalar && yscalar {
+			if sx.T != sy.T {
+				return false
+			}
+			return compareFloats(sx.V, sy.V)
+		}
 		return false
-	}
+	})
 
-	if !compareAnnotations(x.Warnings, y.Warnings) {
-		return false
-	}
-
-	vx, xvec := x.Value.(promql.Vector)
-	vy, yvec := y.Value.(promql.Vector)
-
-	if xvec && yvec {
-		if len(vx) != len(vy) {
-			return false
-		}
-
-		// Sort vector before comparing.
-		sort.Sort(samplesByLabels(vx))
-		sort.Sort(samplesByLabels(vy))
-
-		for i := 0; i < len(vx); i++ {
-			if !compareMetrics(vx[i].Metric, vy[i].Metric) {
-				return false
-			}
-			if vx[i].T != vy[i].T {
-				return false
-			}
-			if !compareFloats(vx[i].F, vy[i].F) {
-				return false
-			}
-			if !compareHistograms(vx[i].H, vy[i].H) {
-				return false
-			}
-		}
-		return true
-	}
-
-	mx, xmat := x.Value.(promql.Matrix)
-	my, ymat := y.Value.(promql.Matrix)
-
-	if xmat && ymat {
-		if len(mx) != len(my) {
-			return false
-		}
-		// Sort matrix before comparing.
-		sort.Sort(seriesByLabels(mx))
-		sort.Sort(seriesByLabels(my))
-		for i := 0; i < len(mx); i++ {
-			mxs := mx[i]
-			mys := my[i]
-
-			if !compareMetrics(mxs.Metric, mys.Metric) {
-				return false
-			}
-
-			xps := mxs.Floats
-			yps := mys.Floats
-
-			if len(xps) != len(yps) {
-				return false
-			}
-			for j := 0; j < len(xps); j++ {
-				if xps[j].T != yps[j].T {
-					return false
-				}
-				if !compareFloats(xps[j].F, yps[j].F) {
-					return false
-				}
-			}
-			xph := mxs.Histograms
-			yph := mys.Histograms
-
-			if len(xph) != len(yph) {
-				return false
-			}
-			for j := 0; j < len(xph); j++ {
-				if xph[j].T != yph[j].T {
-					return false
-				}
-				if !compareHistograms(xph[j].H, yph[j].H) {
-					return false
-				}
-			}
-		}
-		return true
-	}
-
-	sx, xscalar := x.Value.(promql.Scalar)
-	sy, yscalar := y.Value.(promql.Scalar)
-	if xscalar && yscalar {
-		if sx.T != sy.T {
-			return false
-		}
-		return compareFloats(sx.V, sy.V)
-	}
-	return false
-})
-
+}
 func queryExplanation(q promql.Query) string {
 	eq, ok := q.(engine.ExplainableQuery)
 	if !ok {

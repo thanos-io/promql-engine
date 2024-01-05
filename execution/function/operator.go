@@ -12,7 +12,6 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -202,7 +201,6 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		return nil, ctx.Err()
 	default:
 	}
-
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
