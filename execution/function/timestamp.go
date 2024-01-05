@@ -27,7 +27,7 @@ func (o *timestampFunctionOperator) Analyze() (model.OperatorTelemetry, []model.
 }
 
 func (o *timestampFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*timestampFunctionOperator]", []model.VectorOperator{}
+	return "[*timestampFunctionOperator]", []model.VectorOperator{o.next}
 }
 
 func (o *timestampFunctionOperator) Series(ctx context.Context) ([]labels.Labels, error) {

@@ -1,0 +1,7 @@
+go test fuzz v1
+int64(-84)
+uint32(4)
+float64(8)
+float64(-12)
+float64(9.166666666666666)
+float64(103)

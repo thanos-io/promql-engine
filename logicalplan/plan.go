@@ -6,6 +6,7 @@ package logicalplan
 import (
 	"fmt"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -190,6 +191,28 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 }
 
 func trimSorts(expr parser.Expr) parser.Expr {
+	canTrimSorts := true
+	// We cannot trim inner sort if its an argument to a timestamp function.
+	// If we would do it we could transform "timestamp(sort(X))" into "timestamp(X)"
+	// Which might return actual timestamps of samples instead of query execution timestamp.
+	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
+		if current == nil || parent == nil {
+			return true
+		}
+		e, pok := (*parent).(*parser.Call)
+		f, cok := (*current).(*parser.Call)
+
+		if pok && cok {
+			if e.Func.Name == "timestamp" && strings.HasPrefix(f.Func.Name, "sort") {
+				canTrimSorts = false
+				return true
+			}
+		}
+		return false
+	})
+	if !canTrimSorts {
+		return expr
+	}
 	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
 		if current == nil || parent == nil {
 			return true
@@ -410,8 +433,9 @@ func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 // VectorSelector is vector selector with additional configuration set by optimizers.
 type VectorSelector struct {
 	*parser.VectorSelector
-	Filters   []*labels.Matcher
-	BatchSize int64
+	Filters         []*labels.Matcher
+	BatchSize       int64
+	SelectTimestamp bool
 }
 
 func (f VectorSelector) String() string {

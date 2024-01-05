@@ -94,6 +94,7 @@ func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.Selector
 	offset := e.Offset
 	batchsize := e.BatchSize
 	selector := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
+	selectTimestamp := e.SelectTimestamp
 
 	numShards := runtime.GOMAXPROCS(0) / 2
 	if numShards < 1 {
@@ -102,11 +103,9 @@ func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.Selector
 
 	operators := make([]model.VectorOperator, 0, numShards)
 	for i := 0; i < numShards; i++ {
-		operator := exchange.NewConcurrent(
-			scan.NewVectorSelector(
-				model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, i, numShards),
-			2)
-		operators = append(operators, operator)
+		operator := scan.NewVectorSelector(
+			model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, selectTimestamp, i, numShards)
+		operators = append(operators, exchange.NewConcurrent(operator, 2))
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...), nil
@@ -123,7 +122,7 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 	if e.Func.Name == "timestamp" {
 		switch arg := e.Args[0].(type) {
 		case *logicalplan.VectorSelector:
-			// We push down the timestamp function into the scanner through the hints.
+			arg.SelectTimestamp = true
 			return newVectorSelector(arg, storage, opts, hints)
 		case *parser.StepInvariantExpr:
 			// Step invariant expressions on vector selectors need to be unwrapped so that we
@@ -134,6 +133,7 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 				if vs.Timestamp != nil {
 					vs.OriginalOffset = 0
 				}
+				vs.SelectTimestamp = true
 				return newVectorSelector(vs, storage, opts, hints)
 			}
 			return newInstantVectorFunction(e, storage, opts, hints)
