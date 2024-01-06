@@ -35,7 +35,7 @@ func TestQueryExplain(t *testing.T) {
 	for i := 0; i < totalOperators; i++ {
 		concurrencyOperators = append(concurrencyOperators, engine.ExplainOutputNode{
 			OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
-				{OperatorName: fmt.Sprintf("[*vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
+				{OperatorName: fmt.Sprintf("[vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
 			},
 		})
 	}
