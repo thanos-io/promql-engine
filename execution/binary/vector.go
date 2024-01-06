@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/efficientgo/core/errors"
@@ -99,6 +100,8 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	// Some operators do not call Series of all their children.
 	if err := o.initOnce(ctx); err != nil {
