@@ -18,7 +18,6 @@ import (
 	"github.com/thanos-io/promql-engine/ringbuffer"
 )
 
-// TODO: only instant subqueries for now.
 type subqueryOperator struct {
 	model.OperatorTelemetry
 

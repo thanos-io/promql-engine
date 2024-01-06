@@ -50,6 +50,7 @@ func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {
 }
 
 func (o *absentOperator) loadSeries() {
+	// we need to put the filtered labels back for absent to compute its series properly
 	o.once.Do(func() {
 		o.pool.SetStepSize(1)
 
@@ -57,9 +58,10 @@ func (o *absentOperator) loadSeries() {
 		var lm []*labels.Matcher
 		switch n := o.funcExpr.Args[0].(type) {
 		case *logicalplan.VectorSelector:
-			lm = n.LabelMatchers
+			lm = append(n.LabelMatchers, n.Filters...)
 		case *logicalplan.MatrixSelector:
-			lm = n.VectorSelector.(*logicalplan.VectorSelector).LabelMatchers
+			v := n.VectorSelector.(*logicalplan.VectorSelector)
+			lm = append(v.LabelMatchers, v.Filters...)
 		default:
 			o.series = []labels.Labels{labels.EmptyLabels()}
 			return

@@ -88,11 +88,19 @@ jobs:
         run: make test-stringlabels
 
   fuzz:
-    name: Run fuzzing
     runs-on: ubuntu-latest
+    name: Run fuzz
+    env:
+      GOBIN: /tmp/.bin
     steps:
-      - uses: jidicula/go-fuzz-action@main
+      - name: Check out code into the Go module directory.
+        uses: actions/checkout@v3
+
+      - name: Install Go.
+        uses: actions/setup-go@v3
         with:
-          packages: github.com/thanos-io/promql-engine/engine
-          fuzz-time: 1m
-          fuzz-regexp: FuzzEnginePromQLSmithInstantQuery
+          go-version-file: .go-version
+          cache: true
+
+      - name: Run fuzzing
+        run: make fuzz

@@ -178,18 +178,11 @@ func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool
 		if err != nil {
 			return nil, err
 		}
-		_, vs, filters, err := unpackVectorSelector(arg)
-		if err != nil {
-			return nil, err
-		}
-		// if we have a filtered selector we need to put the labels back for absent
-		// to compute its series properly
-		vs.LabelMatchers = append(vs.LabelMatchers, filters...)
 		f := &parser.Call{
 			Func: &parser.Function{Name: "absent"},
 			Args: []parser.Expr{&logicalplan.MatrixSelector{
 				MatrixSelector: &parser.MatrixSelector{
-					VectorSelector: vs,
+					VectorSelector: arg.VectorSelector,
 					Range:          arg.Range,
 				},
 				OriginalString: arg.String(),

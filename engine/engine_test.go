@@ -118,6 +118,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "fuzz failure",
+			load: `load 30s
+        http_requests_total{pod="nginx-1", route="/"} 60.00+11.00x40
+        http_requests_total{pod="nginx-2", route="/"}  8+2.00x40`,
+			query: `quantile by (pod) (scalar(http_requests_total), absent(http_requests_total{pod="nginx-2"} @ end()))`,
+		},
+		{
 			name: "timestamp fuzz 1",
 			load: `load 30s
         http_requests_total{pod="nginx-1", route="/"} 0.20+9.00x40

@@ -45,11 +45,7 @@ func NewStepInvariantOperator(
 	expr parser.Expr,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
-	interval := opts.Step.Milliseconds()
 	// We set interval to be at least 1.
-	if interval == 0 {
-		interval = 1
-	}
 	u := &stepInvariantOperator{
 		OperatorTelemetry: model.NewTelemetry("[stepInvariant]", opts.EnableAnalysis),
 
@@ -58,9 +54,12 @@ func NewStepInvariantOperator(
 		currentStep: opts.Start.UnixMilli(),
 		mint:        opts.Start.UnixMilli(),
 		maxt:        opts.End.UnixMilli(),
-		step:        interval,
+		step:        opts.Step.Milliseconds(),
 		stepsBatch:  opts.StepsBatch,
 		cacheResult: true,
+	}
+	if u.step == 0 {
+		u.step = 1
 	}
 	// We do not duplicate results for range selectors since result is a matrix
 	// with their unique timestamps which does not depend on the step.
