@@ -17,6 +17,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type histogramSeries struct {
@@ -27,12 +28,12 @@ type histogramSeries struct {
 
 // histogramOperator is a function operator that calculates percentiles.
 type histogramOperator struct {
-	pool *model.VectorPool
+	model.OperatorTelemetry
+	once   sync.Once
+	series []labels.Labels
 
+	pool     *model.VectorPool
 	funcArgs parser.Expressions
-
-	once     sync.Once
-	series   []labels.Labels
 	scalarOp model.VectorOperator
 	vectorOp model.VectorOperator
 
@@ -46,24 +47,28 @@ type histogramOperator struct {
 
 	// seriesBuckets are the buckets for each individual conventional histogram series.
 	seriesBuckets []buckets
-	model.OperatorTelemetry
 }
 
-func (o *histogramOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*functionOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 2)
-	if obsScalarOp, ok := o.scalarOp.(model.ObservableVectorOperator); ok {
-		next = append(next, obsScalarOp)
+func newHistogramOperator(
+	pool *model.VectorPool,
+	funcArgs parser.Expressions,
+	scalarOp model.VectorOperator,
+	vectorOp model.VectorOperator,
+	opts *query.Options,
+) *histogramOperator {
+	return &histogramOperator{
+		pool:              pool,
+		funcArgs:          funcArgs,
+		scalarOp:          scalarOp,
+		vectorOp:          vectorOp,
+		scalarPoints:      make([]float64, opts.StepsBatch),
+		OperatorTelemetry: model.NewTelemetry(histogramOperatorName, opts.EnableAnalysis),
 	}
-	if obsVectorOp, ok := o.vectorOp.(model.ObservableVectorOperator); ok {
-		next = append(next, obsVectorOp)
-	}
-	return o, next
 }
 
 func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
 	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
-	return fmt.Sprintf("[*functionOperator] histogram_quantile(%v)", o.funcArgs), next
+	return fmt.Sprintf("%s(%v)", histogramOperatorName, o.funcArgs), next
 }
 
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {

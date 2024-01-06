@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sync"
+	"time"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/efficientgo/core/errors"
@@ -66,7 +67,9 @@ func NewVectorOperator(
 	returnBool bool,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
-	o := &vectorOperator{
+	return &vectorOperator{
+		OperatorTelemetry: model.NewTelemetry("[vectorBinary]", opts.EnableAnalysis),
+
 		pool:       pool,
 		lhs:        lhs,
 		rhs:        rhs,
@@ -74,32 +77,14 @@ func NewVectorOperator(
 		opType:     opType,
 		returnBool: returnBool,
 		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
-	}
-
-	o.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-	return o, nil
-}
-
-func (o *vectorOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*vectorOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 2)
-	if obsnextParamOp, ok := o.lhs.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnextParamOp)
-	}
-	if obsnext, ok := o.rhs.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return o, next
+	}, nil
 }
 
 func (o *vectorOperator) Explain() (me string, next []model.VectorOperator) {
 	if o.matching.On {
-		return fmt.Sprintf("[*vectorOperator] %s - %v, on: %v, group: %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+		return fmt.Sprintf("[vectorBinary] %s - %v, on: %v, group: %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.MatchingLabels, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 	}
-	return fmt.Sprintf("[*vectorOperator] %s - %v, ignoring: %v, group: %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
+	return fmt.Sprintf("[vectorBinary] %s - %v, ignoring: %v, group: %v", parser.ItemTypeStr[o.opType], o.matching.Card.String(), o.matching.On, o.matching.Include), []model.VectorOperator{o.lhs, o.rhs}
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -115,6 +100,8 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	// Some operators do not call Series of all their children.
 	if err := o.initOnce(ctx); err != nil {

@@ -28,6 +28,8 @@ const (
 
 // scalarOperator evaluates expressions where one operand is a scalarOperator.
 type scalarOperator struct {
+	model.OperatorTelemetry
+
 	seriesOnce sync.Once
 	series     []labels.Labels
 
@@ -45,7 +47,6 @@ type scalarOperator struct {
 
 	// Keep the result if both sides are scalars.
 	bothScalars bool
-	model.OperatorTelemetry
 }
 
 func NewScalar(
@@ -70,7 +71,9 @@ func NewScalar(
 		operandValIdx = 1
 	}
 
-	o := &scalarOperator{
+	return &scalarOperator{
+		OperatorTelemetry: model.NewTelemetry("[vectorScalarBinary]", opts.EnableAnalysis),
+
 		pool:          pool,
 		next:          next,
 		scalar:        scalar,
@@ -81,29 +84,12 @@ func NewScalar(
 		operandValIdx: operandValIdx,
 		returnBool:    returnBool,
 		bothScalars:   scalarSide == ScalarSideBoth,
-	}
-	o.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		o.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-	return o, nil
+	}, nil
 
-}
-
-func (o *scalarOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*scalarOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 2)
-	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	if obsnextScalar, ok := o.scalar.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnextScalar)
-	}
-	return o, next
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*scalarOperator] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
+	return fmt.Sprintf("[vectorScalarBinary] %s", parser.ItemTypeStr[o.opType]), []model.VectorOperator{o.next, o.scalar}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {

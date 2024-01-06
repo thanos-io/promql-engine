@@ -34,6 +34,8 @@ func (c errorChan) getError() error {
 // coalesce guarantees that samples from different input vectors will be added to the output in the same order
 // as the input vectors themselves are provided in NewCoalesce.
 type coalesce struct {
+	model.OperatorTelemetry
+
 	once   sync.Once
 	series []labels.Labels
 
@@ -46,37 +48,22 @@ type coalesce struct {
 	inVectors [][]model.StepVector
 	// sampleOffsets holds per-operator offsets needed to map an input sample ID to an output sample ID.
 	sampleOffsets []uint64
-	model.OperatorTelemetry
 }
 
 func NewCoalesce(pool *model.VectorPool, opts *query.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
-	c := &coalesce{
+	return &coalesce{
+		OperatorTelemetry: model.NewTelemetry("[coalesce]", opts.EnableAnalysis),
+
 		pool:          pool,
 		sampleOffsets: make([]uint64, len(operators)),
 		operators:     operators,
 		inVectors:     make([][]model.StepVector, len(operators)),
 		batchSize:     batchSize,
 	}
-	c.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		c.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-	return c
-}
-
-func (c *coalesce) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	c.SetName("[*coalesce]")
-	obsOperators := make([]model.ObservableVectorOperator, 0, len(c.operators))
-	for _, operator := range c.operators {
-		if obsOperator, ok := operator.(model.ObservableVectorOperator); ok {
-			obsOperators = append(obsOperators, obsOperator)
-		}
-	}
-	return c, obsOperators
 }
 
 func (c *coalesce) Explain() (me string, next []model.VectorOperator) {
-	return "[*coalesce]", c.operators
+	return "[coalesce]", c.operators
 }
 
 func (c *coalesce) GetPool() *model.VectorPool {

@@ -34,6 +34,8 @@ type matrixScanner struct {
 }
 
 type matrixSelector struct {
+	model.OperatorTelemetry
+
 	vectorPool   *model.VectorPool
 	functionName string
 	storage      engstore.SeriesSelector
@@ -61,7 +63,6 @@ type matrixSelector struct {
 
 	// Lookback delta for extended range functions.
 	extLookbackDelta int64
-	model.OperatorTelemetry
 }
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
@@ -83,6 +84,8 @@ func NewMatrixSelector(
 	}
 	isExtFunction := function.IsExtFunction(functionName)
 	m := &matrixSelector{
+		OperatorTelemetry: model.NewTelemetry("matrixSelector", opts.EnableAnalysis),
+
 		storage:      selector,
 		call:         call,
 		functionName: functionName,
@@ -106,10 +109,7 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		m.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
+
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
 	if m.step == 0 {
@@ -119,17 +119,12 @@ func NewMatrixSelector(
 	return m, nil
 }
 
-func (o *matrixSelector) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*matrixSelector]")
-	return o, nil
-}
-
 func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 	r := time.Duration(o.selectRange) * time.Millisecond
 	if o.call != nil {
-		return fmt.Sprintf("[*matrixSelector] %v({%v}[%s] %v mod %v)", o.functionName, o.storage.Matchers(), r, o.shard, o.numShards), nil
+		return fmt.Sprintf("[matrixSelector] %v({%v}[%s] %v mod %v)", o.functionName, o.storage.Matchers(), r, o.shard, o.numShards), nil
 	}
-	return fmt.Sprintf("[*matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
+	return fmt.Sprintf("[matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards), nil
 }
 
 func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {

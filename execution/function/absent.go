@@ -13,28 +13,35 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type absentOperator struct {
+	model.OperatorTelemetry
+
 	once     sync.Once
 	funcExpr *parser.Call
 	series   []labels.Labels
 	pool     *model.VectorPool
 	next     model.VectorOperator
-	model.OperatorTelemetry
 }
 
-func (o *absentOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*absentOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
+func newAbsentOperator(
+	funcExpr *parser.Call,
+	pool *model.VectorPool,
+	next model.VectorOperator,
+	opts *query.Options,
+) *absentOperator {
+	return &absentOperator{
+		OperatorTelemetry: model.NewTelemetry(absentOperatorName, opts.EnableAnalysis),
+		funcExpr:          funcExpr,
+		pool:              pool,
+		next:              next,
 	}
-	return o, next
 }
 
 func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*absentOperator]", []model.VectorOperator{o.next}
+	return absentOperatorName, []model.VectorOperator{o.next}
 }
 
 func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {

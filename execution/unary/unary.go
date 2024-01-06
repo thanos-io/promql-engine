@@ -12,6 +12,7 @@ import (
 	"gonum.org/v1/gonum/floats"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/query"
 )
 
 type unaryNegation struct {
@@ -22,28 +23,17 @@ type unaryNegation struct {
 	model.OperatorTelemetry
 }
 
-func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
-	return "[*unaryNegation]", []model.VectorOperator{u.next}
-}
-
-func NewUnaryNegation(
-	next model.VectorOperator,
-	stepsBatch int,
-) (model.VectorOperator, error) {
+func NewUnaryNegation(next model.VectorOperator, opts *query.Options) (model.VectorOperator, error) {
 	u := &unaryNegation{
 		next:              next,
-		OperatorTelemetry: &model.TrackedTelemetry{},
+		OperatorTelemetry: model.NewTelemetry("[unaryNegation]", opts.EnableAnalysis),
 	}
 
 	return u, nil
 }
-func (u *unaryNegation) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	u.SetName("[*unaryNegation]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return u, next
+
+func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
+	return "[unaryNegation]", []model.VectorOperator{u.next}
 }
 
 func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {

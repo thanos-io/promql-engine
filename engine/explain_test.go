@@ -34,8 +34,8 @@ func TestQueryExplain(t *testing.T) {
 	concurrencyOperators := []engine.ExplainOutputNode{}
 	for i := 0; i < totalOperators; i++ {
 		concurrencyOperators = append(concurrencyOperators, engine.ExplainOutputNode{
-			OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-				{OperatorName: fmt.Sprintf("[*vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
+			OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
+				{OperatorName: fmt.Sprintf("[vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
 			},
 		})
 	}
@@ -46,17 +46,17 @@ func TestQueryExplain(t *testing.T) {
 	}{
 		{
 			query:    "time()",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*noArgFunctionOperator] time()"},
+			expected: &engine.ExplainOutputNode{OperatorName: "[noArgFunction] time()"},
 		},
 		{
 			query:    "foo",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*coalesce]", Children: concurrencyOperators},
+			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", Children: concurrencyOperators},
 		},
 		{
 			query: "sum(foo) by (job)",
-			expected: &engine.ExplainOutputNode{OperatorName: "[*concurrencyOperator(buff=2)]", Children: []engine.ExplainOutputNode{
-				{OperatorName: "[*aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
-					{OperatorName: "[*coalesce]", Children: concurrencyOperators},
+			expected: &engine.ExplainOutputNode{OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
+				{OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
+					{OperatorName: "[coalesce]", Children: concurrencyOperators},
 				},
 				},
 			},
