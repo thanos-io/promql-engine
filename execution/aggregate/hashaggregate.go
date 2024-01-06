@@ -59,8 +59,8 @@ func NewHashAggregate(
 	// Grouping labels need to be sorted in order for metric hashing to work.
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
 	slices.Sort(labels)
-	a := &aggregate{
-		OperatorTelemetry: &model.TrackedTelemetry{},
+	return &aggregate{
+		OperatorTelemetry: model.NewTelemetry("[aggregate]", opts.EnableAnalysis),
 
 		next:        next,
 		paramOp:     paramOp,
@@ -70,21 +70,7 @@ func NewHashAggregate(
 		aggregation: aggregation,
 		labels:      labels,
 		stepsBatch:  opts.StepsBatch,
-	}
-
-	return a, nil
-}
-
-func (a *aggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	a.SetName("[*aggregate]")
-	var ops []model.ObservableVectorOperator
-	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
-		ops = append(ops, obsnextParamOp)
-	}
-	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
-		ops = append(ops, obsnext)
-	}
-	return a, ops
+	}, nil
 }
 
 func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
@@ -94,9 +80,9 @@ func (a *aggregate) Explain() (me string, next []model.VectorOperator) {
 	}
 	ops = append(ops, a.next)
 	if a.by {
-		return fmt.Sprintf("[*aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
+		return fmt.Sprintf("[aggregate] %v by (%v)", a.aggregation.String(), a.labels), ops
 	}
-	return fmt.Sprintf("[*aggregate] %v without (%v)", a.aggregation.String(), a.labels), ops
+	return fmt.Sprintf("[aggregate] %v without (%v)", a.aggregation.String(), a.labels), ops
 }
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {

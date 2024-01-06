@@ -35,17 +35,8 @@ type stepInvariantOperator struct {
 	model.OperatorTelemetry
 }
 
-func (u *stepInvariantOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	u.SetName("[*stepInvariantOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := u.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return u, next
-}
-
 func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*stepInvariantOperator]", []model.VectorOperator{u.next}
+	return "[stepInvariant]", []model.VectorOperator{u.next}
 }
 
 func NewStepInvariantOperator(
@@ -60,6 +51,8 @@ func NewStepInvariantOperator(
 		interval = 1
 	}
 	u := &stepInvariantOperator{
+		OperatorTelemetry: model.NewTelemetry("[stepInvariant]", opts.EnableAnalysis),
+
 		vectorPool:  pool,
 		next:        next,
 		currentStep: opts.Start.UnixMilli(),
@@ -74,10 +67,6 @@ func NewStepInvariantOperator(
 	switch expr.(type) {
 	case *logicalplan.MatrixSelector, *parser.SubqueryExpr:
 		u.cacheResult = false
-	}
-	u.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		u.OperatorTelemetry = &model.TrackedTelemetry{}
 	}
 
 	return u, nil

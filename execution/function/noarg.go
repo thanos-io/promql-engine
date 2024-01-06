@@ -16,6 +16,8 @@ import (
 )
 
 type noArgFunctionOperator struct {
+	model.OperatorTelemetry
+
 	mint        int64
 	maxt        int64
 	step        int64
@@ -26,17 +28,10 @@ type noArgFunctionOperator struct {
 	vectorPool  *model.VectorPool
 	series      []labels.Labels
 	sampleIDs   []uint64
-	model.OperatorTelemetry
-}
-
-func (o *noArgFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*noArgFunctionOperator]")
-	return o, []model.ObservableVectorOperator{}
 }
 
 func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-
-	return fmt.Sprintf("[*noArgFunctionOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{}
+	return fmt.Sprintf("%s %s()", noArgFunctionOperatorName, o.funcExpr.Func.Name), []model.VectorOperator{}
 }
 
 func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {

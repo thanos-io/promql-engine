@@ -12,9 +12,10 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/query"
 )
 
-type timestampFunctionOperator struct {
+type timestampOperator struct {
 	next model.VectorOperator
 	model.OperatorTelemetry
 
@@ -22,27 +23,25 @@ type timestampFunctionOperator struct {
 	once   sync.Once
 }
 
-func (o *timestampFunctionOperator) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	o.SetName("[*timestampFunctionOperator]")
-	next := make([]model.ObservableVectorOperator, 0, 1)
-	if obsnext, ok := o.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
+func newTimestampOperator(next model.VectorOperator, opts *query.Options) *timestampOperator {
+	return &timestampOperator{
+		next:              next,
+		OperatorTelemetry: model.NewTelemetry(timestampOperatorName, opts.EnableAnalysis),
 	}
-	return o, next
 }
 
-func (o *timestampFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[*timestampFunctionOperator]", []model.VectorOperator{o.next}
+func (o *timestampOperator) Explain() (me string, next []model.VectorOperator) {
+	return timestampOperatorName, []model.VectorOperator{o.next}
 }
 
-func (o *timestampFunctionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *timestampOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
 	return o.series, nil
 }
 
-func (o *timestampFunctionOperator) loadSeries(ctx context.Context) error {
+func (o *timestampOperator) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
 		series, loadErr := o.next.Series(ctx)
@@ -62,11 +61,11 @@ func (o *timestampFunctionOperator) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func (o *timestampFunctionOperator) GetPool() *model.VectorPool {
+func (o *timestampOperator) GetPool() *model.VectorPool {
 	return o.next.GetPool()
 }
 
-func (o *timestampFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (o *timestampOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

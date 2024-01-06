@@ -105,7 +105,7 @@ func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.Selector
 	for i := 0; i < numShards; i++ {
 		operator := scan.NewVectorSelector(
 			model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, selectTimestamp, i, numShards)
-		operators = append(operators, exchange.NewConcurrent(operator, 2))
+		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...), nil
@@ -250,7 +250,7 @@ func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, stora
 		if err != nil {
 			return nil, err
 		}
-		operators = append(operators, exchange.NewConcurrent(operator, 2))
+		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...), nil
@@ -329,7 +329,7 @@ func newAggregateExpression(e *parser.AggregateExpr, storage *engstore.SelectorP
 		return nil, err
 	}
 
-	return exchange.NewConcurrent(next, 2), nil
+	return exchange.NewConcurrent(next, 2, opts), nil
 
 }
 
@@ -382,7 +382,7 @@ func newUnaryExpression(e *parser.UnaryExpr, storage *engstore.SelectorPool, opt
 	case parser.ADD:
 		return next, nil
 	case parser.SUB:
-		return unary.NewUnaryNegation(next, opts.StepsBatch)
+		return unary.NewUnaryNegation(next, opts)
 	default:
 		// This shouldn't happen as Op was validated when parsing already
 		// https://github.com/prometheus/prometheus/blob/v2.38.0/promql/parser/parse.go#L573.
@@ -420,8 +420,8 @@ func newDeduplication(e logicalplan.Deduplicate, storage *engstore.SelectorPool,
 		operators[i] = operator
 	}
 	coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...)
-	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce)
-	return exchange.NewConcurrent(dedup, 2), nil
+	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce, opts)
+	return exchange.NewConcurrent(dedup, 2, opts), nil
 }
 
 func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -437,7 +437,7 @@ func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hint
 	selectorOpts := *opts
 	selectorOpts.LookbackDelta = 0
 	remoteExec := remote.NewExecution(qry, model.NewVectorPool(opts.StepsBatch), e.QueryRangeStart, &selectorOpts, hints)
-	return exchange.NewConcurrent(remoteExec, 2), nil
+	return exchange.NewConcurrent(remoteExec, 2, opts), nil
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.

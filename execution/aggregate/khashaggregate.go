@@ -23,6 +23,8 @@ import (
 )
 
 type kAggregate struct {
+	model.OperatorTelemetry
+
 	next    model.VectorOperator
 	paramOp model.VectorOperator
 	// params holds the aggregate parameter for each step.
@@ -39,7 +41,6 @@ type kAggregate struct {
 	inputToHeap []*samplesHeap
 	heaps       []*samplesHeap
 	compare     func(float64, float64) bool
-	model.OperatorTelemetry
 }
 
 func NewKHashAggregate(
@@ -66,29 +67,34 @@ func NewKHashAggregate(
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
 	slices.Sort(labels)
 
-	a := &kAggregate{
-		next:        next,
-		vectorPool:  points,
-		by:          by,
-		aggregation: aggregation,
-		labels:      labels,
-		paramOp:     paramOp,
-		compare:     compare,
-		params:      make([]float64, opts.StepsBatch),
-	}
-	a.OperatorTelemetry = &model.NoopTelemetry{}
-	if opts.EnableAnalysis {
-		a.OperatorTelemetry = &model.TrackedTelemetry{}
-	}
-	return a, nil
+	return &kAggregate{
+		OperatorTelemetry: model.NewTelemetry("[kaggregate]", opts.EnableAnalysis),
+		next:              next,
+		vectorPool:        points,
+		by:                by,
+		aggregation:       aggregation,
+		labels:            labels,
+		paramOp:           paramOp,
+		compare:           compare,
+		params:            make([]float64, opts.StepsBatch),
+	}, nil
 }
 
 func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	start := time.Now()
+	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
+
 	in, err := a.next.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
-	start := time.Now()
+
 	args, err := a.paramOp.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -128,7 +134,6 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
-	a.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }
@@ -147,23 +152,11 @@ func (a *kAggregate) GetPool() *model.VectorPool {
 	return a.vectorPool
 }
 
-func (a *kAggregate) Analyze() (model.OperatorTelemetry, []model.ObservableVectorOperator) {
-	a.SetName("[*kaggregate]")
-	next := make([]model.ObservableVectorOperator, 0, 2)
-	if obsnextParamOp, ok := a.paramOp.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnextParamOp)
-	}
-	if obsnext, ok := a.next.(model.ObservableVectorOperator); ok {
-		next = append(next, obsnext)
-	}
-	return a, next
-}
-
 func (a *kAggregate) Explain() (me string, next []model.VectorOperator) {
 	if a.by {
-		return fmt.Sprintf("[*kaggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
+		return fmt.Sprintf("[kaggregate] %v by (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
 	}
-	return fmt.Sprintf("[*kaggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
+	return fmt.Sprintf("[kaggregate] %v without (%v)", a.aggregation.String(), a.labels), []model.VectorOperator{a.paramOp, a.next}
 }
 
 func (a *kAggregate) init(ctx context.Context) error {

@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -19,6 +20,8 @@ import (
 
 // TODO: only instant subqueries for now.
 type subqueryOperator struct {
+	model.OperatorTelemetry
+
 	next        model.VectorOperator
 	pool        *model.VectorPool
 	call        FunctionCall
@@ -49,6 +52,8 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 		step = 1
 	}
 	return &subqueryOperator{
+		OperatorTelemetry: model.NewTelemetry("[subquery]", opts.EnableAnalysis),
+
 		next:          next,
 		call:          call,
 		pool:          pool,
@@ -64,12 +69,14 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 }
 
 func (o *subqueryOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[*subqueryOperator] %v()", o.funcExpr.Func.Name), []model.VectorOperator{o.next}
+	return fmt.Sprintf("[subquery] %v()", o.funcExpr.Func.Name), []model.VectorOperator{o.next}
 }
 
 func (o *subqueryOperator) GetPool() *model.VectorPool { return o.pool }
 
 func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
