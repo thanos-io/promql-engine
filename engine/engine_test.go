@@ -27,7 +27,6 @@ import (
 	"golang.org/x/exp/maps"
 
 	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -118,11 +117,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
-			name: "fuzz failure",
+			name: "duplicate label fuzz",
 			load: `load 30s
-        http_requests_total{pod="nginx-1", route="/"} 60.00+11.00x40
-        http_requests_total{pod="nginx-2", route="/"}  8+2.00x40`,
-			query: `quantile by (pod) (scalar(http_requests_total), absent(http_requests_total{pod="nginx-2"} @ end()))`,
+            			http_requests_total{pod="nginx-1", route="/"} 41.00+0.20x40
+            			http_requests_total{pod="nginx-2", route="/"} 51+21.71x40`,
+			query: `
+-avg by (__name__) (
+    (-group({__name__="http_requests_total"} @ 54.013) or {__name__="http_requests_total"} offset 1m32s)
+)`,
 		},
 		{
 			name: "timestamp fuzz 1",
@@ -2750,6 +2752,21 @@ func TestInstantQuery(t *testing.T) {
 		queryTime time.Time
 	}{
 		{
+			name: "binary pairing early exit fuzz",
+			load: `load 30s
+        			http_requests_total{pod="nginx-1", route="/"} 33.00+1.00x40
+        			http_requests_total{pod="nginx-2", route="/"}  1+2.00x40`,
+			query: `
+        avg without (route) (
+            avg(http_requests_total) / http_requests_total
+        )
+      <=
+        sum by (__name__) (
+            http_requests_total or avg(http_requests_total)
+        )`,
+			queryTime: time.Unix(0, 0),
+		},
+		{
 			name: "offset and @ modifiers",
 			load: `load 30s
               http_requests_total{pod="nginx-0", route="/"} 1+1x30`,
@@ -4943,15 +4960,7 @@ func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric
 
 var (
 	// comparer should be used to compare promql results between engines.
-	comparer = comparerFactory(false)
-	// comparerFuzzing is like comparer but ignores some errors temporarily so we can still
-	// have value from fuzzing without failing on known issues. We should move to reduce the diffs
-	// but its practical to have this right now.
-	comparerFuzzing = comparerFactory(true)
-)
-
-func comparerFactory(fuzzing bool) cmp.Option {
-	return cmp.Comparer(func(x, y *promql.Result) bool {
+	comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 		compareFloats := func(l, r float64) bool {
 			const epsilon = 1e-6
 			return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
@@ -4990,18 +4999,11 @@ func comparerFactory(fuzzing bool) cmp.Option {
 		compareMetrics := func(l, r labels.Labels) bool {
 			return l.Hash() == r.Hash()
 		}
-		// This is known discrepancy in this engine vs upstream. We only check at the top
-		// of the execution tree while upstream prometheus checks at every step. For most sensible
-		// queries this is irrelevant ( i think ) but breaks fuzzing.
-		anyDuplicateLsetError := func(l, r error) bool {
-			return (l != nil && l.Error() == extlabels.ErrDuplicateLabelSet.Error()) ||
-				(r != nil && r.Error() == extlabels.ErrDuplicateLabelSet.Error())
-		}
 
 		if x.Err != nil && y.Err != nil {
 			return cmp.Equal(x.Err.Error(), y.Err.Error())
 		} else if x.Err != nil || y.Err != nil {
-			return fuzzing && anyDuplicateLsetError(x.Err, y.Err)
+			return false
 		}
 
 		if !compareAnnotations(x.Warnings, y.Warnings) {
@@ -5097,8 +5099,8 @@ func comparerFactory(fuzzing bool) cmp.Option {
 		}
 		return false
 	})
+)
 
-}
 func queryExplanation(q promql.Query) string {
 	eq, ok := q.(engine.ExplainableQuery)
 	if !ok {
