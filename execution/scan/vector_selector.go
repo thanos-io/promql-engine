@@ -23,9 +23,10 @@ import (
 )
 
 type vectorScanner struct {
-	labels    labels.Labels
-	signature uint64
-	samples   *storage.MemoizedSeriesIterator
+	labels     labels.Labels
+	signature  uint64
+	samples    *storage.MemoizedSeriesIterator
+	filterFunc func(model.StepVector) model.StepVector
 }
 
 type vectorSelector struct {
@@ -95,6 +96,25 @@ func NewVectorSelector(
 	return o
 }
 
+// filterBinaryOpEqual filters the StepVector based on the equality of samples and histograms with the given value.
+func filterBinaryOpEqual(v model.StepVector, value float64) model.StepVector {
+	filtered := model.StepVector{}
+
+	// Iterate over the samples and histograms in the StepVector.
+	for i, sample := range v.Samples {
+		if sample == value {
+			// Append the matching sample and its corresponding histogram to the filtered StepVector.
+			filtered.AppendSample(nil, v.SampleIDs[i], sample)
+			if len(v.Histograms) > i {
+				filtered.Histograms = append(filtered.Histograms, v.Histograms[i])
+				filtered.HistogramIDs = append(filtered.HistogramIDs, v.HistogramIDs[i])
+			}
+		}
+	}
+
+	return filtered
+}
+
 func (o *vectorSelector) Explain() (me string, next []model.VectorOperator) {
 	return fmt.Sprintf("[vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards), nil
 }
@@ -131,6 +151,14 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	for currStep := 0; currStep < o.numSteps && ts <= o.maxt; currStep++ {
 		vectors = append(vectors, o.vectorPool.GetStepVector(ts))
 		ts += o.step
+	}
+
+	if o.currentSeries > 0 {
+		for i, vector := range vectors {
+			if o.scanners[o.currentSeries].filterFunc != nil {
+				vectors[i] = o.scanners[o.currentSeries].filterFunc(vector)
+			}
+		}
 	}
 
 	// Reset the current timestamp.
