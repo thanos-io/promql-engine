@@ -1848,6 +1848,13 @@ load 30s
 				       http_requests_total{pod="nginx-1", series="1"} 1+2x40`,
 			query: "rate(http_requests_total[20s:10s] offset 20s)",
 		},
+		{
+			name: "vector selector with binary operation",
+			load: `load 100s
+					kube_pod_info{namespace="default"} 1+1x15
+					kube_pod_info{namespace="kube-system"} 1+2x18`,
+			query: `sum(kube_pod_info == 1)`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
