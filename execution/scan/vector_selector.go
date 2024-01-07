@@ -96,8 +96,8 @@ func NewVectorSelector(
 	return o
 }
 
-// filterBinaryOpEqual filters the StepVector based on the equality of samples and histograms with the given value.
-func filterBinaryOpEqual(v model.StepVector, value float64) model.StepVector {
+// filterFunc filters the StepVector based on the equality of samples and histograms with the given value.
+func filterFunc(v model.StepVector, value float64) model.StepVector {
 	filtered := model.StepVector{}
 
 	// Iterate over the samples and histograms in the StepVector.
