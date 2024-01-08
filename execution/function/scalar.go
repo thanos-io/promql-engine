@@ -29,7 +29,7 @@ func newScalarOperator(pool *model.VectorPool, next model.VectorOperator, opts *
 }
 
 func (o *scalarOperator) Explain() (me string, next []model.VectorOperator) {
-	return scalarOperatorName, []model.VectorOperator{}
+	return scalarOperatorName, []model.VectorOperator{o.next}
 }
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -47,6 +47,8 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	default:
 	}
 	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	in, err := o.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -67,7 +69,6 @@ func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.next.GetPool().PutStepVector(vector)
 	}
 	o.next.GetPool().PutVectors(in)
-	o.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

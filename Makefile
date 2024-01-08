@@ -36,13 +36,19 @@ test: ## Runs all Go unit tests.
 	@rm -rf $(GOCACHE)
 	@go test -race -timeout=10m $(GOMODULES);
 
-
 .PHONY: test-stringlabels
 test-stringlabels: ## Runs all Go unit tests with stringlabels flag.
 	@export GOCACHE=/tmp/cache
-	@echo ">> stringlabels: running unit tests (without cache)"
+	@echo ">> running unit tests with stringlabels flag (without cache)"
 	@rm -rf $(GOCACHE)
 	@go test -race --tags=stringlabels -timeout=10m $(GOMODULES);
+
+.PHONY: fuzz
+fuzz: ## Runs selected fuzzing tests
+	@export GOCACHE=/tmp/cache
+	@echo ">> running fuzz tests (without cache)"
+	@rm -rf $(GOCACHE)
+	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzEnginePromQLSmithInstantQuery -fuzztime=2m -fuzzminimizetime 0x;
 
 .PHONY: deps
 deps: ## Ensures fresh go.mod and go.sum.
@@ -110,16 +116,3 @@ bench-new: benchmarks
 .PHONY: benchmark
 benchmark: bench-old bench-new
 	@benchstat benchmarks/old.out benchmarks/new.out
-
-.PHONY: sync-parser
-sync-parser:
-	@echo "Cleaning existing directories"
-	@rm -rf parser
-	@mkdir -p tmp
-	@rm -rf tmp/prometheus
-	@echo "Cloning prometheus"
-	@git clone git@github.com:prometheus/prometheus.git tmp/prometheus
-	@echo "Copying parser"
-	cp -r tmp/prometheus/promql/parser .
-	@echo "Cleaning up"
-	@rm -rf tmp
