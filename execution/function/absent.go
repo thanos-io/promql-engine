@@ -94,8 +94,10 @@ func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, ctx.Err()
 	default:
 	}
-	o.loadSeries()
 	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
+	o.loadSeries()
 
 	vectors, err := o.next.Next(ctx)
 	if err != nil {
@@ -115,6 +117,5 @@ func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 		o.next.GetPool().PutStepVector(vectors[i])
 	}
 	o.next.GetPool().PutVectors(vectors)
-	o.AddExecutionTimeTaken(time.Since(start))
 	return result, nil
 }

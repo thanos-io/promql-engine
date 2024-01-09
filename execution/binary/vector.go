@@ -285,6 +285,11 @@ func (o *vectorOperator) execBinaryArithmetic(lhs, rhs model.StepVector) (model.
 		return step, errors.Newf("Unexpected matching cardinality: %s", o.matching.Card.String())
 	}
 
+	// shortcut: if we have no samples on the high card side we cannot compute pairings
+	if len(hcs.Samples) == 0 {
+		return step, nil
+	}
+
 	for i, sampleID := range lcs.SampleIDs {
 		jp := o.lcJoinBuckets[sampleID]
 		// Hash collisions on the low-card-side would imply a many-to-many relation.

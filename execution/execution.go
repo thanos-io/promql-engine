@@ -60,17 +60,41 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
-		return newVectorSelector(e, storage, opts, hints)
+		op, err := newVectorSelector(e, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		if e.SelectTimestamp {
+			// we will drop the __name__ label here, so we need to check for duplicate labels
+			return exchange.NewDuplicateLabelCheck(op, opts), nil
+		}
+		return op, err
 	case *parser.Call:
-		return newCall(e, storage, opts, hints)
+		op, err := newCall(e, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewDuplicateLabelCheck(op, opts), nil
 	case *parser.AggregateExpr:
-		return newAggregateExpression(e, storage, opts, hints)
+		op, err := newAggregateExpression(e, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewDuplicateLabelCheck(op, opts), nil
 	case *parser.BinaryExpr:
-		return newBinaryExpression(e, storage, opts, hints)
+		op, err := newBinaryExpression(e, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewDuplicateLabelCheck(op, opts), nil
 	case *parser.ParenExpr:
 		return newOperator(e.Expr, storage, opts, hints)
 	case *parser.UnaryExpr:
-		return newUnaryExpression(e, storage, opts, hints)
+		op, err := newUnaryExpression(e, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewDuplicateLabelCheck(op, opts), nil
 	case *parser.StepInvariantExpr:
 		return newStepInvariantExpression(e, storage, opts, hints)
 	case logicalplan.Deduplicate:
@@ -80,7 +104,11 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
 	case logicalplan.UserDefinedExpr:
-		return e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
+		op, err := e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		return exchange.NewDuplicateLabelCheck(op, opts), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
 	}
