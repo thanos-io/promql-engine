@@ -50,7 +50,7 @@ func New(expr parser.Expr, opts *query.Options) Plan {
 
 	// * the engine handles sorting at the presentation layer
 	// * parens are just annoying and getting rid of them doesnt change the query
-	expr = trimParens(trimSorts(expr))
+	expr = trimSorts(expr)
 
 	// replace scanners by our logical nodes
 	expr = replaceSelectors(expr)
@@ -69,7 +69,7 @@ func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) 
 		annos.Merge(a)
 	}
 
-	return &plan{expr: p.expr, opts: p.opts}, *annos
+	return &plan{expr: trimParens(p.expr), opts: p.opts}, *annos
 }
 
 func (p *plan) Expr() parser.Expr {
