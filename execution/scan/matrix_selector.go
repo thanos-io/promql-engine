@@ -238,13 +238,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// is reused between Select() calls?
 				lbls, _ = extlabels.DropMetricName(lbls, b)
 			}
-
-			// If we are dealing with an extended range function we need to search further in the past for valid series.
-			var selectRange = o.selectRange
-			if o.isExtFunction {
-				selectRange += o.extLookbackDelta
-			}
-
 			o.scanners[i] = matrixScanner{
 				labels:     lbls,
 				signature:  s.Signature,
