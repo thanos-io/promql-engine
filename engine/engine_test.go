@@ -145,6 +145,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
               )`,
 		},
 		{
+			name: "timestamp with multiple parenthesis",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1", route="/"} 8.00+9.17x40
+            			http_requests_total{pod="nginx-2", route="/"} -12+103.00x40`,
+			query: `timestamp((http_requests_total))`,
+		},
+		{
 			name: "subqueries in binary expression",
 			load: `load 30s
                http_requests_total{pod="nginx-1", route="/"} 1.00+0.20x40
