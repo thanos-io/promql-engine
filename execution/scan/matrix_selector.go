@@ -301,7 +301,7 @@ func selectPoints(
 		for drop = 0; out[drop].T < mint; drop++ {
 		}
 		// Rotate the slice around drop and reduce the length to remove samples.
-		tail = slices.Grow(tail, drop)
+		tail = slices.Grow(tail, drop)[:drop]
 		copy(tail, out[:drop])
 		copy(out, out[drop:])
 		copy(out[len(out)-drop:], tail)
