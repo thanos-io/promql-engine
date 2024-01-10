@@ -60,15 +60,12 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case *parser.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
-		op, err := newVectorSelector(e, storage, opts, hints)
-		if err != nil {
-			return nil, err
-		}
+		op := newVectorSelector(e, storage, opts, hints)
 		if e.SelectTimestamp {
 			// we will drop the __name__ label here, so we need to check for duplicate labels
 			return exchange.NewDuplicateLabelCheck(op, opts), nil
 		}
-		return op, err
+		return op, nil
 	case *parser.Call:
 		op, err := newCall(e, storage, opts, hints)
 		if err != nil {
@@ -110,7 +107,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	}
 }
 
-func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) model.VectorOperator {
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
@@ -132,7 +129,7 @@ func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.Selector
 		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...), nil
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...)
 }
 
 func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -143,28 +140,6 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 	if e.Func.Name == "absent_over_time" {
 		return newAbsentOverTimeOperator(e, storage, opts, hints)
 	}
-	if e.Func.Name == "timestamp" {
-		switch arg := e.Args[0].(type) {
-		case *logicalplan.VectorSelector:
-			arg.SelectTimestamp = true
-			return newVectorSelector(arg, storage, opts, hints)
-		case *parser.StepInvariantExpr:
-			// Step invariant expressions on vector selectors need to be unwrapped so that we
-			// can return the original timestamp rather than the step invariant one.
-			switch vs := arg.Expr.(type) {
-			case *logicalplan.VectorSelector:
-				// Prometheus weirdness.
-				if vs.Timestamp != nil {
-					vs.OriginalOffset = 0
-				}
-				vs.SelectTimestamp = true
-				return newVectorSelector(vs, storage, opts, hints)
-			}
-			return newInstantVectorFunction(e, storage, opts, hints)
-		}
-		return newInstantVectorFunction(e, storage, opts, hints)
-	}
-
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	for i := range e.Args {

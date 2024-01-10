@@ -48,8 +48,7 @@ func New(expr parser.Expr, opts *query.Options) Plan {
 	setOffsetForAtModifier(opts.Start.UnixMilli(), expr)
 	setOffsetForInnerSubqueries(expr, opts)
 
-	// * the engine handles sorting at the presentation layer
-	// * parens are just annoying and getting rid of them doesnt change the query
+	// the engine handles sorting at the presentation layer
 	expr = trimSorts(expr)
 
 	// replace scanners by our logical nodes
@@ -68,8 +67,10 @@ func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) 
 		p.expr, a = o.Optimize(p.expr, p.opts)
 		annos.Merge(a)
 	}
+	// parens are just annoying and getting rid of them doesnt change the query
+	expr := trimParens(p.expr)
 
-	return &plan{expr: trimParens(p.expr), opts: p.opts}, *annos
+	return &plan{expr: expr, opts: p.opts}, *annos
 }
 
 func (p *plan) Expr() parser.Expr {
@@ -174,7 +175,6 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 		}
 		return transform(parent, current)
 	}
-
 	return true
 }
 
@@ -185,6 +185,23 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String()}
 		case *parser.VectorSelector:
 			*current = &VectorSelector{VectorSelector: t}
+		case *parser.Call:
+			if t.Func.Name != "timestamp" {
+				return
+			}
+			switch v := unwrapParens(t.Args[0]).(type) {
+			case *parser.VectorSelector:
+				*current = &VectorSelector{VectorSelector: v, SelectTimestamp: true}
+			case *parser.StepInvariantExpr:
+				vs, ok := unwrapParens(v.Expr).(*parser.VectorSelector)
+				if ok {
+					// Prometheus weirdness
+					if vs.Timestamp != nil {
+						vs.OriginalOffset = 0
+					}
+					*current = &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
+				}
+			}
 		}
 	})
 	return plan
@@ -355,6 +372,15 @@ func newStepInvariantExpr(expr parser.Expr) parser.Expr {
 	return &parser.StepInvariantExpr{Expr: expr}
 }
 
+func unwrapParens(expr parser.Expr) parser.Expr {
+	switch t := expr.(type) {
+	case *parser.ParenExpr:
+		return unwrapParens(t.Expr)
+	default:
+		return t
+	}
+}
+
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L2658.
 func setOffsetForAtModifier(evalTime int64, expr parser.Expr) {
 	getOffset := func(ts *int64, originalOffset time.Duration, path []parser.Node) time.Duration {
@@ -439,6 +465,11 @@ type VectorSelector struct {
 }
 
 func (f VectorSelector) String() string {
+	if f.SelectTimestamp {
+		// If we pushed down timestamp into the vector selector we need to render the proper
+		// PromQL again.
+		return fmt.Sprintf("timestamp(%s)", f.VectorSelector.String())
+	}
 	return f.VectorSelector.String()
 }
 
