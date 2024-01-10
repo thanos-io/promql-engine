@@ -98,7 +98,7 @@ func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 	var err error
 	d.once.Do(func() {
 		series, seriesErr := d.next.Series(ctx)
-		if err != nil {
+		if seriesErr != nil {
 			err = seriesErr
 			return
 		}

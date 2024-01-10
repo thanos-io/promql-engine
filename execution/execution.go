@@ -104,11 +104,7 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
 	case logicalplan.UserDefinedExpr:
-		op, err := e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-		return exchange.NewDuplicateLabelCheck(op, opts), nil
+		return e.MakeExecutionOperator(model.NewVectorPool(opts.StepsBatch), storage, opts, hints)
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
 	}
