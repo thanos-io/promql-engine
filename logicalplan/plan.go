@@ -80,6 +80,7 @@ func (p *plan) Expr() parser.Expr {
 func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	switch node := (*expr).(type) {
 	case *parser.StepInvariantExpr:
+		transform(expr)
 		traverse(&node.Expr, transform)
 	case *parser.VectorSelector:
 		transform(expr)
@@ -126,7 +127,10 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	case *parser.NumberLiteral:
 		return false
 	case *parser.StepInvariantExpr:
-		return TraverseBottomUp(current, &node.Expr, transform)
+		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
 	case *parser.VectorSelector:
 		return transform(parent, current)
 	case *VectorSelector:
