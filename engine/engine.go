@@ -27,7 +27,6 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/warnings"
-	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -160,13 +159,6 @@ func New(opts Opts) *compatibilityEngine {
 	}
 }
 
-var (
-	// Duplicate label checking logic uses a bitmap with 64 bits currently.
-	// As long as we use this method we need to have batches that are smaller
-	// then 64 steps.
-	ErrStepsBatchTooLarge = errors.New("'StepsBatch' must be less than 64")
-)
-
 type compatibilityEngine struct {
 	prom      v1.QueryEngine
 	functions map[string]*parser.Function
@@ -215,9 +207,6 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
-	}
-	if qOpts.StepsBatch > 64 {
-		return nil, ErrStepsBatchTooLarge
 	}
 
 	lplan, warns := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
@@ -270,9 +259,6 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
-	}
-	if qOpts.StepsBatch > 64 {
-		return nil, ErrStepsBatchTooLarge
 	}
 
 	lplan, warns := logicalplan.New(expr, qOpts).Optimize(e.logicalOptimizers)
@@ -413,9 +399,6 @@ loop:
 			matrix = append(matrix, s)
 		}
 		sort.Sort(matrix)
-		if matrix.ContainsSameLabelset() {
-			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
-		}
 		ret.Value = matrix
 		return ret
 	}

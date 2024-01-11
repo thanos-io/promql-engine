@@ -71,6 +71,8 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	default:
 	}
 	start := time.Now()
+	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
+
 	in, err := u.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -81,6 +83,6 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	for i := range in {
 		floats.Scale(-1, in[i].Samples)
 	}
-	u.AddExecutionTimeTaken(time.Since(start))
+
 	return in, nil
 }

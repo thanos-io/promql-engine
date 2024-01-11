@@ -127,6 +127,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 )`,
 		},
 		{
+			name: "duplicate label fuzz 2",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1"} 1.00+64.00x15
+            			http_requests_total{pod="nginx-2"}  6+12.00x21`,
+			query: `-(sum_over_time(http_requests_total[1m]) or http_requests_total) + http_requests_total`,
+		},
+		{
 			name: "timestamp fuzz 1",
 			load: `load 30s
         http_requests_total{pod="nginx-1", route="/"} 0.20+9.00x40

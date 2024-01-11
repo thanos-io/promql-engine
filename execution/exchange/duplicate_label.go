@@ -55,22 +55,14 @@ func (d *duplicateLabelCheckOperator) Next(ctx context.Context) ([]model.StepVec
 		return nil, nil
 	}
 
-	// TODO: currently there is a bug, we need to reset 'd.c's state
-	// if the current timestamp changes. With configured BatchSize we
-	// dont see all samples for a timestamp in the same batch, but this
-	// logic relies on that.
 	if len(d.p) > 0 {
-		for i := range d.p {
-			d.c[d.p[i].a] = 0
-			d.c[d.p[i].b] = 0
-		}
-		for i, sv := range in {
+		for _, sv := range in {
 			for _, sid := range sv.SampleIDs {
-				d.c[sid] |= 2 << i
+				d.c[sid] = 1
 			}
 		}
 		for i := range d.p {
-			if d.c[d.p[i].a]&d.c[d.p[i].b] > 0 {
+			if d.c[d.p[i].a] > 0 && d.c[d.p[i].b] > 0 {
 				return nil, extlabels.ErrDuplicateLabelSet
 			}
 		}
@@ -116,5 +108,6 @@ func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 		d.p = p
 		d.c = c
 	})
+
 	return err
 }
