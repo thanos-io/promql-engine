@@ -52,13 +52,14 @@ func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator, opts *q
 }
 
 func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { d.AddExecutionTimeTaken(time.Since(start)) }()
+
 	var err error
 	d.once.Do(func() { err = d.loadSeries(ctx) })
 	if err != nil {
 		return nil, err
 	}
-	start := time.Now()
-	defer func() { d.AddExecutionTimeTaken(time.Since(start)) }()
 
 	in, err := d.next.Next(ctx)
 	if err != nil {
@@ -103,6 +104,9 @@ func (d *dedupOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 }
 
 func (d *dedupOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { d.AddExecutionTimeTaken(time.Since(start)) }()
+
 	var err error
 	d.once.Do(func() { err = d.loadSeries(ctx) })
 	if err != nil {

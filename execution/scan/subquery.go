@@ -76,6 +76,7 @@ func (o *subqueryOperator) GetPool() *model.VectorPool { return o.pool }
 func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
 	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -175,6 +176,9 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 }
 
 func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
+
 	if err := o.initSeries(ctx); err != nil {
 		return nil, err
 	}

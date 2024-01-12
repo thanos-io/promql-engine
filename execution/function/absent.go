@@ -45,6 +45,9 @@ func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	o.loadSeries()
 	return o.series, nil
 }
@@ -89,13 +92,14 @@ func (o *absentOperator) GetPool() *model.VectorPool {
 }
 
 func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	o.loadSeries()
 

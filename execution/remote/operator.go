@@ -43,17 +43,15 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart ti
 
 func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() {
-		e.AddExecutionTimeTaken(time.Since(start))
-	}()
+	defer func() { e.AddExecutionTimeTaken(time.Since(start)) }()
+
 	return e.vectorSelector.Series(ctx)
 }
 
 func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() {
-		e.AddExecutionTimeTaken(time.Since(start))
-	}()
+	defer func() { e.AddExecutionTimeTaken(time.Since(start)) }()
+
 	next, err := e.vectorSelector.Next(ctx)
 	if next == nil {
 		// Closing the storage prematurely can lead to results from the query

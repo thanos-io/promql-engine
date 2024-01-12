@@ -35,6 +35,9 @@ func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperato
 }
 
 func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	return o.series, nil
 }
 
@@ -42,11 +45,20 @@ func (o *noArgFunctionOperator) GetPool() *model.VectorPool {
 	return o.vectorPool
 }
 
-func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, error) {
+func (o *noArgFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	if o.currentStep > o.maxt {
 		return nil, nil
 	}
-	start := time.Now()
+
 	ret := o.vectorPool.GetVectorBatch()
 	for i := 0; i < o.stepsBatch && o.currentStep <= o.maxt; i++ {
 		sv := o.vectorPool.GetStepVector(o.currentStep)
@@ -55,7 +67,6 @@ func (o *noArgFunctionOperator) Next(_ context.Context) ([]model.StepVector, err
 		ret = append(ret, sv)
 		o.currentStep += o.step
 	}
-	o.AddExecutionTimeTaken(time.Since(start))
 
 	return ret, nil
 }

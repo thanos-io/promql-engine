@@ -50,6 +50,9 @@ func (o *numberLiteralSelector) Explain() (me string, next []model.VectorOperato
 }
 
 func (o *numberLiteralSelector) Series(context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	o.loadSeries()
 	return o.series, nil
 }
@@ -59,12 +62,14 @@ func (o *numberLiteralSelector) GetPool() *model.VectorPool {
 }
 
 func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
@@ -88,7 +93,6 @@ func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, e
 		o.step = 1
 	}
 	o.currentStep += o.step * int64(o.numSteps)
-	o.AddExecutionTimeTaken(time.Since(start))
 
 	return vectors, nil
 }

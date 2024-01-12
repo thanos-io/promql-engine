@@ -72,6 +72,9 @@ func NewStepInvariantOperator(
 }
 
 func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
+
 	var err error
 	u.seriesOnce.Do(func() {
 		u.series, err = u.next.Series(ctx)
@@ -88,15 +91,17 @@ func (u *stepInvariantOperator) GetPool() *model.VectorPool {
 }
 
 func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, error) {
-	if u.currentStep > u.maxt {
-		return nil, nil
-	}
 	start := time.Now()
+	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
+	}
+
+	if u.currentStep > u.maxt {
+		return nil, nil
 	}
 
 	if !u.cacheResult {
@@ -115,7 +120,6 @@ func (u *stepInvariantOperator) Next(ctx context.Context) ([]model.StepVector, e
 		result = append(result, outVector)
 		u.currentStep += u.step
 	}
-	u.AddExecutionTimeTaken(time.Since(start))
 
 	return result, nil
 }

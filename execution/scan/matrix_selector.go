@@ -128,6 +128,9 @@ func (o *matrixSelector) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -139,13 +142,14 @@ func (o *matrixSelector) GetPool() *model.VectorPool {
 }
 
 func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	if o.currentStep > o.maxt {
 		return nil, nil
