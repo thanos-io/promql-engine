@@ -17,7 +17,6 @@
 package execution
 
 import (
-	"runtime"
 	"sort"
 	"time"
 
@@ -94,6 +93,8 @@ func newOperator(expr parser.Expr, storage *engstore.SelectorPool, opts *query.O
 		return exchange.NewDuplicateLabelCheck(op, opts), nil
 	case *parser.StepInvariantExpr:
 		return newStepInvariantExpression(e, storage, opts, hints)
+	case logicalplan.Coalesce:
+		return newCoalesce(e, storage, opts, hints)
 	case logicalplan.Deduplicate:
 		return newDeduplication(e, storage, opts, hints)
 	case logicalplan.RemoteExecution:
@@ -117,19 +118,10 @@ func newVectorSelector(e *logicalplan.VectorSelector, storage *engstore.Selector
 	selector := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), e.LabelMatchers, e.Filters, hints)
 	selectTimestamp := e.SelectTimestamp
 
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
+	shard := e.Shard
+	numShards := e.NumShards
 
-	operators := make([]model.VectorOperator, 0, numShards)
-	for i := 0; i < numShards; i++ {
-		operator := scan.NewVectorSelector(
-			model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, selectTimestamp, i, numShards)
-		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
-	}
-
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchsize*int64(numShards), operators...)
+	return scan.NewVectorSelector(model.NewVectorPool(opts.StepsBatch), selector, opts, offset, hints, batchsize, selectTimestamp, shard, numShards)
 }
 
 func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -147,6 +139,8 @@ func newCall(e *parser.Call, storage *engstore.SelectorPool, opts *query.Options
 		case *parser.SubqueryExpr:
 			return newSubqueryFunction(e, t, storage, opts, hints)
 		case *logicalplan.MatrixSelector:
+			return newRangeVectorFunction(e, t, storage, opts, hints)
+		case logicalplan.Coalesce:
 			return newRangeVectorFunction(e, t, storage, opts, hints)
 		}
 	}
@@ -193,7 +187,7 @@ func newAbsentOverTimeOperator(call *parser.Call, storage *engstore.SelectorPool
 	}
 }
 
-func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func newRangeVectorFunction(e *parser.Call, t parser.Expr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	batchSize, vs, filters, err := unpackVectorSelector(t)
@@ -212,10 +206,6 @@ func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, stora
 	hints.Range = milliSecondRange
 	filter := storage.GetFilteredSelector(start, end, opts.Step.Milliseconds(), vs.LabelMatchers, filters, hints)
 
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
 	var arg float64
 	if e.Func.Name == "quantile_over_time" {
 		constVal, err := unwrapConstVal(e.Args[0])
@@ -224,28 +214,21 @@ func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, stora
 		}
 		arg = constVal
 	}
+	shard := t.Shard
+	numShards := t.NumShards
 
-	operators := make([]model.VectorOperator, 0, numShards)
-	for i := 0; i < numShards; i++ {
-		operator, err := scan.NewMatrixSelector(
-			model.NewVectorPool(opts.StepsBatch),
-			filter,
-			e.Func.Name,
-			arg,
-			opts,
-			t.Range,
-			vs.Offset,
-			batchSize,
-			i,
-			numShards,
-		)
-		if err != nil {
-			return nil, err
-		}
-		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
-	}
-
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, batchSize*int64(numShards), operators...), nil
+	return scan.NewMatrixSelector(
+		model.NewVectorPool(opts.StepsBatch),
+		filter,
+		e.Func.Name,
+		arg,
+		opts,
+		t.Range,
+		vs.Offset,
+		batchSize,
+		shard,
+		numShards,
+	)
 }
 
 func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
@@ -394,6 +377,18 @@ func newStepInvariantExpression(e *parser.StepInvariantExpr, storage *engstore.S
 	return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(opts.StepsBatch, 1), next, e.Expr, opts)
 }
 
+func newCoalesce(e logicalplan.Coalesce, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+	operators := make([]model.VectorOperator, len(e.Exprs))
+	for i, expr := range e.Exprs {
+		operator, err := newOperator(expr, storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		operators[i] = exchange.NewConcurrent(operator, 2, opts)
+	}
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...), nil
+}
+
 func newDeduplication(e logicalplan.Deduplicate, storage *engstore.SelectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
 	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
 	// Sorting engines by MaxT ensures that samples produced due to
@@ -411,6 +406,7 @@ func newDeduplication(e logicalplan.Deduplicate, storage *engstore.SelectorPool,
 		}
 		operators[i] = operator
 	}
+	// We dont need to use logical coalesce here since it was already pushed back above remote evaluation here
 	coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...)
 	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce, opts)
 	return exchange.NewConcurrent(dedup, 2, opts), nil

@@ -32,8 +32,6 @@ var closedParenthesis = regexp.MustCompile(`\s+\)`)
 // by testMatrixSelector that has a overridden string method?
 func renderExprTree(expr parser.Expr) string {
 	switch t := expr.(type) {
-	case *parser.NumberLiteral:
-		return fmt.Sprint(t.Val)
 	case *VectorSelector:
 		var b strings.Builder
 		base := t.VectorSelector.String()
@@ -49,8 +47,6 @@ func renderExprTree(expr parser.Expr) string {
 			return b.String()
 		}
 		return base
-	case *MatrixSelector:
-		return t.String()
 	case *parser.BinaryExpr:
 		var b strings.Builder
 		b.WriteString(renderExprTree(t.LHS))
@@ -105,8 +101,6 @@ func renderExprTree(expr parser.Expr) string {
 		b.WriteString(renderExprTree(t.Expr))
 		b.WriteRune(')')
 		return b.String()
-	case *parser.StepInvariantExpr:
-		return renderExprTree(t.Expr)
 	default:
 		return t.String()
 	}

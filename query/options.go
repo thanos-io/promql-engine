@@ -5,6 +5,7 @@ package query
 
 import (
 	"context"
+	"runtime"
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
@@ -33,6 +34,14 @@ func (o *Options) NumSteps() int {
 		return o.StepsBatch
 	}
 	return int(totalSteps)
+}
+
+func (o *Options) NumShards() int {
+	numShards := runtime.GOMAXPROCS(0) / 2
+	if numShards < 1 {
+		numShards = 1
+	}
+	return numShards
 }
 
 func (o *Options) IsInstantQuery() bool {

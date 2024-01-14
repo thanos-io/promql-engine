@@ -27,6 +27,7 @@ var (
 var DefaultOptimizers = []Optimizer{
 	SortMatchers{},
 	MergeSelectsOptimizer{},
+	CoalesceOptimizer{},
 }
 
 type Plan interface {
@@ -182,16 +183,16 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 	traverse(&plan, func(current *parser.Expr) {
 		switch t := (*current).(type) {
 		case *parser.MatrixSelector:
-			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String()}
+			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String(), Shard: 0, NumShards: 1}
 		case *parser.VectorSelector:
-			*current = &VectorSelector{VectorSelector: t}
+			*current = &VectorSelector{VectorSelector: t, Shard: 0, NumShards: 1}
 		case *parser.Call:
 			if t.Func.Name != "timestamp" {
 				return
 			}
 			switch v := unwrapParens(t.Args[0]).(type) {
 			case *parser.VectorSelector:
-				*current = &VectorSelector{VectorSelector: v, SelectTimestamp: true}
+				*current = &VectorSelector{VectorSelector: v, SelectTimestamp: true, Shard: 0, NumShards: 1}
 			case *parser.StepInvariantExpr:
 				vs, ok := unwrapParens(v.Expr).(*parser.VectorSelector)
 				if ok {
@@ -199,7 +200,7 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 					if vs.Timestamp != nil {
 						vs.OriginalOffset = 0
 					}
-					*current = &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
+					*current = &VectorSelector{VectorSelector: vs, SelectTimestamp: true, Shard: 0, NumShards: 1}
 				}
 			}
 		}
@@ -462,6 +463,9 @@ type VectorSelector struct {
 	Filters         []*labels.Matcher
 	BatchSize       int64
 	SelectTimestamp bool
+
+	Shard     int
+	NumShards int
 }
 
 func (f VectorSelector) String() string {
@@ -488,6 +492,9 @@ type MatrixSelector struct {
 
 	// Needed because this operator is used in the distributed mode
 	OriginalString string
+
+	Shard     int
+	NumShards int
 }
 
 func (f MatrixSelector) String() string {
