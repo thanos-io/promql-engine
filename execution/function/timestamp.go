@@ -35,6 +35,9 @@ func (o *timestampOperator) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (o *timestampOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -66,16 +69,15 @@ func (o *timestampOperator) GetPool() *model.VectorPool {
 }
 
 func (o *timestampOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	if err := o.loadSeries(ctx); err != nil {
-		return nil, err
-	}
 
-	start := time.Now()
 	in, err := o.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -85,6 +87,5 @@ func (o *timestampOperator) Next(ctx context.Context) ([]model.StepVector, error
 			vector.Samples[i] = float64(vector.T / 1000)
 		}
 	}
-	o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start))
 	return in, nil
 }

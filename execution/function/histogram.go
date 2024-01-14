@@ -72,6 +72,9 @@ func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
 	if err != nil {
@@ -86,12 +89,15 @@ func (o *histogramOperator) GetPool() *model.VectorPool {
 }
 
 func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
+
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
 	if err != nil {
@@ -120,7 +126,6 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 		o.scalarOp.GetPool().PutStepVector(scalar)
 	}
 	o.scalarOp.GetPool().PutVectors(scalars)
-	o.AddExecutionTimeTaken(time.Since(start))
 
 	return o.processInputSeries(vectors)
 }

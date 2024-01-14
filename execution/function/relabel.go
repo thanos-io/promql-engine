@@ -46,6 +46,9 @@ func (o *relabelOperator) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (o *relabelOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
 	return o.series, err
@@ -57,9 +60,9 @@ func (o *relabelOperator) GetPool() *model.VectorPool {
 
 func (o *relabelOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	next, err := o.next.Next(ctx)
-	o.AddExecutionTimeTaken(time.Since(start))
-	return next, err
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
+	return o.next.Next(ctx)
 }
 
 func (o *relabelOperator) loadSeries(ctx context.Context) (err error) {

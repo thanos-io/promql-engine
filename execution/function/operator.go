@@ -143,6 +143,9 @@ func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -155,6 +158,9 @@ func (o *functionOperator) GetPool() *model.VectorPool {
 }
 
 func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -163,7 +169,7 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
-	start := time.Now()
+
 	// Process non-variadic single/multi-arg instant vector and scalar input functions.
 	// Call next on vector input.
 	vectors, err := o.nextOps[o.vectorIndex].Next(ctx)
@@ -222,8 +228,6 @@ func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			}
 		}
 	}
-
-	o.AddExecutionTimeTaken(time.Since(start))
 
 	return vectors, nil
 }

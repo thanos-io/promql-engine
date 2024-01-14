@@ -37,6 +37,9 @@ func (u *unaryNegation) Explain() (me string, next []model.VectorOperator) {
 }
 
 func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
+
 	if err := u.loadSeries(ctx); err != nil {
 		return nil, err
 	}
@@ -65,12 +68,15 @@ func (u *unaryNegation) GetPool() *model.VectorPool {
 }
 
 func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
+
 	in, err := u.next.Next(ctx)
 	if err != nil {
 		return nil, err
@@ -81,6 +87,5 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	for i := range in {
 		floats.Scale(-1, in[i].Samples)
 	}
-	u.AddExecutionTimeTaken(time.Since(start))
 	return in, nil
 }

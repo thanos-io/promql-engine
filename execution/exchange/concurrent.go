@@ -43,6 +43,9 @@ func (c *concurrencyOperator) Explain() (me string, next []model.VectorOperator)
 }
 
 func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
+
 	return c.next.Series(ctx)
 }
 
@@ -51,14 +54,14 @@ func (c *concurrencyOperator) GetPool() *model.VectorPool {
 }
 
 func (c *concurrencyOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-
-	start := time.Now()
-	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
 
 	c.once.Do(func() {
 		go c.pull(ctx)

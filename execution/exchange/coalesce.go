@@ -71,6 +71,9 @@ func (c *coalesce) GetPool() *model.VectorPool {
 }
 
 func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
+
 	var err error
 	c.once.Do(func() { err = c.loadSeries(ctx) })
 	if err != nil {
@@ -80,13 +83,14 @@ func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
 }
 
 func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
+
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	default:
 	}
-	start := time.Now()
-	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
 
 	var err error
 	c.once.Do(func() { err = c.loadSeries(ctx) })
