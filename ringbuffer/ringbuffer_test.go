@@ -37,8 +37,9 @@ func newFloatReader(items []Sample[float64]) *floatReader {
 	}
 }
 
-func (f *floatReader) ReadNext(item *Sample[float64]) {
+func (f *floatReader) ReadNext(item *Sample[float64]) bool {
 	item.T = f.items[f.i].T
 	item.V = f.items[f.i].V
 	f.i++
+	return true
 }

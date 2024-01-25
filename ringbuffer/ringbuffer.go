@@ -34,14 +34,18 @@ func (r *RingBuffer[T]) MaxT() int64 {
 	return r.items[len(r.items)-1].T
 }
 
-func (r *RingBuffer[T]) ReadIntoNext(f func(*Sample[T])) {
+// ReadIntoNext can be used to read a sample into the next ring buffer slot through the passed in callback.
+// If the callback function returns false, the sample is not kept in the buffer.
+func (r *RingBuffer[T]) ReadIntoNext(f func(*Sample[T]) bool) {
 	n := len(r.items)
 	if cap(r.items) > len(r.items) {
 		r.items = r.items[:n+1]
 	} else {
 		r.items = append(r.items, Sample[T]{})
 	}
-	f(&r.items[n])
+	if keep := f(&r.items[n]); !keep {
+		r.items = r.items[:n]
+	}
 }
 
 func (r *RingBuffer[T]) ReadIntoLast(f func(*Sample[T])) {

@@ -277,7 +277,17 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T >= mint {
-		m.buffer.Push(m.lastSample.T, Value{F: m.lastSample.V.F, H: m.lastSample.V.H})
+		m.buffer.ReadIntoNext(func(s *ringbuffer.Sample[Value]) bool {
+			s.T, s.V.F = m.lastSample.T, m.lastSample.V.F
+			if m.lastSample.V.H != nil {
+				if s.V.H == nil {
+					s.V.H = m.lastSample.V.H.Copy()
+				} else {
+					m.lastSample.V.H.CopyTo(s.V.H)
+				}
+			}
+			return true
+		})
 		m.lastSample.T = math.MinInt64
 		mint = maxInt64(mint, m.buffer.MaxT()+1)
 	}
@@ -285,16 +295,21 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			t, h := m.iterator.AtFloatHistogram()
-			if value.IsStaleNaN(h.Sum) {
-				continue
-			}
-			if t > maxt {
-				m.lastSample.T, m.lastSample.V.H = t, h
+			var stop bool
+			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample[Value]) bool {
+				s.T, s.V.H = m.iterator.AtFloatHistogram(s.V.H)
+				if value.IsStaleNaN(s.V.H.Sum) {
+					return false
+				}
+				if s.T > maxt {
+					m.lastSample.T, m.lastSample.V.H = s.T, s.V.H
+					stop = true
+					return false
+				}
+				return true
+			})
+			if stop {
 				return nil
-			}
-			if t >= mint {
-				m.buffer.Push(t, Value{H: h})
 			}
 		case chunkenc.ValFloat:
 			t, v := m.iterator.At()

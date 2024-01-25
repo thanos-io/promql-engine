@@ -4504,9 +4504,13 @@ func (m *mockIterator) At() (int64, float64) {
 	return m.timestamps[m.i], m.values[m.i]
 }
 
-func (m *mockIterator) AtHistogram() (int64, *histogram.Histogram) { return 0, nil }
+func (m *mockIterator) AtHistogram(_ *histogram.Histogram) (int64, *histogram.Histogram) {
+	return 0, nil
+}
 
-func (m *mockIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) { return 0, nil }
+func (m *mockIterator) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
+	return 0, nil
+}
 
 func (m *mockIterator) AtT() int64 { return m.timestamps[m.i] }
 
@@ -4546,11 +4550,11 @@ type slowIterator struct {
 	ts int64
 }
 
-func (d *slowIterator) AtHistogram() (int64, *histogram.Histogram) {
+func (d *slowIterator) AtHistogram(_ *histogram.Histogram) (int64, *histogram.Histogram) {
 	panic("not implemented")
 }
 
-func (d *slowIterator) AtFloatHistogram() (int64, *histogram.FloatHistogram) {
+func (d *slowIterator) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *histogram.FloatHistogram) {
 	panic("not implemented")
 }
 
