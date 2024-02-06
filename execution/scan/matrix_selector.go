@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -296,13 +297,19 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			var stop bool
-			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample[Value]) bool {
+			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample[Value]) (keep bool) {
+				if s.V.H == nil {
+					s.V.H = &histogram.FloatHistogram{}
+				}
 				s.T, s.V.H = m.iterator.AtFloatHistogram(s.V.H)
 				if value.IsStaleNaN(s.V.H.Sum) {
 					return false
 				}
+				if s.T < mint {
+					return false
+				}
 				if s.T > maxt {
-					m.lastSample.T, m.lastSample.V.H = s.T, s.V.H
+					m.lastSample.T, m.lastSample.V.H = s.T, s.V.H.Copy()
 					stop = true
 					return false
 				}
@@ -325,7 +332,6 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 			}
 		}
 	}
-
 	return m.iterator.Err()
 }
 

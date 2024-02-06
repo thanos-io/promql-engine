@@ -4627,7 +4627,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 type histogramTestCase struct {
 	name                   string
 	query                  string
-	onlyInstant            bool
+	start                  time.Time
 	wantEmptyForMixedTypes bool
 }
 
@@ -4643,12 +4643,9 @@ func TestNativeHistograms(t *testing.T) {
 
 	cases := []histogramTestCase{
 		{
-			name:  "plain selector",
-			query: "native_histogram_series",
-		},
-		{
-			name:  "rate() with uneven interval",
-			query: "rate(native_histogram_series[1m15s])",
+			name:  "count_over_time() with different start time",
+			query: "count_over_time(native_histogram_series[1m15s])",
+			start: time.Unix(400, 0),
 		},
 		{
 			name:  "irate()",
@@ -4754,6 +4751,11 @@ func TestNativeHistograms(t *testing.T) {
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
 	numHistograms := 100
 	mixedTypesOpts := []bool{false, true}
+	var (
+		queryStart = time.Unix(50, 0)
+		queryEnd   = time.Unix(600, 0)
+		queryStep  = 30 * time.Second
+	)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, withMixedTypes := range mixedTypesOpts {
@@ -4796,16 +4798,16 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					})
 
 					t.Run("range", func(t *testing.T) {
-						if tc.onlyInstant {
-							t.Skip()
+						if tc.start == (time.Time{}) {
+							tc.start = queryStart
 						}
 						ctx := context.Background()
-						q1, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						q1, err := thanosEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, queryEnd, queryStep)
 						testutil.Ok(t, err)
 						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
 
-						q2, err := promEngine.NewRangeQuery(ctx, storage, nil, tc.query, time.Unix(50, 0), time.Unix(600, 0), 30*time.Second)
+						q2, err := promEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, queryEnd, queryStep)
 						testutil.Ok(t, err)
 						promResult := q2.Exec(ctx)
 						testutil.Ok(t, promResult.Err)
