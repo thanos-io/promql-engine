@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/execution/scan"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
 	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
@@ -36,7 +35,7 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart ti
 		query:             query,
 		opts:              opts,
 		queryRangeStart:   queryRangeStart,
-		vectorSelector:    scan.NewVectorSelector(pool, storage, opts, 0, 0, false, 0, 1),
+		vectorSelector:    promstorage.NewVectorSelector(pool, storage, opts, 0, 0, false, 0, 1),
 		OperatorTelemetry: model.NewTelemetry("[remoteExec]", opts.EnableAnalysis),
 	}
 }

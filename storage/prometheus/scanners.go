@@ -1,4 +1,7 @@
-package scan
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
+package prometheus
 
 import (
 	"runtime"
@@ -12,15 +15,14 @@ import (
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
-	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 type prometheusScanners struct {
-	selectors *promstorage.SelectorPool
+	selectors *SelectorPool
 }
 
 func NewPrometheusScanners(queryable storage.Queryable) *prometheusScanners {
-	return &prometheusScanners{selectors: promstorage.NewSelectorPool(queryable)}
+	return &prometheusScanners{selectors: NewSelectorPool(queryable)}
 }
 
 func (p prometheusScanners) NewVectorSelector(

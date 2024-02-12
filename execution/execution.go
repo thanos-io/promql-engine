@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
@@ -399,13 +398,4 @@ func getTimeRangesForVectorSelector(n *logicalplan.VectorSelector, opts *query.O
 	}
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset
-}
-
-func unpackVectorSelector(t *logicalplan.MatrixSelector) (int64, *logicalplan.VectorSelector, []*labels.Matcher, error) {
-	switch t := t.VectorSelector.(type) {
-	case *logicalplan.VectorSelector:
-		return t.BatchSize, t, t.Filters, nil
-	default:
-		return 0, nil, nil, parse.ErrNotSupportedExpr
-	}
 }

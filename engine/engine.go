@@ -17,21 +17,22 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	promstorage "github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	v1 "github.com/prometheus/prometheus/web/api/v1"
+
+	engstorage "github.com/thanos-io/promql-engine/storage"
+	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 
 	"github.com/thanos-io/promql-engine/execution"
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/execution/scan"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
-	"github.com/thanos-io/promql-engine/storage"
 )
 
 type QueryType int
@@ -105,7 +106,7 @@ func New(opts Opts) *compatibilityEngine {
 // When executing queries, the engine will create scanner operators using the storage.Scanners and will ignore the
 // Prometheus storage passed in NewInstantQuery and NewRangeQuery.
 // This method is useful when the data being queried does not easily fit into the Prometheus storage model.
-func NewWithScanners(opts Opts, scanners storage.Scanners) *compatibilityEngine {
+func NewWithScanners(opts Opts, scanners engstorage.Scanners) *compatibilityEngine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
 	}
@@ -191,7 +192,7 @@ var (
 type compatibilityEngine struct {
 	prom      v1.QueryEngine
 	functions map[string]*parser.Function
-	scanners  storage.Scanners
+	scanners  engstorage.Scanners
 
 	disableDuplicateLabelChecks bool
 	disableFallback             bool
@@ -211,7 +212,7 @@ func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
 	e.prom.SetQueryLogger(l)
 }
 
-func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q promstorage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -269,7 +270,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q promstorage
 	}, nil
 }
 
-func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q promstorage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -325,9 +326,9 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q promstorage.Q
 	}, nil
 }
 
-func (e *compatibilityEngine) storageScanners(queryable promstorage.Queryable) storage.Scanners {
+func (e *compatibilityEngine) storageScanners(queryable storage.Queryable) engstorage.Scanners {
 	if e.scanners == nil {
-		return scan.NewPrometheusScanners(queryable)
+		return promstorage.NewPrometheusScanners(queryable)
 	}
 	return e.scanners
 }
