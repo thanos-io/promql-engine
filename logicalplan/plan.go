@@ -87,49 +87,49 @@ func (p *plan) Expr() parser.Expr {
 	return p.expr
 }
 
-func traverse(expr *parser.Expr, transform func(*parser.Expr)) {
+func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	switch node := (*expr).(type) {
 	case *parser.StepInvariantExpr:
 		transform(expr)
-		traverse(&node.Expr, transform)
+		Traverse(&node.Expr, transform)
 	case *parser.VectorSelector:
 		transform(expr)
 	case *VectorSelector:
 		var x parser.Expr = node.VectorSelector
 		transform(expr)
-		traverse(&x, transform)
+		Traverse(&x, transform)
 	case *MatrixSelector:
 		var x parser.Expr = node.MatrixSelector
 		transform(expr)
-		traverse(&x, transform)
+		Traverse(&x, transform)
 	case *parser.MatrixSelector:
 		transform(expr)
-		traverse(&node.VectorSelector, transform)
+		Traverse(&node.VectorSelector, transform)
 	case *parser.AggregateExpr:
 		transform(expr)
-		traverse(&node.Param, transform)
-		traverse(&node.Expr, transform)
+		Traverse(&node.Param, transform)
+		Traverse(&node.Expr, transform)
 	case *parser.Call:
 		transform(expr)
 		for i := range node.Args {
-			traverse(&(node.Args[i]), transform)
+			Traverse(&(node.Args[i]), transform)
 		}
 	case *parser.BinaryExpr:
 		transform(expr)
-		traverse(&node.LHS, transform)
-		traverse(&node.RHS, transform)
+		Traverse(&node.LHS, transform)
+		Traverse(&node.RHS, transform)
 	case *parser.UnaryExpr:
 		transform(expr)
-		traverse(&node.Expr, transform)
+		Traverse(&node.Expr, transform)
 	case *parser.ParenExpr:
 		transform(expr)
-		traverse(&node.Expr, transform)
+		Traverse(&node.Expr, transform)
 	case *parser.SubqueryExpr:
 		transform(expr)
-		traverse(&node.Expr, transform)
+		Traverse(&node.Expr, transform)
 	case CheckDuplicateLabels:
 		transform(expr)
-		traverse(&node.Expr, transform)
+		Traverse(&node.Expr, transform)
 	}
 }
 
@@ -201,7 +201,7 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 }
 
 func replaceSelectors(plan parser.Expr) parser.Expr {
-	traverse(&plan, func(current *parser.Expr) {
+	Traverse(&plan, func(current *parser.Expr) {
 		switch t := (*current).(type) {
 		case *parser.MatrixSelector:
 			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String()}
@@ -283,7 +283,7 @@ func trimParens(expr parser.Expr) parser.Expr {
 }
 
 func insertDuplicateLabelChecks(expr parser.Expr) parser.Expr {
-	traverse(&expr, func(node *parser.Expr) {
+	Traverse(&expr, func(node *parser.Expr) {
 		switch t := (*node).(type) {
 		case *parser.AggregateExpr, *parser.UnaryExpr, *parser.BinaryExpr, *parser.Call:
 			*node = CheckDuplicateLabels{Expr: t}
@@ -492,12 +492,22 @@ func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 	}
 }
 
+// Projection has information on which series labels should be selected from storage.
+type Projection struct {
+	// Labels is a list of labels to be included or excluded from the selection result, depending on the value of Include.
+	Labels []string
+	// Include is true if only the provided list of labels should be retrieved from storage.
+	// When set to false, the provided list of labels should be excluded from selection.
+	Include bool
+}
+
 // VectorSelector is vector selector with additional configuration set by optimizers.
 type VectorSelector struct {
 	*parser.VectorSelector
 	Filters         []*labels.Matcher
 	BatchSize       int64
 	SelectTimestamp bool
+	Projection      Projection
 }
 
 func (f VectorSelector) String() string {
