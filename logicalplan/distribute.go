@@ -431,7 +431,7 @@ func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.D
 
 	var selectRange time.Duration
 	var offset time.Duration
-	traverse(expr, func(node *parser.Expr) {
+	Traverse(expr, func(node *parser.Expr) {
 		switch n := (*node).(type) {
 		case *parser.SubqueryExpr:
 			selectRange += n.Range
@@ -490,7 +490,7 @@ func matchesExternalLabelSet(expr parser.Expr, externalLabelSet []labels.Labels)
 		return true
 	}
 	var selectorSet [][]*labels.Matcher
-	traverse(&expr, func(current *parser.Expr) {
+	Traverse(&expr, func(current *parser.Expr) {
 		vs, ok := (*current).(*VectorSelector)
 		if ok {
 			selectorSet = append(selectorSet, vs.LabelMatchers)

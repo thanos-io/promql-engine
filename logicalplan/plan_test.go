@@ -27,7 +27,7 @@ var closedParenthesis = regexp.MustCompile(`\s+\)`)
 // internal logical expression types. Implementations were largeley taken
 // from upstream prometheus.
 //
-// TODO: maybe its better to traverse the expression here and inject
+// TODO: maybe its better to Traverse the expression here and inject
 // new nodes with prepared String methods? Like replacing MatrixSelector
 // by testMatrixSelector that has a overridden string method?
 func renderExprTree(expr parser.Expr) string {
