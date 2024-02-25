@@ -127,6 +127,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 )`,
 		},
 		{
+			name: "duplicate label - multiple top level series get merged",
+			load: `load 1m
+            			A 1 2 _ _ _ _ _ _ _ _ _
+            			B _ _ _ _ _ _ _ _ _ 1 2`,
+			query: `exp({__name__=~"(A|B)"})`,
+		},
+		{
 			name: "timestamp fuzz 1",
 			load: `load 30s
         http_requests_total{pod="nginx-1", route="/"} 0.20+9.00x40
