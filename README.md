@@ -109,7 +109,7 @@ An engine using the distributed mode can be created through the `NewDistributedE
 
 The interfaces used for remote execution can be found in [api](https://pkg.go.dev/github.com/thanos-io/promql-engine/api) package. Note that the `RemoteEngine` interface has a `NewRangeQuery` method, similar to the one in the Prometheus [v1.QueryEngine](https://pkg.go.dev/github.com/prometheus/prometheus@v0.42.0/web/api/v1#QueryEngine) interface. It is up to the user of the library to implement this method as they see fit. An example implementation could be to forward the query to an HTTP `/api/v1/query_range` endpoint of a Prometheus instance. In Thanos, this method is implemented as a gRPC call to a Thanos Querier.
 
-For more details on the overall design, please refer to the [proposal](https://github.com/thanos-io/thanos/blob/main/docs/proposals-accepted/202301-distributed-query-execution.md) in the Thanos project.
+For more details on the overall design, please refer to the [proposal](https://github.com/thanos-io/thanos/blob/main/docs/proposals-done/202301-distributed-query-execution.md) in the Thanos project.
 
 ## Continuous benchmark
 

@@ -461,8 +461,6 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 		if _, ok := distributiveAggregations[e.Op]; !ok {
 			return false
 		}
-	case *parser.Call:
-		return len(e.Args) > 0
 	}
 
 	return true
