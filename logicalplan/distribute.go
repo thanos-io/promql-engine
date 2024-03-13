@@ -461,8 +461,6 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 		if _, ok := distributiveAggregations[e.Op]; !ok {
 			return false
 		}
-	case *parser.Call:
-		return len(e.Args) > 0
 	}
 
 	return true
@@ -535,6 +533,9 @@ func isConstantExpr(expr parser.Expr) bool {
 	case *parser.ParenExpr:
 		return isConstantExpr(texpr.Expr)
 	case *parser.Call:
+		if len(texpr.Args) == 0 {
+			return true
+		}
 		constArgs := true
 		for _, arg := range texpr.Args {
 			constArgs = constArgs && isConstantExpr(arg)

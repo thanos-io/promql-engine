@@ -222,6 +222,16 @@ dedup(
 )`,
 		},
 		{
+			name:     "top level function with no args",
+			expr:     `pi()`,
+			expected: `pi()`,
+		},
+		{
+			name:     "binary expression with no arg functions",
+			expr:     `time() - pi()`,
+			expected: `time() - pi()`,
+		},
+		{
 			name: `histogram quantile`,
 			expr: `histogram_quantile(0.5, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket[5m])))`,
 			expected: `
@@ -261,6 +271,11 @@ histogram_quantile(0.5, sum by (le) (dedup(
 			expected: `sum by (pod) (dedup(
 remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60)), 
 remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
+		},
+		{
+			name:     "binary expression with no arg function",
+			expr:     `time() - last_update_timestamp`,
+			expected: `dedup(remote(time() - last_update_timestamp), remote(time() - last_update_timestamp))`,
 		},
 		{
 			name:     "subquery",
