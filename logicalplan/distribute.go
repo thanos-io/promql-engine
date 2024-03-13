@@ -533,9 +533,6 @@ func isConstantExpr(expr parser.Expr) bool {
 	case *parser.ParenExpr:
 		return isConstantExpr(texpr.Expr)
 	case *parser.Call:
-		if len(texpr.Args) == 0 {
-			return true
-		}
 		constArgs := true
 		for _, arg := range texpr.Args {
 			constArgs = constArgs && isConstantExpr(arg)
