@@ -89,6 +89,11 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		return nil, err
 	}
 
+	scalarArg := 0.0
+	if o.funcExpr.Func.Name == "quantile_over_time" {
+		scalarArg = o.funcExpr.Args[0].(*parser.StepInvariantExpr).Expr.(*parser.NumberLiteral).Val
+	}
+
 	res := o.pool.GetVectorBatch()
 	for i := 0; o.currentStep <= o.maxt && i < o.stepsBatch; i++ {
 		mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
@@ -134,9 +139,10 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
 			f, h, ok := o.call(FunctionArgs{
-				Samples:     rangeSamples.Samples(),
-				StepTime:    maxt,
-				SelectRange: o.subQuery.Range.Milliseconds(),
+				ScalarPoints: []float64{scalarArg},
+				Samples:      rangeSamples.Samples(),
+				StepTime:     maxt,
+				SelectRange:  o.subQuery.Range.Milliseconds(),
 			})
 			if ok {
 				if h != nil {

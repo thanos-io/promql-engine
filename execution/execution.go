@@ -196,10 +196,18 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
 	}
-	// TODO: We dont pass arguments yet
 	if e.Func.Name == "quantile_over_time" {
-		return nil, parse.ErrNotImplemented
+		err := errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
+		steInvExpr, isStepInv := e.Args[0].(*parser.StepInvariantExpr)
+		if !isStepInv {
+			return nil, err
+		}
+		_, isScalar := steInvExpr.Expr.(*parser.NumberLiteral)
+		if !isScalar {
+			return nil, err
+		}
 	}
+
 	nOpts := query.NestedOptionsForSubquery(opts, t)
 
 	hints.Start = nOpts.Start.UnixMilli()
