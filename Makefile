@@ -36,6 +36,13 @@ test: ## Runs all Go unit tests.
 	@rm -rf $(GOCACHE)
 	@go test -race -timeout=10m $(GOMODULES);
 
+.PHONY: test-fast
+test-fast: ## Runs all Go unit tests without race detector.
+	@export GOCACHE=/tmp/cache
+	@echo ">> running unit tests with short flag (without cache)"
+	@rm -rf $(GOCACHE)
+	@go test -timeout=10m $(GOMODULES);
+
 .PHONY: test-stringlabels
 test-stringlabels: ## Runs all Go unit tests with stringlabels flag.
 	@export GOCACHE=/tmp/cache
