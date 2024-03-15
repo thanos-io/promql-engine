@@ -81,7 +81,7 @@ func (rs RemoteExecutions) String() string {
 // remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
 	Engine          api.RemoteEngine
-	Query           string
+	Query           parser.Expr
 	QueryRangeStart time.Time
 
 	valueType parser.ValueType
@@ -304,7 +304,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 
 		remoteQueries = append(remoteQueries, RemoteExecution{
 			Engine:          e,
-			Query:           (*expr).String(),
+			Query:           *expr,
 			QueryRangeStart: start,
 			valueType:       (*expr).Type(),
 		})
@@ -330,7 +330,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 		}
 		queries = append(queries, RemoteExecution{
 			Engine:          engines[i],
-			Query:           expr.String(),
+			Query:           expr,
 			QueryRangeStart: opts.Start,
 			valueType:       expr.Type(),
 		})
@@ -342,7 +342,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 	if len(queries) == 0 && len(engines) > 0 {
 		return RemoteExecution{
 			Engine:          engines[len(engines)-1],
-			Query:           expr.String(),
+			Query:           expr,
 			QueryRangeStart: opts.Start,
 			valueType:       expr.Type(),
 		}
