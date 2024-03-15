@@ -24,6 +24,7 @@ func TestFilter_MultipleMatcherWithSameName(t *testing.T) {
 }
 
 func TestFilter_Matches(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name     string
 		matchers []*labels.Matcher
@@ -72,7 +73,9 @@ func TestFilter_Matches(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			f := storage.NewFilter(tc.matchers)
 			if got := f.Matches(tc.series); got != tc.expected {
 				if tc.expected {

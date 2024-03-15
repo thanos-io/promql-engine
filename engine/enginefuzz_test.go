@@ -125,6 +125,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 	f.Add(int64(0), uint32(0), 1.0, 1.0, 1.0, 2.0)
 
 	f.Fuzz(func(t *testing.T, seed int64, ts uint32, initialVal1, initialVal2, inc1, inc2 float64) {
+		t.Parallel()
 		if inc1 < 0 || inc2 < 0 {
 			return
 		}
