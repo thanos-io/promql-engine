@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"os"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -4760,19 +4759,13 @@ func TestNativeHistograms(t *testing.T) {
 		},
 	}
 
-	file, err := os.Create("/tmp/native-cpu.prof")
-	testutil.Ok(t, err)
-	pprof.StartCPUProfile(file)
 	defer pprof.StopCPUProfile()
 	t.Run("integer_histograms", func(t *testing.T) {
-		// generate a profile
-		t0 := time.Now()
-		//t.Parallel()
+		t.Parallel()
 		testNativeHistograms(t, cases, opts, generateNativeHistogramSeries)
-		t.Logf("CPU profile took %v", time.Since(t0))
 	})
 	t.Run("float_histograms", func(t *testing.T) {
-		//t.Parallel()
+		t.Parallel()
 		testNativeHistograms(t, cases, opts, generateFloatHistogramSeries)
 	})
 }
