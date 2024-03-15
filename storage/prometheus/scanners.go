@@ -13,7 +13,6 @@ import (
 	"github.com/thanos-io/promql-engine/execution/exchange"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/extexpr"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -69,7 +68,7 @@ func (p prometheusScanners) NewMatrixSelector(
 
 	arg := 0.0
 	if call.Func.Name == "quantile_over_time" {
-		unwrap, err := extexpr.UnwrapFloat(call.Args[0])
+		unwrap, err := logicalplan.UnwrapFloat(call.Args[0])
 		if err != nil {
 			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
 		}

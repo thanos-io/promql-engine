@@ -15,8 +15,8 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/extexpr"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
 )
@@ -57,7 +57,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 
 	arg := 0.0
 	if funcExpr.Func.Name == "quantile_over_time" {
-		unwrap, err := extexpr.UnwrapFloat(funcExpr.Args[0])
+		unwrap, err := logicalplan.UnwrapFloat(funcExpr.Args[0])
 		if err != nil {
 			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
 		}

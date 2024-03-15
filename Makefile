@@ -89,7 +89,7 @@ lint: format deps $(GOLANGCI_LINT) $(FAILLINT) $(COPYRIGHT) docs
 fmt.{Errorf}=github.com/efficientgo/core/errors.{Wrap,Wrapf},\
 github.com/prometheus/prometheus/pkg/testutils=github.com/efficientgo/core/testutil,\
 github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(GOMODULES)
-	@$(FAILLINT) -paths "fmt.{Print,Println,Sprint,Errorf}" -ignore-tests $(GOMODULES)
+	@$(FAILLINT) -paths "fmt.{Print,Println,Errorf}" -ignore-tests $(GOMODULES)
 	@echo ">> linting all of the Go files GOGC=${GOGC}"
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"

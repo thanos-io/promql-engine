@@ -371,7 +371,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 
 	// Handle case with strings early on as this does not need us to process samples.
 	switch e := q.expr.(type) {
-	case *parser.StringLiteral:
+	case *logicalplan.StringLiteral:
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
 	ret = &promql.Result{

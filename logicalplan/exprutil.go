@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package extexpr
+package logicalplan
 
 import (
 	"github.com/efficientgo/core/errors"
@@ -11,7 +11,7 @@ import (
 // UnwrapString recursively unwraps a parser.Expr until it reaches an StringLiteral.
 func UnwrapString(expr parser.Expr) (string, error) {
 	switch texpr := expr.(type) {
-	case *parser.StringLiteral:
+	case *StringLiteral:
 		return texpr.Val, nil
 	case *parser.ParenExpr:
 		return UnwrapString(texpr.Expr)
@@ -32,7 +32,7 @@ func UnsafeUnwrapString(expr parser.Expr) string {
 // UnwrapFloat recursively unwraps a parser.Expr until it reaches an NumberLiteral.
 func UnwrapFloat(expr parser.Expr) (float64, error) {
 	switch texpr := expr.(type) {
-	case *parser.NumberLiteral:
+	case *NumberLiteral:
 		return texpr.Val, nil
 	case *parser.ParenExpr:
 		return UnwrapFloat(texpr.Expr)
@@ -50,5 +50,28 @@ func UnwrapParens(expr parser.Expr) parser.Expr {
 		return UnwrapParens(t.Expr)
 	default:
 		return t
+	}
+}
+
+// IsConstantExpr reports if the expression evaluates to a constant.
+func IsConstantExpr(expr parser.Expr) bool {
+	// TODO: there are more possibilities for constant expressions
+	switch texpr := expr.(type) {
+	case *NumberLiteral, *StringLiteral:
+		return true
+	case *parser.StepInvariantExpr:
+		return IsConstantExpr(texpr.Expr)
+	case *parser.ParenExpr:
+		return IsConstantExpr(texpr.Expr)
+	case *parser.Call:
+		constArgs := true
+		for _, arg := range texpr.Args {
+			constArgs = constArgs && IsConstantExpr(arg)
+		}
+		return constArgs
+	case *parser.BinaryExpr:
+		return IsConstantExpr(texpr.LHS) && IsConstantExpr(texpr.RHS)
+	default:
+		return false
 	}
 }
