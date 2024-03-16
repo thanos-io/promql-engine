@@ -16,6 +16,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/thanos-io/promql-engine/extexpr"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -211,11 +212,11 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 			if t.Func.Name != "timestamp" {
 				return
 			}
-			switch v := unwrapParens(t.Args[0]).(type) {
+			switch v := extexpr.UnwrapParens(t.Args[0]).(type) {
 			case *parser.VectorSelector:
 				*current = &VectorSelector{VectorSelector: v, SelectTimestamp: true}
 			case *parser.StepInvariantExpr:
-				vs, ok := unwrapParens(v.Expr).(*parser.VectorSelector)
+				vs, ok := extexpr.UnwrapParens(v.Expr).(*parser.VectorSelector)
 				if ok {
 					// Prometheus weirdness
 					if vs.Timestamp != nil {
@@ -406,15 +407,6 @@ func makeInt64Pointer(val int64) *int64 {
 
 func newStepInvariantExpr(expr parser.Expr) parser.Expr {
 	return &parser.StepInvariantExpr{Expr: expr}
-}
-
-func unwrapParens(expr parser.Expr) parser.Expr {
-	switch t := expr.(type) {
-	case *parser.ParenExpr:
-		return unwrapParens(t.Expr)
-	default:
-		return t
-	}
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L2658.
