@@ -13,6 +13,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/exchange"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/extexpr"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -67,9 +68,9 @@ func (p prometheusScanners) NewMatrixSelector(
 	}
 	var arg float64
 	if call.Func.Name == "quantile_over_time" {
-		constVal, err := unwrapConstVal(call.Args[0])
+		constVal, err := extexpr.UnwrapFloat(call.Args[0])
 		if err != nil {
-			return nil, err
+			return nil, errors.Wrap(parse.ErrNotSupportedExpr, "matrix selector argument must be a constant")
 		}
 		arg = constVal
 	}
@@ -98,15 +99,4 @@ func (p prometheusScanners) NewMatrixSelector(
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, vs.BatchSize*int64(numShards), operators...), nil
-}
-
-func unwrapConstVal(e parser.Expr) (float64, error) {
-	switch c := e.(type) {
-	case *parser.NumberLiteral:
-		return c.Val, nil
-	case *parser.StepInvariantExpr:
-		return unwrapConstVal(c.Expr)
-	}
-
-	return 0, errors.Wrap(parse.ErrNotSupportedExpr, "matrix selector argument must be a constant")
 }

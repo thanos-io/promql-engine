@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/extexpr"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -274,7 +275,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engine
 	if allowedStartOffset < startOffset {
 		return *expr
 	}
-	if isConstantExpr(*expr) {
+	if extexpr.IsConstantExpr(*expr) {
 		return *expr
 	}
 
@@ -467,8 +468,8 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 }
 
 func isBinaryExpressionWithOneConstantSide(expr *parser.BinaryExpr) bool {
-	lhsConstant := isConstantExpr(expr.LHS)
-	rhsConstant := isConstantExpr(expr.RHS)
+	lhsConstant := extexpr.IsConstantExpr(expr.LHS)
+	rhsConstant := extexpr.IsConstantExpr(expr.RHS)
 	return (lhsConstant || rhsConstant)
 }
 
@@ -523,28 +524,6 @@ func matchesExternalLabels(ms []*labels.Matcher, externalLabels labels.Labels) b
 	return true
 }
 
-func isConstantExpr(expr parser.Expr) bool {
-	// TODO: there are more possibilities for constant expressions
-	switch texpr := expr.(type) {
-	case *parser.NumberLiteral:
-		return true
-	case *parser.StepInvariantExpr:
-		return isConstantExpr(texpr.Expr)
-	case *parser.ParenExpr:
-		return isConstantExpr(texpr.Expr)
-	case *parser.Call:
-		constArgs := true
-		for _, arg := range texpr.Args {
-			constArgs = constArgs && isConstantExpr(arg)
-		}
-		return constArgs
-	case *parser.BinaryExpr:
-		return isConstantExpr(texpr.LHS) && isConstantExpr(texpr.RHS)
-	default:
-		return false
-	}
-}
-
 func rewritesEngineLabels(e parser.Expr, engineLabels map[string]struct{}) bool {
 	var result bool
 	TraverseBottomUp(nil, &e, func(parent *parser.Expr, node *parser.Expr) bool {
@@ -552,7 +531,7 @@ func rewritesEngineLabels(e parser.Expr, engineLabels map[string]struct{}) bool 
 		if !ok || call.Func.Name != "label_replace" {
 			return false
 		}
-		targetLabel := call.Args[1].(*parser.StringLiteral).Val
+		targetLabel := extexpr.UnsafeUnwrapString(call.Args[1])
 		if _, ok := engineLabels[targetLabel]; ok {
 			result = true
 			return true
