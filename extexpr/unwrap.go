@@ -8,7 +8,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-// UnwrapString recursively unwraps an parser.Expr until it reaches an StringLiteral.
+// UnwrapString recursively unwraps a parser.Expr until it reaches an StringLiteral.
 func UnwrapString(expr parser.Expr) (string, error) {
 	switch texpr := expr.(type) {
 	case *parser.StringLiteral:
@@ -29,7 +29,7 @@ func UnsafeUnwrapString(expr parser.Expr) string {
 	return v
 }
 
-// UnwrapString recursively unwraps an parser.Expr until it reaches an NumberLiteral.
+// UnwrapFloat recursively unwraps a parser.Expr until it reaches an NumberLiteral.
 func UnwrapFloat(expr parser.Expr) (float64, error) {
 	switch texpr := expr.(type) {
 	case *parser.NumberLiteral:
@@ -43,7 +43,7 @@ func UnwrapFloat(expr parser.Expr) (float64, error) {
 	}
 }
 
-// UnwrapString recursively unwraps an parser.ParenExpr.
+// UnwrapParens recursively unwraps a parser.ParenExpr.
 func UnwrapParens(expr parser.Expr) parser.Expr {
 	switch t := expr.(type) {
 	case *parser.ParenExpr:

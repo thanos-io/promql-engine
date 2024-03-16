@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/efficientgo/core/errors"
+	"github.com/thanos-io/promql-engine/extexpr"
 
-	"github.com/thanos-io/promql-engine/extscanners"
+	"github.com/efficientgo/core/errors"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -96,7 +96,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 	scalarArg := 0.0
 	var err error
 	if o.funcExpr.Func.Name == "quantile_over_time" {
-		scalarArg, err = extscanners.UnwrapConstVal(o.funcExpr.Args[0])
+		scalarArg, err = extexpr.UnwrapFloat(o.funcExpr.Args[0])
 		if err != nil {
 			return nil, errors.Wrapf(err, "failed to unwrap scalar argument for quantile_over_time")
 		}
