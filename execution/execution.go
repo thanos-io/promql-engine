@@ -196,11 +196,11 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
 	}
+
 	if e.Func.Name == "quantile_over_time" {
-		err := errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
 		_, unwrapErr := extscanners.UnwrapConstVal(e.Args[0])
 		if unwrapErr != nil {
-			return nil, err
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
 		}
 	}
 
