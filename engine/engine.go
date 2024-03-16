@@ -451,10 +451,10 @@ loop:
 			matrix = append(matrix, s)
 		}
 		sort.Sort(matrix)
+		ret.Value = matrix
 		if matrix.ContainsSameLabelset() {
 			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
 		}
-		ret.Value = matrix
 		return ret
 	}
 
