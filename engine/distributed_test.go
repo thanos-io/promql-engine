@@ -251,38 +251,17 @@ func TestDistributedAggregations(t *testing.T) {
 		query := query
 		t.Run(query.name, func(t *testing.T) {
 			t.Parallel()
-			localOpts := engine.Opts{
-				EngineOpts: promql.EngineOpts{
-					Timeout:              1 * time.Hour,
-					MaxSamples:           1e10,
-					EnableNegativeOffset: true,
-					EnableAtModifier:     true,
-				},
-			}
 			for _, test := range tests {
 				test := test
 				var allSeries []*mockSeries
 				remoteEngines := make([]api.RemoteEngine, 0, len(test.seriesSets)+1)
 				for _, s := range test.seriesSets {
-					remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-						localOpts,
-						storageWithMockSeries(s.series...),
-						s.mint(),
-						s.maxt(),
-						s.extLset,
-					))
 					allSeries = append(allSeries, s.series...)
 				}
 				if len(test.timeOverlap.series) > 0 {
-					remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-						localOpts,
-						storageWithMockSeries(test.timeOverlap.series...),
-						test.timeOverlap.mint(),
-						test.timeOverlap.maxt(),
-						test.timeOverlap.extLset,
-					))
 					allSeries = append(allSeries, test.timeOverlap.series...)
 				}
+				completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
 				t.Run(test.name, func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
 						localOpts := engine.Opts{
@@ -294,12 +273,28 @@ func TestDistributedAggregations(t *testing.T) {
 								LookbackDelta:        lookbackDelta,
 							},
 						}
+
+						for _, s := range test.seriesSets {
+							remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
+								localOpts,
+								storageWithMockSeries(s.series...),
+								s.mint(),
+								s.maxt(),
+								s.extLset,
+							))
+						}
+						if len(test.timeOverlap.series) > 0 {
+							remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
+								localOpts,
+								storageWithMockSeries(test.timeOverlap.series...),
+								test.timeOverlap.mint(),
+								test.timeOverlap.maxt(),
+								test.timeOverlap.extLset,
+							))
+						}
+
 						for _, queryOpts := range allQueryOpts {
-
-							completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
-
 							ctx := context.Background()
-
 							distOpts := localOpts
 							distOpts.DisableFallback = !query.expectFallback
 							for _, instantTS := range instantTSs {
