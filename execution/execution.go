@@ -23,7 +23,6 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-
 	promstorage "github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
@@ -37,6 +36,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/scan"
 	"github.com/thanos-io/promql-engine/execution/step_invariant"
 	"github.com/thanos-io/promql-engine/execution/unary"
+	"github.com/thanos-io/promql-engine/extscanners"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage"
@@ -198,12 +198,8 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage
 	}
 	if e.Func.Name == "quantile_over_time" {
 		err := errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
-		steInvExpr, isStepInv := e.Args[0].(*parser.StepInvariantExpr)
-		if !isStepInv {
-			return nil, err
-		}
-		_, isScalar := steInvExpr.Expr.(*parser.NumberLiteral)
-		if !isScalar {
+		_, unwrapErr := extscanners.UnwrapConstVal(e.Args[0])
+		if unwrapErr != nil {
 			return nil, err
 		}
 	}
