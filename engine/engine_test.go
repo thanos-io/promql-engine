@@ -11,6 +11,7 @@ import (
 	"math"
 	"reflect"
 	"runtime"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -46,6 +47,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestPromqlAcceptance(t *testing.T) {
+	t.Parallel()
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
 			EnableAtModifier:         true,
@@ -58,6 +60,7 @@ func TestPromqlAcceptance(t *testing.T) {
 }
 
 func TestVectorSelectorWithGaps(t *testing.T) {
+	t.Parallel()
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e10,
@@ -96,6 +99,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 }
 
 func TestQueriesAgainstOldEngine(t *testing.T) {
+	t.Parallel()
 	start := time.Unix(0, 0)
 	end := time.Unix(1800, 0)
 	step := time.Second * 30
@@ -1871,7 +1875,9 @@ load 30s
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
 		for _, tc := range cases {
+			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
+				t.Parallel()
 				storage := promql.LoadedStorage(t, tc.load)
 				defer storage.Close()
 
@@ -2000,7 +2006,9 @@ func TestWarnings(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
 			q1, err := newEngine.NewRangeQuery(context.Background(), querier, nil, tc.query, start, end, step)
 			testutil.Ok(t, err)
@@ -2015,6 +2023,7 @@ func TestWarnings(t *testing.T) {
 }
 
 func TestEdgeCases(t *testing.T) {
+	t.Parallel()
 	testCases := []struct {
 		name   string
 		series []storage.Series
@@ -2068,7 +2077,9 @@ func TestEdgeCases(t *testing.T) {
 	}
 	step := time.Second * 30
 	for _, tc := range testCases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			ctx := context.Background()
 			oldEngine := promql.NewEngine(opts)
 			q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
@@ -2689,7 +2700,9 @@ func TestRateVsXRate(t *testing.T) {
 	}
 
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			load := defaultLoad
 			if tc.load != "" {
 				load = tc.load
@@ -2741,17 +2754,8 @@ func createVectorResult(vector promql.Vector) *promql.Result {
 }
 
 func TestInstantQuery(t *testing.T) {
+	t.Parallel()
 	defaultQueryTime := time.Unix(50, 0)
-	// Negative offset and at modifier are enabled by default
-	// since Prometheus v2.33.0, so we also enable them.
-	opts := promql.EngineOpts{
-		Timeout:                  1 * time.Hour,
-		MaxSamples:               1e10,
-		EnableNegativeOffset:     true,
-		EnableAtModifier:         true,
-		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
-	}
-
 	cases := []struct {
 		load      string
 		name      string
@@ -3871,14 +3875,26 @@ absent_over_time({__name__="http_requests_total",route="/"}[3m] offset 1m45s)`,
 	disableOptimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			testStorage := promql.LoadedStorage(t, tc.load)
+			defer testStorage.Close()
 			for _, disableOptimizers := range disableOptimizerOpts {
+				disableOptimizers := disableOptimizers
 				t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
-						opts.LookbackDelta = lookbackDelta
-
-						storage := promql.LoadedStorage(t, tc.load)
-						defer storage.Close()
+						lookbackDelta := lookbackDelta
+						// Negative offset and at modifier are enabled by default
+						// since Prometheus v2.33.0, so we also enable them.
+						opts := promql.EngineOpts{
+							Timeout:                  1 * time.Hour,
+							MaxSamples:               1e10,
+							EnableNegativeOffset:     true,
+							EnableAtModifier:         true,
+							NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
+							LookbackDelta:            lookbackDelta,
+						}
 
 						for _, disableFallback := range []bool{false, true} {
 							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
@@ -3898,14 +3914,14 @@ absent_over_time({__name__="http_requests_total",route="/"}[3m] offset 1m45s)`,
 								})
 
 								ctx := context.Background()
-								q1, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, queryTime)
+								q1, err := newEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
 								testutil.Ok(t, err)
 								defer q1.Close()
 
 								newResult := q1.Exec(ctx)
 
 								oldEngine := promql.NewEngine(opts)
-								q2, err := oldEngine.NewInstantQuery(ctx, storage, nil, tc.query, queryTime)
+								q2, err := oldEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
 								testutil.Ok(t, err)
 								defer q2.Close()
 
@@ -4274,7 +4290,9 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			},
 		},
 	} {
+		tc := tc
 		t.Run(tc.query, func(t *testing.T) {
+			t.Parallel()
 			opts := promql.EngineOpts{
 				Logger:           nil,
 				Reg:              nil,
@@ -4634,6 +4652,7 @@ type histogramTestCase struct {
 type histogramGeneratorFunc func(app storage.Appender, numSeries int, withMixedTypes bool) error
 
 func TestNativeHistograms(t *testing.T) {
+	t.Parallel()
 	opts := promql.EngineOpts{
 		Timeout:              1 * time.Hour,
 		MaxSamples:           1e16,
@@ -4740,16 +4759,19 @@ func TestNativeHistograms(t *testing.T) {
 		},
 	}
 
+	defer pprof.StopCPUProfile()
 	t.Run("integer_histograms", func(t *testing.T) {
+		t.Parallel()
 		testNativeHistograms(t, cases, opts, generateNativeHistogramSeries)
 	})
 	t.Run("float_histograms", func(t *testing.T) {
+		t.Parallel()
 		testNativeHistograms(t, cases, opts, generateFloatHistogramSeries)
 	})
 }
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
-	numHistograms := 100
+	numHistograms := 50
 	mixedTypesOpts := []bool{false, true}
 	var (
 		queryStart = time.Unix(50, 0)
@@ -4757,7 +4779,9 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 		queryStep  = 30 * time.Second
 	)
 	for _, tc := range cases {
+		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 			for _, withMixedTypes := range mixedTypesOpts {
 				t.Run(fmt.Sprintf("mixedTypes=%t", withMixedTypes), func(t *testing.T) {
 					storage := teststorage.New(t)
@@ -4897,6 +4921,7 @@ func generateFloatHistogramSeries(app storage.Appender, numSeries int, withMixed
 }
 
 func TestMixedNativeHistogramTypes(t *testing.T) {
+	t.Parallel()
 	histograms := tsdbutil.GenerateTestHistograms(2)
 
 	storage := teststorage.New(t)

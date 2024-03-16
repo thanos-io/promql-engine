@@ -19,6 +19,7 @@ import (
 )
 
 func TestQueryExplain(t *testing.T) {
+	t.Parallel()
 	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
 	series := storage.MockSeries(
 		[]int64{240, 270, 300, 600, 630, 660},

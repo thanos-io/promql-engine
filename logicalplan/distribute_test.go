@@ -19,6 +19,7 @@ import (
 )
 
 func TestDistributedExecution(t *testing.T) {
+	t.Parallel()
 	cases := []struct {
 		name       string
 		expr       string

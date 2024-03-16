@@ -220,7 +220,9 @@ func TestMatcherPropagation(t *testing.T) {
 
 	optimizers := []Optimizer{PropagateMatchersOptimizer{}}
 	for _, tcase := range cases {
+		tcase := tcase
 		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 

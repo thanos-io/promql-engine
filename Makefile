@@ -31,10 +31,14 @@ help: ## Displays help.
 
 .PHONY: test
 test: ## Runs all Go unit tests.
-	@export GOCACHE=/tmp/cache
 	@echo ">> running unit tests (without cache)"
-	@rm -rf $(GOCACHE)
-	@go test -race -timeout=10m $(GOMODULES);
+	@rm -rf /tmp/engine-cache
+	@GORACE=atexit_sleep_ms=0 GOCACHE=/tmp/engine-cache go test -race -timeout=10m $(GOMODULES);
+
+.PHONY: test-fast
+test-fast: ## Runs all Go unit tests without race detector.
+	@echo ">> running unit tests without race detection (with cache)"
+	@go test -count=1 -timeout=10m $(GOMODULES);
 
 .PHONY: test-stringlabels
 test-stringlabels: ## Runs all Go unit tests with stringlabels flag.
