@@ -66,13 +66,14 @@ func (p prometheusScanners) NewMatrixSelector(
 	if numShards < 1 {
 		numShards = 1
 	}
-	var arg float64
+
+	arg := 0.0
 	if call.Func.Name == "quantile_over_time" {
-		constVal, err := extexpr.UnwrapFloat(call.Args[0])
+		unwrap, err := extexpr.UnwrapFloat(call.Args[0])
 		if err != nil {
-			return nil, errors.Wrap(parse.ErrNotSupportedExpr, "matrix selector argument must be a constant")
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
 		}
-		arg = constVal
+		arg = unwrap
 	}
 
 	vs := logicalNode.VectorSelector.(*logicalplan.VectorSelector)

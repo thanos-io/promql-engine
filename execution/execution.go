@@ -20,8 +20,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/thanos-io/promql-engine/extexpr"
-
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -196,13 +194,6 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage
 	// TODO: We dont implement ext functions
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
-	}
-
-	if e.Func.Name == "quantile_over_time" {
-		_, unwrapErr := extexpr.UnwrapFloat(e.Args[0])
-		if unwrapErr != nil {
-			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
-		}
 	}
 
 	nOpts := query.NestedOptionsForSubquery(opts, t)
