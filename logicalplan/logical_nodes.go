@@ -5,6 +5,7 @@ package logicalplan
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -49,7 +50,8 @@ func (f VectorSelector) PromQLExpr() {}
 // MatrixSelector is matrix selector with additional configuration set by optimizers.
 // It is used so we can get rid of VectorSelector in distributed mode too.
 type MatrixSelector struct {
-	*parser.MatrixSelector
+	VectorSelector parser.Expr
+	Range          time.Duration
 
 	// Needed because this operator is used in the distributed mode
 	OriginalString string
@@ -117,3 +119,21 @@ func (c NumberLiteral) PositionRange() posrange.PositionRange { return posrange.
 func (c NumberLiteral) Type() parser.ValueType { return parser.ValueTypeScalar }
 
 func (c NumberLiteral) PromQLExpr() {}
+
+// StepInvariantExpr is a logical node that expresses that the child expression
+// returns the same value at every step in the evaluation.
+type StepInvariantExpr struct {
+	Expr parser.Expr
+}
+
+func (c StepInvariantExpr) String() string { return c.Expr.String() }
+
+func (c StepInvariantExpr) Pretty(level int) string { return c.String() }
+
+func (c StepInvariantExpr) PositionRange() posrange.PositionRange {
+	return c.Expr.PositionRange()
+}
+
+func (c StepInvariantExpr) Type() parser.ValueType { return c.Expr.Type() }
+
+func (c StepInvariantExpr) PromQLExpr() {}

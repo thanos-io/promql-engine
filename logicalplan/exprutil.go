@@ -15,7 +15,7 @@ func UnwrapString(expr parser.Expr) (string, error) {
 		return texpr.Val, nil
 	case *parser.ParenExpr:
 		return UnwrapString(texpr.Expr)
-	case *parser.StepInvariantExpr:
+	case *StepInvariantExpr:
 		return UnwrapString(texpr.Expr)
 	default:
 		return "", errors.Newf("unexpected type: %T", texpr)
@@ -36,7 +36,7 @@ func UnwrapFloat(expr parser.Expr) (float64, error) {
 		return texpr.Val, nil
 	case *parser.ParenExpr:
 		return UnwrapFloat(texpr.Expr)
-	case *parser.StepInvariantExpr:
+	case *StepInvariantExpr:
 		return UnwrapFloat(texpr.Expr)
 	default:
 		return 0, errors.Newf("unexpected type: %T", texpr)
@@ -59,7 +59,7 @@ func IsConstantExpr(expr parser.Expr) bool {
 	switch texpr := expr.(type) {
 	case *NumberLiteral, *StringLiteral:
 		return true
-	case *parser.StepInvariantExpr:
+	case *StepInvariantExpr:
 		return IsConstantExpr(texpr.Expr)
 	case *parser.ParenExpr:
 		return IsConstantExpr(texpr.Expr)

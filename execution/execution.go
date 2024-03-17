@@ -68,7 +68,7 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 		return newOperator(e.Expr, storage, opts, hints)
 	case *parser.UnaryExpr:
 		return newUnaryExpression(e, storage, opts, hints)
-	case *parser.StepInvariantExpr:
+	case *logicalplan.StepInvariantExpr:
 		return newStepInvariantExpression(e, storage, opts, hints)
 	case logicalplan.Deduplicate:
 		return newDeduplication(e, storage, opts, hints)
@@ -162,10 +162,8 @@ func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opt
 		f := &parser.Call{
 			Func: &parser.Function{Name: "absent"},
 			Args: []parser.Expr{&logicalplan.MatrixSelector{
-				MatrixSelector: &parser.MatrixSelector{
-					VectorSelector: arg.VectorSelector,
-					Range:          arg.Range,
-				},
+				VectorSelector: arg.VectorSelector,
+				Range:          arg.Range,
 				OriginalString: arg.String(),
 			}},
 		}
@@ -321,7 +319,7 @@ func newUnaryExpression(e *parser.UnaryExpr, scanners storage.Scanners, opts *qu
 	}
 }
 
-func newStepInvariantExpression(e *parser.StepInvariantExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newStepInvariantExpression(e *logicalplan.StepInvariantExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch t := e.Expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, t.Val), nil

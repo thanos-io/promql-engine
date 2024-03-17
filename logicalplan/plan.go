@@ -55,7 +55,7 @@ func New(expr parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan 
 	expr = trimSorts(expr)
 
 	// replace scanners by our logical nodes
-	expr = replaceSelectors(expr)
+	expr = replacePrometheusNodes(expr)
 
 	return &plan{
 		expr:     expr,
@@ -72,6 +72,8 @@ func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) 
 		annos.Merge(a)
 	}
 	// parens are just annoying and getting rid of them doesn't change the query
+	// NOTE: we need to do this here to not break the distributed optimizer since
+	// rendering subqueries String() method depends on parens sometimes.
 	expr := trimParens(p.expr)
 
 	if !p.planOpts.DisableDuplicateLabelCheck {
@@ -92,6 +94,9 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.StepInvariantExpr:
 		transform(expr)
 		Traverse(&node.Expr, transform)
+	case *StepInvariantExpr:
+		transform(expr)
+		Traverse(&node.Expr, transform)
 	case *parser.VectorSelector:
 		transform(expr)
 	case *VectorSelector:
@@ -99,7 +104,7 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		transform(expr)
 		Traverse(&x, transform)
 	case *MatrixSelector:
-		var x parser.Expr = node.MatrixSelector
+		var x parser.Expr = node.VectorSelector
 		transform(expr)
 		Traverse(&x, transform)
 	case *parser.MatrixSelector:
@@ -144,6 +149,11 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			return stop
 		}
 		return transform(parent, current)
+	case *StepInvariantExpr:
+		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
 	case *parser.VectorSelector:
 		return transform(parent, current)
 	case *VectorSelector:
@@ -156,7 +166,7 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 		if stop := transform(parent, current); stop {
 			return stop
 		}
-		var x parser.Expr = node.MatrixSelector
+		var x parser.Expr = node.VectorSelector
 		return TraverseBottomUp(current, &x, transform)
 	case *parser.MatrixSelector:
 		return transform(current, &node.VectorSelector)
@@ -200,24 +210,26 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	return true
 }
 
-func replaceSelectors(plan parser.Expr) parser.Expr {
-	Traverse(&plan, func(current *parser.Expr) {
-		switch t := (*current).(type) {
-		case *parser.StringLiteral:
-			*current = &StringLiteral{Val: t.Val}
-		case *parser.NumberLiteral:
-			*current = &NumberLiteral{Val: t.Val}
-		case *parser.MatrixSelector:
-			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String()}
-		case *parser.VectorSelector:
-			*current = &VectorSelector{VectorSelector: t}
-		case *parser.Call:
-			if t.Func.Name != "timestamp" {
-				return
-			}
+func replacePrometheusNodes(plan parser.Expr) parser.Expr {
+	switch t := (plan).(type) {
+	case *parser.StringLiteral:
+		return &StringLiteral{Val: t.Val}
+	case *parser.NumberLiteral:
+		return &NumberLiteral{Val: t.Val}
+	case *parser.StepInvariantExpr:
+		return &StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
+	case *parser.MatrixSelector:
+		return &MatrixSelector{VectorSelector: replacePrometheusNodes(t.VectorSelector), Range: t.Range, OriginalString: t.String()}
+	case *parser.VectorSelector:
+		return &VectorSelector{VectorSelector: t}
+
+	//TODO: we dont yet have logical nodes for these, keep traversing here but set fields in-place
+	case *parser.Call:
+		if t.Func.Name == "timestamp" {
+			// pushed-down timestamp function
 			switch v := UnwrapParens(t.Args[0]).(type) {
 			case *parser.VectorSelector:
-				*current = &VectorSelector{VectorSelector: v, SelectTimestamp: true}
+				return &VectorSelector{VectorSelector: v, SelectTimestamp: true}
 			case *parser.StepInvariantExpr:
 				vs, ok := UnwrapParens(v.Expr).(*parser.VectorSelector)
 				if ok {
@@ -225,11 +237,33 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 					if vs.Timestamp != nil {
 						vs.OriginalOffset = 0
 					}
-					*current = &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
+					return &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
 				}
 			}
 		}
-	})
+		// nested timestamp functions
+		for i, arg := range t.Args {
+			t.Args[i] = replacePrometheusNodes(arg)
+		}
+		return t
+	case *parser.ParenExpr:
+		t.Expr = replacePrometheusNodes(t.Expr)
+		return t
+	case *parser.UnaryExpr:
+		t.Expr = replacePrometheusNodes(t.Expr)
+		return t
+	case *parser.AggregateExpr:
+		t.Expr = replacePrometheusNodes(t.Expr)
+		t.Param = replacePrometheusNodes(t.Param)
+		return t
+	case *parser.BinaryExpr:
+		t.LHS = replacePrometheusNodes(t.LHS)
+		t.RHS = replacePrometheusNodes(t.RHS)
+		return t
+	case *parser.SubqueryExpr:
+		t.Expr = replacePrometheusNodes(t.Expr)
+		return t
+	}
 	return plan
 }
 
