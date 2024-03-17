@@ -14,5 +14,5 @@ import (
 
 type Scanners interface {
 	NewVectorSelector(opts *query.Options, hints storage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error)
-	NewMatrixSelector(opts *query.Options, hints storage.SelectHints, logicalNode logicalplan.MatrixSelector, call parser.Call) (model.VectorOperator, error)
+	NewMatrixSelector(opts *query.Options, hints storage.SelectHints, selector logicalplan.MatrixSelector, call parser.Call) (model.VectorOperator, error)
 }

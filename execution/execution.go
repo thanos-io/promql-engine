@@ -54,7 +54,7 @@ func New(expr parser.Expr, storage storage.Scanners, opts *query.Options) (model
 
 func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
-	case *parser.NumberLiteral:
+	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
 		return newVectorSelector(e, storage, opts, hints)
@@ -323,7 +323,7 @@ func newUnaryExpression(e *parser.UnaryExpr, scanners storage.Scanners, opts *qu
 
 func newStepInvariantExpression(e *parser.StepInvariantExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch t := e.Expr.(type) {
-	case *parser.NumberLiteral:
+	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, t.Val), nil
 	}
 	next, err := newOperator(e.Expr, scanners, opts.WithEndTime(opts.Start), hints)

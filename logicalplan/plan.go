@@ -9,14 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/thanos-io/promql-engine/extexpr"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -90,6 +87,8 @@ func (p *plan) Expr() parser.Expr {
 
 func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	switch node := (*expr).(type) {
+	case *parser.StringLiteral, *parser.NumberLiteral:
+		transform(expr)
 	case *parser.StepInvariantExpr:
 		transform(expr)
 		Traverse(&node.Expr, transform)
@@ -136,10 +135,10 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 
 func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(parent *parser.Expr, node *parser.Expr) bool) bool {
 	switch node := (*current).(type) {
-	case *parser.StringLiteral:
-		return false
-	case *parser.NumberLiteral:
-		return false
+	case *parser.StringLiteral, *StringLiteral:
+		return transform(parent, current)
+	case *parser.NumberLiteral, *NumberLiteral:
+		return transform(parent, current)
 	case *parser.StepInvariantExpr:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
@@ -204,6 +203,10 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 func replaceSelectors(plan parser.Expr) parser.Expr {
 	Traverse(&plan, func(current *parser.Expr) {
 		switch t := (*current).(type) {
+		case *parser.StringLiteral:
+			*current = &StringLiteral{Val: t.Val}
+		case *parser.NumberLiteral:
+			*current = &NumberLiteral{Val: t.Val}
 		case *parser.MatrixSelector:
 			*current = &MatrixSelector{MatrixSelector: t, OriginalString: t.String()}
 		case *parser.VectorSelector:
@@ -212,11 +215,11 @@ func replaceSelectors(plan parser.Expr) parser.Expr {
 			if t.Func.Name != "timestamp" {
 				return
 			}
-			switch v := extexpr.UnwrapParens(t.Args[0]).(type) {
+			switch v := UnwrapParens(t.Args[0]).(type) {
 			case *parser.VectorSelector:
 				*current = &VectorSelector{VectorSelector: v, SelectTimestamp: true}
 			case *parser.StepInvariantExpr:
-				vs, ok := extexpr.UnwrapParens(v.Expr).(*parser.VectorSelector)
+				vs, ok := UnwrapParens(v.Expr).(*parser.VectorSelector)
 				if ok {
 					// Prometheus weirdness
 					if vs.Timestamp != nil {
@@ -483,75 +486,3 @@ func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 		}
 	}
 }
-
-// Projection has information on which series labels should be selected from storage.
-type Projection struct {
-	// Labels is a list of labels to be included or excluded from the selection result, depending on the value of Include.
-	Labels []string
-	// Include is true if only the provided list of labels should be retrieved from storage.
-	// When set to false, the provided list of labels should be excluded from selection.
-	Include bool
-}
-
-// VectorSelector is vector selector with additional configuration set by optimizers.
-type VectorSelector struct {
-	*parser.VectorSelector
-	Filters         []*labels.Matcher
-	BatchSize       int64
-	SelectTimestamp bool
-	Projection      Projection
-}
-
-func (f VectorSelector) String() string {
-	if f.SelectTimestamp {
-		// If we pushed down timestamp into the vector selector we need to render the proper
-		// PromQL again.
-		return fmt.Sprintf("timestamp(%s)", f.VectorSelector.String())
-	}
-	return f.VectorSelector.String()
-}
-
-func (f VectorSelector) Pretty(level int) string { return f.String() }
-
-func (f VectorSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
-func (f VectorSelector) Type() parser.ValueType { return parser.ValueTypeVector }
-
-func (f VectorSelector) PromQLExpr() {}
-
-// MatrixSelector is matrix selector with additional configuration set by optimizers.
-// It is used so we can get rid of VectorSelector in distributed mode too.
-type MatrixSelector struct {
-	*parser.MatrixSelector
-
-	// Needed because this operator is used in the distributed mode
-	OriginalString string
-}
-
-func (f MatrixSelector) String() string {
-	return f.OriginalString
-}
-
-func (f MatrixSelector) Pretty(level int) string { return f.String() }
-
-func (f MatrixSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
-func (f MatrixSelector) Type() parser.ValueType { return parser.ValueTypeVector }
-
-func (f MatrixSelector) PromQLExpr() {}
-
-type CheckDuplicateLabels struct {
-	Expr parser.Expr
-}
-
-func (c CheckDuplicateLabels) String() string {
-	return c.Expr.String()
-}
-
-func (c CheckDuplicateLabels) Pretty(level int) string { return c.Expr.Pretty(level) }
-
-func (c CheckDuplicateLabels) PositionRange() posrange.PositionRange { return c.Expr.PositionRange() }
-
-func (c CheckDuplicateLabels) Type() parser.ValueType { return c.Expr.Type() }
-
-func (c CheckDuplicateLabels) PromQLExpr() {}
