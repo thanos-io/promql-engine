@@ -105,7 +105,7 @@ func renderExprTree(expr parser.Expr) string {
 		b.WriteString(renderExprTree(t.Expr))
 		b.WriteRune(')')
 		return b.String()
-	case *parser.StepInvariantExpr:
+	case *StepInvariantExpr:
 		return renderExprTree(t.Expr)
 	case CheckDuplicateLabels:
 		return renderExprTree(t.Expr)
