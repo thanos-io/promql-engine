@@ -14,6 +14,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql/parser"
 
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -34,7 +35,7 @@ func renderExprTree(expr parser.Expr) string {
 	switch t := expr.(type) {
 	case *parser.NumberLiteral:
 		return fmt.Sprint(t.Val)
-	case *VectorSelector:
+	case *nodes.VectorSelector:
 		var b strings.Builder
 		base := t.VectorSelector.String()
 		if t.BatchSize > 0 {
@@ -49,7 +50,7 @@ func renderExprTree(expr parser.Expr) string {
 			return b.String()
 		}
 		return base
-	case *MatrixSelector:
+	case *nodes.MatrixSelector:
 		return t.String()
 	case *parser.BinaryExpr:
 		var b strings.Builder
@@ -105,9 +106,9 @@ func renderExprTree(expr parser.Expr) string {
 		b.WriteString(renderExprTree(t.Expr))
 		b.WriteRune(')')
 		return b.String()
-	case *StepInvariantExpr:
+	case *nodes.StepInvariantExpr:
 		return renderExprTree(t.Expr)
-	case CheckDuplicateLabels:
+	case nodes.CheckDuplicateLabels:
 		return renderExprTree(t.Expr)
 	default:
 		return t.String()

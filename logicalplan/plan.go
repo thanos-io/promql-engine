@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -53,7 +54,6 @@ func New(expr parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan 
 
 	// the engine handles sorting at the presentation layer
 	expr = trimSorts(expr)
-
 	// replace scanners by our logical nodes
 	expr = replacePrometheusNodes(expr)
 
@@ -71,16 +71,11 @@ func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) 
 		p.expr, a = o.Optimize(p.expr, p.opts)
 		annos.Merge(a)
 	}
-	// parens are just annoying and getting rid of them doesn't change the query
-	// NOTE: we need to do this here to not break the distributed optimizer since
-	// rendering subqueries String() method depends on parens sometimes.
-	expr := trimParens(p.expr)
-
 	if !p.planOpts.DisableDuplicateLabelCheck {
-		expr = insertDuplicateLabelChecks(expr)
+		p.expr = insertDuplicateLabelChecks(p.expr)
 	}
 
-	return &plan{expr: expr, opts: p.opts}, *annos
+	return &plan{expr: p.expr, opts: p.opts}, *annos
 }
 
 func (p *plan) Expr() parser.Expr {
@@ -94,16 +89,16 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.StepInvariantExpr:
 		transform(expr)
 		Traverse(&node.Expr, transform)
-	case *StepInvariantExpr:
+	case *nodes.StepInvariantExpr:
 		transform(expr)
 		Traverse(&node.Expr, transform)
 	case *parser.VectorSelector:
 		transform(expr)
-	case *VectorSelector:
+	case *nodes.VectorSelector:
 		var x parser.Expr = node.VectorSelector
 		transform(expr)
 		Traverse(&x, transform)
-	case *MatrixSelector:
+	case *nodes.MatrixSelector:
 		var x parser.Expr = node.VectorSelector
 		transform(expr)
 		Traverse(&x, transform)
@@ -132,7 +127,10 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.SubqueryExpr:
 		transform(expr)
 		Traverse(&node.Expr, transform)
-	case CheckDuplicateLabels:
+	case *nodes.SubqueryExpr:
+		transform(expr)
+		Traverse(&node.Expr, transform)
+	case nodes.CheckDuplicateLabels:
 		transform(expr)
 		Traverse(&node.Expr, transform)
 	}
@@ -140,29 +138,29 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 
 func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(parent *parser.Expr, node *parser.Expr) bool) bool {
 	switch node := (*current).(type) {
-	case *parser.StringLiteral, *StringLiteral:
+	case *parser.StringLiteral, *nodes.StringLiteral:
 		return transform(parent, current)
-	case *parser.NumberLiteral, *NumberLiteral:
+	case *parser.NumberLiteral, *nodes.NumberLiteral:
 		return transform(parent, current)
 	case *parser.StepInvariantExpr:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
 		return transform(parent, current)
-	case *StepInvariantExpr:
+	case *nodes.StepInvariantExpr:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
 		return transform(parent, current)
 	case *parser.VectorSelector:
 		return transform(parent, current)
-	case *VectorSelector:
+	case *nodes.VectorSelector:
 		if stop := transform(parent, current); stop {
 			return stop
 		}
 		var x parser.Expr = node.VectorSelector
 		return TraverseBottomUp(current, &x, transform)
-	case *MatrixSelector:
+	case *nodes.MatrixSelector:
 		if stop := transform(parent, current); stop {
 			return stop
 		}
@@ -201,7 +199,12 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			return stop
 		}
 		return transform(parent, current)
-	case CheckDuplicateLabels:
+	case *nodes.SubqueryExpr:
+		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
+	case nodes.CheckDuplicateLabels:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
@@ -213,15 +216,28 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 	switch t := (plan).(type) {
 	case *parser.StringLiteral:
-		return &StringLiteral{Val: t.Val}
+		return &nodes.StringLiteral{Val: t.Val}
 	case *parser.NumberLiteral:
-		return &NumberLiteral{Val: t.Val}
+		return &nodes.NumberLiteral{Val: t.Val}
 	case *parser.StepInvariantExpr:
-		return &StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
+		return &nodes.StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
 	case *parser.MatrixSelector:
-		return &MatrixSelector{VectorSelector: replacePrometheusNodes(t.VectorSelector), Range: t.Range, OriginalString: t.String()}
+		return &nodes.MatrixSelector{VectorSelector: replacePrometheusNodes(t.VectorSelector), Range: t.Range, OriginalString: t.String()}
 	case *parser.VectorSelector:
-		return &VectorSelector{VectorSelector: t}
+		return &nodes.VectorSelector{VectorSelector: t}
+	case *parser.SubqueryExpr:
+		return &nodes.SubqueryExpr{
+			Expr:           replacePrometheusNodes(t.Expr),
+			Range:          t.Range,
+			Step:           t.Step,
+			Offset:         t.Offset,
+			OriginalOffset: t.OriginalOffset,
+			Timestamp:      t.Timestamp,
+			StartOrEnd:     t.StartOrEnd,
+		}
+	case *parser.ParenExpr:
+		// unwrap parens as we go
+		return replacePrometheusNodes(t.Expr)
 
 	//TODO: we dont yet have logical nodes for these, keep traversing here but set fields in-place
 	case *parser.Call:
@@ -229,7 +245,7 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 			// pushed-down timestamp function
 			switch v := UnwrapParens(t.Args[0]).(type) {
 			case *parser.VectorSelector:
-				return &VectorSelector{VectorSelector: v, SelectTimestamp: true}
+				return &nodes.VectorSelector{VectorSelector: v, SelectTimestamp: true}
 			case *parser.StepInvariantExpr:
 				vs, ok := UnwrapParens(v.Expr).(*parser.VectorSelector)
 				if ok {
@@ -237,7 +253,7 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 					if vs.Timestamp != nil {
 						vs.OriginalOffset = 0
 					}
-					return &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
+					return &nodes.VectorSelector{VectorSelector: vs, SelectTimestamp: true}
 				}
 			}
 		}
@@ -245,9 +261,6 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 		for i, arg := range t.Args {
 			t.Args[i] = replacePrometheusNodes(arg)
 		}
-		return t
-	case *parser.ParenExpr:
-		t.Expr = replacePrometheusNodes(t.Expr)
 		return t
 	case *parser.UnaryExpr:
 		t.Expr = replacePrometheusNodes(t.Expr)
@@ -259,9 +272,6 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 	case *parser.BinaryExpr:
 		t.LHS = replacePrometheusNodes(t.LHS)
 		t.RHS = replacePrometheusNodes(t.RHS)
-		return t
-	case *parser.SubqueryExpr:
-		t.Expr = replacePrometheusNodes(t.Expr)
 		return t
 	}
 	return plan
@@ -306,28 +316,14 @@ func trimSorts(expr parser.Expr) parser.Expr {
 	return expr
 }
 
-func trimParens(expr parser.Expr) parser.Expr {
-	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
-		if current == nil || parent == nil {
-			return true
-		}
-		switch (*parent).(type) {
-		case *parser.ParenExpr:
-			*parent = *current
-		}
-		return false
-	})
-	return expr
-}
-
 func insertDuplicateLabelChecks(expr parser.Expr) parser.Expr {
 	Traverse(&expr, func(node *parser.Expr) {
 		switch t := (*node).(type) {
 		case *parser.AggregateExpr, *parser.UnaryExpr, *parser.BinaryExpr, *parser.Call:
-			*node = CheckDuplicateLabels{Expr: t}
-		case *VectorSelector:
+			*node = nodes.CheckDuplicateLabels{Expr: t}
+		case *nodes.VectorSelector:
 			if t.SelectTimestamp {
-				*node = CheckDuplicateLabels{Expr: t}
+				*node = nodes.CheckDuplicateLabels{Expr: t}
 			}
 		}
 	})
@@ -511,7 +507,7 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 	switch n := expr.(type) {
 	case *parser.SubqueryExpr:
-		nOpts := query.NestedOptionsForSubquery(opts, n)
+		nOpts := query.NestedOptionsForSubqueryProm(opts, n)
 		setOffsetForAtModifier(nOpts.Start.UnixMilli(), n.Expr)
 		setOffsetForInnerSubqueries(n.Expr, nOpts)
 	default:

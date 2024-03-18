@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 )
 
 type Options struct {
@@ -45,7 +46,29 @@ func (o *Options) WithEndTime(end time.Time) *Options {
 	return &result
 }
 
-func NestedOptionsForSubquery(opts *Options, t *parser.SubqueryExpr) *Options {
+func NestedOptionsForSubquery(opts *Options, t *nodes.SubqueryExpr) *Options {
+	nOpts := &Options{
+		Context:                  opts.Context,
+		End:                      opts.End.Add(-t.Offset),
+		LookbackDelta:            opts.LookbackDelta,
+		StepsBatch:               opts.StepsBatch,
+		ExtLookbackDelta:         opts.ExtLookbackDelta,
+		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
+		EnableAnalysis:           opts.EnableAnalysis,
+	}
+	if t.Step != 0 {
+		nOpts.Step = t.Step
+	} else {
+		nOpts.Step = opts.NoStepSubqueryIntervalFn(t.Range)
+	}
+	nOpts.Start = time.UnixMilli(nOpts.Step.Milliseconds() * (opts.Start.Add(-t.Offset-t.Range).UnixMilli() / nOpts.Step.Milliseconds()))
+	if nOpts.Start.Before(opts.Start.Add(-t.Offset - t.Range)) {
+		nOpts.Start = nOpts.Start.Add(nOpts.Step)
+	}
+	return nOpts
+}
+
+func NestedOptionsForSubqueryProm(opts *Options, t *parser.SubqueryExpr) *Options {
 	nOpts := &Options{
 		Context:                  opts.Context,
 		End:                      opts.End.Add(-t.Offset),

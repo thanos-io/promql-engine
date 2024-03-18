@@ -14,6 +14,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -28,7 +29,7 @@ func NewPrometheusScanners(queryable storage.Queryable) *prometheusScanners {
 func (p prometheusScanners) NewVectorSelector(
 	opts *query.Options,
 	hints storage.SelectHints,
-	logicalNode logicalplan.VectorSelector,
+	logicalNode nodes.VectorSelector,
 ) (model.VectorOperator, error) {
 	numShards := runtime.GOMAXPROCS(0) / 2
 	if numShards < 1 {
@@ -58,7 +59,7 @@ func (p prometheusScanners) NewVectorSelector(
 func (p prometheusScanners) NewMatrixSelector(
 	opts *query.Options,
 	hints storage.SelectHints,
-	logicalNode logicalplan.MatrixSelector,
+	logicalNode nodes.MatrixSelector,
 	call parser.Call,
 ) (model.VectorOperator, error) {
 	numShards := runtime.GOMAXPROCS(0) / 2
@@ -75,7 +76,7 @@ func (p prometheusScanners) NewMatrixSelector(
 		arg = unwrap
 	}
 
-	vs := logicalNode.VectorSelector.(*logicalplan.VectorSelector)
+	vs := logicalNode.VectorSelector.(*nodes.VectorSelector)
 	filter := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
 
 	operators := make([]model.VectorOperator, 0, numShards)

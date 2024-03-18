@@ -13,7 +13,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -64,7 +64,7 @@ func NewStepInvariantOperator(
 	// We do not duplicate results for range selectors since result is a matrix
 	// with their unique timestamps which does not depend on the step.
 	switch expr.(type) {
-	case *logicalplan.MatrixSelector, *parser.SubqueryExpr:
+	case *nodes.MatrixSelector, *nodes.SubqueryExpr:
 		u.cacheResult = false
 	}
 

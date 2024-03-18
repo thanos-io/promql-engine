@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
 )
@@ -35,7 +36,7 @@ type subqueryOperator struct {
 
 	scalarArgs []float64
 	funcExpr   *parser.Call
-	subQuery   *parser.SubqueryExpr
+	subQuery   *nodes.SubqueryExpr
 
 	onceSeries sync.Once
 	series     []labels.Labels
@@ -45,7 +46,7 @@ type subqueryOperator struct {
 	buffers       []*ringbuffer.RingBuffer[Value]
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *parser.Call, subQuery *parser.SubqueryExpr) (model.VectorOperator, error) {
+func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *parser.Call, subQuery *nodes.SubqueryExpr) (model.VectorOperator, error) {
 	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err

@@ -6,16 +6,15 @@ package logicalplan
 import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 )
 
 // UnwrapString recursively unwraps a parser.Expr until it reaches an StringLiteral.
 func UnwrapString(expr parser.Expr) (string, error) {
 	switch texpr := expr.(type) {
-	case *StringLiteral:
+	case *nodes.StringLiteral:
 		return texpr.Val, nil
-	case *parser.ParenExpr:
-		return UnwrapString(texpr.Expr)
-	case *StepInvariantExpr:
+	case *nodes.StepInvariantExpr:
 		return UnwrapString(texpr.Expr)
 	default:
 		return "", errors.Newf("unexpected type: %T", texpr)
@@ -32,11 +31,9 @@ func UnsafeUnwrapString(expr parser.Expr) string {
 // UnwrapFloat recursively unwraps a parser.Expr until it reaches an NumberLiteral.
 func UnwrapFloat(expr parser.Expr) (float64, error) {
 	switch texpr := expr.(type) {
-	case *NumberLiteral:
+	case *nodes.NumberLiteral:
 		return texpr.Val, nil
-	case *parser.ParenExpr:
-		return UnwrapFloat(texpr.Expr)
-	case *StepInvariantExpr:
+	case *nodes.StepInvariantExpr:
 		return UnwrapFloat(texpr.Expr)
 	default:
 		return 0, errors.Newf("unexpected type: %T", texpr)
@@ -57,11 +54,9 @@ func UnwrapParens(expr parser.Expr) parser.Expr {
 func IsConstantExpr(expr parser.Expr) bool {
 	// TODO: there are more possibilities for constant expressions
 	switch texpr := expr.(type) {
-	case *NumberLiteral, *StringLiteral:
+	case *nodes.NumberLiteral, *nodes.StringLiteral:
 		return true
-	case *StepInvariantExpr:
-		return IsConstantExpr(texpr.Expr)
-	case *parser.ParenExpr:
+	case *nodes.StepInvariantExpr:
 		return IsConstantExpr(texpr.Expr)
 	case *parser.Call:
 		constArgs := true

@@ -5,11 +5,11 @@ package logicalplan
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -63,7 +63,7 @@ func (m PassthroughOptimizer) Optimize(plan parser.Expr, opts *query.Options) (p
 
 	matchingLabelsEngines := make([]api.RemoteEngine, 0, len(engines))
 	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
-		if vs, ok := (*current).(*VectorSelector); ok {
+		if vs, ok := (*current).(*nodes.VectorSelector); ok {
 			for _, e := range engines {
 				if !labelSetsMatch(vs.LabelMatchers, e.LabelSets()...) {
 					continue

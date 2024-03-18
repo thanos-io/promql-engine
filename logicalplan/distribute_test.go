@@ -34,7 +34,7 @@ func TestDistributedExecution(t *testing.T) {
 		{
 			name:     "parentheses",
 			expr:     `(http_requests_total)`,
-			expected: `dedup(remote((http_requests_total)), remote((http_requests_total)))`,
+			expected: `dedup(remote(http_requests_total), remote(http_requests_total))`,
 		},
 		{
 			name:     "rate",

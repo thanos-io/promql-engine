@@ -12,7 +12,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -60,10 +60,10 @@ func (o *absentOperator) loadSeries() {
 		// https://github.com/prometheus/prometheus/blob/main/promql/functions.go#L1385
 		var lm []*labels.Matcher
 		switch n := o.funcExpr.Args[0].(type) {
-		case *logicalplan.VectorSelector:
+		case *nodes.VectorSelector:
 			lm = append(n.LabelMatchers, n.Filters...)
-		case *logicalplan.MatrixSelector:
-			v := n.VectorSelector.(*logicalplan.VectorSelector)
+		case *nodes.MatrixSelector:
+			v := n.VectorSelector.(*nodes.VectorSelector)
 			lm = append(v.LabelMatchers, v.Filters...)
 		default:
 			o.series = []labels.Labels{labels.EmptyLabels()}

@@ -1,12 +1,13 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package logicalplan
+package nodes
 
 import (
 	"fmt"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -137,3 +138,53 @@ func (c StepInvariantExpr) PositionRange() posrange.PositionRange {
 func (c StepInvariantExpr) Type() parser.ValueType { return c.Expr.Type() }
 
 func (c StepInvariantExpr) PromQLExpr() {}
+
+// SubqueryExpr.
+type SubqueryExpr struct {
+	Expr parser.Expr
+
+	Step, Range            time.Duration
+	Offset, OriginalOffset time.Duration
+	Timestamp              *int64
+	StartOrEnd             parser.ItemType
+}
+
+func (c SubqueryExpr) String() string {
+	return fmt.Sprintf("(%s)%s", c.Expr.String(), c.getSubqueryTimeSuffix())
+}
+
+func (c SubqueryExpr) Pretty(level int) string { return c.String() }
+
+func (c SubqueryExpr) PositionRange() posrange.PositionRange {
+	return posrange.PositionRange{}
+}
+
+func (c SubqueryExpr) Type() parser.ValueType { return c.Expr.Type() }
+
+func (c SubqueryExpr) PromQLExpr() {}
+
+// Taken from prometheus: <TODO>
+// getSubqueryTimeSuffix returns the '[<range>:<step>] @ <timestamp> offset <offset>' suffix of the subquery.
+func (c SubqueryExpr) getSubqueryTimeSuffix() string {
+	step := ""
+	if c.Step != 0 {
+		step = model.Duration(c.Step).String()
+	}
+	offset := ""
+	switch {
+	case c.OriginalOffset > time.Duration(0):
+		offset = fmt.Sprintf(" offset %s", model.Duration(c.OriginalOffset))
+	case c.OriginalOffset < time.Duration(0):
+		offset = fmt.Sprintf(" offset -%s", model.Duration(-c.OriginalOffset))
+	}
+	at := ""
+	switch {
+	case c.Timestamp != nil:
+		at = fmt.Sprintf(" @ %.3f", float64(*c.Timestamp)/1000.0)
+	case c.StartOrEnd == parser.START:
+		at = " @ start()"
+	case c.StartOrEnd == parser.END:
+		at = " @ end()"
+	}
+	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(c.Range), step, at, offset)
+}

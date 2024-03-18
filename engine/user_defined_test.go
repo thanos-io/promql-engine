@@ -19,6 +19,7 @@ import (
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -66,7 +67,7 @@ type injectVectorSelector struct{}
 func (i injectVectorSelector) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
 	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *parser.Expr) bool {
 		switch t := (*current).(type) {
-		case *logicalplan.VectorSelector:
+		case *nodes.VectorSelector:
 			*current = &logicalVectorSelector{
 				VectorSelector: t,
 			}
@@ -77,7 +78,7 @@ func (i injectVectorSelector) Optimize(plan parser.Expr, opts *query.Options) (p
 }
 
 type logicalVectorSelector struct {
-	*logicalplan.VectorSelector
+	*nodes.VectorSelector
 }
 
 func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {

@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -225,9 +226,9 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 }
 
 func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*parser.Expr]*parser.Expr, current *parser.Expr, opts *query.Options) *query.Options {
-	subqueryParents := make([]*parser.SubqueryExpr, 0, len(parents))
+	subqueryParents := make([]*nodes.SubqueryExpr, 0, len(parents))
 	for p := parents[current]; p != nil; p = parents[p] {
-		if subquery, ok := (*p).(*parser.SubqueryExpr); ok {
+		if subquery, ok := (*p).(*nodes.SubqueryExpr); ok {
 			subqueryParents = append(subqueryParents, subquery)
 		}
 	}
@@ -433,11 +434,11 @@ func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.D
 	var offset time.Duration
 	Traverse(expr, func(node *parser.Expr) {
 		switch n := (*node).(type) {
-		case *parser.SubqueryExpr:
+		case *nodes.SubqueryExpr:
 			selectRange += n.Range
-		case *MatrixSelector:
+		case *nodes.MatrixSelector:
 			selectRange += n.Range
-		case *VectorSelector:
+		case *nodes.VectorSelector:
 			offset = n.Offset
 		}
 	})
@@ -489,7 +490,7 @@ func matchesExternalLabelSet(expr parser.Expr, externalLabelSet []labels.Labels)
 	}
 	var selectorSet [][]*labels.Matcher
 	Traverse(&expr, func(current *parser.Expr) {
-		vs, ok := (*current).(*VectorSelector)
+		vs, ok := (*current).(*nodes.VectorSelector)
 		if ok {
 			selectorSet = append(selectorSet, vs.LabelMatchers)
 		}

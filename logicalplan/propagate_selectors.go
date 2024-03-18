@@ -7,10 +7,10 @@ import (
 	"sort"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -47,11 +47,11 @@ func (m PropagateMatchersOptimizer) Optimize(plan parser.Expr, _ *query.Options)
 }
 
 func propagateMatchers(binOp *parser.BinaryExpr) {
-	lhSelector, ok := binOp.LHS.(*VectorSelector)
+	lhSelector, ok := binOp.LHS.(*nodes.VectorSelector)
 	if !ok {
 		return
 	}
-	rhSelector, ok := binOp.RHS.(*VectorSelector)
+	rhSelector, ok := binOp.RHS.(*nodes.VectorSelector)
 	if !ok {
 		return
 	}
@@ -106,7 +106,7 @@ func makeUnion(lhMatchers map[string]*labels.Matcher, rhMatchers map[string]*lab
 	return union, false
 }
 
-func toMatcherMap(lhSelector *VectorSelector) map[string]*labels.Matcher {
+func toMatcherMap(lhSelector *nodes.VectorSelector) map[string]*labels.Matcher {
 	lhMatchers := make(map[string]*labels.Matcher)
 	for _, m := range lhSelector.LabelMatchers {
 		lhMatchers[m.Name] = m

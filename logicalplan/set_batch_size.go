@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -37,7 +38,7 @@ func (m SelectorBatchSize) Optimize(plan parser.Expr, _ *query.Options) (parser.
 				return
 			}
 			canBatch = true
-		case *VectorSelector:
+		case *nodes.VectorSelector:
 			if canBatch {
 				e.BatchSize = m.Size
 			}

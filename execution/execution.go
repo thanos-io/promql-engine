@@ -37,6 +37,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/step_invariant"
 	"github.com/thanos-io/promql-engine/execution/unary"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage"
 )
@@ -54,9 +55,9 @@ func New(expr parser.Expr, storage storage.Scanners, opts *query.Options) (model
 
 func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
-	case *logicalplan.NumberLiteral:
+	case *nodes.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
-	case *logicalplan.VectorSelector:
+	case *nodes.VectorSelector:
 		return newVectorSelector(e, storage, opts, hints)
 	case *parser.Call:
 		return newCall(e, storage, opts, hints)
@@ -68,13 +69,13 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 		return newOperator(e.Expr, storage, opts, hints)
 	case *parser.UnaryExpr:
 		return newUnaryExpression(e, storage, opts, hints)
-	case *logicalplan.StepInvariantExpr:
+	case *nodes.StepInvariantExpr:
 		return newStepInvariantExpression(e, storage, opts, hints)
 	case logicalplan.Deduplicate:
 		return newDeduplication(e, storage, opts, hints)
 	case logicalplan.RemoteExecution:
 		return newRemoteExecution(e, opts, hints)
-	case logicalplan.CheckDuplicateLabels:
+	case nodes.CheckDuplicateLabels:
 		return newDuplicateLabelCheck(e, storage, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
@@ -85,7 +86,7 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 	}
 }
 
-func newVectorSelector(e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newVectorSelector(e *nodes.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
@@ -102,14 +103,14 @@ func newCall(e *parser.Call, scanners storage.Scanners, opts *query.Options, hin
 	}
 	if e.Func.Name == "timestamp" {
 		switch arg := e.Args[0].(type) {
-		case *logicalplan.VectorSelector:
+		case *nodes.VectorSelector:
 			arg.SelectTimestamp = true
 			return newVectorSelector(arg, scanners, opts, hints)
 		case *parser.StepInvariantExpr:
 			// Step invariant expressions on vector selectors need to be unwrapped so that we
 			// can return the original timestamp rather than the step invariant one.
 			switch vs := arg.Expr.(type) {
-			case *logicalplan.VectorSelector:
+			case *nodes.VectorSelector:
 				// Prometheus weirdness.
 				if vs.Timestamp != nil {
 					vs.OriginalOffset = 0
@@ -126,9 +127,9 @@ func newCall(e *parser.Call, scanners storage.Scanners, opts *query.Options, hin
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	for i := range e.Args {
 		switch t := e.Args[i].(type) {
-		case *parser.SubqueryExpr:
+		case *nodes.SubqueryExpr:
 			return newSubqueryFunction(e, t, scanners, opts, hints)
-		case *logicalplan.MatrixSelector:
+		case *nodes.MatrixSelector:
 			return newRangeVectorFunction(e, t, scanners, opts, hints)
 		}
 	}
@@ -137,7 +138,7 @@ func newCall(e *parser.Call, scanners storage.Scanners, opts *query.Options, hin
 
 func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
-	case *parser.SubqueryExpr:
+	case *nodes.SubqueryExpr:
 		matrixCall := &parser.Call{
 			Func: &parser.Function{Name: "last_over_time"},
 		}
@@ -150,7 +151,7 @@ func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opt
 			Args: []parser.Expr{matrixCall},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
-	case *logicalplan.MatrixSelector:
+	case *nodes.MatrixSelector:
 		matrixCall := &parser.Call{
 			Func: &parser.Function{Name: "last_over_time"},
 			Args: call.Args,
@@ -161,7 +162,7 @@ func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opt
 		}
 		f := &parser.Call{
 			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{&logicalplan.MatrixSelector{
+			Args: []parser.Expr{&nodes.MatrixSelector{
 				VectorSelector: arg.VectorSelector,
 				Range:          arg.Range,
 				OriginalString: arg.String(),
@@ -173,7 +174,7 @@ func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opt
 	}
 }
 
-func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newRangeVectorFunction(e *parser.Call, t *nodes.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	milliSecondRange := t.Range.Milliseconds()
@@ -181,14 +182,14 @@ func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, scann
 		milliSecondRange += opts.ExtLookbackDelta.Milliseconds()
 	}
 
-	start, end := getTimeRangesForVectorSelector(t.VectorSelector.(*logicalplan.VectorSelector), opts, milliSecondRange)
+	start, end := getTimeRangesForVectorSelector(t.VectorSelector.(*nodes.VectorSelector), opts, milliSecondRange)
 	hints.Start = start
 	hints.End = end
 	hints.Range = milliSecondRange
 	return scanners.NewMatrixSelector(opts, hints, *t, *e)
 }
 
-func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newSubqueryFunction(e *parser.Call, t *nodes.SubqueryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO: We dont implement ext functions
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
@@ -319,9 +320,9 @@ func newUnaryExpression(e *parser.UnaryExpr, scanners storage.Scanners, opts *qu
 	}
 }
 
-func newStepInvariantExpression(e *logicalplan.StepInvariantExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newStepInvariantExpression(e *nodes.StepInvariantExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch t := e.Expr.(type) {
-	case *logicalplan.NumberLiteral:
+	case *nodes.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, t.Val), nil
 	}
 	next, err := newOperator(e.Expr, scanners, opts.WithEndTime(opts.Start), hints)
@@ -369,7 +370,7 @@ func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hint
 	return exchange.NewConcurrent(remoteExec, 2, opts), nil
 }
 
-func newDuplicateLabelCheck(e logicalplan.CheckDuplicateLabels, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newDuplicateLabelCheck(e nodes.CheckDuplicateLabels, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	op, err := newOperator(e.Expr, storage, opts, hints)
 	if err != nil {
 		return nil, err
@@ -378,7 +379,7 @@ func newDuplicateLabelCheck(e logicalplan.CheckDuplicateLabels, storage storage.
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
-func getTimeRangesForVectorSelector(n *logicalplan.VectorSelector, opts *query.Options, evalRange int64) (int64, int64) {
+func getTimeRangesForVectorSelector(n *nodes.VectorSelector, opts *query.Options, evalRange int64) (int64, int64) {
 	start := opts.Start.UnixMilli()
 	end := opts.End.UnixMilli()
 	if n.Timestamp != nil {

@@ -5,10 +5,10 @@ package logicalplan
 
 import (
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -33,7 +33,7 @@ func (m MergeSelectsOptimizer) Optimize(plan parser.Expr, _ *query.Options) (par
 
 func extractSelectors(selectors matcherHeap, expr parser.Expr) {
 	Traverse(&expr, func(node *parser.Expr) {
-		e, ok := (*node).(*VectorSelector)
+		e, ok := (*node).(*nodes.VectorSelector)
 		if !ok {
 			return
 		}
@@ -49,7 +49,7 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 	Traverse(expr, func(node *parser.Expr) {
 		var matchers []*labels.Matcher
 		switch e := (*node).(type) {
-		case *VectorSelector:
+		case *nodes.VectorSelector:
 			matchers = e.LabelMatchers
 		default:
 			return
@@ -83,7 +83,7 @@ func replaceMatchers(selectors matcherHeap, expr *parser.Expr) {
 			}
 
 			switch e := (*node).(type) {
-			case *VectorSelector:
+			case *nodes.VectorSelector:
 				e.LabelMatchers = replacement
 				e.Filters = filters
 			}

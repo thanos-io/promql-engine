@@ -9,6 +9,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 
+	"github.com/thanos-io/promql-engine/logicalplan/nodes"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -19,7 +20,7 @@ type SortMatchers struct{}
 
 func (m SortMatchers) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	Traverse(&plan, func(node *parser.Expr) {
-		e, ok := (*node).(*VectorSelector)
+		e, ok := (*node).(*nodes.VectorSelector)
 		if !ok {
 			return
 		}
