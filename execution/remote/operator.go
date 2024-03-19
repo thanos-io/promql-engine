@@ -81,6 +81,9 @@ func (e *Execution) Explain() (next []model.VectorOperator) {
 
 func (e *Execution) updateStats() {
 	existingStats := e.query.Stats()
+	if existingStats == nil || existingStats.Samples == nil {
+		return
+	}
 	e.UpdatePeak(existingStats.Samples.PeakSamples)
 	e.IncrementSamplesAtStep(int(existingStats.Samples.TotalSamples), 0)
 }
