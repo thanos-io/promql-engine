@@ -144,12 +144,12 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	ts = o.currentStep
 	fromSeries := o.currentSeries
 	for ; o.currentSeries-fromSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
-		currStepSamples = 0
 		var (
 			series   = o.scanners[o.currentSeries]
 			seriesTs = ts
 		)
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
+			currStepSamples = 0
 			t, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return nil, err
@@ -166,8 +166,8 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				currStepSamples++
 			}
 			seriesTs += o.step
-			o.IncrementSamplesAtStep(0, 0)
-			o.UpdatePeak(0)
+			o.IncrementSamplesAtStep(int(currStepSamples), currStep)
+			o.UpdatePeak(int(currStepSamples))
 		}
 	}
 	if o.currentSeries == int64(len(o.scanners)) {

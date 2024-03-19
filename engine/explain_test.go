@@ -192,7 +192,7 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	tstorage := promql.LoadedStorage(t, load)
 	defer tstorage.Close()
 
-	query, err := ng.NewRangeQuery(
+	rangeQry, err := ng.NewRangeQuery(
 		ctx,
 		tstorage,
 		promql.NewPrometheusQueryOpts(false, 0),
@@ -203,11 +203,22 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	)
 	testutil.Ok(t, err)
 
-	queryResults := query.Exec(context.Background())
+	queryResults := rangeQry.Exec(context.Background())
 	testutil.Ok(t, queryResults.Err)
 
-	explainableQuery := query.(engine.ExplainableQuery)
+	explainableQuery := rangeQry.(engine.ExplainableQuery)
 	analyzeOutput := explainableQuery.Analyze()
+	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
+	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
+
+	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
+	testutil.Ok(t, err)
+
+	queryResults = query.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
+
+	explainableQuery = query.(engine.ExplainableQuery)
+	analyzeOutput = explainableQuery.Analyze()
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 }
