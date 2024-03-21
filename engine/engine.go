@@ -98,7 +98,7 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 // New creates a new query engine with the given options. The query engine will
 // use the storage passed in NewInstantQuery and NewRangeQuery for retrieving
 // data when executing queries.
-func New(opts Opts) *compatibilityEngine {
+func New(opts Opts) *Engine {
 	return NewWithScanners(opts, nil)
 }
 
@@ -106,7 +106,7 @@ func New(opts Opts) *compatibilityEngine {
 // When executing queries, the engine will create scanner operators using the storage.Scanners and will ignore the
 // Prometheus storage passed in NewInstantQuery and NewRangeQuery.
 // This method is useful when the data being queried does not easily fit into the Prometheus storage model.
-func NewWithScanners(opts Opts, scanners engstorage.Scanners) *compatibilityEngine {
+func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
 	}
@@ -161,7 +161,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *compatibilityEngi
 		engine = opts.Engine
 	}
 
-	return &compatibilityEngine{
+	return &Engine{
 		prom:      engine,
 		functions: functions,
 		scanners:  scanners,
@@ -189,7 +189,7 @@ var (
 	ErrStepsBatchTooLarge = errors.New("'StepsBatch' must be less than 64")
 )
 
-type compatibilityEngine struct {
+type Engine struct {
 	prom      v1.QueryEngine
 	functions map[string]*parser.Function
 	scanners  engstorage.Scanners
@@ -208,11 +208,11 @@ type compatibilityEngine struct {
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
-func (e *compatibilityEngine) SetQueryLogger(l promql.QueryLogger) {
+func (e *Engine) SetQueryLogger(l promql.QueryLogger) {
 	e.prom.SetQueryLogger(l)
 }
 
-func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -270,7 +270,7 @@ func (e *compatibilityEngine) NewInstantQuery(ctx context.Context, q storage.Que
 	}, nil
 }
 
-func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -288,17 +288,7 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
 	}
 
-	qOpts := &query.Options{
-		Context:                  ctx,
-		Start:                    start,
-		End:                      end,
-		Step:                     step,
-		StepsBatch:               stepsBatch,
-		LookbackDelta:            opts.LookbackDelta(),
-		ExtLookbackDelta:         e.extLookbackDelta,
-		EnableAnalysis:           e.enableAnalysis,
-		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
-	}
+	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
@@ -326,7 +316,53 @@ func (e *compatibilityEngine) NewRangeQuery(ctx context.Context, q storage.Query
 	}, nil
 }
 
-func (e *compatibilityEngine) storageScanners(queryable storage.Queryable) engstorage.Scanners {
+func (e *Engine) NewQueryFromPlan(
+	ctx context.Context,
+	q storage.Queryable,
+	opts promql.QueryOpts,
+	plan logicalplan.Plan,
+	start, end time.Time,
+	step time.Duration,
+) (promql.Query, error) {
+	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
+	if qOpts.StepsBatch > 64 {
+		return nil, ErrStepsBatchTooLarge
+	}
+
+	exec, err := execution.New(plan.Expr(), e.storageScanners(q), qOpts)
+	if e.triggerFallback(err) {
+		e.metrics.queries.WithLabelValues("true").Inc()
+		return e.prom.NewRangeQuery(ctx, q, opts, plan.Expr().String(), start, end, step)
+	}
+	e.metrics.queries.WithLabelValues("false").Inc()
+	if err != nil {
+		return nil, err
+	}
+
+	return &compatibilityQuery{
+		Query:  &Query{exec: exec, opts: opts},
+		engine: e,
+		expr:   plan.Expr(),
+		t:      RangeQuery,
+	}, nil
+}
+
+func (e *Engine) makeQueryOpts(ctx context.Context, start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
+	qOpts := &query.Options{
+		Context:                  ctx,
+		Start:                    start,
+		End:                      end,
+		Step:                     step,
+		StepsBatch:               stepsBatch,
+		LookbackDelta:            opts.LookbackDelta(),
+		ExtLookbackDelta:         e.extLookbackDelta,
+		EnableAnalysis:           e.enableAnalysis,
+		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+	}
+	return qOpts
+}
+
+func (e *Engine) storageScanners(queryable storage.Queryable) engstorage.Scanners {
 	if e.scanners == nil {
 		return promstorage.NewPrometheusScanners(queryable)
 	}
@@ -353,7 +389,7 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 
 type compatibilityQuery struct {
 	*Query
-	engine *compatibilityEngine
+	engine *Engine
 	expr   parser.Expr
 	ts     time.Time // Empty for range queries.
 	warns  annotations.Annotations
@@ -533,7 +569,7 @@ func (q *compatibilityQuery) Cancel() {
 	}
 }
 
-func (e *compatibilityEngine) triggerFallback(err error) bool {
+func (e *Engine) triggerFallback(err error) bool {
 	if e.disableFallback {
 		return false
 	}

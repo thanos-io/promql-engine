@@ -20,7 +20,7 @@ import (
 
 type remoteEngine struct {
 	q         storage.Queryable
-	engine    *compatibilityEngine
+	engine    *Engine
 	labelSets []labels.Labels
 	maxt      int64
 	mint      int64
@@ -54,7 +54,7 @@ func (l remoteEngine) NewRangeQuery(ctx context.Context, opts promql.QueryOpts, 
 
 type distributedEngine struct {
 	endpoints    api.RemoteEndpoints
-	remoteEngine *compatibilityEngine
+	remoteEngine *Engine
 }
 
 func NewDistributedEngine(opts Opts, endpoints api.RemoteEndpoints) v1.QueryEngine {
