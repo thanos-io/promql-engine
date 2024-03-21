@@ -108,7 +108,7 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *parser.MatrixSelector:
 		transform(expr)
 		Traverse(&node.VectorSelector, transform)
-	case *parser.AggregateExpr:
+	case *Aggregation:
 		transform(expr)
 		Traverse(&node.Param, transform)
 		Traverse(&node.Expr, transform)
@@ -169,6 +169,11 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	case *parser.MatrixSelector:
 		return transform(current, &node.VectorSelector)
 	case *parser.AggregateExpr:
+		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
+	case *Aggregation:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
@@ -272,9 +277,13 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 			Expr: replacePrometheusNodes(t.Expr),
 		}
 	case *parser.AggregateExpr:
-		t.Expr = replacePrometheusNodes(t.Expr)
-		t.Param = replacePrometheusNodes(t.Param)
-		return t
+		return &Aggregation{
+			Op:       t.Op,
+			Expr:     replacePrometheusNodes(t.Expr),
+			Param:    replacePrometheusNodes(t.Param),
+			Grouping: t.Grouping,
+			Without:  t.Without,
+		}
 	case *parser.BinaryExpr:
 		t.LHS = replacePrometheusNodes(t.LHS)
 		t.RHS = replacePrometheusNodes(t.RHS)
@@ -342,7 +351,7 @@ func trimParens(expr parser.Expr) parser.Expr {
 func insertDuplicateLabelChecks(expr parser.Expr) parser.Expr {
 	Traverse(&expr, func(node *parser.Expr) {
 		switch t := (*node).(type) {
-		case *parser.AggregateExpr, *Unary, *parser.BinaryExpr, *FunctionCall:
+		case *Aggregation, *Unary, *parser.BinaryExpr, *FunctionCall:
 			*node = CheckDuplicateLabels{Expr: t}
 		case *VectorSelector:
 			if t.SelectTimestamp {

@@ -23,14 +23,14 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (pa
 		}
 		// If the current node is avg(), distribute the operation and
 		// stop the traversal.
-		if aggr, ok := (*current).(*parser.AggregateExpr); ok {
+		if aggr, ok := (*current).(*Aggregation); ok {
 			if aggr.Op != parser.AVG {
 				return true
 			}
 
-			sum := *(*current).(*parser.AggregateExpr)
+			sum := *(*current).(*Aggregation)
 			sum.Op = parser.SUM
-			count := *(*current).(*parser.AggregateExpr)
+			count := *(*current).(*Aggregation)
 			count.Op = parser.COUNT
 			*current = &parser.BinaryExpr{
 				Op:  parser.DIV,
@@ -54,7 +54,7 @@ func isDistributiveOrAverage(expr *parser.Expr, skipBinaryPushdown bool) bool {
 		return false
 	}
 	var isAvg bool
-	if aggr, ok := (*expr).(*parser.AggregateExpr); ok {
+	if aggr, ok := (*expr).(*Aggregation); ok {
 		isAvg = aggr.Op == parser.AVG
 	}
 	return isDistributive(expr, skipBinaryPushdown) || isAvg

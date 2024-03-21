@@ -195,3 +195,44 @@ func (p Unary) PositionRange() posrange.PositionRange { return p.Expr.PositionRa
 func (p Unary) Type() parser.ValueType { return p.Expr.Type() }
 
 func (p Unary) PromQLExpr() {}
+
+// Aggregation represents a PromQL aggregation.
+type Aggregation struct {
+	Op       parser.ItemType // The used aggregation operation.
+	Expr     parser.Expr     // The Vector expression over which is aggregated.
+	Param    parser.Expr     // Parameter used by some aggregators.
+	Grouping []string        // The labels by which to group the Vector.
+	Without  bool            // Whether to drop the given labels rather than keep them
+}
+
+func (f Aggregation) String() string {
+	aggrString := f.getAggOpStr()
+	aggrString += "("
+	if f.Op.IsAggregatorWithParam() {
+		aggrString += fmt.Sprintf("%s, ", f.Param)
+	}
+	aggrString += fmt.Sprintf("%s)", f.Expr)
+
+	return aggrString
+}
+
+func (f Aggregation) Pretty(_ int) string { return f.String() }
+
+func (f Aggregation) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+
+func (f Aggregation) Type() parser.ValueType { return parser.ValueTypeVector }
+
+func (f Aggregation) PromQLExpr() {}
+
+func (f Aggregation) getAggOpStr() string {
+	aggrString := f.Op.String()
+
+	switch {
+	case f.Without:
+		aggrString += fmt.Sprintf(" without (%s) ", strings.Join(f.Grouping, ", "))
+	case len(f.Grouping) > 0:
+		aggrString += fmt.Sprintf(" by (%s) ", strings.Join(f.Grouping, ", "))
+	}
+
+	return aggrString
+}

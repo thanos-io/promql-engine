@@ -189,7 +189,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 
 		// If the current node is an aggregation, distribute the operation and
 		// stop the traversal.
-		if aggr, ok := (*current).(*parser.AggregateExpr); ok {
+		if aggr, ok := (*current).(*Aggregation); ok {
 			localAggregation := aggr.Op
 			if aggr.Op == parser.COUNT {
 				localAggregation = parser.SUM
@@ -197,13 +197,12 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 
 			remoteAggregation := newRemoteAggregation(aggr, engines)
 			subQueries := m.distributeQuery(&remoteAggregation, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
-			*current = &parser.AggregateExpr{
+			*current = &Aggregation{
 				Op:       localAggregation,
 				Expr:     subQueries,
 				Param:    aggr.Param,
 				Grouping: aggr.Grouping,
 				Without:  aggr.Without,
-				PosRange: aggr.PosRange,
 			}
 			return true
 		}
@@ -237,7 +236,7 @@ func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*parser.Expr]*pa
 	return opts
 }
 
-func newRemoteAggregation(rootAggregation *parser.AggregateExpr, engines []api.RemoteEngine) parser.Expr {
+func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngine) parser.Expr {
 	groupingSet := make(map[string]struct{})
 	for _, lbl := range rootAggregation.Grouping {
 		groupingSet[lbl] = struct{}{}
@@ -456,7 +455,7 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	switch e := (*expr).(type) {
 	case *parser.BinaryExpr:
 		return isBinaryExpressionWithOneConstantSide(e) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(e))
-	case *parser.AggregateExpr:
+	case *Aggregation:
 		// Certain aggregations are currently not supported.
 		if _, ok := distributiveAggregations[e.Op]; !ok {
 			return false

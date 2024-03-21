@@ -88,7 +88,7 @@ func renderExprTree(expr parser.Expr) string {
 		}
 		b.WriteRune(')')
 		return b.String()
-	case *parser.AggregateExpr:
+	case *Aggregation:
 		var b strings.Builder
 		b.Write([]byte(t.Op.String()))
 		switch {

@@ -60,7 +60,7 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 		return newVectorSelector(e, storage, opts, hints)
 	case *logicalplan.FunctionCall:
 		return newCall(e, storage, opts, hints)
-	case *parser.AggregateExpr:
+	case *logicalplan.Aggregation:
 		return newAggregateExpression(e, storage, opts, hints)
 	case *parser.BinaryExpr:
 		return newBinaryExpression(e, storage, opts, hints)
@@ -230,7 +230,7 @@ func newInstantVectorFunction(e *logicalplan.FunctionCall, storage storage.Scann
 	return function.NewFunctionOperator(e, nextOperators, opts.StepsBatch, opts)
 }
 
-func newAggregateExpression(e *parser.AggregateExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newAggregateExpression(e *logicalplan.Aggregation, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	hints.Func = e.Op.String()
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
