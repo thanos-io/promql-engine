@@ -5,6 +5,7 @@ package logicalplan
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -137,3 +138,27 @@ func (c StepInvariantExpr) PositionRange() posrange.PositionRange {
 func (c StepInvariantExpr) Type() parser.ValueType { return c.Expr.Type() }
 
 func (c StepInvariantExpr) PromQLExpr() {}
+
+// FunctionCall represents a PromQL function.
+type FunctionCall struct {
+	// The function that was called.
+	Func *parser.Function
+	// Arguments passed into the function.
+	Args parser.Expressions
+}
+
+func (f FunctionCall) String() string {
+	args := make([]string, 0, len(f.Args))
+	for _, arg := range f.Args {
+		args = append(args, arg.String())
+	}
+	return fmt.Sprintf("%s(%s)", f.Func.Name, strings.Join(args, ", "))
+}
+
+func (f FunctionCall) Pretty(level int) string { return f.String() }
+
+func (f FunctionCall) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+
+func (f FunctionCall) Type() parser.ValueType { return f.Func.ReturnType }
+
+func (f FunctionCall) PromQLExpr() {}

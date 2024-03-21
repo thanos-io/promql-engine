@@ -58,7 +58,7 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
 		return newVectorSelector(e, storage, opts, hints)
-	case *parser.Call:
+	case *logicalplan.FunctionCall:
 		return newCall(e, storage, opts, hints)
 	case *parser.AggregateExpr:
 		return newAggregateExpression(e, storage, opts, hints)
@@ -92,7 +92,7 @@ func newVectorSelector(e *logicalplan.VectorSelector, scanners storage.Scanners,
 	return scanners.NewVectorSelector(opts, hints, *e)
 }
 
-func newCall(e *parser.Call, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newCall(e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	hints.Func = e.Func.Name
 	hints.Grouping = nil
 	hints.By = false
@@ -135,23 +135,23 @@ func newCall(e *parser.Call, scanners storage.Scanners, opts *query.Options, hin
 	return newInstantVectorFunction(e, scanners, opts, hints)
 }
 
-func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newAbsentOverTimeOperator(call *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
 	case *parser.SubqueryExpr:
-		matrixCall := &parser.Call{
+		matrixCall := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "last_over_time"},
 		}
 		argOp, err := newSubqueryFunction(matrixCall, arg, scanners, opts, hints)
 		if err != nil {
 			return nil, err
 		}
-		f := &parser.Call{
+		f := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "absent"},
 			Args: []parser.Expr{matrixCall},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *logicalplan.MatrixSelector:
-		matrixCall := &parser.Call{
+		matrixCall := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "last_over_time"},
 			Args: call.Args,
 		}
@@ -159,7 +159,7 @@ func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opt
 		if err != nil {
 			return nil, err
 		}
-		f := &parser.Call{
+		f := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "absent"},
 			Args: []parser.Expr{&logicalplan.MatrixSelector{
 				VectorSelector: arg.VectorSelector,
@@ -173,7 +173,7 @@ func newAbsentOverTimeOperator(call *parser.Call, scanners storage.Scanners, opt
 	}
 }
 
-func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newRangeVectorFunction(e *logicalplan.FunctionCall, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	milliSecondRange := t.Range.Milliseconds()
@@ -188,7 +188,7 @@ func newRangeVectorFunction(e *parser.Call, t *logicalplan.MatrixSelector, scann
 	return scanners.NewMatrixSelector(opts, hints, *t, *e)
 }
 
-func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newSubqueryFunction(e *logicalplan.FunctionCall, t *parser.SubqueryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO: We dont implement ext functions
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
@@ -213,7 +213,7 @@ func newSubqueryFunction(e *parser.Call, t *parser.SubqueryExpr, storage storage
 	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, &outerOpts, e, t)
 }
 
-func newInstantVectorFunction(e *parser.Call, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newInstantVectorFunction(e *logicalplan.FunctionCall, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	nextOperators := make([]model.VectorOperator, 0, len(e.Args))
 	for i := range e.Args {
 		// Strings don't need an operator

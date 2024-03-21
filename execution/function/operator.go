@@ -17,6 +17,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -30,7 +31,7 @@ const (
 	noArgFunctionOperatorName = "[noArgFunction]"
 )
 
-func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	// Some functions need to be handled in special operators
 	switch funcExpr.Func.Name {
 	case "scalar":
@@ -53,7 +54,7 @@ func NewFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, 
 	return newInstantVectorFunctionOperator(funcExpr, nextOps, stepsBatch, opts)
 }
 
-func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newNoArgsFunctionOperator(funcExpr *logicalplan.FunctionCall, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := noArgFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, UnknownFunctionError(funcExpr.Func.Name)
@@ -92,7 +93,7 @@ func newNoArgsFunctionOperator(funcExpr *parser.Call, stepsBatch int, opts *quer
 type functionOperator struct {
 	model.OperatorTelemetry
 
-	funcExpr *parser.Call
+	funcExpr *logicalplan.FunctionCall
 	series   []labels.Labels
 	once     sync.Once
 
@@ -103,7 +104,7 @@ type functionOperator struct {
 	scalarPoints [][]float64
 }
 
-func newInstantVectorFunctionOperator(funcExpr *parser.Call, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	call, ok := instantVectorFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, UnknownFunctionError(funcExpr.Func.Name)

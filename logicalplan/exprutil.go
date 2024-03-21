@@ -63,7 +63,7 @@ func IsConstantExpr(expr parser.Expr) bool {
 		return IsConstantExpr(texpr.Expr)
 	case *parser.ParenExpr:
 		return IsConstantExpr(texpr.Expr)
-	case *parser.Call:
+	case *FunctionCall:
 		constArgs := true
 		for _, arg := range texpr.Args {
 			constArgs = constArgs && IsConstantExpr(arg)

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -20,14 +19,14 @@ type absentOperator struct {
 	model.OperatorTelemetry
 
 	once     sync.Once
-	funcExpr *parser.Call
+	funcExpr *logicalplan.FunctionCall
 	series   []labels.Labels
 	pool     *model.VectorPool
 	next     model.VectorOperator
 }
 
 func newAbsentOperator(
-	funcExpr *parser.Call,
+	funcExpr *logicalplan.FunctionCall,
 	pool *model.VectorPool,
 	next model.VectorOperator,
 	opts *query.Options,

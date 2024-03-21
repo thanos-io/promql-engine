@@ -13,7 +13,6 @@ import (
 	"github.com/efficientgo/core/errors"
 	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -24,14 +23,14 @@ type relabelOperator struct {
 	model.OperatorTelemetry
 
 	next     model.VectorOperator
-	funcExpr *parser.Call
+	funcExpr *logicalplan.FunctionCall
 	once     sync.Once
 	series   []labels.Labels
 }
 
 func newRelabelOperator(
 	next model.VectorOperator,
-	funcExpr *parser.Call,
+	funcExpr *logicalplan.FunctionCall,
 	opts *query.Options,
 ) *relabelOperator {
 	return &relabelOperator{

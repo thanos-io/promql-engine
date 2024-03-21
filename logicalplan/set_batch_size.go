@@ -24,7 +24,7 @@ func (m SelectorBatchSize) Optimize(plan parser.Expr, _ *query.Options) (parser.
 	canBatch := false
 	Traverse(&plan, func(current *parser.Expr) {
 		switch e := (*current).(type) {
-		case *parser.Call:
+		case *FunctionCall:
 			//TODO: calls can reduce the labelset of the input; think histogram_quantile reducing
 			// multiple "le" labels into one output. We cannot handle this in batching. Revisit
 			// what is safe here.

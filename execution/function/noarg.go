@@ -10,9 +10,8 @@ import (
 
 	"github.com/prometheus/prometheus/model/labels"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type noArgFunctionOperator struct {
@@ -23,7 +22,7 @@ type noArgFunctionOperator struct {
 	step        int64
 	currentStep int64
 	stepsBatch  int
-	funcExpr    *parser.Call
+	funcExpr    *logicalplan.FunctionCall
 	call        noArgFunctionCall
 	vectorPool  *model.VectorPool
 	series      []labels.Labels
