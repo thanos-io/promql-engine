@@ -89,19 +89,20 @@ func (l DistributedEngine) NewRangeQuery(ctx context.Context, q storage.Queryabl
 	return l.remoteEngine.NewRangeQuery(ctx, q, opts, qs, start, end, interval)
 }
 
-func (l DistributedEngine) NewQueryFromPlan(
-	ctx context.Context,
-	q storage.Queryable,
-	opts promql.QueryOpts,
-	plan logicalplan.Plan,
-	start, end time.Time,
-	interval time.Duration,
-) (promql.Query, error) {
+func (l DistributedEngine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Plan, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
 	// Some clients might only support second precision when executing queries.
 	start = start.Truncate(time.Second)
 	end = end.Truncate(time.Second)
 	interval = interval.Truncate(time.Second)
 
-	return l.remoteEngine.NewQueryFromPlan(ctx, q, opts, plan, start, end, interval)
+	return l.remoteEngine.NewRangeQueryFromPlan(ctx, q, opts, plan, start, end, interval)
+}
+
+func (l DistributedEngine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Plan, ts time.Time) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	ts = ts.Truncate(time.Second)
+
+	return l.remoteEngine.NewInstantQueryFromPlan(ctx, q, opts, plan, ts)
 }

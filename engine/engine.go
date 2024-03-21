@@ -316,14 +316,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	}, nil
 }
 
-func (e *Engine) NewQueryFromPlan(
-	ctx context.Context,
-	q storage.Queryable,
-	opts promql.QueryOpts,
-	plan logicalplan.Plan,
-	start, end time.Time,
-	step time.Duration,
-) (promql.Query, error) {
+func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Plan, start, end time.Time, step time.Duration) (promql.Query, error) {
 	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
@@ -345,6 +338,10 @@ func (e *Engine) NewQueryFromPlan(
 		expr:   plan.Expr(),
 		t:      RangeQuery,
 	}, nil
+}
+
+func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Plan, ts time.Time) (promql.Query, error) {
+	return e.NewRangeQueryFromPlan(ctx, q, opts, plan, ts, ts, 0)
 }
 
 func (e *Engine) makeQueryOpts(ctx context.Context, start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
