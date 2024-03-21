@@ -34,7 +34,7 @@ type subqueryOperator struct {
 	stepsBatch  int
 
 	scalarArgs []float64
-	funcExpr   *parser.Call
+	funcExpr   *logicalplan.FunctionCall
 	subQuery   *parser.SubqueryExpr
 
 	onceSeries sync.Once
@@ -45,7 +45,7 @@ type subqueryOperator struct {
 	buffers       []*ringbuffer.RingBuffer[Value]
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *parser.Call, subQuery *parser.SubqueryExpr) (model.VectorOperator, error) {
+func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *parser.SubqueryExpr) (model.VectorOperator, error) {
 	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err

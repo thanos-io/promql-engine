@@ -112,7 +112,7 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		transform(expr)
 		Traverse(&node.Param, transform)
 		Traverse(&node.Expr, transform)
-	case *parser.Call:
+	case *FunctionCall:
 		transform(expr)
 		for i := range node.Args {
 			Traverse(&(node.Args[i]), transform)
@@ -180,6 +180,13 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			}
 		}
 		return transform(parent, current)
+	case *FunctionCall:
+		for i := range node.Args {
+			if stop := TraverseBottomUp(current, &node.Args[i], transform); stop {
+				return stop
+			}
+		}
+		return transform(parent, current)
 	case *parser.BinaryExpr:
 		lstop := TraverseBottomUp(current, &node.LHS, transform)
 		rstop := TraverseBottomUp(current, &node.RHS, transform)
@@ -221,7 +228,7 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 	case *parser.VectorSelector:
 		return &VectorSelector{VectorSelector: t}
 
-	//TODO: we dont yet have logical nodes for these, keep traversing here but set fields in-place
+	// TODO: we dont yet have logical nodes for these, keep traversing here but set fields in-place
 	case *parser.Call:
 		if t.Func.Name == "timestamp" {
 			// pushed-down timestamp function
@@ -239,11 +246,15 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 				}
 			}
 		}
+		args := make([]parser.Expr, len(t.Args))
 		// nested timestamp functions
 		for i, arg := range t.Args {
-			t.Args[i] = replacePrometheusNodes(arg)
+			args[i] = replacePrometheusNodes(arg)
 		}
-		return t
+		return &FunctionCall{
+			Func: t.Func,
+			Args: args,
+		}
 	case *parser.ParenExpr:
 		t.Expr = replacePrometheusNodes(t.Expr)
 		return t
@@ -321,7 +332,7 @@ func trimParens(expr parser.Expr) parser.Expr {
 func insertDuplicateLabelChecks(expr parser.Expr) parser.Expr {
 	Traverse(&expr, func(node *parser.Expr) {
 		switch t := (*node).(type) {
-		case *parser.AggregateExpr, *parser.UnaryExpr, *parser.BinaryExpr, *parser.Call:
+		case *parser.AggregateExpr, *parser.UnaryExpr, *parser.BinaryExpr, *FunctionCall:
 			*node = CheckDuplicateLabels{Expr: t}
 		case *VectorSelector:
 			if t.SelectTimestamp {

@@ -76,7 +76,7 @@ func renderExprTree(expr parser.Expr) string {
 		}
 		b.WriteString(renderExprTree(t.RHS))
 		return b.String()
-	case *parser.Call:
+	case *FunctionCall:
 		var b strings.Builder
 		b.Write([]byte(t.Func.Name))
 		b.WriteRune('(')

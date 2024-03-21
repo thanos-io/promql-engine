@@ -362,7 +362,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 }
 
 func isAbsent(expr parser.Expr) bool {
-	call, ok := expr.(*parser.Call)
+	call, ok := expr.(*FunctionCall)
 	if !ok {
 		return false
 	}
@@ -526,7 +526,7 @@ func matchesExternalLabels(ms []*labels.Matcher, externalLabels labels.Labels) b
 func rewritesEngineLabels(e parser.Expr, engineLabels map[string]struct{}) bool {
 	var result bool
 	TraverseBottomUp(nil, &e, func(parent *parser.Expr, node *parser.Expr) bool {
-		call, ok := (*node).(*parser.Call)
+		call, ok := (*node).(*FunctionCall)
 		if !ok || call.Func.Name != "label_replace" {
 			return false
 		}

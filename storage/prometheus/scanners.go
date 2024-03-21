@@ -7,7 +7,6 @@ import (
 	"runtime"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/execution/exchange"
@@ -59,7 +58,7 @@ func (p prometheusScanners) NewMatrixSelector(
 	opts *query.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.MatrixSelector,
-	call parser.Call,
+	call logicalplan.FunctionCall,
 ) (model.VectorOperator, error) {
 	numShards := runtime.GOMAXPROCS(0) / 2
 	if numShards < 1 {
