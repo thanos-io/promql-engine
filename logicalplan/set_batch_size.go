@@ -31,7 +31,7 @@ func (m SelectorBatchSize) Optimize(plan parser.Expr, _ *query.Options) (parser.
 			canBatch = false
 		case *parser.BinaryExpr:
 			canBatch = false
-		case *parser.AggregateExpr:
+		case *Aggregation:
 			if e.Op == parser.QUANTILE || e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
 				canBatch = false
 				return
