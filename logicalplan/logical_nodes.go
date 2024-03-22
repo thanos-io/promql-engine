@@ -14,6 +14,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
+type Node interface {
+	parser.Expr
+}
+
+type Nodes []Node
+
 // Projection has information on which series labels should be selected from storage.
 type Projection struct {
 	// Labels is a list of labels to be included or excluded from the selection result, depending on the value of Include.
@@ -73,7 +79,7 @@ func (f MatrixSelector) PromQLExpr() {}
 
 // CheckDuplicateLabels is a logical node that checks for duplicate labels in the same timestamp.
 type CheckDuplicateLabels struct {
-	Expr parser.Expr
+	Expr Node
 }
 
 func (c CheckDuplicateLabels) String() string {
@@ -125,7 +131,7 @@ func (c NumberLiteral) PromQLExpr() {}
 // StepInvariantExpr is a logical node that expresses that the child expression
 // returns the same value at every step in the evaluation.
 type StepInvariantExpr struct {
-	Expr parser.Expr
+	Expr Node
 }
 
 func (c StepInvariantExpr) String() string { return c.Expr.String() }
@@ -145,7 +151,7 @@ type FunctionCall struct {
 	// The function that was called.
 	Func *parser.Function
 	// Arguments passed into the function.
-	Args parser.Expressions
+	Args []Node
 }
 
 func (f FunctionCall) String() string {
@@ -165,7 +171,7 @@ func (f FunctionCall) Type() parser.ValueType { return f.Func.ReturnType }
 func (f FunctionCall) PromQLExpr() {}
 
 type Parens struct {
-	Expr parser.Expr
+	Expr Node
 }
 
 func (p Parens) String() string {
@@ -182,7 +188,7 @@ func (p Parens) PromQLExpr() {}
 
 type Unary struct {
 	Op   parser.ItemType
-	Expr parser.Expr
+	Expr Node
 }
 
 func (p Unary) String() string {
@@ -200,8 +206,8 @@ func (p Unary) PromQLExpr() {}
 // Aggregation represents a PromQL aggregation.
 type Aggregation struct {
 	Op       parser.ItemType // The used aggregation operation.
-	Expr     parser.Expr     // The Vector expression over which is aggregated.
-	Param    parser.Expr     // Parameter used by some aggregators.
+	Expr     Node            // The Vector expression over which is aggregated.
+	Param    Node            // Parameter used by some aggregators.
 	Grouping []string        // The labels by which to group the Vector.
 	Without  bool            // Whether to drop the given labels rather than keep them
 }
@@ -240,7 +246,7 @@ func (f Aggregation) getAggOpStr() string {
 
 type Binary struct {
 	Op       parser.ItemType // The operation of the expression.
-	LHS, RHS parser.Expr     // The operands on the respective sides of the operator.
+	LHS, RHS Node            // The operands on the respective sides of the operator.
 
 	// The matching behavior for the operation if both operands are Vectors.
 	// If they are not this field is nil.
@@ -297,7 +303,7 @@ func (b Binary) getMatchingStr() string {
 }
 
 type Subquery struct {
-	Expr  parser.Expr
+	Expr  Node
 	Range time.Duration
 	// OriginalOffset is the actual offset that was set in the query.
 	// This never changes.

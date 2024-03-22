@@ -13,10 +13,10 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -33,7 +33,7 @@ type histogramOperator struct {
 	series []labels.Labels
 
 	pool     *model.VectorPool
-	funcArgs parser.Expressions
+	funcArgs logicalplan.Nodes
 	scalarOp model.VectorOperator
 	vectorOp model.VectorOperator
 
@@ -51,7 +51,7 @@ type histogramOperator struct {
 
 func newHistogramOperator(
 	pool *model.VectorPool,
-	funcArgs parser.Expressions,
+	funcArgs logicalplan.Nodes,
 	scalarOp model.VectorOperator,
 	vectorOp model.VectorOperator,
 	opts *query.Options,

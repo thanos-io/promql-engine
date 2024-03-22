@@ -20,9 +20,9 @@ type SelectorBatchSize struct {
 // If any aggregate is present in the plan, the batch size is set to the configured value.
 // The two exceptions where this cannot be done is if the aggregate is quantile, or
 // when a binary expression precedes the aggregate.
-func (m SelectorBatchSize) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
+func (m SelectorBatchSize) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
 	canBatch := false
-	Traverse(&plan, func(current *parser.Expr) {
+	Traverse(&plan, func(current *Node) {
 		switch e := (*current).(type) {
 		case *FunctionCall:
 			//TODO: calls can reduce the labelset of the input; think histogram_quantile reducing

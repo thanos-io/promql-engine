@@ -31,11 +31,11 @@ type Plan interface {
 }
 
 type Optimizer interface {
-	Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations)
+	Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations)
 }
 
 type plan struct {
-	expr     parser.Expr
+	expr     Node
 	opts     *query.Options
 	planOpts PlanOptions
 }
@@ -44,16 +44,16 @@ type PlanOptions struct {
 	DisableDuplicateLabelCheck bool
 }
 
-func New(expr parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
-	expr = promql.PreprocessExpr(expr, queryOpts.Start, queryOpts.End)
+func New(orig parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
+	expr := promql.PreprocessExpr(orig, queryOpts.Start, queryOpts.End)
 	setOffsetForAtModifier(queryOpts.Start.UnixMilli(), expr)
 	setOffsetForInnerSubqueries(expr, queryOpts)
 
-	// the engine handles sorting at the presentation layer
-	expr = trimSorts(expr)
-
 	// replace scanners by our logical nodes
 	expr = replacePrometheusNodes(expr)
+
+	// the engine handles sorting at the presentation layer
+	expr = trimSorts(expr)
 
 	return &plan{
 		expr:     expr,
@@ -85,29 +85,19 @@ func (p *plan) Expr() parser.Expr {
 	return p.expr
 }
 
-func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
+func Traverse(expr *Node, transform func(*Node)) {
 	switch node := (*expr).(type) {
-	case *parser.StringLiteral, *parser.NumberLiteral:
+	case *StringLiteral, *NumberLiteral:
 		transform(expr)
-	case *parser.StepInvariantExpr:
-		transform(expr)
-		Traverse(&node.Expr, transform)
 	case *StepInvariantExpr:
 		transform(expr)
 		Traverse(&node.Expr, transform)
-	case *parser.VectorSelector:
-		transform(expr)
 	case *VectorSelector:
-		var x parser.Expr = node.VectorSelector
 		transform(expr)
-		Traverse(&x, transform)
 	case *MatrixSelector:
-		var x parser.Expr = node.VectorSelector
 		transform(expr)
+		var x Node = node.VectorSelector
 		Traverse(&x, transform)
-	case *parser.MatrixSelector:
-		transform(expr)
-		Traverse(&node.VectorSelector, transform)
 	case *Aggregation:
 		transform(expr)
 		Traverse(&node.Param, transform)
@@ -117,10 +107,6 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		for i := range node.Args {
 			Traverse(&(node.Args[i]), transform)
 		}
-	case *parser.BinaryExpr:
-		transform(expr)
-		Traverse(&node.LHS, transform)
-		Traverse(&node.RHS, transform)
 	case *Binary:
 		transform(expr)
 		Traverse(&node.LHS, transform)
@@ -133,60 +119,36 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		Traverse(&node.Expr, transform)
 	case *Subquery:
 		transform(expr)
-		Traverse(&node.Expr, transform)
+		var x Node = node.Expr
+		Traverse(&x, transform)
 	case CheckDuplicateLabels:
 		transform(expr)
 		Traverse(&node.Expr, transform)
 	}
 }
 
-func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(parent *parser.Expr, node *parser.Expr) bool) bool {
+func TraverseBottomUp(parent *Node, current *Node, transform func(parent *Node, node *Node) bool) bool {
 	switch node := (*current).(type) {
-	case *parser.StringLiteral, *StringLiteral:
+	case *StringLiteral:
 		return transform(parent, current)
-	case *parser.NumberLiteral, *NumberLiteral:
-		return transform(parent, current)
-	case *parser.StepInvariantExpr:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
+	case *NumberLiteral:
 		return transform(parent, current)
 	case *StepInvariantExpr:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
 		return transform(parent, current)
-	case *parser.VectorSelector:
-		return transform(parent, current)
 	case *VectorSelector:
-		if stop := transform(parent, current); stop {
-			return stop
-		}
-		var x parser.Expr = node.VectorSelector
-		return TraverseBottomUp(current, &x, transform)
+		return transform(parent, current)
 	case *MatrixSelector:
 		if stop := transform(parent, current); stop {
 			return stop
 		}
-		var x parser.Expr = node.VectorSelector
+		var x Node = node.VectorSelector
 		return TraverseBottomUp(current, &x, transform)
-	case *parser.MatrixSelector:
-		return transform(current, &node.VectorSelector)
-	case *parser.AggregateExpr:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
 	case *Aggregation:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
-		}
-		return transform(parent, current)
-	case *parser.Call:
-		for i := range node.Args {
-			if stop := TraverseBottomUp(current, &node.Args[i], transform); stop {
-				return stop
-			}
 		}
 		return transform(parent, current)
 	case *FunctionCall:
@@ -196,13 +158,6 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			}
 		}
 		return transform(parent, current)
-	case *parser.BinaryExpr:
-		lstop := TraverseBottomUp(current, &node.LHS, transform)
-		rstop := TraverseBottomUp(current, &node.RHS, transform)
-		if lstop || rstop {
-			return true
-		}
-		return transform(parent, current)
 	case *Binary:
 		lstop := TraverseBottomUp(current, &node.LHS, transform)
 		rstop := TraverseBottomUp(current, &node.RHS, transform)
@@ -210,15 +165,8 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			return true
 		}
 		return transform(parent, current)
-	case *parser.UnaryExpr:
-		return TraverseBottomUp(current, &node.Expr, transform)
 	case *Unary:
 		return TraverseBottomUp(current, &node.Expr, transform)
-	case *parser.ParenExpr:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
 	case *Parens:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
@@ -238,7 +186,7 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 	return true
 }
 
-func replacePrometheusNodes(plan parser.Expr) parser.Expr {
+func replacePrometheusNodes(plan parser.Expr) Node {
 	switch t := (plan).(type) {
 	case *parser.StringLiteral:
 		return &StringLiteral{Val: t.Val}
@@ -275,7 +223,7 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 				}
 			}
 		}
-		args := make([]parser.Expr, len(t.Args))
+		args := make([]Node, len(t.Args))
 		// nested timestamp functions
 		for i, arg := range t.Args {
 			args[i] = replacePrometheusNodes(arg)
@@ -323,17 +271,17 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 	return plan
 }
 
-func trimSorts(expr parser.Expr) parser.Expr {
+func trimSorts(expr Node) parser.Expr {
 	canTrimSorts := true
 	// We cannot trim inner sort if its an argument to a timestamp function.
 	// If we would do it we could transform "timestamp(sort(X))" into "timestamp(X)"
 	// Which might return actual timestamps of samples instead of query execution timestamp.
-	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
+	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
 		if current == nil || parent == nil {
 			return true
 		}
-		e, pok := (*parent).(*parser.Call)
-		f, cok := (*current).(*parser.Call)
+		e, pok := (*parent).(*FunctionCall)
+		f, cok := (*current).(*FunctionCall)
 
 		if pok && cok {
 			if e.Func.Name == "timestamp" && strings.HasPrefix(f.Func.Name, "sort") {
@@ -346,12 +294,12 @@ func trimSorts(expr parser.Expr) parser.Expr {
 	if !canTrimSorts {
 		return expr
 	}
-	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
+	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
 		if current == nil || parent == nil {
 			return true
 		}
 		switch e := (*parent).(type) {
-		case *parser.Call:
+		case *FunctionCall:
 			switch e.Func.Name {
 			case "sort", "sort_desc":
 				*parent = *current
@@ -362,13 +310,13 @@ func trimSorts(expr parser.Expr) parser.Expr {
 	return expr
 }
 
-func trimParens(expr parser.Expr) parser.Expr {
-	TraverseBottomUp(nil, &expr, func(parent, current *parser.Expr) bool {
+func trimParens(expr Node) Node {
+	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
 		if current == nil || parent == nil {
 			return true
 		}
 		switch (*parent).(type) {
-		case *parser.ParenExpr:
+		case *Parens:
 			*parent = *current
 		}
 		return false
@@ -376,8 +324,8 @@ func trimParens(expr parser.Expr) parser.Expr {
 	return expr
 }
 
-func insertDuplicateLabelChecks(expr parser.Expr) parser.Expr {
-	Traverse(&expr, func(node *parser.Expr) {
+func insertDuplicateLabelChecks(expr Node) Node {
+	Traverse(&expr, func(node *Node) {
 		switch t := (*node).(type) {
 		case *Aggregation, *Unary, *Binary, *FunctionCall:
 			*node = CheckDuplicateLabels{Expr: t}
