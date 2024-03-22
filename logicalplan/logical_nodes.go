@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -51,7 +52,7 @@ func (f VectorSelector) PromQLExpr() {}
 // MatrixSelector is matrix selector with additional configuration set by optimizers.
 // It is used so we can get rid of VectorSelector in distributed mode too.
 type MatrixSelector struct {
-	VectorSelector parser.Expr
+	VectorSelector *VectorSelector
 	Range          time.Duration
 
 	// Needed because this operator is used in the distributed mode
@@ -293,4 +294,56 @@ func (b Binary) getMatchingStr() string {
 		}
 	}
 	return matching
+}
+
+type Subquery struct {
+	Expr  parser.Expr
+	Range time.Duration
+	// OriginalOffset is the actual offset that was set in the query.
+	// This never changes.
+	OriginalOffset time.Duration
+	// Offset is the offset used during the query execution
+	// which is calculated using the original offset, at modifier time,
+	// eval time, and subquery offsets in the AST tree.
+	Offset    time.Duration
+	Timestamp *int64
+	Step      time.Duration
+
+	StartOrEnd parser.ItemType
+}
+
+func (s Subquery) String() string {
+	return fmt.Sprintf("%s%s", s.Expr.String(), s.getSubqueryTimeSuffix())
+}
+
+func (s Subquery) Pretty(_ int) string { return s.String() }
+
+func (s Subquery) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+
+func (s Subquery) Type() parser.ValueType { return s.Expr.Type() }
+
+func (s Subquery) PromQLExpr() {}
+
+func (s Subquery) getSubqueryTimeSuffix() any {
+	step := ""
+	if s.Step != 0 {
+		step = model.Duration(s.Step).String()
+	}
+	offset := ""
+	switch {
+	case s.OriginalOffset > time.Duration(0):
+		offset = fmt.Sprintf(" offset %s", model.Duration(s.OriginalOffset))
+	case s.OriginalOffset < time.Duration(0):
+		offset = fmt.Sprintf(" offset -%s", model.Duration(-s.OriginalOffset))
+	}
+	at := ""
+	switch {
+	case s.Timestamp != nil:
+		at = fmt.Sprintf(" @ %.3f", float64(*s.Timestamp)/1000.0)
+	case s.StartOrEnd == parser.START:
+		at = " @ start()"
+	case s.StartOrEnd == parser.END:
+		at = " @ end()"
+	}
+	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(s.Range), step, at, offset)
 }

@@ -224,14 +224,19 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 }
 
 func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*parser.Expr]*parser.Expr, current *parser.Expr, opts *query.Options) *query.Options {
-	subqueryParents := make([]*parser.SubqueryExpr, 0, len(parents))
+	subqueryParents := make([]*Subquery, 0, len(parents))
 	for p := parents[current]; p != nil; p = parents[p] {
-		if subquery, ok := (*p).(*parser.SubqueryExpr); ok {
+		if subquery, ok := (*p).(*Subquery); ok {
 			subqueryParents = append(subqueryParents, subquery)
 		}
 	}
 	for i := len(subqueryParents) - 1; i >= 0; i-- {
-		opts = query.NestedOptionsForSubquery(opts, subqueryParents[i])
+		opts = query.NestedOptionsForSubquery(
+			opts,
+			subqueryParents[i].Step,
+			subqueryParents[i].Range,
+			subqueryParents[i].Offset,
+		)
 	}
 	return opts
 }
@@ -432,7 +437,7 @@ func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.D
 	var offset time.Duration
 	Traverse(expr, func(node *parser.Expr) {
 		switch n := (*node).(type) {
-		case *parser.SubqueryExpr:
+		case *Subquery:
 			selectRange += n.Range
 		case *MatrixSelector:
 			selectRange += n.Range

@@ -11,7 +11,6 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
@@ -35,7 +34,7 @@ type subqueryOperator struct {
 
 	scalarArgs []float64
 	funcExpr   *logicalplan.FunctionCall
-	subQuery   *parser.SubqueryExpr
+	subQuery   *logicalplan.Subquery
 
 	onceSeries sync.Once
 	series     []labels.Labels
@@ -45,7 +44,7 @@ type subqueryOperator struct {
 	buffers       []*ringbuffer.RingBuffer[Value]
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *parser.SubqueryExpr) (model.VectorOperator, error) {
+func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
 	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err

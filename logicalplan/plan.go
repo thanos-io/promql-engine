@@ -131,7 +131,7 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 	case *Parens:
 		transform(expr)
 		Traverse(&node.Expr, transform)
-	case *parser.SubqueryExpr:
+	case *Subquery:
 		transform(expr)
 		Traverse(&node.Expr, transform)
 	case CheckDuplicateLabels:
@@ -224,7 +224,7 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 			return stop
 		}
 		return transform(parent, current)
-	case *parser.SubqueryExpr:
+	case *Subquery:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
@@ -247,7 +247,13 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 	case *parser.StepInvariantExpr:
 		return &StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
 	case *parser.MatrixSelector:
-		return &MatrixSelector{VectorSelector: replacePrometheusNodes(t.VectorSelector), Range: t.Range, OriginalString: t.String()}
+		return &MatrixSelector{
+			VectorSelector: &VectorSelector{
+				VectorSelector: t.VectorSelector.(*parser.VectorSelector),
+			},
+			Range:          t.Range,
+			OriginalString: t.String(),
+		}
 	case *parser.VectorSelector:
 		return &VectorSelector{VectorSelector: t}
 
@@ -304,8 +310,15 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 			ReturnBool:     t.ReturnBool,
 		}
 	case *parser.SubqueryExpr:
-		t.Expr = replacePrometheusNodes(t.Expr)
-		return t
+		return &Subquery{
+			Expr:           replacePrometheusNodes(t.Expr),
+			Range:          t.Range,
+			OriginalOffset: t.OriginalOffset,
+			Offset:         t.Offset,
+			Timestamp:      t.Timestamp,
+			Step:           t.Step,
+			StartOrEnd:     t.StartOrEnd,
+		}
 	}
 	return plan
 }
@@ -420,7 +433,7 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 		ts                    int64 = math.MaxInt64
 	)
 	for _, node := range path {
-		if n, ok := node.(*parser.SubqueryExpr); ok {
+		if n, ok := node.(*Subquery); ok {
 			subqOffset += n.OriginalOffset
 			subqRange += n.Range
 			if n.Timestamp != nil {
@@ -442,7 +455,7 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
 	switch n := expr.(type) {
 	case *parser.SubqueryExpr:
-		nOpts := query.NestedOptionsForSubquery(opts, n)
+		nOpts := query.NestedOptionsForSubquery(opts, n.Step, n.Range, n.Offset)
 		setOffsetForAtModifier(nOpts.Start.UnixMilli(), n.Expr)
 		setOffsetForInnerSubqueries(n.Expr, nOpts)
 	default:

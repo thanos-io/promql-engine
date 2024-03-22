@@ -68,7 +68,7 @@ func (o *absentOperator) loadSeries() {
 		case *logicalplan.VectorSelector:
 			lm = append(n.LabelMatchers, n.Filters...)
 		case *logicalplan.MatrixSelector:
-			v := n.VectorSelector.(*logicalplan.VectorSelector)
+			v := n.VectorSelector
 			lm = append(v.LabelMatchers, v.Filters...)
 		default:
 			o.series = []labels.Labels{labels.EmptyLabels()}
