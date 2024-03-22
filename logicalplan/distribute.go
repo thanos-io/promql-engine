@@ -349,7 +349,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 
 	var rootExpr parser.Expr = queries[0]
 	for i := 1; i < len(queries); i++ {
-		rootExpr = &parser.BinaryExpr{
+		rootExpr = &Binary{
 			Op:             parser.MUL,
 			LHS:            rootExpr,
 			RHS:            queries[i],
@@ -453,7 +453,7 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	}
 
 	switch e := (*expr).(type) {
-	case *parser.BinaryExpr:
+	case *Binary:
 		return isBinaryExpressionWithOneConstantSide(e) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(e))
 	case *Aggregation:
 		// Certain aggregations are currently not supported.
@@ -465,13 +465,13 @@ func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
 	return true
 }
 
-func isBinaryExpressionWithOneConstantSide(expr *parser.BinaryExpr) bool {
+func isBinaryExpressionWithOneConstantSide(expr *Binary) bool {
 	lhsConstant := IsConstantExpr(expr.LHS)
 	rhsConstant := IsConstantExpr(expr.RHS)
-	return (lhsConstant || rhsConstant)
+	return lhsConstant || rhsConstant
 }
 
-func isBinaryExpressionWithDistributableMatching(expr *parser.BinaryExpr) bool {
+func isBinaryExpressionWithDistributableMatching(expr *Binary) bool {
 	if expr.VectorMatching == nil {
 		return false
 	}

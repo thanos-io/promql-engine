@@ -32,7 +32,7 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (pa
 			sum.Op = parser.SUM
 			count := *(*current).(*Aggregation)
 			count.Op = parser.COUNT
-			*current = &parser.BinaryExpr{
+			*current = &Binary{
 				Op:  parser.DIV,
 				LHS: &sum,
 				RHS: &count,

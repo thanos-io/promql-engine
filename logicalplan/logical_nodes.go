@@ -236,3 +236,61 @@ func (f Aggregation) getAggOpStr() string {
 
 	return aggrString
 }
+
+type Binary struct {
+	Op       parser.ItemType // The operation of the expression.
+	LHS, RHS parser.Expr     // The operands on the respective sides of the operator.
+
+	// The matching behavior for the operation if both operands are Vectors.
+	// If they are not this field is nil.
+	VectorMatching *parser.VectorMatching
+
+	// If a comparison operator, return 0/1 rather than filtering.
+	ReturnBool bool
+
+	ValueType parser.ValueType
+}
+
+func (b Binary) Pretty(_ int) string { return b.String() }
+
+func (b Binary) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
+
+func (b Binary) Type() parser.ValueType {
+	if b.LHS.Type() == parser.ValueTypeScalar && b.RHS.Type() == parser.ValueTypeScalar {
+		return parser.ValueTypeScalar
+	}
+	return parser.ValueTypeVector
+}
+
+func (b Binary) PromQLExpr() {}
+
+func (b Binary) String() string {
+	returnBool := ""
+	if b.ReturnBool {
+		returnBool = " bool"
+	}
+
+	matching := b.getMatchingStr()
+	return fmt.Sprintf("%s %s%s%s %s", b.LHS, b.Op, returnBool, matching, b.RHS)
+}
+
+func (b Binary) getMatchingStr() string {
+	matching := ""
+	vm := b.VectorMatching
+	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
+		vmTag := "ignoring"
+		if vm.On {
+			vmTag = "on"
+		}
+		matching = fmt.Sprintf(" %s (%s)", vmTag, strings.Join(vm.MatchingLabels, ", "))
+
+		if vm.Card == parser.CardManyToOne || vm.Card == parser.CardOneToMany {
+			vmCard := "right"
+			if vm.Card == parser.CardManyToOne {
+				vmCard = "left"
+			}
+			matching += fmt.Sprintf(" group_%s (%s)", vmCard, strings.Join(vm.Include, ", "))
+		}
+	}
+	return matching
+}
