@@ -62,7 +62,7 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 		return newCall(e, storage, opts, hints)
 	case *logicalplan.Aggregation:
 		return newAggregateExpression(e, storage, opts, hints)
-	case *parser.BinaryExpr:
+	case *logicalplan.Binary:
 		return newBinaryExpression(e, storage, opts, hints)
 	case *logicalplan.Parens:
 		return newOperator(e.Expr, storage, opts, hints)
@@ -262,14 +262,14 @@ func newAggregateExpression(e *logicalplan.Aggregation, scanners storage.Scanner
 
 }
 
-func newBinaryExpression(e *parser.BinaryExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newBinaryExpression(e *logicalplan.Binary, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
 		return newScalarBinaryOperator(e, scanners, opts, hints)
 	}
 	return newVectorBinaryOperator(e, scanners, opts, hints)
 }
 
-func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newVectorBinaryOperator(e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	leftOperator, err := newOperator(e.LHS, storage, opts, hints)
 	if err != nil {
 		return nil, err
@@ -281,7 +281,7 @@ func newVectorBinaryOperator(e *parser.BinaryExpr, storage storage.Scanners, opt
 	return binary.NewVectorOperator(model.NewVectorPool(opts.StepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
 }
 
-func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newScalarBinaryOperator(e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	lhs, err := newOperator(e.LHS, storage, opts, hints)
 	if err != nil {
 		return nil, err

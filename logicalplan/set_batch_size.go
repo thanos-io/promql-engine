@@ -29,7 +29,7 @@ func (m SelectorBatchSize) Optimize(plan parser.Expr, _ *query.Options) (parser.
 			// multiple "le" labels into one output. We cannot handle this in batching. Revisit
 			// what is safe here.
 			canBatch = false
-		case *parser.BinaryExpr:
+		case *Binary:
 			canBatch = false
 		case *Aggregation:
 			if e.Op == parser.QUANTILE || e.Op == parser.TOPK || e.Op == parser.BOTTOMK {

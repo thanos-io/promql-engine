@@ -20,7 +20,7 @@ type PropagateMatchersOptimizer struct{}
 
 func (m PropagateMatchersOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	Traverse(&plan, func(expr *parser.Expr) {
-		binOp, ok := (*expr).(*parser.BinaryExpr)
+		binOp, ok := (*expr).(*Binary)
 		if !ok {
 			return
 		}
@@ -46,7 +46,7 @@ func (m PropagateMatchersOptimizer) Optimize(plan parser.Expr, _ *query.Options)
 	return plan, nil
 }
 
-func propagateMatchers(binOp *parser.BinaryExpr) {
+func propagateMatchers(binOp *Binary) {
 	lhSelector, ok := binOp.LHS.(*VectorSelector)
 	if !ok {
 		return

@@ -71,7 +71,7 @@ func IsConstantExpr(expr parser.Expr) bool {
 			constArgs = constArgs && IsConstantExpr(arg)
 		}
 		return constArgs
-	case *parser.BinaryExpr:
+	case *Binary:
 		return IsConstantExpr(texpr.LHS) && IsConstantExpr(texpr.RHS)
 	default:
 		return false

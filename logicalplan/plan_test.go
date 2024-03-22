@@ -51,7 +51,7 @@ func renderExprTree(expr parser.Expr) string {
 		return base
 	case *MatrixSelector:
 		return t.String()
-	case *parser.BinaryExpr:
+	case *Binary:
 		var b strings.Builder
 		b.WriteString(renderExprTree(t.LHS))
 		b.WriteString(" ")
