@@ -5,7 +5,6 @@ package function
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -29,8 +28,12 @@ type noArgFunctionOperator struct {
 	sampleIDs   []uint64
 }
 
-func (o *noArgFunctionOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("%s %s()", noArgFunctionOperatorName, o.funcExpr.Func.Name), []model.VectorOperator{}
+func (o *noArgFunctionOperator) Explain() (next []model.VectorOperator) {
+	return nil
+}
+
+func (o *noArgFunctionOperator) String() string {
+	return "[noArgFunction]"
 }
 
 func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {

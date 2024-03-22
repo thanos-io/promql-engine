@@ -35,8 +35,12 @@ type stepInvariantOperator struct {
 	model.OperatorTelemetry
 }
 
-func (u *stepInvariantOperator) Explain() (me string, next []model.VectorOperator) {
-	return "[stepInvariant]", []model.VectorOperator{u.next}
+func (u *stepInvariantOperator) Explain() (next []model.VectorOperator) {
+	return []model.VectorOperator{u.next}
+}
+
+func (u *stepInvariantOperator) String() string {
+	return "[stepInvariant]"
 }
 
 func NewStepInvariantOperator(
@@ -47,8 +51,6 @@ func NewStepInvariantOperator(
 ) (model.VectorOperator, error) {
 	// We set interval to be at least 1.
 	u := &stepInvariantOperator{
-		OperatorTelemetry: model.NewTelemetry("[stepInvariant]", opts.EnableAnalysis),
-
 		vectorPool:  pool,
 		next:        next,
 		currentStep: opts.Start.UnixMilli(),
@@ -58,6 +60,7 @@ func NewStepInvariantOperator(
 		stepsBatch:  opts.StepsBatch,
 		cacheResult: true,
 	}
+	u.OperatorTelemetry = model.NewTelemetry(u, opts.EnableAnalysis)
 	if u.step == 0 {
 		u.step = 1
 	}

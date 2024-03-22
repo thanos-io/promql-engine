@@ -31,16 +31,22 @@ func newAbsentOperator(
 	next model.VectorOperator,
 	opts *query.Options,
 ) *absentOperator {
-	return &absentOperator{
-		OperatorTelemetry: model.NewTelemetry(absentOperatorName, opts.EnableAnalysis),
-		funcExpr:          funcExpr,
-		pool:              pool,
-		next:              next,
+	oper := &absentOperator{
+		funcExpr: funcExpr,
+		pool:     pool,
+		next:     next,
 	}
+	oper.OperatorTelemetry = model.NewTelemetry(oper, opts.EnableAnalysis)
+
+	return oper
 }
 
-func (o *absentOperator) Explain() (me string, next []model.VectorOperator) {
-	return absentOperatorName, []model.VectorOperator{o.next}
+func (o *absentOperator) String() string {
+	return "[absent]"
+}
+
+func (o *absentOperator) Explain() (next []model.VectorOperator) {
+	return []model.VectorOperator{o.next}
 }
 
 func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {

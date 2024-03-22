@@ -33,15 +33,21 @@ func newRelabelOperator(
 	funcExpr *logicalplan.FunctionCall,
 	opts *query.Options,
 ) *relabelOperator {
-	return &relabelOperator{
-		OperatorTelemetry: model.NewTelemetry(relabelOperatorName, opts.EnableAnalysis),
-		next:              next,
-		funcExpr:          funcExpr,
+	oper := &relabelOperator{
+		next:     next,
+		funcExpr: funcExpr,
 	}
+	oper.OperatorTelemetry = model.NewTelemetry(oper, opts.EnableAnalysis)
+
+	return oper
 }
 
-func (o *relabelOperator) Explain() (me string, next []model.VectorOperator) {
-	return relabelOperatorName, []model.VectorOperator{}
+func (o *relabelOperator) String() string {
+	return "[relabel]"
+}
+
+func (o *relabelOperator) Explain() (next []model.VectorOperator) {
+	return []model.VectorOperator{}
 }
 
 func (o *relabelOperator) Series(ctx context.Context) ([]labels.Labels, error) {

@@ -56,19 +56,24 @@ func newHistogramOperator(
 	vectorOp model.VectorOperator,
 	opts *query.Options,
 ) *histogramOperator {
-	return &histogramOperator{
-		pool:              pool,
-		funcArgs:          funcArgs,
-		scalarOp:          scalarOp,
-		vectorOp:          vectorOp,
-		scalarPoints:      make([]float64, opts.StepsBatch),
-		OperatorTelemetry: model.NewTelemetry(histogramOperatorName, opts.EnableAnalysis),
+	oper := &histogramOperator{
+		pool:         pool,
+		funcArgs:     funcArgs,
+		scalarOp:     scalarOp,
+		vectorOp:     vectorOp,
+		scalarPoints: make([]float64, opts.StepsBatch),
 	}
+	oper.OperatorTelemetry = model.NewTelemetry(oper, opts.EnableAnalysis)
+
+	return oper
 }
 
-func (o *histogramOperator) Explain() (me string, next []model.VectorOperator) {
-	next = []model.VectorOperator{o.scalarOp, o.vectorOp}
-	return fmt.Sprintf("%s(%v)", histogramOperatorName, o.funcArgs), next
+func (o *histogramOperator) String() string {
+	return fmt.Sprintf("[histogram_quantile](%v)", o.funcArgs)
+}
+
+func (o *histogramOperator) Explain() (next []model.VectorOperator) {
+	return []model.VectorOperator{o.scalarOp, o.vectorOp}
 }
 
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {

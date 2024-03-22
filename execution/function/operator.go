@@ -21,16 +21,6 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 )
 
-const (
-	absentOperatorName        = "[absent]"
-	functionOperatorName      = "[function]"
-	histogramOperatorName     = "[histogram_quantile]"
-	relabelOperatorName       = "[relabel]"
-	scalarOperatorName        = "[scalar]"
-	timestampOperatorName     = "[timestamp]"
-	noArgFunctionOperatorName = "[noArgFunction]"
-)
-
 func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
 	// Some functions need to be handled in special operators
 	switch funcExpr.Func.Name {
@@ -67,16 +57,17 @@ func newNoArgsFunctionOperator(funcExpr *logicalplan.FunctionCall, stepsBatch in
 	}
 
 	op := &noArgFunctionOperator{
-		OperatorTelemetry: model.NewTelemetry(noArgFunctionOperatorName, opts.EnableAnalysis),
-		currentStep:       opts.Start.UnixMilli(),
-		mint:              opts.Start.UnixMilli(),
-		maxt:              opts.End.UnixMilli(),
-		step:              interval,
-		stepsBatch:        stepsBatch,
-		funcExpr:          funcExpr,
-		call:              call,
-		vectorPool:        model.NewVectorPool(stepsBatch),
+		currentStep: opts.Start.UnixMilli(),
+		mint:        opts.Start.UnixMilli(),
+		maxt:        opts.End.UnixMilli(),
+		step:        interval,
+		stepsBatch:  stepsBatch,
+		funcExpr:    funcExpr,
+		call:        call,
+		vectorPool:  model.NewVectorPool(stepsBatch),
 	}
+	op.OperatorTelemetry = model.NewTelemetry(op, opts.EnableAnalysis)
+
 	switch funcExpr.Func.Name {
 	case "pi", "time":
 		op.sampleIDs = []uint64{0}
@@ -115,13 +106,13 @@ func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOp
 		scalarPoints[i] = make([]float64, len(nextOps)-1)
 	}
 	f := &functionOperator{
-		OperatorTelemetry: model.NewTelemetry(functionOperatorName, opts.EnableAnalysis),
-		nextOps:           nextOps,
-		call:              call,
-		funcExpr:          funcExpr,
-		vectorIndex:       0,
-		scalarPoints:      scalarPoints,
+		nextOps:      nextOps,
+		call:         call,
+		funcExpr:     funcExpr,
+		vectorIndex:  0,
+		scalarPoints: scalarPoints,
 	}
+	f.OperatorTelemetry = model.NewTelemetry(f, opts.EnableAnalysis)
 
 	for i := range funcExpr.Args {
 		if funcExpr.Args[i].Type() == parser.ValueTypeVector {
@@ -139,8 +130,12 @@ func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOp
 	}
 }
 
-func (o *functionOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("%s %v(%v)", functionOperatorName, o.funcExpr.Func.Name, o.funcExpr.Args), o.nextOps
+func (o *functionOperator) Explain() (next []model.VectorOperator) {
+	return o.nextOps
+}
+
+func (o *functionOperator) String() string {
+	return fmt.Sprintf("[function] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args)
 }
 
 func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
