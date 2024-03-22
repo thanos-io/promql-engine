@@ -162,3 +162,36 @@ func (f FunctionCall) PositionRange() posrange.PositionRange { return posrange.P
 func (f FunctionCall) Type() parser.ValueType { return f.Func.ReturnType }
 
 func (f FunctionCall) PromQLExpr() {}
+
+type Parens struct {
+	Expr parser.Expr
+}
+
+func (p Parens) String() string {
+	return fmt.Sprintf("(%s)", p.Expr.String())
+}
+
+func (p Parens) Pretty(level int) string { return p.String() }
+
+func (p Parens) PositionRange() posrange.PositionRange { return p.Expr.PositionRange() }
+
+func (p Parens) Type() parser.ValueType { return p.Expr.Type() }
+
+func (p Parens) PromQLExpr() {}
+
+type Unary struct {
+	Op   parser.ItemType
+	Expr parser.Expr
+}
+
+func (p Unary) String() string {
+	return fmt.Sprintf("%s%s", p.Op.String(), p.Expr.String())
+}
+
+func (p Unary) Pretty(level int) string { return p.String() }
+
+func (p Unary) PositionRange() posrange.PositionRange { return p.Expr.PositionRange() }
+
+func (p Unary) Type() parser.ValueType { return p.Expr.Type() }
+
+func (p Unary) PromQLExpr() {}

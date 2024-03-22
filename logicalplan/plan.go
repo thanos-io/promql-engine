@@ -121,10 +121,10 @@ func Traverse(expr *parser.Expr, transform func(*parser.Expr)) {
 		transform(expr)
 		Traverse(&node.LHS, transform)
 		Traverse(&node.RHS, transform)
-	case *parser.UnaryExpr:
+	case *Unary:
 		transform(expr)
 		Traverse(&node.Expr, transform)
-	case *parser.ParenExpr:
+	case *Parens:
 		transform(expr)
 		Traverse(&node.Expr, transform)
 	case *parser.SubqueryExpr:
@@ -196,7 +196,14 @@ func TraverseBottomUp(parent *parser.Expr, current *parser.Expr, transform func(
 		return transform(parent, current)
 	case *parser.UnaryExpr:
 		return TraverseBottomUp(current, &node.Expr, transform)
+	case *Unary:
+		return TraverseBottomUp(current, &node.Expr, transform)
 	case *parser.ParenExpr:
+		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
+			return stop
+		}
+		return transform(parent, current)
+	case *Parens:
 		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
 			return stop
 		}
@@ -256,11 +263,14 @@ func replacePrometheusNodes(plan parser.Expr) parser.Expr {
 			Args: args,
 		}
 	case *parser.ParenExpr:
-		t.Expr = replacePrometheusNodes(t.Expr)
-		return t
+		return &Parens{
+			Expr: replacePrometheusNodes(t.Expr),
+		}
 	case *parser.UnaryExpr:
-		t.Expr = replacePrometheusNodes(t.Expr)
-		return t
+		return &Unary{
+			Op:   t.Op,
+			Expr: replacePrometheusNodes(t.Expr),
+		}
 	case *parser.AggregateExpr:
 		t.Expr = replacePrometheusNodes(t.Expr)
 		t.Param = replacePrometheusNodes(t.Param)
@@ -332,7 +342,7 @@ func trimParens(expr parser.Expr) parser.Expr {
 func insertDuplicateLabelChecks(expr parser.Expr) parser.Expr {
 	Traverse(&expr, func(node *parser.Expr) {
 		switch t := (*node).(type) {
-		case *parser.AggregateExpr, *parser.UnaryExpr, *parser.BinaryExpr, *FunctionCall:
+		case *parser.AggregateExpr, *Unary, *parser.BinaryExpr, *FunctionCall:
 			*node = CheckDuplicateLabels{Expr: t}
 		case *VectorSelector:
 			if t.SelectTimestamp {
