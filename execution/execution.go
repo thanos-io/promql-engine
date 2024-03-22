@@ -64,9 +64,9 @@ func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options
 		return newAggregateExpression(e, storage, opts, hints)
 	case *parser.BinaryExpr:
 		return newBinaryExpression(e, storage, opts, hints)
-	case *parser.ParenExpr:
+	case *logicalplan.Parens:
 		return newOperator(e.Expr, storage, opts, hints)
-	case *parser.UnaryExpr:
+	case *logicalplan.Unary:
 		return newUnaryExpression(e, storage, opts, hints)
 	case *logicalplan.StepInvariantExpr:
 		return newStepInvariantExpression(e, storage, opts, hints)
@@ -302,7 +302,7 @@ func newScalarBinaryOperator(e *parser.BinaryExpr, storage storage.Scanners, opt
 	return binary.NewScalar(model.NewVectorPoolWithSize(opts.StepsBatch, 1), lhs, rhs, e.Op, scalarSide, e.ReturnBool, opts)
 }
 
-func newUnaryExpression(e *parser.UnaryExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newUnaryExpression(e *logicalplan.Unary, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	next, err := newOperator(e.Expr, scanners, opts, hints)
 	if err != nil {
 		return nil, err
