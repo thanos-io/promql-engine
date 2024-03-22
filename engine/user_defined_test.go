@@ -81,7 +81,7 @@ type logicalVectorSelector struct {
 }
 
 func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
-	return &vectorSelectorOperator{
+	oper := &vectorSelectorOperator{
 		stepsBatch: opts.StepsBatch,
 		vectors:    vectors,
 
@@ -89,7 +89,13 @@ func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, 
 		maxt:        opts.End.UnixMilli(),
 		step:        opts.Step.Milliseconds(),
 		currentStep: opts.Start.UnixMilli(),
-	}, nil
+	}
+
+	return oper, nil
+}
+
+func (c vectorSelectorOperator) String() string {
+	return "logicalVectorSelector"
 }
 
 type vectorSelectorOperator struct {
@@ -128,6 +134,6 @@ func (c *vectorSelectorOperator) GetPool() *model.VectorPool {
 	return c.vectors
 }
 
-func (c *vectorSelectorOperator) Explain() (me string, next []model.VectorOperator) {
-	return "vectorSelectorOperator", nil
+func (c *vectorSelectorOperator) Explain() (next []model.VectorOperator) {
+	return nil
 }

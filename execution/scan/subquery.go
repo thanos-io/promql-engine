@@ -64,9 +64,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 		arg = unwrap
 	}
 
-	return &subqueryOperator{
-		OperatorTelemetry: model.NewTelemetry("[subquery]", opts.EnableAnalysis),
-
+	oper := &subqueryOperator{
 		next:          next,
 		call:          call,
 		pool:          pool,
@@ -79,11 +77,18 @@ func NewSubqueryOperator(pool *model.VectorPool, next model.VectorOperator, opts
 		step:          step,
 		stepsBatch:    opts.StepsBatch,
 		lastCollected: -1,
-	}, nil
+	}
+	oper.OperatorTelemetry = model.NewTelemetry(oper, opts.EnableAnalysis)
+
+	return oper, nil
 }
 
-func (o *subqueryOperator) Explain() (me string, next []model.VectorOperator) {
-	return fmt.Sprintf("[subquery] %v()", o.funcExpr.Func.Name), []model.VectorOperator{o.next}
+func (o *subqueryOperator) String() string {
+	return fmt.Sprintf("[subquery] %v()", o.funcExpr.Func.Name)
+}
+
+func (o *subqueryOperator) Explain() (next []model.VectorOperator) {
+	return []model.VectorOperator{o.next}
 }
 
 func (o *subqueryOperator) GetPool() *model.VectorPool { return o.pool }
