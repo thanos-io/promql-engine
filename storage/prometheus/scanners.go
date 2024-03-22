@@ -74,7 +74,7 @@ func (p prometheusScanners) NewMatrixSelector(
 		arg = unwrap
 	}
 
-	vs := logicalNode.VectorSelector.(*logicalplan.VectorSelector)
+	vs := logicalNode.VectorSelector
 	filter := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
 
 	operators := make([]model.VectorOperator, 0, numShards)

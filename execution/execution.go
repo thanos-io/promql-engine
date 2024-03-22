@@ -126,7 +126,7 @@ func newCall(e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	for i := range e.Args {
 		switch t := e.Args[i].(type) {
-		case *parser.SubqueryExpr:
+		case *logicalplan.Subquery:
 			return newSubqueryFunction(e, t, scanners, opts, hints)
 		case *logicalplan.MatrixSelector:
 			return newRangeVectorFunction(e, t, scanners, opts, hints)
@@ -137,7 +137,7 @@ func newCall(e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query
 
 func newAbsentOverTimeOperator(call *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
-	case *parser.SubqueryExpr:
+	case *logicalplan.Subquery:
 		matrixCall := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "last_over_time"},
 		}
@@ -181,20 +181,20 @@ func newRangeVectorFunction(e *logicalplan.FunctionCall, t *logicalplan.MatrixSe
 		milliSecondRange += opts.ExtLookbackDelta.Milliseconds()
 	}
 
-	start, end := getTimeRangesForVectorSelector(t.VectorSelector.(*logicalplan.VectorSelector), opts, milliSecondRange)
+	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, milliSecondRange)
 	hints.Start = start
 	hints.End = end
 	hints.Range = milliSecondRange
 	return scanners.NewMatrixSelector(opts, hints, *t, *e)
 }
 
-func newSubqueryFunction(e *logicalplan.FunctionCall, t *parser.SubqueryExpr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newSubqueryFunction(e *logicalplan.FunctionCall, t *logicalplan.Subquery, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO: We dont implement ext functions
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
 	}
 
-	nOpts := query.NestedOptionsForSubquery(opts, t)
+	nOpts := query.NestedOptionsForSubquery(opts, t.Step, t.Range, t.Offset)
 
 	hints.Start = nOpts.Start.UnixMilli()
 	hints.End = nOpts.End.UnixMilli()

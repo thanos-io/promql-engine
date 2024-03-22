@@ -63,7 +63,7 @@ load 30s
 
 type injectVectorSelector struct{}
 
-func (i injectVectorSelector) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+func (i injectVectorSelector) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
 	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *parser.Expr) bool {
 		switch t := (*current).(type) {
 		case *logicalplan.VectorSelector:
