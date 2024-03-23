@@ -50,7 +50,7 @@ func (m PassthroughOptimizer) Optimize(plan Node, opts *query.Options) (Node, an
 		}
 		return RemoteExecution{
 			Engine:          engines[0],
-			Query:           plan,
+			Query:           plan.Clone(),
 			QueryRangeStart: opts.Start,
 		}, nil
 	}
@@ -76,7 +76,7 @@ func (m PassthroughOptimizer) Optimize(plan Node, opts *query.Options) (Node, an
 	if len(matchingLabelsEngines) == 1 && matchingEngineTime(matchingLabelsEngines[0], opts) {
 		return RemoteExecution{
 			Engine:          matchingLabelsEngines[0],
-			Query:           plan,
+			Query:           plan.Clone(),
 			QueryRangeStart: opts.Start,
 		}, nil
 	}

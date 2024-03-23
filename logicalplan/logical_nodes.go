@@ -14,8 +14,13 @@ import (
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
+type Cloneable interface {
+	Clone() Node
+}
+
 type Node interface {
 	parser.Expr
+	Cloneable
 }
 
 type Nodes []Node
@@ -36,6 +41,23 @@ type VectorSelector struct {
 	BatchSize       int64
 	SelectTimestamp bool
 	Projection      Projection
+}
+
+func (f VectorSelector) Clone() Node {
+	clone := f
+	vsClone := *f.VectorSelector
+	clone.VectorSelector = &vsClone
+
+	clone.Filters = shallowCloneSlice(f.Filters)
+	clone.LabelMatchers = shallowCloneSlice(f.LabelMatchers)
+	clone.Projection.Labels = shallowCloneSlice(f.Projection.Labels)
+
+	if f.VectorSelector.Timestamp != nil {
+		ts := *f.VectorSelector.Timestamp
+		clone.Timestamp = &ts
+	}
+
+	return &clone
 }
 
 func (f VectorSelector) String() string {
@@ -65,6 +87,12 @@ type MatrixSelector struct {
 	OriginalString string
 }
 
+func (f MatrixSelector) Clone() Node {
+	clone := f
+	clone.VectorSelector = f.VectorSelector.Clone().(*VectorSelector)
+	return &clone
+}
+
 func (f MatrixSelector) String() string {
 	return f.OriginalString
 }
@@ -80,6 +108,12 @@ func (f MatrixSelector) PromQLExpr() {}
 // CheckDuplicateLabels is a logical node that checks for duplicate labels in the same timestamp.
 type CheckDuplicateLabels struct {
 	Expr Node
+}
+
+func (c CheckDuplicateLabels) Clone() Node {
+	clone := c
+	clone.Expr = c.Expr.Clone()
+	return clone
 }
 
 func (c CheckDuplicateLabels) String() string {
@@ -99,6 +133,11 @@ type StringLiteral struct {
 	Val string
 }
 
+func (c StringLiteral) Clone() Node {
+	clone := c
+	return &clone
+}
+
 func (c StringLiteral) String() string {
 	return fmt.Sprintf("%q", c.Val)
 }
@@ -114,6 +153,11 @@ func (c StringLiteral) PromQLExpr() {}
 // NumberLiteral is a logical node representing a literal number.
 type NumberLiteral struct {
 	Val float64
+}
+
+func (c NumberLiteral) Clone() Node {
+	clone := c
+	return &clone
 }
 
 func (c NumberLiteral) String() string {
@@ -134,6 +178,12 @@ type StepInvariantExpr struct {
 	Expr Node
 }
 
+func (c StepInvariantExpr) Clone() Node {
+	clone := c
+	clone.Expr = c.Expr.Clone()
+	return &clone
+}
+
 func (c StepInvariantExpr) String() string { return c.Expr.String() }
 
 func (c StepInvariantExpr) Pretty(level int) string { return c.String() }
@@ -149,9 +199,18 @@ func (c StepInvariantExpr) PromQLExpr() {}
 // FunctionCall represents a PromQL function.
 type FunctionCall struct {
 	// The function that was called.
-	Func *parser.Function
+	Func parser.Function
 	// Arguments passed into the function.
 	Args []Node
+}
+
+func (f FunctionCall) Clone() Node {
+	clone := f
+	clone.Args = make([]Node, 0, len(f.Args))
+	for _, arg := range f.Args {
+		clone.Args = append(clone.Args, arg.Clone())
+	}
+	return &clone
 }
 
 func (f FunctionCall) String() string {
@@ -174,6 +233,12 @@ type Parens struct {
 	Expr Node
 }
 
+func (p Parens) Clone() Node {
+	clone := p
+	clone.Expr = p.Expr.Clone()
+	return &clone
+}
+
 func (p Parens) String() string {
 	return fmt.Sprintf("(%s)", p.Expr.String())
 }
@@ -189,6 +254,12 @@ func (p Parens) PromQLExpr() {}
 type Unary struct {
 	Op   parser.ItemType
 	Expr Node
+}
+
+func (p Unary) Clone() Node {
+	clone := p
+	clone.Expr = p.Expr.Clone()
+	return &clone
 }
 
 func (p Unary) String() string {
@@ -210,6 +281,16 @@ type Aggregation struct {
 	Param    Node            // Parameter used by some aggregators.
 	Grouping []string        // The labels by which to group the Vector.
 	Without  bool            // Whether to drop the given labels rather than keep them
+}
+
+func (f Aggregation) Clone() Node {
+	clone := f
+	clone.Expr = f.Expr.Clone()
+	if clone.Param != nil {
+		clone.Param = f.Param.Clone()
+	}
+	clone.Grouping = shallowCloneSlice(f.Grouping)
+	return &clone
 }
 
 func (f Aggregation) String() string {
@@ -256,6 +337,17 @@ type Binary struct {
 	ReturnBool bool
 
 	ValueType parser.ValueType
+}
+
+func (b Binary) Clone() Node {
+	clone := b
+	clone.LHS = b.LHS.Clone()
+	clone.RHS = b.RHS.Clone()
+	if b.VectorMatching != nil {
+		vm := *b.VectorMatching
+		clone.VectorMatching = &vm
+	}
+	return &clone
 }
 
 func (b Binary) Pretty(_ int) string { return b.String() }
@@ -318,6 +410,18 @@ type Subquery struct {
 	StartOrEnd parser.ItemType
 }
 
+func (s Subquery) Clone() Node {
+	clone := s
+	clone.Expr = s.Expr.Clone()
+
+	if s.Timestamp != nil {
+		ts := *s.Timestamp
+		clone.Timestamp = &ts
+	}
+
+	return &clone
+}
+
 func (s Subquery) String() string {
 	return fmt.Sprintf("%s%s", s.Expr.String(), s.getSubqueryTimeSuffix())
 }
@@ -352,4 +456,13 @@ func (s Subquery) getSubqueryTimeSuffix() any {
 		at = " @ end()"
 	}
 	return fmt.Sprintf("[%s:%s]%s%s", model.Duration(s.Range), step, at, offset)
+}
+
+func shallowCloneSlice[T any](s []T) []T {
+	if s == nil {
+		return nil
+	}
+	clone := make([]T, len(s))
+	copy(clone, s)
+	return clone
 }

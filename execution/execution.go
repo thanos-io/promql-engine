@@ -105,7 +105,7 @@ func newCall(e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query
 		case *logicalplan.VectorSelector:
 			arg.SelectTimestamp = true
 			return newVectorSelector(arg, scanners, opts, hints)
-		case *parser.StepInvariantExpr:
+		case *logicalplan.StepInvariantExpr:
 			// Step invariant expressions on vector selectors need to be unwrapped so that we
 			// can return the original timestamp rather than the step invariant one.
 			switch vs := arg.Expr.(type) {
@@ -139,20 +139,20 @@ func newAbsentOverTimeOperator(call *logicalplan.FunctionCall, scanners storage.
 	switch arg := call.Args[0].(type) {
 	case *logicalplan.Subquery:
 		matrixCall := &logicalplan.FunctionCall{
-			Func: &parser.Function{Name: "last_over_time"},
+			Func: parser.Function{Name: "last_over_time"},
 		}
 		argOp, err := newSubqueryFunction(matrixCall, arg, scanners, opts, hints)
 		if err != nil {
 			return nil, err
 		}
 		f := &logicalplan.FunctionCall{
-			Func: &parser.Function{Name: "absent"},
+			Func: parser.Function{Name: "absent"},
 			Args: []logicalplan.Node{matrixCall},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *logicalplan.MatrixSelector:
 		matrixCall := &logicalplan.FunctionCall{
-			Func: &parser.Function{Name: "last_over_time"},
+			Func: parser.Function{Name: "last_over_time"},
 			Args: call.Args,
 		}
 		argOp, err := newRangeVectorFunction(matrixCall, arg, scanners, opts, hints)
@@ -160,7 +160,7 @@ func newAbsentOverTimeOperator(call *logicalplan.FunctionCall, scanners storage.
 			return nil, err
 		}
 		f := &logicalplan.FunctionCall{
-			Func: &parser.Function{Name: "absent"},
+			Func: parser.Function{Name: "absent"},
 			Args: []logicalplan.Node{&logicalplan.MatrixSelector{
 				VectorSelector: arg.VectorSelector,
 				Range:          arg.Range,
