@@ -16,8 +16,8 @@ type DistributeAvgOptimizer struct {
 	SkipBinaryPushdown bool
 }
 
-func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
-	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
+func (r DistributeAvgOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		if !isDistributiveOrAverage(current, r.SkipBinaryPushdown) {
 			return true
 		}
@@ -49,7 +49,7 @@ func (r DistributeAvgOptimizer) Optimize(plan parser.Expr, _ *query.Options) (pa
 	return plan, nil
 }
 
-func isDistributiveOrAverage(expr *parser.Expr, skipBinaryPushdown bool) bool {
+func isDistributiveOrAverage(expr *Node, skipBinaryPushdown bool) bool {
 	if expr == nil {
 		return false
 	}

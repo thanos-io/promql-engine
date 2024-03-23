@@ -278,7 +278,8 @@ func TestTrimSorts(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			testutil.Equals(t, tcase.expected, trimSorts(expr).String())
+			exprPlan := New(expr, &query.Options{}, PlanOptions{})
+			testutil.Equals(t, tcase.expected, exprPlan.Expr().String())
 		})
 	}
 }

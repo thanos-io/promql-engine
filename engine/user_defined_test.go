@@ -14,8 +14,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 
-	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -63,8 +61,8 @@ load 30s
 
 type injectVectorSelector struct{}
 
-func (i injectVectorSelector) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
-	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *parser.Expr) bool {
+func (i injectVectorSelector) Optimize(plan logicalplan.Node, _ *query.Options) (logicalplan.Node, annotations.Annotations) {
+	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *logicalplan.Node) bool {
 		switch t := (*current).(type) {
 		case *logicalplan.VectorSelector:
 			*current = &logicalVectorSelector{

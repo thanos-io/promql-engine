@@ -147,7 +147,7 @@ func newAbsentOverTimeOperator(call *logicalplan.FunctionCall, scanners storage.
 		}
 		f := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{matrixCall},
+			Args: []logicalplan.Node{matrixCall},
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *logicalplan.MatrixSelector:
@@ -161,7 +161,7 @@ func newAbsentOverTimeOperator(call *logicalplan.FunctionCall, scanners storage.
 		}
 		f := &logicalplan.FunctionCall{
 			Func: &parser.Function{Name: "absent"},
-			Args: []parser.Expr{&logicalplan.MatrixSelector{
+			Args: []logicalplan.Node{&logicalplan.MatrixSelector{
 				VectorSelector: arg.VectorSelector,
 				Range:          arg.Range,
 				OriginalString: arg.String(),

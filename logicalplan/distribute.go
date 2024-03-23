@@ -150,7 +150,7 @@ type DistributedExecutionOptimizer struct {
 	SkipBinaryPushdown bool
 }
 
-func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Options) (parser.Expr, annotations.Annotations) {
+func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
 	engines := m.Endpoints.Engines()
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
@@ -176,12 +176,12 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 	}
 
 	// TODO(fpetkovski): Consider changing TraverseBottomUp to pass in a list of parents in the transform function.
-	parents := make(map[*parser.Expr]*parser.Expr)
-	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
+	parents := make(map[*Node]*Node)
+	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		parents[current] = parent
 		return false
 	})
-	TraverseBottomUp(nil, &plan, func(parent, current *parser.Expr) (stop bool) {
+	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current, m.SkipBinaryPushdown) {
 			return true
@@ -223,7 +223,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan parser.Expr, opts *query.Op
 	return plan, nil
 }
 
-func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*parser.Expr]*parser.Expr, current *parser.Expr, opts *query.Options) *query.Options {
+func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*Node]*Node, current *Node, opts *query.Options) *query.Options {
 	subqueryParents := make([]*Subquery, 0, len(parents))
 	for p := parents[current]; p != nil; p = parents[p] {
 		if subquery, ok := (*p).(*Subquery); ok {
@@ -241,7 +241,7 @@ func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*parser.Expr]*pa
 	return opts
 }
 
-func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngine) parser.Expr {
+func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngine) Node {
 	groupingSet := make(map[string]struct{})
 	for _, lbl := range rootAggregation.Grouping {
 		groupingSet[lbl] = struct{}{}
@@ -273,7 +273,7 @@ func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngi
 // distributeQuery takes a PromQL expression in the form of *parser.Expr and a set of remote engines.
 // For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
-func (m DistributedExecutionOptimizer) distributeQuery(expr *parser.Expr, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) parser.Expr {
+func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) Node {
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
 	if allowedStartOffset < startOffset {
 		return *expr
@@ -428,14 +428,14 @@ func calculateStepAlignedStart(opts *query.Options, engineMinTime time.Time) tim
 // 6h can correctly evaluate only the last 5h of the range.
 // The first 1 hour of data cannot be correctly calculated since the range selector in the engine
 // will not be able to gather enough points.
-func calculateStartOffset(expr *parser.Expr, lookbackDelta time.Duration) time.Duration {
+func calculateStartOffset(expr *Node, lookbackDelta time.Duration) time.Duration {
 	if expr == nil {
 		return lookbackDelta
 	}
 
 	var selectRange time.Duration
 	var offset time.Duration
-	Traverse(expr, func(node *parser.Expr) {
+	Traverse(expr, func(node *Node) {
 		switch n := (*node).(type) {
 		case *Subquery:
 			selectRange += n.Range
@@ -452,7 +452,7 @@ func numSteps(start, end time.Time, step time.Duration) int64 {
 	return (end.UnixMilli()-start.UnixMilli())/step.Milliseconds() + 1
 }
 
-func isDistributive(expr *parser.Expr, skipBinaryPushdown bool) bool {
+func isDistributive(expr *Node, skipBinaryPushdown bool) bool {
 	if expr == nil {
 		return false
 	}
@@ -487,12 +487,12 @@ func isBinaryExpressionWithDistributableMatching(expr *Binary) bool {
 }
 
 // matchesExternalLabels returns false if given matchers are not matching external labels.
-func matchesExternalLabelSet(expr parser.Expr, externalLabelSet []labels.Labels) bool {
+func matchesExternalLabelSet(expr Node, externalLabelSet []labels.Labels) bool {
 	if len(externalLabelSet) == 0 {
 		return true
 	}
 	var selectorSet [][]*labels.Matcher
-	Traverse(&expr, func(current *parser.Expr) {
+	Traverse(&expr, func(current *Node) {
 		vs, ok := (*current).(*VectorSelector)
 		if ok {
 			selectorSet = append(selectorSet, vs.LabelMatchers)
@@ -527,9 +527,9 @@ func matchesExternalLabels(ms []*labels.Matcher, externalLabels labels.Labels) b
 	return true
 }
 
-func rewritesEngineLabels(e parser.Expr, engineLabels map[string]struct{}) bool {
+func rewritesEngineLabels(e Node, engineLabels map[string]struct{}) bool {
 	var result bool
-	TraverseBottomUp(nil, &e, func(parent *parser.Expr, node *parser.Expr) bool {
+	TraverseBottomUp(nil, &e, func(parent *Node, node *Node) bool {
 		call, ok := (*node).(*FunctionCall)
 		if !ok || call.Func.Name != "label_replace" {
 			return false

@@ -18,8 +18,8 @@ import (
 // two vector selectors in a binary expression.
 type PropagateMatchersOptimizer struct{}
 
-func (m PropagateMatchersOptimizer) Optimize(plan parser.Expr, _ *query.Options) (parser.Expr, annotations.Annotations) {
-	Traverse(&plan, func(expr *parser.Expr) {
+func (m PropagateMatchersOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+	Traverse(&plan, func(expr *Node) {
 		binOp, ok := (*expr).(*Binary)
 		if !ok {
 			return
