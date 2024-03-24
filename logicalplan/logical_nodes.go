@@ -17,9 +17,18 @@ type Cloneable interface {
 	Clone() Node
 }
 
+type Traversable interface {
+	Children() []*Node
+}
+
+type LeafNode struct{}
+
+func (l LeafNode) Children() []*Node { return nil }
+
 type Node interface {
 	fmt.Stringer
 	Cloneable
+	Traversable
 	Type() parser.ValueType
 }
 
@@ -37,14 +46,15 @@ type Projection struct {
 // VectorSelector is vector selector with additional configuration set by optimizers.
 type VectorSelector struct {
 	*parser.VectorSelector
+	LeafNode
 	Filters         []*labels.Matcher
 	BatchSize       int64
 	SelectTimestamp bool
 	Projection      Projection
 }
 
-func (f VectorSelector) Clone() Node {
-	clone := f
+func (f *VectorSelector) Clone() Node {
+	clone := *f
 	vsClone := *f.VectorSelector
 	clone.VectorSelector = &vsClone
 
@@ -60,7 +70,7 @@ func (f VectorSelector) Clone() Node {
 	return &clone
 }
 
-func (f VectorSelector) String() string {
+func (f *VectorSelector) String() string {
 	if f.SelectTimestamp {
 		// If we pushed down timestamp into the vector selector we need to render the proper
 		// PromQL again.
@@ -69,7 +79,7 @@ func (f VectorSelector) String() string {
 	return f.VectorSelector.String()
 }
 
-func (f VectorSelector) Type() parser.ValueType { return parser.ValueTypeVector }
+func (f *VectorSelector) Type() parser.ValueType { return parser.ValueTypeVector }
 
 // MatrixSelector is matrix selector with additional configuration set by optimizers.
 // It is used so we can get rid of VectorSelector in distributed mode too.
@@ -81,65 +91,57 @@ type MatrixSelector struct {
 	OriginalString string
 }
 
-func (f MatrixSelector) Clone() Node {
-	clone := f
+func (f *MatrixSelector) Clone() Node {
+	clone := *f
 	clone.VectorSelector = f.VectorSelector.Clone().(*VectorSelector)
 	return &clone
 }
 
-func (f MatrixSelector) String() string {
+func (f *MatrixSelector) Children() []*Node {
+	var vs Node = f.VectorSelector
+	return []*Node{&vs}
+}
+
+func (f *MatrixSelector) String() string {
 	return f.OriginalString
 }
 
-func (f MatrixSelector) Type() parser.ValueType { return parser.ValueTypeVector }
+func (f *MatrixSelector) Type() parser.ValueType { return parser.ValueTypeVector }
 
 // CheckDuplicateLabels is a logical node that checks for duplicate labels in the same timestamp.
 type CheckDuplicateLabels struct {
 	Expr Node
 }
 
-func (c CheckDuplicateLabels) Clone() Node {
-	clone := c
+func (c *CheckDuplicateLabels) Clone() Node {
+	clone := *c
 	clone.Expr = c.Expr.Clone()
-	return clone
+	return &clone
 }
 
-func (c CheckDuplicateLabels) String() string {
-	return c.Expr.String()
-}
-func (c CheckDuplicateLabels) Type() parser.ValueType { return c.Expr.Type() }
+func (c *CheckDuplicateLabels) Children() []*Node      { return []*Node{&c.Expr} }
+func (c *CheckDuplicateLabels) String() string         { return c.Expr.String() }
+func (c *CheckDuplicateLabels) Type() parser.ValueType { return c.Expr.Type() }
 
 // StringLiteral is a logical node representing a literal string.
 type StringLiteral struct {
+	LeafNode
 	Val string
 }
 
-func (c StringLiteral) Clone() Node {
-	clone := c
-	return &clone
-}
-
-func (c StringLiteral) String() string {
-	return fmt.Sprintf("%q", c.Val)
-}
-
-func (c StringLiteral) Type() parser.ValueType { return parser.ValueTypeString }
+func (c *StringLiteral) Clone() Node            { return &StringLiteral{Val: c.Val} }
+func (c *StringLiteral) String() string         { return fmt.Sprintf("%q", c.Val) }
+func (c *StringLiteral) Type() parser.ValueType { return parser.ValueTypeString }
 
 // NumberLiteral is a logical node representing a literal number.
 type NumberLiteral struct {
+	LeafNode
 	Val float64
 }
 
-func (c NumberLiteral) Clone() Node {
-	clone := c
-	return &clone
-}
-
-func (c NumberLiteral) String() string {
-	return fmt.Sprint(c.Val)
-}
-
-func (c NumberLiteral) Type() parser.ValueType { return parser.ValueTypeScalar }
+func (c *NumberLiteral) Clone() Node            { return &NumberLiteral{Val: c.Val} }
+func (c *NumberLiteral) String() string         { return fmt.Sprint(c.Val) }
+func (c *NumberLiteral) Type() parser.ValueType { return parser.ValueTypeScalar }
 
 // StepInvariantExpr is a logical node that expresses that the child expression
 // returns the same value at every step in the evaluation.
@@ -147,15 +149,15 @@ type StepInvariantExpr struct {
 	Expr Node
 }
 
-func (c StepInvariantExpr) Clone() Node {
-	clone := c
+func (c *StepInvariantExpr) Clone() Node {
+	clone := *c
 	clone.Expr = c.Expr.Clone()
 	return &clone
 }
 
-func (c StepInvariantExpr) String() string { return c.Expr.String() }
-
-func (c StepInvariantExpr) Type() parser.ValueType { return c.Expr.Type() }
+func (c *StepInvariantExpr) Children() []*Node      { return []*Node{&c.Expr} }
+func (c *StepInvariantExpr) String() string         { return c.Expr.String() }
+func (c *StepInvariantExpr) Type() parser.ValueType { return c.Expr.Type() }
 
 // FunctionCall represents a PromQL function.
 type FunctionCall struct {
@@ -165,8 +167,8 @@ type FunctionCall struct {
 	Args []Node
 }
 
-func (f FunctionCall) Clone() Node {
-	clone := f
+func (f *FunctionCall) Clone() Node {
+	clone := *f
 	clone.Args = make([]Node, 0, len(f.Args))
 	for _, arg := range f.Args {
 		clone.Args = append(clone.Args, arg.Clone())
@@ -174,7 +176,15 @@ func (f FunctionCall) Clone() Node {
 	return &clone
 }
 
-func (f FunctionCall) String() string {
+func (f *FunctionCall) Children() []*Node {
+	args := make([]*Node, 0, len(f.Args))
+	for i := range f.Args {
+		args = append(args, &f.Args[i])
+	}
+	return args
+}
+
+func (f *FunctionCall) String() string {
 	args := make([]string, 0, len(f.Args))
 	for _, arg := range f.Args {
 		args = append(args, arg.String())
@@ -182,40 +192,26 @@ func (f FunctionCall) String() string {
 	return fmt.Sprintf("%s(%s)", f.Func.Name, strings.Join(args, ", "))
 }
 
-func (f FunctionCall) Type() parser.ValueType { return f.Func.ReturnType }
+func (f *FunctionCall) Type() parser.ValueType { return f.Func.ReturnType }
 
 type Parens struct {
 	Expr Node
 }
 
-func (p Parens) Clone() Node {
-	clone := p
-	clone.Expr = p.Expr.Clone()
-	return &clone
-}
-
-func (p Parens) String() string {
-	return fmt.Sprintf("(%s)", p.Expr.String())
-}
-
-func (p Parens) Type() parser.ValueType { return p.Expr.Type() }
+func (p *Parens) Clone() Node            { return &Parens{Expr: p.Expr.Clone()} }
+func (p *Parens) Children() []*Node      { return []*Node{&p.Expr} }
+func (p *Parens) String() string         { return fmt.Sprintf("(%s)", p.Expr.String()) }
+func (p *Parens) Type() parser.ValueType { return p.Expr.Type() }
 
 type Unary struct {
 	Op   parser.ItemType
 	Expr Node
 }
 
-func (p Unary) Clone() Node {
-	clone := p
-	clone.Expr = p.Expr.Clone()
-	return &clone
-}
-
-func (p Unary) String() string {
-	return fmt.Sprintf("%s%s", p.Op.String(), p.Expr.String())
-}
-
-func (p Unary) Type() parser.ValueType { return p.Expr.Type() }
+func (p *Unary) Clone() Node            { return &Unary{Op: p.Op, Expr: p.Expr.Clone()} }
+func (p *Unary) Children() []*Node      { return []*Node{&p.Expr} }
+func (p *Unary) String() string         { return fmt.Sprintf("%s%s", p.Op.String(), p.Expr.String()) }
+func (p *Unary) Type() parser.ValueType { return p.Expr.Type() }
 
 // Aggregation represents a PromQL aggregation.
 type Aggregation struct {
@@ -226,8 +222,8 @@ type Aggregation struct {
 	Without  bool            // Whether to drop the given labels rather than keep them
 }
 
-func (f Aggregation) Clone() Node {
-	clone := f
+func (f *Aggregation) Clone() Node {
+	clone := *f
 	clone.Expr = f.Expr.Clone()
 	if clone.Param != nil {
 		clone.Param = f.Param.Clone()
@@ -236,7 +232,15 @@ func (f Aggregation) Clone() Node {
 	return &clone
 }
 
-func (f Aggregation) String() string {
+func (f *Aggregation) Children() []*Node {
+	children := []*Node{&f.Expr}
+	if f.Param != nil {
+		children = append(children, &f.Param)
+	}
+	return children
+}
+
+func (f *Aggregation) String() string {
 	aggrString := f.getAggOpStr()
 	aggrString += "("
 	if f.Op.IsAggregatorWithParam() {
@@ -247,9 +251,9 @@ func (f Aggregation) String() string {
 	return aggrString
 }
 
-func (f Aggregation) Type() parser.ValueType { return parser.ValueTypeVector }
+func (f *Aggregation) Type() parser.ValueType { return parser.ValueTypeVector }
 
-func (f Aggregation) getAggOpStr() string {
+func (f *Aggregation) getAggOpStr() string {
 	aggrString := f.Op.String()
 
 	switch {
@@ -276,8 +280,8 @@ type Binary struct {
 	ValueType parser.ValueType
 }
 
-func (b Binary) Clone() Node {
-	clone := b
+func (b *Binary) Clone() Node {
+	clone := *b
 	clone.LHS = b.LHS.Clone()
 	clone.RHS = b.RHS.Clone()
 	if b.VectorMatching != nil {
@@ -287,14 +291,16 @@ func (b Binary) Clone() Node {
 	return &clone
 }
 
-func (b Binary) Type() parser.ValueType {
+func (b *Binary) Children() []*Node { return []*Node{&b.LHS, &b.RHS} }
+
+func (b *Binary) Type() parser.ValueType {
 	if b.LHS.Type() == parser.ValueTypeScalar && b.RHS.Type() == parser.ValueTypeScalar {
 		return parser.ValueTypeScalar
 	}
 	return parser.ValueTypeVector
 }
 
-func (b Binary) String() string {
+func (b *Binary) String() string {
 	returnBool := ""
 	if b.ReturnBool {
 		returnBool = " bool"
@@ -304,7 +310,7 @@ func (b Binary) String() string {
 	return fmt.Sprintf("%s %s%s%s %s", b.LHS, b.Op, returnBool, matching, b.RHS)
 }
 
-func (b Binary) getMatchingStr() string {
+func (b *Binary) getMatchingStr() string {
 	matching := ""
 	vm := b.VectorMatching
 	if vm != nil && (len(vm.MatchingLabels) > 0 || vm.On) {
@@ -341,8 +347,8 @@ type Subquery struct {
 	StartOrEnd parser.ItemType
 }
 
-func (s Subquery) Clone() Node {
-	clone := s
+func (s *Subquery) Clone() Node {
+	clone := *s
 	clone.Expr = s.Expr.Clone()
 
 	if s.Timestamp != nil {
@@ -353,13 +359,15 @@ func (s Subquery) Clone() Node {
 	return &clone
 }
 
-func (s Subquery) String() string {
+func (s *Subquery) Children() []*Node { return []*Node{&s.Expr} }
+
+func (s *Subquery) String() string {
 	return fmt.Sprintf("%s%s", s.Expr.String(), s.getSubqueryTimeSuffix())
 }
 
-func (s Subquery) Type() parser.ValueType { return s.Expr.Type() }
+func (s *Subquery) Type() parser.ValueType { return s.Expr.Type() }
 
-func (s Subquery) getSubqueryTimeSuffix() any {
+func (s *Subquery) getSubqueryTimeSuffix() any {
 	step := ""
 	if s.Step != 0 {
 		step = model.Duration(s.Step).String()

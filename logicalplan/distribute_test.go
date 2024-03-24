@@ -598,7 +598,7 @@ sum(dedup(
 	testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
 
 	getSelector := func(i int) *VectorSelector {
-		return optimizedPlan.Root().(CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expressions[i].Query.(*Aggregation).Expr.(*VectorSelector)
+		return optimizedPlan.Root().(*CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expressions[i].Query.(*Aggregation).Expr.(*VectorSelector)
 	}
 
 	// Assert that modifying one subquery does not affect the other one.

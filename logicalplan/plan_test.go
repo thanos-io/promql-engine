@@ -107,7 +107,7 @@ func renderExprTree(expr Node) string {
 		return b.String()
 	case *StepInvariantExpr:
 		return renderExprTree(t.Expr)
-	case CheckDuplicateLabels:
+	case *CheckDuplicateLabels:
 		return renderExprTree(t.Expr)
 	default:
 		return t.String()
