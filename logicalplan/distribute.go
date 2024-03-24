@@ -81,10 +81,16 @@ func (rs RemoteExecutions) String() string {
 // remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
 	Engine          api.RemoteEngine
-	Query           parser.Expr
+	Query           Node
 	QueryRangeStart time.Time
 
 	valueType parser.ValueType
+}
+
+func (r RemoteExecution) Clone() Node {
+	clone := r
+	clone.Query = r.Query.Clone()
+	return clone
 }
 
 func (r RemoteExecution) String() string {
@@ -107,6 +113,15 @@ type Deduplicate struct {
 	Expressions RemoteExecutions
 }
 
+func (r Deduplicate) Clone() Node {
+	clone := r
+	clone.Expressions = make(RemoteExecutions, len(r.Expressions))
+	for i, e := range r.Expressions {
+		clone.Expressions[i] = e.Clone().(RemoteExecution)
+	}
+	return clone
+}
+
 func (r Deduplicate) String() string {
 	return fmt.Sprintf("dedup(%s)", r.Expressions.String())
 }
@@ -120,6 +135,8 @@ func (r Deduplicate) Type() parser.ValueType { return r.Expressions[0].Type() }
 func (r Deduplicate) PromQLExpr() {}
 
 type Noop struct{}
+
+func (r Noop) Clone() Node { return r }
 
 func (r Noop) String() string { return "noop" }
 
@@ -308,7 +325,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 
 		remoteQueries = append(remoteQueries, RemoteExecution{
 			Engine:          e,
-			Query:           *expr,
+			Query:           (*expr).Clone(),
 			QueryRangeStart: start,
 			valueType:       (*expr).Type(),
 		})
@@ -323,7 +340,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 	}
 }
 
-func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engines []api.RemoteEngine, startOffset time.Duration, opts *query.Options) parser.Expr {
+func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api.RemoteEngine, startOffset time.Duration, opts *query.Options) Node {
 	queries := make(RemoteExecutions, 0, len(engines))
 	for i, e := range engines {
 		if e.MaxT() < opts.Start.UnixMilli()-startOffset.Milliseconds() {
@@ -334,7 +351,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 		}
 		queries = append(queries, RemoteExecution{
 			Engine:          engines[i],
-			Query:           expr,
+			Query:           expr.Clone(),
 			QueryRangeStart: opts.Start,
 			valueType:       expr.Type(),
 		})
@@ -352,7 +369,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 		}
 	}
 
-	var rootExpr parser.Expr = queries[0]
+	var rootExpr Node = queries[0]
 	for i := 1; i < len(queries); i++ {
 		rootExpr = &Binary{
 			Op:             parser.MUL,
@@ -365,7 +382,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr parser.Expr, engine
 	return rootExpr
 }
 
-func isAbsent(expr parser.Expr) bool {
+func isAbsent(expr Node) bool {
 	call, ok := expr.(*FunctionCall)
 	if !ok {
 		return false

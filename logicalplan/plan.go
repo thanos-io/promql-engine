@@ -44,13 +44,13 @@ type PlanOptions struct {
 	DisableDuplicateLabelCheck bool
 }
 
-func New(orig parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
-	expr := promql.PreprocessExpr(orig, queryOpts.Start, queryOpts.End)
-	setOffsetForAtModifier(queryOpts.Start.UnixMilli(), expr)
-	setOffsetForInnerSubqueries(expr, queryOpts)
+func New(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
+	ast = promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End)
+	setOffsetForAtModifier(queryOpts.Start.UnixMilli(), ast)
+	setOffsetForInnerSubqueries(ast, queryOpts)
 
 	// replace scanners by our logical nodes
-	expr = replacePrometheusNodes(expr)
+	expr := replacePrometheusNodes(ast)
 
 	// the engine handles sorting at the presentation layer
 	expr = trimSorts(expr)
@@ -229,7 +229,7 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 			args[i] = replacePrometheusNodes(arg)
 		}
 		return &FunctionCall{
-			Func: t.Func,
+			Func: *t.Func,
 			Args: args,
 		}
 	case *parser.ParenExpr:
@@ -267,11 +267,13 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 			Step:           t.Step,
 			StartOrEnd:     t.StartOrEnd,
 		}
+	case nil:
+		return nil
 	}
-	return plan
+	panic("Unrecognized AST node")
 }
 
-func trimSorts(expr Node) parser.Expr {
+func trimSorts(expr Node) Node {
 	canTrimSorts := true
 	// We cannot trim inner sort if its an argument to a timestamp function.
 	// If we would do it we could transform "timestamp(sort(X))" into "timestamp(X)"

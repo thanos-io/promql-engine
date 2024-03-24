@@ -18,6 +18,12 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 )
 
+var replacements = map[string]*regexp.Regexp{
+	" ": spaces,
+	"(": openParenthesis,
+	")": closedParenthesis,
+}
+
 func TestDistributedExecution(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -327,11 +333,6 @@ sum_over_time(max(dedup(
 		DistributeAvgOptimizer{},
 		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 	}
-	replacements := map[string]*regexp.Regexp{
-		" ": spaces,
-		"(": openParenthesis,
-		")": closedParenthesis,
-	}
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -365,12 +366,6 @@ func (o engineOpts) maxt() int64 {
 }
 
 func TestDistributedExecutionWithLongSelectorRanges(t *testing.T) {
-	replacements := map[string]*regexp.Regexp{
-		" ": spaces,
-		"(": openParenthesis,
-		")": closedParenthesis,
-	}
-
 	sixHours := 6 * time.Hour
 	eightHours := 8 * time.Hour
 	twelveHours := 12 * time.Hour
@@ -503,12 +498,6 @@ dedup(
 }
 
 func TestDistributedExecutionPruningByTime(t *testing.T) {
-	replacements := map[string]*regexp.Regexp{
-		" ": spaces,
-		"(": openParenthesis,
-		")": closedParenthesis,
-	}
-
 	firstEngineOpts := engineOpts{
 		minTime: time.Unix(0, 0),
 		maxTime: time.Unix(0, 0).Add(6 * time.Hour),
@@ -574,6 +563,50 @@ sum(
 			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
 		})
 	}
+}
+
+func TestDistributedExecutionClonesNodes(t *testing.T) {
+	var (
+		start    = time.Unix(0, 0)
+		end      = time.Unix(0, 0).Add(6 * time.Hour)
+		step     = time.Second
+		expected = `
+sum(dedup(
+  remote(sum by (region) (metric{region="east"})), 
+  remote(sum by (region) (metric{region="east"}))
+))`
+	)
+	expr, err := parser.ParseExpr(`sum(metric{region="east"})`)
+	testutil.Ok(t, err)
+
+	engines := []api.RemoteEngine{
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+	}
+
+	lplan := New(expr, &query.Options{Start: start, End: end, Step: step}, PlanOptions{})
+	optimizedPlan, _ := lplan.Optimize([]Optimizer{
+		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+	})
+
+	newMatcher := labels.MustNewMatcher(labels.MatchEqual, "region", "west")
+	// Modify the original expression to ensure that changes to not leak into the optimized plan.
+	originalVS := expr.(*parser.AggregateExpr).Expr.(*parser.VectorSelector)
+	originalVS.LabelMatchers = append(originalVS.LabelMatchers, newMatcher)
+
+	expectedPlan := cleanUp(replacements, expected)
+	testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
+
+	getSelector := func(i int) *VectorSelector {
+		return optimizedPlan.Expr().(CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expressions[i].Query.(*Aggregation).Expr.(*VectorSelector)
+	}
+
+	// Assert that modifying one subquery does not affect the other one.
+	vs0 := getSelector(0)
+	vs0.LabelMatchers = append(vs0.LabelMatchers, newMatcher)
+
+	vs1 := getSelector(1)
+	testutil.Assert(t, len(vs1.LabelMatchers) == len(vs0.LabelMatchers)-1, "expected %d label matchers, got %d", len(vs0.LabelMatchers)-1, len(vs1.LabelMatchers))
 }
 
 type engineMock struct {
