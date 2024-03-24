@@ -27,7 +27,7 @@ var DefaultOptimizers = []Optimizer{
 
 type Plan interface {
 	Optimize([]Optimizer) (Plan, annotations.Annotations)
-	Expr() parser.Expr
+	Root() Node
 }
 
 type Optimizer interface {
@@ -81,7 +81,7 @@ func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) 
 	return &plan{expr: expr, opts: p.opts}, *annos
 }
 
-func (p *plan) Expr() parser.Expr {
+func (p *plan) Root() Node {
 	return p.expr
 }
 
@@ -383,7 +383,7 @@ func subqueryTimes(path []parser.Node) (time.Duration, time.Duration, *int64) {
 		ts                    int64 = math.MaxInt64
 	)
 	for _, node := range path {
-		if n, ok := node.(*Subquery); ok {
+		if n, ok := node.(*parser.SubqueryExpr); ok {
 			subqOffset += n.OriginalOffset
 			subqRange += n.Range
 			if n.Timestamp != nil {

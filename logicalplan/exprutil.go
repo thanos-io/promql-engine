@@ -9,7 +9,7 @@ import (
 )
 
 // UnwrapString recursively unwraps a parser.Expr until it reaches an StringLiteral.
-func UnwrapString(expr parser.Expr) (string, error) {
+func UnwrapString(expr Node) (string, error) {
 	switch texpr := expr.(type) {
 	case *StringLiteral:
 		return texpr.Val, nil
@@ -24,13 +24,13 @@ func UnwrapString(expr parser.Expr) (string, error) {
 
 // UnsafeUnwrapString is like UnwrapString but should only be used in cases where the parser
 // guarantees success by already only allowing strings wrapped in parentheses.
-func UnsafeUnwrapString(expr parser.Expr) string {
+func UnsafeUnwrapString(expr Node) string {
 	v, _ := UnwrapString(expr)
 	return v
 }
 
 // UnwrapFloat recursively unwraps a parser.Expr until it reaches an NumberLiteral.
-func UnwrapFloat(expr parser.Expr) (float64, error) {
+func UnwrapFloat(expr Node) (float64, error) {
 	switch texpr := expr.(type) {
 	case *NumberLiteral:
 		return texpr.Val, nil
@@ -48,15 +48,13 @@ func UnwrapParens(expr parser.Expr) parser.Expr {
 	switch t := expr.(type) {
 	case *parser.ParenExpr:
 		return UnwrapParens(t.Expr)
-	case *Parens:
-		return UnwrapParens(t.Expr)
 	default:
 		return t
 	}
 }
 
 // IsConstantExpr reports if the expression evaluates to a constant.
-func IsConstantExpr(expr parser.Expr) bool {
+func IsConstantExpr(expr Node) bool {
 	// TODO: there are more possibilities for constant expressions
 	switch texpr := expr.(type) {
 	case *NumberLiteral, *StringLiteral:

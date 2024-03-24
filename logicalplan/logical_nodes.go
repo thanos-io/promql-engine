@@ -11,7 +11,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type Cloneable interface {
@@ -19,8 +18,9 @@ type Cloneable interface {
 }
 
 type Node interface {
-	parser.Expr
+	fmt.Stringer
 	Cloneable
+	Type() parser.ValueType
 }
 
 type Nodes []Node
@@ -69,13 +69,7 @@ func (f VectorSelector) String() string {
 	return f.VectorSelector.String()
 }
 
-func (f VectorSelector) Pretty(level int) string { return f.String() }
-
-func (f VectorSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (f VectorSelector) Type() parser.ValueType { return parser.ValueTypeVector }
-
-func (f VectorSelector) PromQLExpr() {}
 
 // MatrixSelector is matrix selector with additional configuration set by optimizers.
 // It is used so we can get rid of VectorSelector in distributed mode too.
@@ -97,13 +91,7 @@ func (f MatrixSelector) String() string {
 	return f.OriginalString
 }
 
-func (f MatrixSelector) Pretty(level int) string { return f.String() }
-
-func (f MatrixSelector) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (f MatrixSelector) Type() parser.ValueType { return parser.ValueTypeVector }
-
-func (f MatrixSelector) PromQLExpr() {}
 
 // CheckDuplicateLabels is a logical node that checks for duplicate labels in the same timestamp.
 type CheckDuplicateLabels struct {
@@ -119,14 +107,7 @@ func (c CheckDuplicateLabels) Clone() Node {
 func (c CheckDuplicateLabels) String() string {
 	return c.Expr.String()
 }
-
-func (c CheckDuplicateLabels) Pretty(level int) string { return c.Expr.Pretty(level) }
-
-func (c CheckDuplicateLabels) PositionRange() posrange.PositionRange { return c.Expr.PositionRange() }
-
 func (c CheckDuplicateLabels) Type() parser.ValueType { return c.Expr.Type() }
-
-func (c CheckDuplicateLabels) PromQLExpr() {}
 
 // StringLiteral is a logical node representing a literal string.
 type StringLiteral struct {
@@ -142,13 +123,7 @@ func (c StringLiteral) String() string {
 	return fmt.Sprintf("%q", c.Val)
 }
 
-func (c StringLiteral) Pretty(level int) string { return c.String() }
-
-func (c StringLiteral) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (c StringLiteral) Type() parser.ValueType { return parser.ValueTypeString }
-
-func (c StringLiteral) PromQLExpr() {}
 
 // NumberLiteral is a logical node representing a literal number.
 type NumberLiteral struct {
@@ -164,13 +139,7 @@ func (c NumberLiteral) String() string {
 	return fmt.Sprint(c.Val)
 }
 
-func (c NumberLiteral) Pretty(level int) string { return c.String() }
-
-func (c NumberLiteral) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (c NumberLiteral) Type() parser.ValueType { return parser.ValueTypeScalar }
-
-func (c NumberLiteral) PromQLExpr() {}
 
 // StepInvariantExpr is a logical node that expresses that the child expression
 // returns the same value at every step in the evaluation.
@@ -186,15 +155,7 @@ func (c StepInvariantExpr) Clone() Node {
 
 func (c StepInvariantExpr) String() string { return c.Expr.String() }
 
-func (c StepInvariantExpr) Pretty(level int) string { return c.String() }
-
-func (c StepInvariantExpr) PositionRange() posrange.PositionRange {
-	return c.Expr.PositionRange()
-}
-
 func (c StepInvariantExpr) Type() parser.ValueType { return c.Expr.Type() }
-
-func (c StepInvariantExpr) PromQLExpr() {}
 
 // FunctionCall represents a PromQL function.
 type FunctionCall struct {
@@ -221,13 +182,7 @@ func (f FunctionCall) String() string {
 	return fmt.Sprintf("%s(%s)", f.Func.Name, strings.Join(args, ", "))
 }
 
-func (f FunctionCall) Pretty(level int) string { return f.String() }
-
-func (f FunctionCall) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (f FunctionCall) Type() parser.ValueType { return f.Func.ReturnType }
-
-func (f FunctionCall) PromQLExpr() {}
 
 type Parens struct {
 	Expr Node
@@ -243,13 +198,7 @@ func (p Parens) String() string {
 	return fmt.Sprintf("(%s)", p.Expr.String())
 }
 
-func (p Parens) Pretty(level int) string { return p.String() }
-
-func (p Parens) PositionRange() posrange.PositionRange { return p.Expr.PositionRange() }
-
 func (p Parens) Type() parser.ValueType { return p.Expr.Type() }
-
-func (p Parens) PromQLExpr() {}
 
 type Unary struct {
 	Op   parser.ItemType
@@ -266,13 +215,7 @@ func (p Unary) String() string {
 	return fmt.Sprintf("%s%s", p.Op.String(), p.Expr.String())
 }
 
-func (p Unary) Pretty(level int) string { return p.String() }
-
-func (p Unary) PositionRange() posrange.PositionRange { return p.Expr.PositionRange() }
-
 func (p Unary) Type() parser.ValueType { return p.Expr.Type() }
-
-func (p Unary) PromQLExpr() {}
 
 // Aggregation represents a PromQL aggregation.
 type Aggregation struct {
@@ -304,13 +247,7 @@ func (f Aggregation) String() string {
 	return aggrString
 }
 
-func (f Aggregation) Pretty(_ int) string { return f.String() }
-
-func (f Aggregation) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (f Aggregation) Type() parser.ValueType { return parser.ValueTypeVector }
-
-func (f Aggregation) PromQLExpr() {}
 
 func (f Aggregation) getAggOpStr() string {
 	aggrString := f.Op.String()
@@ -350,18 +287,12 @@ func (b Binary) Clone() Node {
 	return &clone
 }
 
-func (b Binary) Pretty(_ int) string { return b.String() }
-
-func (b Binary) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (b Binary) Type() parser.ValueType {
 	if b.LHS.Type() == parser.ValueTypeScalar && b.RHS.Type() == parser.ValueTypeScalar {
 		return parser.ValueTypeScalar
 	}
 	return parser.ValueTypeVector
 }
-
-func (b Binary) PromQLExpr() {}
 
 func (b Binary) String() string {
 	returnBool := ""
@@ -426,13 +357,7 @@ func (s Subquery) String() string {
 	return fmt.Sprintf("%s%s", s.Expr.String(), s.getSubqueryTimeSuffix())
 }
 
-func (s Subquery) Pretty(_ int) string { return s.String() }
-
-func (s Subquery) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (s Subquery) Type() parser.ValueType { return s.Expr.Type() }
-
-func (s Subquery) PromQLExpr() {}
 
 func (s Subquery) getSubqueryTimeSuffix() any {
 	step := ""

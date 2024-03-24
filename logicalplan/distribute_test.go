@@ -342,7 +342,7 @@ sum_over_time(max(dedup(
 			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, warns := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
-			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+			testutil.Equals(t, expectedPlan, optimizedPlan.Root().String())
 			if tcase.expectWarn {
 				testutil.Assert(t, len(warns) > 0, "expected warnings, got none")
 			} else {
@@ -492,7 +492,7 @@ dedup(
 			plan := New(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
-			testutil.Equals(t, expectedPlan, optimizedPlan.Expr().String())
+			testutil.Equals(t, expectedPlan, optimizedPlan.Root().String())
 		})
 	}
 }
@@ -560,7 +560,7 @@ sum(
 			plan := New(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
-			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
 		})
 	}
 }
@@ -595,10 +595,10 @@ sum(dedup(
 	originalVS.LabelMatchers = append(originalVS.LabelMatchers, newMatcher)
 
 	expectedPlan := cleanUp(replacements, expected)
-	testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
+	testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
 
 	getSelector := func(i int) *VectorSelector {
-		return optimizedPlan.Expr().(CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expressions[i].Query.(*Aggregation).Expr.(*VectorSelector)
+		return optimizedPlan.Root().(CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expressions[i].Query.(*Aggregation).Expr.(*VectorSelector)
 	}
 
 	// Assert that modifying one subquery does not affect the other one.

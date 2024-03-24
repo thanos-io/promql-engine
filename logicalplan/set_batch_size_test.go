@@ -100,7 +100,7 @@ func TestSetBatchSize(t *testing.T) {
 
 			plan := New(expr, &query.Options{}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
-			testutil.Equals(t, tcase.expected, renderExprTree(optimizedPlan.Expr()))
+			testutil.Equals(t, tcase.expected, renderExprTree(optimizedPlan.Root()))
 		})
 	}
 }

@@ -30,9 +30,9 @@ var closedParenthesis = regexp.MustCompile(`\s+\)`)
 // TODO: maybe its better to Traverse the expression here and inject
 // new nodes with prepared String methods? Like replacing MatrixSelector
 // by testMatrixSelector that has a overridden string method?
-func renderExprTree(expr parser.Expr) string {
+func renderExprTree(expr Node) string {
 	switch t := expr.(type) {
-	case *parser.NumberLiteral:
+	case *NumberLiteral:
 		return fmt.Sprint(t.Val)
 	case *VectorSelector:
 		var b strings.Builder
@@ -185,7 +185,7 @@ func TestDefaultOptimizers(t *testing.T) {
 			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(DefaultOptimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
-			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
 		})
 	}
 }
@@ -229,7 +229,7 @@ func TestMatcherPropagation(t *testing.T) {
 			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
-			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Expr()))
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
 		})
 	}
 }
@@ -279,7 +279,7 @@ func TestTrimSorts(t *testing.T) {
 			testutil.Ok(t, err)
 
 			exprPlan := New(expr, &query.Options{}, PlanOptions{})
-			testutil.Equals(t, tcase.expected, exprPlan.Expr().String())
+			testutil.Equals(t, tcase.expected, exprPlan.Root().String())
 		})
 	}
 }

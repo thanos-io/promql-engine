@@ -10,7 +10,6 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -46,7 +45,7 @@ func (u *stepInvariantOperator) String() string {
 func NewStepInvariantOperator(
 	pool *model.VectorPool,
 	next model.VectorOperator,
-	expr parser.Expr,
+	expr logicalplan.Node,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
 	// We set interval to be at least 1.
@@ -67,7 +66,7 @@ func NewStepInvariantOperator(
 	// We do not duplicate results for range selectors since result is a matrix
 	// with their unique timestamps which does not depend on the step.
 	switch expr.(type) {
-	case *logicalplan.MatrixSelector, *parser.SubqueryExpr:
+	case *logicalplan.MatrixSelector, *logicalplan.Subquery:
 		u.cacheResult = false
 	}
 
