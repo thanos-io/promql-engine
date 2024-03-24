@@ -4,7 +4,6 @@
 package logicalplan
 
 import (
-	"encoding/json"
 	"math"
 	"strings"
 	"time"
@@ -39,10 +38,6 @@ type plan struct {
 	expr     Node
 	opts     *query.Options
 	planOpts PlanOptions
-}
-
-func (p *plan) MarshalJSON() ([]byte, error) {
-	return json.Marshal(p.expr)
 }
 
 type PlanOptions struct {
