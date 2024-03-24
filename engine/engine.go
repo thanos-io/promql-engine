@@ -249,7 +249,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.New(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Expr(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -262,7 +262,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	return &compatibilityQuery{
 		Query:      &Query{exec: exec, opts: opts},
 		engine:     e,
-		expr:       expr,
+		plan:       lplan,
 		ts:         ts,
 		warns:      warns,
 		t:          InstantQuery,
@@ -297,7 +297,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.New(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Expr(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -310,7 +310,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	return &compatibilityQuery{
 		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
-		expr:   expr,
+		plan:   lplan,
 		warns:  warns,
 		t:      RangeQuery,
 	}, nil
@@ -322,10 +322,10 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 		return nil, ErrStepsBatchTooLarge
 	}
 
-	exec, err := execution.New(plan.Expr(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(plan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewRangeQuery(ctx, q, opts, plan.Expr().String(), start, end, step)
+		return e.prom.NewRangeQuery(ctx, q, opts, plan.Root().String(), start, end, step)
 	}
 	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
@@ -335,7 +335,7 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 	return &compatibilityQuery{
 		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
-		expr:   plan.Expr(),
+		plan:   plan,
 		t:      RangeQuery,
 	}, nil
 }
@@ -387,7 +387,7 @@ func (q *Query) Analyze() *AnalyzeOutputNode {
 type compatibilityQuery struct {
 	*Query
 	engine *Engine
-	expr   parser.Expr
+	plan   logicalplan.Plan
 	ts     time.Time // Empty for range queries.
 	warns  annotations.Annotations
 
@@ -403,7 +403,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	}()
 
 	// Handle case with strings early on as this does not need us to process samples.
-	switch e := q.expr.(type) {
+	switch e := q.plan.Root().(type) {
 	case *logicalplan.StringLiteral:
 		return &promql.Result{Value: promql.String{V: e.Val, T: q.ts.UnixMilli()}}
 	}
@@ -411,7 +411,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 		Value:    promql.Vector{},
 		Warnings: q.warns,
 	}
-	defer recoverEngine(q.engine.logger, q.expr, &ret.Err)
+	defer recoverEngine(q.engine.logger, q.plan, &ret.Err)
 
 	q.engine.metrics.currentQueries.Inc()
 	defer q.engine.metrics.currentQueries.Dec()
@@ -492,7 +492,7 @@ loop:
 	}
 
 	var result parser.Value
-	switch q.expr.Type() {
+	switch q.plan.Root().Type() {
 	case parser.ValueTypeMatrix:
 		result = promql.Matrix(series)
 	case parser.ValueTypeVector:
@@ -527,7 +527,7 @@ loop:
 		}
 		result = promql.Scalar{V: v, T: q.ts.UnixMilli()}
 	default:
-		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.expr.Type()))
+		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.plan.Root().Type()))
 	}
 
 	ret.Value = result
@@ -557,7 +557,7 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 
 func (q *compatibilityQuery) Close() { q.Cancel() }
 
-func (q *compatibilityQuery) String() string { return q.expr.String() }
+func (q *compatibilityQuery) String() string { return q.plan.Root().String() }
 
 func (q *compatibilityQuery) Cancel() {
 	if q.cancel != nil {
@@ -574,7 +574,7 @@ func (e *Engine) triggerFallback(err error) bool {
 	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
 }
 
-func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
+func recoverEngine(logger log.Logger, plan logicalplan.Plan, errp *error) {
 	e := recover()
 	if e == nil {
 		return
@@ -586,7 +586,7 @@ func recoverEngine(logger log.Logger, expr parser.Expr, errp *error) {
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
-		level.Error(logger).Log("msg", "runtime panic in engine", "expr", expr.String(), "err", e, "stacktrace", string(buf))
+		level.Error(logger).Log("msg", "runtime panic in engine", "expr", plan.Root().String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
 	}
 }

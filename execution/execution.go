@@ -43,7 +43,7 @@ import (
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(expr parser.Expr, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
+func New(expr logicalplan.Node, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
 	hints := promstorage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
@@ -52,7 +52,7 @@ func New(expr parser.Expr, storage storage.Scanners, opts *query.Options) (model
 	return newOperator(expr, storage, opts, hints)
 }
 
-func newOperator(expr parser.Expr, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newOperator(expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
