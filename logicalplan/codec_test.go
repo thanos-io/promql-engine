@@ -4,7 +4,6 @@
 package logicalplan
 
 import (
-	"encoding/json"
 	"testing"
 
 	"github.com/efficientgo/core/testutil"
@@ -25,10 +24,10 @@ sum(
 	original := New(ast, &query.Options{}, PlanOptions{})
 	original, _ = original.Optimize(DefaultOptimizers)
 
-	bytes, err := json.Marshal(original)
+	bytes, err := Marshal(original.Root())
 	testutil.Ok(t, err)
 
-	var clone plan
-	testutil.Ok(t, json.Unmarshal(bytes, &clone))
-	testutil.Equals(t, original.Root().String(), clone.Root().String())
+	clone, err := Unmarshal(bytes)
+	testutil.Ok(t, err)
+	testutil.Equals(t, original.Root().String(), clone.String())
 }

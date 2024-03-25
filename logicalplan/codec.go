@@ -13,8 +13,8 @@ type jsonNode struct {
 	Children []json.RawMessage `json:"children,omitempty"`
 }
 
-func (p *plan) MarshalJSON() ([]byte, error) {
-	clone := p.Root().Clone()
+func Marshal(node Node) ([]byte, error) {
+	clone := node.Clone()
 	return marshalNode(clone)
 }
 
@@ -38,13 +38,8 @@ func marshalNode(node Node) ([]byte, error) {
 	})
 }
 
-func (p *plan) UnmarshalJSON(data []byte) error {
-	root, err := unmarshalNode(data)
-	if err != nil {
-		return err
-	}
-	p.expr = root
-	return nil
+func Unmarshal(data []byte) (Node, error) {
+	return unmarshalNode(data)
 }
 
 func unmarshalNode(data []byte) (Node, error) {
