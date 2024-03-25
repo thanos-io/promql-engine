@@ -50,7 +50,6 @@ func (tm *NoopTelemetry) UpdatePeak(_ int) {}
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return stats.NewQuerySamples(false) }
 
 type TrackedTelemetry struct {
-	name          string
 	ExecutionTime time.Duration
 	fmt.Stringer
 
@@ -58,11 +57,9 @@ type TrackedTelemetry struct {
 }
 
 func NewTrackedTelemetry(operator fmt.Stringer) *TrackedTelemetry {
-	return &TrackedTelemetry{Stringer: operator}
-}
-
-func (ti *TrackedTelemetry) Name() string {
-	return ti.name
+	return &TrackedTelemetry{
+		Stringer: operator,
+	}
 }
 
 func (ti *TrackedTelemetry) AddExecutionTimeTaken(t time.Duration) { ti.ExecutionTime += t }
@@ -72,10 +69,16 @@ func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
 }
 
 func (ti *TrackedTelemetry) IncrementSamplesAtStep(samples, step int) {
+	if ti.LoadedSamples == nil {
+		ti.LoadedSamples = stats.NewQuerySamples(false)
+	}
 	ti.LoadedSamples.IncrementSamplesAtStep(step, int64(samples))
 }
 
 func (ti *TrackedTelemetry) UpdatePeak(samples int) {
+	if ti.LoadedSamples == nil {
+		ti.LoadedSamples = stats.NewQuerySamples(false)
+	}
 	ti.LoadedSamples.UpdatePeak(samples)
 }
 
