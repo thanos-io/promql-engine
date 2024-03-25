@@ -35,7 +35,10 @@ func (a *AnalyzeOutputNode) TotalSamples() int64 {
 	for _, child := range a.Children {
 		total += child.TotalSamples()
 	}
-	return total + a.OperatorTelemetry.Samples().TotalSamples
+	if a.OperatorTelemetry.Samples() != nil {
+		total += a.OperatorTelemetry.Samples().TotalSamples
+	}
+	return total
 }
 
 func (a *AnalyzeOutputNode) PeakSamples() int64 {
@@ -43,7 +46,10 @@ func (a *AnalyzeOutputNode) PeakSamples() int64 {
 	for _, child := range a.Children {
 		peak = int64(math.Max(float64(peak), float64(child.PeakSamples())))
 	}
-	return int64(math.Max(float64(peak), float64(a.OperatorTelemetry.Samples().PeakSamples)))
+	if a.OperatorTelemetry.Samples() != nil {
+		peak = int64(math.Max(float64(peak), float64(a.OperatorTelemetry.Samples().PeakSamples)))
+	}
+	return peak
 }
 
 func analyzeQuery(obsv model.ObservableVectorOperator) *AnalyzeOutputNode {
