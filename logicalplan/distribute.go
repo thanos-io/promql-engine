@@ -15,7 +15,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
@@ -80,6 +79,7 @@ func (rs RemoteExecutions) String() string {
 // RemoteExecution is a logical plan that describes a
 // remote execution of a Query against the given PromQL Engine.
 type RemoteExecution struct {
+	LeafNode
 	Engine          api.RemoteEngine
 	Query           Node
 	QueryRangeStart time.Time
@@ -100,16 +100,11 @@ func (r RemoteExecution) String() string {
 	return fmt.Sprintf("remote(%s) [%s]", r.Query, r.QueryRangeStart.UTC().String())
 }
 
-func (r RemoteExecution) Pretty(level int) string { return r.String() }
-
-func (r RemoteExecution) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (r RemoteExecution) Type() parser.ValueType { return r.valueType }
-
-func (r RemoteExecution) PromQLExpr() {}
 
 // Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
 type Deduplicate struct {
+	LeafNode
 	Expressions RemoteExecutions
 }
 
@@ -126,27 +121,17 @@ func (r Deduplicate) String() string {
 	return fmt.Sprintf("dedup(%s)", r.Expressions.String())
 }
 
-func (r Deduplicate) Pretty(level int) string { return r.String() }
-
-func (r Deduplicate) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (r Deduplicate) Type() parser.ValueType { return r.Expressions[0].Type() }
 
-func (r Deduplicate) PromQLExpr() {}
-
-type Noop struct{}
+type Noop struct {
+	LeafNode
+}
 
 func (r Noop) Clone() Node { return r }
 
 func (r Noop) String() string { return "noop" }
 
-func (r Noop) Pretty(level int) string { return r.String() }
-
-func (r Noop) PositionRange() posrange.PositionRange { return posrange.PositionRange{} }
-
 func (r Noop) Type() parser.ValueType { return parser.ValueTypeVector }
-
-func (r Noop) PromQLExpr() {}
 
 // distributiveAggregations are all PromQL aggregations which support
 // distributed execution.
@@ -475,6 +460,8 @@ func isDistributive(expr *Node, skipBinaryPushdown bool) bool {
 	}
 
 	switch e := (*expr).(type) {
+	case Deduplicate, RemoteExecution:
+		return false
 	case *Binary:
 		return isBinaryExpressionWithOneConstantSide(e) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(e))
 	case *Aggregation:

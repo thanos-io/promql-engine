@@ -74,7 +74,7 @@ func newOperator(expr logicalplan.Node, storage storage.Scanners, opts *query.Op
 		return newDeduplication(e, storage, opts, hints)
 	case logicalplan.RemoteExecution:
 		return newRemoteExecution(e, opts, hints)
-	case logicalplan.CheckDuplicateLabels:
+	case *logicalplan.CheckDuplicateLabels:
 		return newDuplicateLabelCheck(e, storage, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
@@ -369,7 +369,7 @@ func newRemoteExecution(e logicalplan.RemoteExecution, opts *query.Options, hint
 	return exchange.NewConcurrent(remoteExec, 2, opts), nil
 }
 
-func newDuplicateLabelCheck(e logicalplan.CheckDuplicateLabels, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newDuplicateLabelCheck(e *logicalplan.CheckDuplicateLabels, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	op, err := newOperator(e.Expr, storage, opts, hints)
 	if err != nil {
 		return nil, err

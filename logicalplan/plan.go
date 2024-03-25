@@ -86,104 +86,22 @@ func (p *plan) Root() Node {
 }
 
 func Traverse(expr *Node, transform func(*Node)) {
-	switch node := (*expr).(type) {
-	case *StringLiteral, *NumberLiteral:
-		transform(expr)
-	case *StepInvariantExpr:
-		transform(expr)
-		Traverse(&node.Expr, transform)
-	case *VectorSelector:
-		transform(expr)
-	case *MatrixSelector:
-		transform(expr)
-		var x Node = node.VectorSelector
-		Traverse(&x, transform)
-	case *Aggregation:
-		transform(expr)
-		Traverse(&node.Param, transform)
-		Traverse(&node.Expr, transform)
-	case *FunctionCall:
-		transform(expr)
-		for i := range node.Args {
-			Traverse(&(node.Args[i]), transform)
-		}
-	case *Binary:
-		transform(expr)
-		Traverse(&node.LHS, transform)
-		Traverse(&node.RHS, transform)
-	case *Unary:
-		transform(expr)
-		Traverse(&node.Expr, transform)
-	case *Parens:
-		transform(expr)
-		Traverse(&node.Expr, transform)
-	case *Subquery:
-		transform(expr)
-		var x Node = node.Expr
-		Traverse(&x, transform)
-	case CheckDuplicateLabels:
-		transform(expr)
-		Traverse(&node.Expr, transform)
+	children := (*expr).Children()
+	transform(expr)
+	for _, c := range children {
+		Traverse(c, transform)
 	}
 }
 
 func TraverseBottomUp(parent *Node, current *Node, transform func(parent *Node, node *Node) bool) bool {
-	switch node := (*current).(type) {
-	case *StringLiteral:
-		return transform(parent, current)
-	case *NumberLiteral:
-		return transform(parent, current)
-	case *StepInvariantExpr:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
-	case *VectorSelector:
-		return transform(parent, current)
-	case *MatrixSelector:
-		if stop := transform(parent, current); stop {
-			return stop
-		}
-		var x Node = node.VectorSelector
-		return TraverseBottomUp(current, &x, transform)
-	case *Aggregation:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
-	case *FunctionCall:
-		for i := range node.Args {
-			if stop := TraverseBottomUp(current, &node.Args[i], transform); stop {
-				return stop
-			}
-		}
-		return transform(parent, current)
-	case *Binary:
-		lstop := TraverseBottomUp(current, &node.LHS, transform)
-		rstop := TraverseBottomUp(current, &node.RHS, transform)
-		if lstop || rstop {
-			return true
-		}
-		return transform(parent, current)
-	case *Unary:
-		return TraverseBottomUp(current, &node.Expr, transform)
-	case *Parens:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
-	case *Subquery:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
-	case CheckDuplicateLabels:
-		if stop := TraverseBottomUp(current, &node.Expr, transform); stop {
-			return stop
-		}
-		return transform(parent, current)
+	var stop bool
+	for _, c := range (*current).Children() {
+		stop = TraverseBottomUp(current, c, transform) || stop
 	}
-	return true
+	if stop {
+		return stop
+	}
+	return transform(parent, current)
 }
 
 func replacePrometheusNodes(plan parser.Expr) Node {
@@ -329,11 +247,13 @@ func trimParens(expr Node) Node {
 func insertDuplicateLabelChecks(expr Node) Node {
 	Traverse(&expr, func(node *Node) {
 		switch t := (*node).(type) {
+		case *CheckDuplicateLabels:
+			return
 		case *Aggregation, *Unary, *Binary, *FunctionCall:
-			*node = CheckDuplicateLabels{Expr: t}
+			*node = &CheckDuplicateLabels{Expr: t}
 		case *VectorSelector:
 			if t.SelectTimestamp {
-				*node = CheckDuplicateLabels{Expr: t}
+				*node = &CheckDuplicateLabels{Expr: t}
 			}
 		}
 	})
