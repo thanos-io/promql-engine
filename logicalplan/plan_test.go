@@ -182,7 +182,7 @@ func TestDefaultOptimizers(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(DefaultOptimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
 			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
@@ -226,7 +226,7 @@ func TestMatcherPropagation(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := New(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := strings.Trim(spaces.ReplaceAllString(tcase.expected, " "), " ")
 			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
@@ -278,7 +278,7 @@ func TestTrimSorts(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			exprPlan := New(expr, &query.Options{}, PlanOptions{})
+			exprPlan := NewFromAST(expr, &query.Options{}, PlanOptions{})
 			testutil.Equals(t, tcase.expected, exprPlan.Root().String())
 		})
 	}
