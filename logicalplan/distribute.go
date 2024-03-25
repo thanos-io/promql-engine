@@ -100,7 +100,9 @@ func (r RemoteExecution) String() string {
 	return fmt.Sprintf("remote(%s) [%s]", r.Query, r.QueryRangeStart.UTC().String())
 }
 
-func (r RemoteExecution) Type() parser.ValueType { return r.valueType }
+func (r RemoteExecution) Type() NodeType { return RemoteExecutionNode }
+
+func (r RemoteExecution) ReturnType() parser.ValueType { return r.valueType }
 
 // Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
 type Deduplicate struct {
@@ -121,7 +123,9 @@ func (r Deduplicate) String() string {
 	return fmt.Sprintf("dedup(%s)", r.Expressions.String())
 }
 
-func (r Deduplicate) Type() parser.ValueType { return r.Expressions[0].Type() }
+func (r Deduplicate) ReturnType() parser.ValueType { return r.Expressions[0].ReturnType() }
+
+func (r Deduplicate) Type() NodeType { return DeduplicateNode }
 
 type Noop struct {
 	LeafNode
@@ -131,7 +135,9 @@ func (r Noop) Clone() Node { return r }
 
 func (r Noop) String() string { return "noop" }
 
-func (r Noop) Type() parser.ValueType { return parser.ValueTypeVector }
+func (r Noop) ReturnType() parser.ValueType { return parser.ValueTypeVector }
+
+func (r Noop) Type() NodeType { return NoopNode }
 
 // distributiveAggregations are all PromQL aggregations which support
 // distributed execution.
@@ -312,7 +318,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 			Engine:          e,
 			Query:           (*expr).Clone(),
 			QueryRangeStart: start,
-			valueType:       (*expr).Type(),
+			valueType:       (*expr).ReturnType(),
 		})
 	}
 
@@ -338,7 +344,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 			Engine:          engines[i],
 			Query:           expr.Clone(),
 			QueryRangeStart: opts.Start,
-			valueType:       expr.Type(),
+			valueType:       expr.ReturnType(),
 		})
 	}
 	// We need to make sure that absent is at least evaluated against one engine.
@@ -350,7 +356,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 			Engine:          engines[len(engines)-1],
 			Query:           expr,
 			QueryRangeStart: opts.Start,
-			valueType:       expr.Type(),
+			valueType:       expr.ReturnType(),
 		}
 	}
 

@@ -492,7 +492,7 @@ loop:
 	}
 
 	var result parser.Value
-	switch q.plan.Root().Type() {
+	switch q.plan.Root().ReturnType() {
 	case parser.ValueTypeMatrix:
 		result = promql.Matrix(series)
 	case parser.ValueTypeVector:

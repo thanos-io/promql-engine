@@ -217,7 +217,7 @@ func newInstantVectorFunction(e *logicalplan.FunctionCall, storage storage.Scann
 	nextOperators := make([]model.VectorOperator, 0, len(e.Args))
 	for i := range e.Args {
 		// Strings don't need an operator
-		if e.Args[i].Type() == parser.ValueTypeString {
+		if e.Args[i].ReturnType() == parser.ValueTypeString {
 			continue
 		}
 		next, err := newOperator(e.Args[i], storage, opts, hints)
@@ -241,7 +241,7 @@ func newAggregateExpression(e *logicalplan.Aggregation, scanners storage.Scanner
 		return nil, err
 	}
 
-	if e.Param != nil && e.Param.Type() != parser.ValueTypeString {
+	if e.Param != nil && e.Param.ReturnType() != parser.ValueTypeString {
 		paramOp, err = newOperator(e.Param, scanners, opts, hints)
 		if err != nil {
 			return nil, err
@@ -263,7 +263,7 @@ func newAggregateExpression(e *logicalplan.Aggregation, scanners storage.Scanner
 }
 
 func newBinaryExpression(e *logicalplan.Binary, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
-	if e.LHS.Type() == parser.ValueTypeScalar || e.RHS.Type() == parser.ValueTypeScalar {
+	if e.LHS.ReturnType() == parser.ValueTypeScalar || e.RHS.ReturnType() == parser.ValueTypeScalar {
 		return newScalarBinaryOperator(e, scanners, opts, hints)
 	}
 	return newVectorBinaryOperator(e, scanners, opts, hints)
@@ -292,9 +292,9 @@ func newScalarBinaryOperator(e *logicalplan.Binary, storage storage.Scanners, op
 	}
 
 	scalarSide := binary.ScalarSideRight
-	if e.LHS.Type() == parser.ValueTypeScalar && e.RHS.Type() == parser.ValueTypeScalar {
+	if e.LHS.ReturnType() == parser.ValueTypeScalar && e.RHS.ReturnType() == parser.ValueTypeScalar {
 		scalarSide = binary.ScalarSideBoth
-	} else if e.LHS.Type() == parser.ValueTypeScalar {
+	} else if e.LHS.ReturnType() == parser.ValueTypeScalar {
 		rhs, lhs = lhs, rhs
 		scalarSide = binary.ScalarSideLeft
 	}

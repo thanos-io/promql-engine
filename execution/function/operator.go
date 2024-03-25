@@ -115,14 +115,14 @@ func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOp
 	f.OperatorTelemetry = model.NewTelemetry(f, opts.EnableAnalysis)
 
 	for i := range funcExpr.Args {
-		if funcExpr.Args[i].Type() == parser.ValueTypeVector {
+		if funcExpr.Args[i].ReturnType() == parser.ValueTypeVector {
 			f.vectorIndex = i
 			break
 		}
 	}
 
 	// Check selector type.
-	switch funcExpr.Args[f.vectorIndex].Type() {
+	switch funcExpr.Args[f.vectorIndex].ReturnType() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
 		return f, nil
 	default:
