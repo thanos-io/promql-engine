@@ -44,7 +44,16 @@ type PlanOptions struct {
 	DisableDuplicateLabelCheck bool
 }
 
-func New(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
+// New creates a new logical plan from logical node.
+func New(root Node, queryOpts *query.Options, planOpts PlanOptions) Plan {
+	return &plan{
+		expr:     root,
+		opts:     queryOpts,
+		planOpts: planOpts,
+	}
+}
+
+func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
 	ast = promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End)
 	setOffsetForAtModifier(queryOpts.Start.UnixMilli(), ast)
 	setOffsetForInnerSubqueries(ast, queryOpts)
@@ -60,6 +69,23 @@ func New(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
 		opts:     queryOpts,
 		planOpts: planOpts,
 	}
+}
+
+// NewFromBytes creates a new logical plan from a byte slice created with Marshal.
+// This method is used to deserialize a logical plan which has been sent over the wire.
+func NewFromBytes(bytes []byte, queryOpts *query.Options, planOpts PlanOptions) (Plan, error) {
+	root, err := Unmarshal(bytes)
+	if err != nil {
+		return nil, err
+	}
+	// the engine handles sorting at the presentation layer
+	root = trimSorts(root)
+
+	return &plan{
+		expr:     root,
+		opts:     queryOpts,
+		planOpts: planOpts,
+	}, nil
 }
 
 func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) {
@@ -137,7 +163,9 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 					if vs.Timestamp != nil {
 						vs.OriginalOffset = 0
 					}
-					return &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
+					return &StepInvariantExpr{
+						Expr: &VectorSelector{VectorSelector: vs, SelectTimestamp: true},
+					}
 				}
 			}
 		}

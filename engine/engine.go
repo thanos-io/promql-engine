@@ -248,7 +248,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.New(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
 	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
@@ -280,23 +280,20 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
-
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, e.lookbackDelta)
 	}
 	if opts.LookbackDelta() <= 0 {
 		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
 	}
-
 	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
-
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.New(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
 	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
@@ -316,16 +313,19 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	}, nil
 }
 
-func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Plan, start, end time.Time, step time.Duration) (promql.Query, error) {
+func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (promql.Query, error) {
 	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
-
-	exec, err := execution.New(plan.Root(), e.storageScanners(q), qOpts)
+	planOpts := logicalplan.PlanOptions{
+		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
+	}
+	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewRangeQuery(ctx, q, opts, plan.Root().String(), start, end, step)
+		return e.prom.NewRangeQuery(ctx, q, opts, lplan.Root().String(), start, end, step)
 	}
 	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
@@ -335,12 +335,13 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 	return &compatibilityQuery{
 		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
-		plan:   plan,
+		plan:   lplan,
+		warns:  warns,
 		t:      RangeQuery,
 	}, nil
 }
 
-func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Plan, ts time.Time) (promql.Query, error) {
+func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Node, ts time.Time) (promql.Query, error) {
 	return e.NewRangeQueryFromPlan(ctx, q, opts, plan, ts, ts, 0)
 }
 

@@ -21,7 +21,7 @@ sum(
 )`
 	ast, err := parser.ParseExpr(expr)
 	testutil.Ok(t, err)
-	original := New(ast, &query.Options{}, PlanOptions{})
+	original := NewFromAST(ast, &query.Options{}, PlanOptions{})
 	original, _ = original.Optimize(DefaultOptimizers)
 
 	bytes, err := Marshal(original.Root())
