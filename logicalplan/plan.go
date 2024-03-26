@@ -163,7 +163,9 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 					if vs.Timestamp != nil {
 						vs.OriginalOffset = 0
 					}
-					return &VectorSelector{VectorSelector: vs, SelectTimestamp: true}
+					return &StepInvariantExpr{
+						Expr: &VectorSelector{VectorSelector: vs, SelectTimestamp: true},
+					}
 				}
 			}
 		}
