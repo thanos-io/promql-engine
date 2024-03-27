@@ -20,10 +20,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
-	v1 "github.com/prometheus/prometheus/web/api/v1"
-
-	engstorage "github.com/thanos-io/promql-engine/storage"
-	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 
 	"github.com/thanos-io/promql-engine/execution"
 	"github.com/thanos-io/promql-engine/execution/function"
@@ -33,6 +29,8 @@ import (
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
+	engstorage "github.com/thanos-io/promql-engine/storage"
+	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 type QueryType int
@@ -69,7 +67,7 @@ type Opts struct {
 	EnableXFunctions bool
 
 	// FallbackEngine
-	Engine v1.QueryEngine
+	Engine promql.QueryEngine
 
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
@@ -154,7 +152,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		),
 	}
 
-	var engine v1.QueryEngine
+	var engine promql.QueryEngine
 	if opts.Engine == nil {
 		engine = promql.NewEngine(opts.EngineOpts)
 	} else {
@@ -190,7 +188,7 @@ var (
 )
 
 type Engine struct {
-	prom      v1.QueryEngine
+	prom      promql.QueryEngine
 	functions map[string]*parser.Function
 	scanners  engstorage.Scanners
 
@@ -206,10 +204,6 @@ type Engine struct {
 	extLookbackDelta         time.Duration
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
-}
-
-func (e *Engine) SetQueryLogger(l promql.QueryLogger) {
-	e.prom.SetQueryLogger(l)
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
