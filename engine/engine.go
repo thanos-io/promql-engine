@@ -308,6 +308,12 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 }
 
 func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (promql.Query, error) {
+	if opts == nil {
+		opts = promql.NewPrometheusQueryOpts(false, e.lookbackDelta)
+	}
+	if opts.LookbackDelta() <= 0 {
+		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
+	}
 	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
