@@ -122,6 +122,7 @@ func unmarshalNode(data []byte) (Node, error) {
 		if err := json.Unmarshal(t.Data, s); err != nil {
 			return nil, err
 		}
+		return s, nil
 	case SubqueryNode:
 		s := &Subquery{}
 		if err := json.Unmarshal(t.Data, s); err != nil {
