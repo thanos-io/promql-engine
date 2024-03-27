@@ -18,6 +18,7 @@ sum(
   max_over_time(sum by (pod) (2 * -(rate(http_requests_total[1h])))[2m:1m]) 
   +
   http_requests_total{job="api-server"} @ end()
+  + label_replace(metric, "new_label", "$1", "label", ".*")
 )`
 	ast, err := parser.ParseExpr(expr)
 	testutil.Ok(t, err)
