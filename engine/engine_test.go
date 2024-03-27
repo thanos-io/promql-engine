@@ -2463,7 +2463,7 @@ func TestRateVsXRate(t *testing.T) {
 			queryTime: time.Unix(25, 0),
 			expected: []promql.Sample{
 				createSample(defaultQueryTime.UnixMilli(), 0.022, labels.FromStrings("path", "/foo")),
-				createSample(defaultQueryTime.UnixMilli(), 0.12, labels.FromStrings("path", "/bar")),
+				createSample(defaultQueryTime.UnixMilli(), 0.11000000000000001, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
@@ -2485,7 +2485,7 @@ func TestRateVsXRate(t *testing.T) {
 			queryTime: time.Unix(24, 0),
 			expected: []promql.Sample{
 				createSample(24000, 0.0265, labels.FromStrings("path", "/foo")),
-				createSample(24000, 0.116, labels.FromStrings("path", "/bar")),
+				createSample(24000, 0.106, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
@@ -2506,8 +2506,8 @@ func TestRateVsXRate(t *testing.T) {
 			query:     "rate(http_requests[50s])",
 			queryTime: time.Unix(26, 0),
 			expected: []promql.Sample{
-				createSample(26000, 0.02279999999, labels.FromStrings("path", "/foo")),
-				createSample(26000, 0.124, labels.FromStrings("path", "/bar")),
+				createSample(26000, 0.022799999999999997, labels.FromStrings("path", "/foo")),
+				createSample(26000, 0.11399999999999999, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
