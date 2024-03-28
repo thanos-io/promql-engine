@@ -48,9 +48,9 @@ func (tm *NoopTelemetry) IncrementSamplesAtStep(_, _ int) {}
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return stats.NewQuerySamples(false) }
 
 type TrackedTelemetry struct {
-	ExecutionTime time.Duration
 	fmt.Stringer
 
+	ExecutionTime time.Duration
 	LoadedSamples *stats.QuerySamples
 }
 
@@ -67,13 +67,14 @@ func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
 }
 
 func (ti *TrackedTelemetry) IncrementSamplesAtStep(samples, step int) {
+	ti.updatePeak(samples)
 	if ti.LoadedSamples == nil {
 		ti.LoadedSamples = stats.NewQuerySamples(false)
 	}
 	ti.LoadedSamples.IncrementSamplesAtStep(step, int64(samples))
 }
 
-func (ti *TrackedTelemetry) UpdatePeak(samples int) {
+func (ti *TrackedTelemetry) updatePeak(samples int) {
 	if ti.LoadedSamples == nil {
 		ti.LoadedSamples = stats.NewQuerySamples(false)
 	}

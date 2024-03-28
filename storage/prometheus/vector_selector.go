@@ -167,7 +167,6 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			}
 			seriesTs += o.step
 			o.IncrementSamplesAtStep(int(currStepSamples), currStep)
-			o.UpdatePeak(int(currStepSamples))
 		}
 	}
 	if o.currentSeries == int64(len(o.scanners)) {
