@@ -13,11 +13,11 @@ import (
 )
 
 type OperatorTelemetry interface {
+	fmt.Stringer
+
 	AddExecutionTimeTaken(time.Duration)
 	ExecutionTimeTaken() time.Duration
-	fmt.Stringer
 	IncrementSamplesAtStep(samples int, step int)
-	UpdatePeak(samples int)
 	Samples() *stats.QuerySamples
 }
 
@@ -44,8 +44,6 @@ func (tm *NoopTelemetry) ExecutionTimeTaken() time.Duration {
 }
 
 func (tm *NoopTelemetry) IncrementSamplesAtStep(_, _ int) {}
-
-func (tm *NoopTelemetry) UpdatePeak(_ int) {}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return stats.NewQuerySamples(false) }
 
