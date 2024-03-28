@@ -84,7 +84,6 @@ func (e *Execution) updateStats() {
 	if existingStats == nil || existingStats.Samples == nil {
 		return
 	}
-	e.UpdatePeak(existingStats.Samples.PeakSamples)
 	e.IncrementSamplesAtStep(int(existingStats.Samples.TotalSamples), 0)
 }
 

@@ -209,7 +209,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				}
 				stepSamples += int64(len(series.buffer.Samples()))
 			}
-			o.UpdatePeak(int(stepSamples))
 			o.IncrementSamplesAtStep(int(stepSamples), currStep)
 			seriesTs += o.step
 		}
