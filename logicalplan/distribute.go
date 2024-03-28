@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	RewrittenExternalLabelWarning = errors.Newf("%s: rewriting an external label with label_replace optimizing the query for distributed execution", annotations.PromQLWarning.Error())
+	RewrittenExternalLabelWarning = errors.Newf("%s: rewriting an external label with label_replace disable optimizations for query distributed execution", annotations.PromQLWarning.Error())
 )
 
 type timeRange struct {
