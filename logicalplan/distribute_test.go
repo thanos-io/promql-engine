@@ -177,7 +177,7 @@ dedup(
 )`,
 		},
 		{
-			name: "label replace with aggregation",
+			name: "label replace to internal label before an aggregation",
 			expr: `max by (instance) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))`,
 			expected: `
 max by (instance) (
@@ -200,6 +200,15 @@ max by (location) (dedup(
 			name:     "label replace to external label before an aggregation",
 			expr:     `max by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
 			expected: `max by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
+		},
+		{
+			name: "label replace to external label before an avg",
+			expr: `avg by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
+			expected: `
+sum by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)")) 
+/ on (location)
+count by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)")
+)`,
 		},
 		{
 			name: "label replace after an aggregation",
