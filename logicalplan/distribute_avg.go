@@ -57,5 +57,5 @@ func isDistributiveOrAverage(expr *Node, skipBinaryPushdown bool) bool {
 	if aggr, ok := (*expr).(*Aggregation); ok {
 		isAvg = aggr.Op == parser.AVG
 	}
-	return isDistributive(expr, skipBinaryPushdown) || isAvg
+	return isDistributive(expr, skipBinaryPushdown, map[string]struct{}{}) || isAvg
 }

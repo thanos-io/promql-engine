@@ -188,10 +188,27 @@ max by (instance) (
 )`,
 		},
 		{
-			name:       "label replace rewrites external label",
-			expr:       `max by (location) (label_replace(http_requests_total, "region", "$1", "instance", "(.*)"))`,
-			expected:   `max by (location) (label_replace(http_requests_total, "region", "$1", "instance", "(.*)"))`,
-			expectWarn: true,
+			name: "label replace to internal label before an aggregation",
+			expr: `max by (location) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))`,
+			expected: `
+max by (location) (dedup(
+  remote(max by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))), 
+  remote(max by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)")))
+))`,
+		},
+		{
+			name:     "label replace to external label before an aggregation",
+			expr:     `max by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
+			expected: `max by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
+		},
+		{
+			name: "label replace after an aggregation",
+			expr: `label_replace(max by (location) (http_requests_total), "region", "$1", "location", "(.*)")`,
+			expected: `
+label_replace(max by (location) (dedup(
+  remote(max by (location, region) (http_requests_total)), 
+  remote(max by (location, region) (http_requests_total))
+)), "region", "$1", "location", "(.*)")`,
 		},
 		{
 			name: "binary operation in the operand path",
