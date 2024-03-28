@@ -179,9 +179,6 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		}
 	}
 	minEngineOverlap := labelRanges.minOverlap()
-	if rewritesEngineLabels(plan, engineLabels) {
-		return plan, annotations.New().Add(RewrittenExternalLabelWarning)
-	}
 
 	// TODO(fpetkovski): Consider changing TraverseBottomUp to pass in a list of parents in the transform function.
 	parents := make(map[*Node]*Node)
@@ -191,7 +188,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 	})
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
-		if !isDistributive(current, m.SkipBinaryPushdown) {
+		if !isDistributive(current, m.SkipBinaryPushdown, engineLabels) {
 			return true
 		}
 
@@ -220,7 +217,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		}
 
 		// If the parent operation is distributive, continue the traversal.
-		if isDistributive(parent, m.SkipBinaryPushdown) {
+		if isDistributive(parent, m.SkipBinaryPushdown, engineLabels) {
 			return false
 		}
 
@@ -460,7 +457,7 @@ func numSteps(start, end time.Time, step time.Duration) int64 {
 	return (end.UnixMilli()-start.UnixMilli())/step.Milliseconds() + 1
 }
 
-func isDistributive(expr *Node, skipBinaryPushdown bool) bool {
+func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string]struct{}) bool {
 	if expr == nil {
 		return false
 	}
@@ -474,6 +471,13 @@ func isDistributive(expr *Node, skipBinaryPushdown bool) bool {
 		// Certain aggregations are currently not supported.
 		if _, ok := distributiveAggregations[e.Op]; !ok {
 			return false
+		}
+	case *FunctionCall:
+		if e.Func.Name == "label_replace" {
+			targetLabel := UnsafeUnwrapString(e.Args[1])
+			if _, ok := engineLabels[targetLabel]; ok {
+				return false
+			}
 		}
 	}
 
