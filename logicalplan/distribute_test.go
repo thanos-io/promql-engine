@@ -197,9 +197,10 @@ max by (location) (dedup(
 ))`,
 		},
 		{
-			name:     "label replace to external label before an aggregation",
-			expr:     `max by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
-			expected: `max by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
+			name:       "label replace to external label before an aggregation",
+			expr:       `max by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
+			expected:   `max by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
+			expectWarn: true,
 		},
 		{
 			name: "label replace to external label before an avg",
@@ -209,6 +210,7 @@ sum by (location) (label_replace(dedup(remote(http_requests_total), remote(http_
 / on (location)
 count by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)")
 )`,
+			expectWarn: true,
 		},
 		{
 			name: "label replace after an aggregation",
@@ -218,6 +220,7 @@ label_replace(max by (location) (dedup(
   remote(max by (location, region) (http_requests_total)), 
   remote(max by (location, region) (http_requests_total))
 )), "region", "$1", "location", "(.*)")`,
+			expectWarn: true,
 		},
 		{
 			name: "binary operation in the operand path",

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -17,6 +18,10 @@ import (
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
+)
+
+var (
+	RewrittenExternalLabelWarning = errors.Newf("%s: rewriting an external label with label_replace optimizing the query for distributed execution", annotations.PromQLWarning.Error())
 )
 
 type timeRange struct {
@@ -181,9 +186,11 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		parents[current] = parent
 		return false
 	})
+
+	var warns = annotations.New()
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
-		if !isDistributive(current, m.SkipBinaryPushdown, engineLabels) {
+		if !isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) {
 			return true
 		}
 
@@ -212,7 +219,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		}
 
 		// If the parent operation is distributive, continue the traversal.
-		if isDistributive(parent, m.SkipBinaryPushdown, engineLabels) {
+		if isDistributive(parent, m.SkipBinaryPushdown, engineLabels, warns) {
 			return false
 		}
 
@@ -220,7 +227,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		return true
 	})
 
-	return plan, nil
+	return plan, *warns
 }
 
 func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*Node]*Node, current *Node, opts *query.Options) *query.Options {
@@ -452,7 +459,7 @@ func numSteps(start, end time.Time, step time.Duration) int64 {
 	return (end.UnixMilli()-start.UnixMilli())/step.Milliseconds() + 1
 }
 
-func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string]struct{}) bool {
+func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string]struct{}, warns *annotations.Annotations) bool {
 	if expr == nil {
 		return false
 	}
@@ -471,6 +478,7 @@ func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string
 		if e.Func.Name == "label_replace" {
 			targetLabel := UnsafeUnwrapString(e.Args[1])
 			if _, ok := engineLabels[targetLabel]; ok {
+				warns.Add(RewrittenExternalLabelWarning)
 				return false
 			}
 		}
