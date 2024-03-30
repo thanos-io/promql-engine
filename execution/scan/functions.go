@@ -25,9 +25,12 @@ type FunctionArgs struct {
 	Samples          []ringbuffer.Sample[Value]
 	StepTime         int64
 	SelectRange      int64
-	ScalarPoints     []float64
 	Offset           int64
 	MetricAppearedTs *int64
+
+	// Only holt-winters uses two arguments, we fall back for that.
+	// quantile_over_time and predict_linear use one, so we only use one here.
+	ScalarPoint float64
 }
 
 type FunctionCall func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool)
@@ -124,7 +127,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		for i, sample := range f.Samples {
 			floats[i] = sample.V.F
 		}
-		return aggregate.Quantile(f.ScalarPoints[0], floats), nil, true
+		return aggregate.Quantile(f.ScalarPoint, floats), nil, true
 	},
 	"changes": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool) {
 		if len(f.Samples) == 0 {

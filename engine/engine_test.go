@@ -245,6 +245,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   end,
 		},
 		{
+			name: "quantile_over_time with subquery and non-constant param",
+			load: `load 30s
+        http_requests_total{pod="nginx-1"} 41.00+0.20x40
+        http_requests_total{pod="nginx-2"} 51+21.71x40
+        param_series 0+0.01x40`,
+			query: `quantile_over_time(scalar(param_series), http_requests_total{pod="nginx-1"}[5m:1m])`,
+			start: start,
+			end:   end,
+		},
+		{
 			name: "changes",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
