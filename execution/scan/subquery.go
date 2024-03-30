@@ -156,8 +156,9 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			f, h, ok := o.call(FunctionArgs{
 				ScalarPoint: scalarArg,
 				Samples:     rangeSamples.Samples(),
-				StepTime:    maxt,
+				StepTime:    maxt + o.subQuery.Offset.Milliseconds(),
 				SelectRange: o.subQuery.Range.Milliseconds(),
+				Offset:      o.subQuery.Offset.Milliseconds(),
 			})
 			if ok {
 				if h != nil {

@@ -121,6 +121,14 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "predict_linear fuzz",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1", route="/"} 48.00+9.17x40
+            			http_requests_total{pod="nginx-2", route="/"} -108+173.00x40`,
+			query: `predict_linear(
+            http_requests_total{route="/"}[1h:1m] offset 1m, 60)`,
+		},
+		{
 			name: "duplicate label fuzz",
 			load: `load 30s
             			http_requests_total{pod="nginx-1", route="/"} 41.00+0.20x40
@@ -251,6 +259,16 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
         http_requests_total{pod="nginx-2"} 51+21.71x40
         param_series 0+0.01x40`,
 			query: `quantile_over_time(scalar(param_series), http_requests_total{pod="nginx-1"}[5m:1m])`,
+			start: start,
+			end:   end,
+		},
+		{
+			name: "predict_linear with subquery and non-constant param",
+			load: `load 30s
+        http_requests_total{pod="nginx-1"} 41.00+0.20x40
+        http_requests_total{pod="nginx-2"} 51+21.71x40
+        param_series 1+1x40`,
+			query: `predict_linear(http_requests_total{pod="nginx-1"}[5m:1m], scalar(param_series))`,
 			start: start,
 			end:   end,
 		},
@@ -4366,11 +4384,6 @@ func TestFallback(t *testing.T) {
 		query string
 	}{
 		{
-			// TODO(fpetkovski): Update this expression once we add support for predict_linear.
-			name:  "unsupported function",
-			query: `predict_linear(http_requests_total{pod="nginx-1"}[5m], 10)`,
-		},
-		{
 			name:  "unsupported function with scalar",
 			query: `quantile_over_time(scalar(sum(http_requests_total)), http_requests_total[2m])`,
 		},
@@ -5020,6 +5033,13 @@ var (
 	comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 		compareFloats := func(l, r float64) bool {
 			const epsilon = 1e-6
+			if math.Abs(l) == math.Inf(+1) && math.Abs(r) == math.Inf(+1) {
+				// We sometimes cannot disambiguate between negative and positive inf.
+				// This is a problem mostly for fuzzing because we dont disambiguate between
+				// negative and positive zero, if we then divide by that we fail, which we do
+				// not want.
+				return true
+			}
 			return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
 		}
 		compareHistograms := func(l, r *histogram.FloatHistogram) bool {

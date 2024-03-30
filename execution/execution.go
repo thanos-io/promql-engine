@@ -211,12 +211,17 @@ func newSubqueryFunction(e *logicalplan.FunctionCall, t *logicalplan.Subquery, s
 		outerOpts.End = time.UnixMilli(*t.Timestamp)
 	}
 
-	// TODO: predict_linear
 	var scalarArg model.VectorOperator
 	switch e.Func.Name {
 	case "quantile_over_time":
 		// quantile_over_time(scalar, range-vector)
 		scalarArg, err = newOperator(e.Args[0], storage, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+	case "predict_linear":
+		// predict_linear(range-vector, scalar)
+		scalarArg, err = newOperator(e.Args[1], storage, opts, hints)
 		if err != nil {
 			return nil, err
 		}
