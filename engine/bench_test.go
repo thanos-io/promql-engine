@@ -456,6 +456,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 			query: "count(http_requests_total)",
 		},
 		{
+			name:  "count_values",
+			query: "count_values('val', http_requests_total)",
+		},
+		{
 			name:  "round",
 			query: "round(http_requests_total)",
 		},

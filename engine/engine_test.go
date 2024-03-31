@@ -2878,10 +2878,38 @@ func TestInstantQuery(t *testing.T) {
 		queryTime time.Time
 	}{
 		{
+			name: "count_values fuzz",
+			load: `load 30s
+            			http_requests_total{pod="nginx-1", route="/"} 51.00+1.00x40
+            			http_requests_total{pod="nginx-2", route="/"} -74+14.00x40`,
+			query: `count_values without () (
+                "value",
+                    (
+                      atanh(http_requests_total{pod="nginx-1"})
+                        >
+                      tanh(http_requests_total{route="/"})
+                    )
+                  or
+                    avg by (pod, __name__) (
+                        http_requests_total{route="/"}
+                    )
+              )`,
+		},
+		{
 			name: "sum evaluates to -0 fuzz",
 			load: `load 30s
             		http_requests_total{pod="nginx-2", route="/"}  0`,
 			query:     `sum by (pod) (-http_requests_total) atan2 -0`,
+			queryTime: time.Unix(0, 0),
+		},
+		{
+			name: "count_values",
+			load: `load 30s
+        version{foo="bar"} 1
+        version{foo="baz"} 1
+        version{foo="quz"} 2
+      `,
+			query:     `count_values("val", version)`,
 			queryTime: time.Unix(0, 0),
 		},
 		{
