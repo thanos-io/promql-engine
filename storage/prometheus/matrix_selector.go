@@ -40,7 +40,7 @@ type matrixSelector struct {
 	vectorPool   *model.VectorPool
 	functionName string
 	storage      SeriesSelector
-	scalarArgs   []float64
+	scalarArg    float64
 	call         scan.FunctionCall
 	scanners     []matrixScanner
 	bufferTail   []ringbuffer.Sample[scan.Value]
@@ -89,7 +89,7 @@ func NewMatrixSelector(
 		call:         call,
 		functionName: functionName,
 		vectorPool:   pool,
-		scalarArgs:   []float64{arg},
+		scalarArg:    arg,
 		bufferTail:   make([]ringbuffer.Sample[scan.Value], 16),
 
 		numSteps:      opts.NumSteps(),
@@ -194,7 +194,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
 				Offset:           o.offset,
-				ScalarPoints:     o.scalarArgs,
+				ScalarPoint:      o.scalarArg,
 				MetricAppearedTs: series.metricAppearedTs,
 			})
 

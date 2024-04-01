@@ -10,14 +10,14 @@ The engine intends to have full compatibility with the original engine used in P
 
 The following table shows operations which are currently supported by the engine
 
-| Type                   | Supported                                                                                      | Priority |
-|------------------------|------------------------------------------------------------------------------------------------|----------|
-| Binary expressions     | Full support                                                                                   |          |
-| Histograms             | Full support                                                                                   |          |
-| Subqueries             | Full support                                                                                   |          |
-| Aggregations           | Full support except for `count_values`                                                         | Medium   |
-| Aggregations over time | Full support except for `absent_over_time` and `quantile_over_time` with non-constant argument | Medium   |
-| Functions              | Close to full support (see https://github.com/thanos-io/promql-engine/issues/138)              | Medium   |
+| Type                   | Supported                                                                              | Priority |
+|------------------------|----------------------------------------------------------------------------------------|----------|
+| Binary expressions     | Full support                                                                           |          |
+| Histograms             | Full support                                                                           |          |
+| Subqueries             | Full support                                                                           |          |
+| Aggregations           | Full support except for `count_values`                                                 | Medium   |
+| Aggregations over time | Full support except for `quantile_over_time` with non-constant argument                | Medium   |
+| Functions              | Full support except for `holt_winters` and `predict_linear` with non-constant argument | Medium   |
 
 ## Design
 
@@ -76,7 +76,7 @@ The current implementation uses goroutines very liberally which means the query 
 
 ### Plan optimization
 
-Each PromQL query is initially treated as a declarative (logical) plan and is optimizes before execution. The engine currently supports several optimizers, some of which are enabled by default and others need to be explicitly opted-into. Optimizers implement the [Optimizer](https://pkg.go.dev/github.com/thanos-io/promql-engine@main/logicalplan#Optimizer) interface and all implementations can be found in the [logicalplan](https://pkg.go.dev/github.com/thanos-io/promql-engine@main/logicalplan) package.
+Each PromQL query is initially treated as a declarative (logical) plan and is optimizes before execution. The engine currently supports several optimizers, some of which are enabled by default and others need to be explicitly opted-into. Optimizers implement the [Optimizer](https://pkg.go.dev/github.com/thanos-io/promql-engine/logicalplan#Optimizer) interface and all implementations can be found in the [logicalplan](https://pkg.go.dev/github.com/thanos-io/promql-engine/logicalplan) package.
 
 ### Extensibility
 
