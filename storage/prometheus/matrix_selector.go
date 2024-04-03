@@ -161,12 +161,10 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		ts += o.step
 	}
 
-	stepSamples := int64(0)
 	// Reset the current timestamp.
 	ts = o.currentStep
 	firstSeries := o.currentSeries
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
-		stepSamples = 0
 		var (
 			series   = &o.scanners[o.currentSeries]
 			seriesTs = ts
@@ -207,9 +205,8 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				} else {
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, f)
 				}
-				stepSamples += int64(len(series.buffer.Samples()))
 			}
-			o.IncrementSamplesAtStep(int(stepSamples), currStep)
+			o.IncrementSamplesAtStep(len(series.buffer.Samples()), currStep)
 			seriesTs += o.step
 		}
 	}

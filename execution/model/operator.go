@@ -45,7 +45,7 @@ func (tm *NoopTelemetry) ExecutionTimeTaken() time.Duration {
 
 func (tm *NoopTelemetry) IncrementSamplesAtStep(_, _ int) {}
 
-func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return stats.NewQuerySamples(false) }
+func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
 
 type TrackedTelemetry struct {
 	fmt.Stringer
