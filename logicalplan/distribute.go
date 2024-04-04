@@ -83,8 +83,6 @@ type RemoteExecution struct {
 	Engine          api.RemoteEngine
 	Query           Node
 	QueryRangeStart time.Time
-
-	valueType parser.ValueType
 }
 
 func (r RemoteExecution) Clone() Node {
@@ -102,7 +100,7 @@ func (r RemoteExecution) String() string {
 
 func (r RemoteExecution) Type() NodeType { return RemoteExecutionNode }
 
-func (r RemoteExecution) ReturnType() parser.ValueType { return r.valueType }
+func (r RemoteExecution) ReturnType() parser.ValueType { return r.Query.ReturnType() }
 
 // Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
 type Deduplicate struct {
@@ -317,7 +315,6 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 			Engine:          e,
 			Query:           (*expr).Clone(),
 			QueryRangeStart: start,
-			valueType:       (*expr).ReturnType(),
 		})
 	}
 
@@ -343,7 +340,6 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 			Engine:          engines[i],
 			Query:           expr.Clone(),
 			QueryRangeStart: opts.Start,
-			valueType:       expr.ReturnType(),
 		})
 	}
 	// We need to make sure that absent is at least evaluated against one engine.
@@ -355,7 +351,6 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 			Engine:          engines[len(engines)-1],
 			Query:           expr,
 			QueryRangeStart: opts.Start,
-			valueType:       expr.ReturnType(),
 		}
 	}
 

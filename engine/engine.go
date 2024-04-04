@@ -264,6 +264,44 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	}, nil
 }
 
+func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, ts time.Time) (promql.Query, error) {
+	if opts == nil {
+		opts = promql.NewPrometheusQueryOpts(false, e.lookbackDelta)
+	}
+	if opts.LookbackDelta() <= 0 {
+		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
+	}
+
+	qOpts := e.makeQueryOpts(ctx, ts, ts, 0, opts)
+	if qOpts.StepsBatch > 64 {
+		return nil, ErrStepsBatchTooLarge
+	}
+	planOpts := logicalplan.PlanOptions{
+		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
+	}
+	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
+	if e.triggerFallback(err) {
+		e.metrics.queries.WithLabelValues("true").Inc()
+		return e.prom.NewInstantQuery(ctx, q, opts, root.String(), ts)
+	}
+	e.metrics.queries.WithLabelValues("false").Inc()
+	if err != nil {
+		return nil, err
+	}
+
+	return &compatibilityQuery{
+		Query:  &Query{exec: exec, opts: opts},
+		engine: e,
+		plan:   lplan,
+		ts:     ts,
+		warns:  warns,
+		t:      InstantQuery,
+		// TODO(fpetkovski): Infer the sort order from the plan, ideally without copying the newResultSort function.
+		resultSort: noSortResultSort{},
+	}, nil
+}
+
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
@@ -339,10 +377,6 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 		warns:  warns,
 		t:      RangeQuery,
 	}, nil
-}
-
-func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, plan logicalplan.Node, ts time.Time) (promql.Query, error) {
-	return e.NewRangeQueryFromPlan(ctx, q, opts, plan, ts, ts, 0)
 }
 
 func (e *Engine) makeQueryOpts(ctx context.Context, start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
@@ -528,7 +562,7 @@ loop:
 		}
 		result = promql.Scalar{V: v, T: q.ts.UnixMilli()}
 	default:
-		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.plan.Root().Type()))
+		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.plan.Root().ReturnType()))
 	}
 
 	ret.Value = result
