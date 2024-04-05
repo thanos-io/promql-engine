@@ -587,7 +587,15 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 	if q.opts != nil {
 		enablePerStepStats = q.opts.EnablePerStepStats()
 	}
-	return &stats.Statistics{Timers: stats.NewQueryTimers(), Samples: stats.NewQuerySamples(enablePerStepStats)}
+
+	analysis := q.Analyze()
+	samples := stats.NewQuerySamples(enablePerStepStats)
+	if analysis != nil {
+		samples.PeakSamples = int(analysis.PeakSamples())
+		samples.TotalSamples = analysis.TotalSamples()
+	}
+
+	return &stats.Statistics{Timers: stats.NewQueryTimers(), Samples: samples}
 }
 
 func (q *compatibilityQuery) Close() { q.Cancel() }

@@ -206,6 +206,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, f)
 				}
 			}
+			o.IncrementSamplesAtStep(len(series.buffer.Samples()), currStep)
 			seriesTs += o.step
 		}
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/stretchr/testify/require"
 
 	"github.com/thanos-io/promql-engine/engine"
 )
@@ -32,7 +33,7 @@ func TestQueryExplain(t *testing.T) {
 
 	// Calculate concurrencyOperators according to max available CPUs.
 	totalOperators := runtime.GOMAXPROCS(0) / 2
-	concurrencyOperators := []engine.ExplainOutputNode{}
+	var concurrencyOperators []engine.ExplainOutputNode
 	for i := 0; i < totalOperators; i++ {
 		concurrencyOperators = append(concurrencyOperators, engine.ExplainOutputNode{
 			OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
@@ -144,8 +145,10 @@ func TestQueryAnalyze(t *testing.T) {
 			query: "rate(http_requests_total[30s]) > bool 0",
 		},
 	} {
+		tc := tc
 		{
 			t.Run(tc.query, func(t *testing.T) {
+				t.Parallel()
 				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
 				ctx := context.Background()
 
@@ -175,4 +178,47 @@ func TestQueryAnalyze(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestAnalyzeOutputNode_Samples(t *testing.T) {
+	t.Parallel()
+	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true})
+	ctx := context.Background()
+
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x10
+				http_requests_total{pod="nginx-2"} 1+2x14`
+
+	tstorage := promql.LoadedStorage(t, load)
+	defer tstorage.Close()
+
+	rangeQry, err := ng.NewRangeQuery(
+		ctx,
+		tstorage,
+		promql.NewPrometheusQueryOpts(false, 0),
+		"sum(rate(http_requests_total[1m])) by (pod)",
+		time.Unix(0, 0),
+		time.Unix(2*60*60, 0),
+		60*time.Second,
+	)
+	testutil.Ok(t, err)
+
+	queryResults := rangeQry.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
+
+	explainableQuery := rangeQry.(engine.ExplainableQuery)
+	analyzeOutput := explainableQuery.Analyze()
+	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
+	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
+
+	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
+	testutil.Ok(t, err)
+
+	queryResults = query.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
+
+	explainableQuery = query.(engine.ExplainableQuery)
+	analyzeOutput = explainableQuery.Analyze()
+	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
+	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 }
