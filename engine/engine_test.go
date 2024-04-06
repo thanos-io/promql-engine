@@ -273,6 +273,15 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			end:   end,
 		},
 		{
+			name: "predict_linear with subquery and non-existing param series",
+			load: `load 30s
+        http_requests_total{pod="nginx-1"} 41.00+0.20x40
+        http_requests_total{pod="nginx-2"} 51+21.71x40`,
+			query: `predict_linear(http_requests_total{pod="nginx-1"}[5m:1m], scalar(non_existent))`,
+			start: start,
+			end:   end,
+		},
+		{
 			name: "changes",
 			load: `load 30s
 					http_requests_total{pod="nginx-1"} 1+1x15
@@ -1439,14 +1448,36 @@ load 30s
 			query: `10 + scalar(max(http_requests_total))`,
 		},
 		{
-			name: "quantile",
+			name: "quantile with param series",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50
+               param_series 0+0.1x50`,
+			query: "quantile(scalar(param_series), rate(http_requests_total[1m]))",
+		},
+		{
+			name: "quantile with param series that evaluates to NaN",
+			load: `load 30s
+				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
+				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
+				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50
+               param_series NaN+0x50`,
+			query: "quantile(scalar(param_series), rate(http_requests_total[1m]))",
+		},
+		{
+			name: "quantile with non-existing param series",
 			load: `load 30s
 				       http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
 				       http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
 				       http_requests_total{pod="nginx-4", series="3"} 5+2.4x50
 				       http_requests_total{pod="nginx-5", series="1"} 8.4+2.3x50
 				       http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50	`,
-			query: "quantile(scalar(sum(http_requests_total)), rate(http_requests_total[1m]))",
+			query: "quantile(scalar(non_existent), rate(http_requests_total[1m]))",
 		},
 		{
 			name: "clamp",

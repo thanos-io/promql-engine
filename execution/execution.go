@@ -253,18 +253,24 @@ func newAggregateExpression(e *logicalplan.Aggregation, scanners storage.Scanner
 	hints.Func = e.Op.String()
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
-	var paramOp model.VectorOperator
 
 	next, err := newOperator(e.Expr, scanners, opts, hints)
 	if err != nil {
 		return nil, err
 	}
 
-	if e.Param != nil && e.Param.ReturnType() != parser.ValueTypeString {
+	// parameter is only required for count_values, quantile, topk and bottomk.
+	var paramOp model.VectorOperator
+	switch e.Op {
+	case parser.COUNT_VALUES:
+		return nil, parse.UnsupportedOperationErr(parser.COUNT_VALUES)
+	case parser.QUANTILE, parser.TOPK, parser.BOTTOMK:
 		paramOp, err = newOperator(e.Param, scanners, opts, hints)
 		if err != nil {
 			return nil, err
 		}
+	default:
+		paramOp = noop.NewOperator()
 	}
 
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
@@ -272,7 +278,6 @@ func newAggregateExpression(e *logicalplan.Aggregation, scanners storage.Scanner
 	} else {
 		next, err = aggregate.NewHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 	}
-
 	if err != nil {
 		return nil, err
 	}
