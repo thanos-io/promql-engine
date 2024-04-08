@@ -187,13 +187,18 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	ctx := context.Background()
 
 	load := `load 30s
-				http_requests_total{pod="nginx-1"} 1+1x1000
-				http_requests_total{pod="nginx-2"} 1+2x1000`
+				http_requests_total{pod="nginx-1"} 1+1x100
+				http_requests_total{pod="nginx-2"} 1+1x100`
 
 	tstorage := promql.LoadedStorage(t, load)
 	defer tstorage.Close()
 	minT := tstorage.Head().Meta().MinTime
 	maxT := tstorage.Head().Meta().MaxTime
+
+	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
+	testutil.Ok(t, err)
+	queryResults := query.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
 
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
@@ -205,8 +210,7 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 		60*time.Second,
 	)
 	testutil.Ok(t, err)
-
-	queryResults := rangeQry.Exec(context.Background())
+	queryResults = rangeQry.Exec(context.Background())
 	testutil.Ok(t, queryResults.Err)
 
 	explainableQuery := rangeQry.(engine.ExplainableQuery)
@@ -214,28 +218,26 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 
-	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
-	testutil.Ok(t, err)
-
-	queryResults = query.Exec(context.Background())
-	testutil.Ok(t, queryResults.Err)
-
-	explainableQuery = query.(engine.ExplainableQuery)
+	explainableQuery = rangeQry.(engine.ExplainableQuery)
 	analyzeOutput = explainableQuery.Analyze()
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 	result := renderAnalysisTree(analyzeOutput, 0)
-	expected := `[coalesce]: 0 peak: 0
+	expected := `[duplicateLabelCheck]: 0 peak: 0
 |---[concurrent(buff=2)]: 0 peak: 0
-|   |---[vectorSelector] {[__name__="http_requests_total"]} 0 mod 5: 0 peak: 0
-|---[concurrent(buff=2)]: 0 peak: 0
-|   |---[vectorSelector] {[__name__="http_requests_total"]} 1 mod 5: 0 peak: 0
-|---[concurrent(buff=2)]: 0 peak: 0
-|   |---[vectorSelector] {[__name__="http_requests_total"]} 2 mod 5: 1 peak: 1
-|---[concurrent(buff=2)]: 0 peak: 0
-|   |---[vectorSelector] {[__name__="http_requests_total"]} 3 mod 5: 0 peak: 0
-|---[concurrent(buff=2)]: 0 peak: 0
-|   |---[vectorSelector] {[__name__="http_requests_total"]} 4 mod 5: 1 peak: 1
+|   |---[aggregate] sum by ([pod]): 0 peak: 0
+|   |   |---[duplicateLabelCheck]: 0 peak: 0
+|   |   |   |---[coalesce]: 0 peak: 0
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 5): 0 peak: 0
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 5): 0 peak: 0
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 2 mod 5): 1061 peak: 21
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 3 mod 5): 0 peak: 0
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 4 mod 5): 1061 peak: 21
 `
 	require.EqualValues(t, expected, result)
 }
