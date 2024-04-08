@@ -31,7 +31,10 @@ func (p Scanners) NewVectorSelector(
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
 ) (model.VectorOperator, error) {
-	numShards := runtime.GOMAXPROCS(0) / 2
+	numShards := opts.MaxShards
+	if numShards < 1 {
+		numShards = runtime.GOMAXPROCS(0) / 2
+	}
 	if numShards < 1 {
 		numShards = 1
 	}
