@@ -199,6 +199,10 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	testutil.Ok(t, err)
 	queryResults := query.Exec(context.Background())
 	testutil.Ok(t, queryResults.Err)
+	explainableQuery := query.(engine.ExplainableQuery)
+	analyzeOutput := explainableQuery.Analyze()
+	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
+	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
@@ -212,11 +216,6 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	testutil.Ok(t, err)
 	queryResults = rangeQry.Exec(context.Background())
 	testutil.Ok(t, queryResults.Err)
-
-	explainableQuery := rangeQry.(engine.ExplainableQuery)
-	analyzeOutput := explainableQuery.Analyze()
-	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
-	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 
 	explainableQuery = rangeQry.(engine.ExplainableQuery)
 	analyzeOutput = explainableQuery.Analyze()
