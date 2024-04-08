@@ -183,7 +183,7 @@ func TestQueryAnalyze(t *testing.T) {
 
 func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	t.Parallel()
-	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true})
+	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true, MaxShards: 2})
 	ctx := context.Background()
 
 	load := `load 30s
@@ -228,15 +228,9 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 |   |   |---[duplicateLabelCheck]: 0 peak: 0
 |   |   |   |---[coalesce]: 0 peak: 0
 |   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 5): 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): 1061 peak: 21
 |   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 5): 0 peak: 0
-|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 2 mod 5): 1061 peak: 21
-|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 3 mod 5): 0 peak: 0
-|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 4 mod 5): 1061 peak: 21
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): 1061 peak: 21
 `
 	require.EqualValues(t, expected, result)
 }

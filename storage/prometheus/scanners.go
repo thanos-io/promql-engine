@@ -31,13 +31,7 @@ func (p Scanners) NewVectorSelector(
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
 ) (model.VectorOperator, error) {
-	numShards := opts.MaxShards
-	if numShards < 1 {
-		numShards = runtime.GOMAXPROCS(0) / 2
-	}
-	if numShards < 1 {
-		numShards = 1
-	}
+	numShards := getMaxShards(opts.MaxShards)
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
 
 	operators := make([]model.VectorOperator, 0, numShards)
@@ -66,10 +60,7 @@ func (p Scanners) NewMatrixSelector(
 	logicalNode logicalplan.MatrixSelector,
 	call logicalplan.FunctionCall,
 ) (model.VectorOperator, error) {
-	numShards := runtime.GOMAXPROCS(0) / 2
-	if numShards < 1 {
-		numShards = 1
-	}
+	numShards := getMaxShards(opts.MaxShards)
 
 	arg := 0.0
 	switch call.Func.Name {
@@ -111,4 +102,14 @@ func (p Scanners) NewMatrixSelector(
 	}
 
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, vs.BatchSize*int64(numShards), operators...), nil
+}
+
+func getMaxShards(maxShards int) int {
+	if maxShards < 1 {
+		maxShards = runtime.GOMAXPROCS(0) / 2
+	}
+	if maxShards < 1 {
+		maxShards = 1
+	}
+	return maxShards
 }
