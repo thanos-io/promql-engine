@@ -395,6 +395,13 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 }
 
 func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
+	decodingConcurrency := 0
+	if e.decodingConcurrency < 1 {
+		decodingConcurrency = runtime.GOMAXPROCS(0) / 2
+		if decodingConcurrency < 1 {
+			decodingConcurrency = 1
+		}
+	}
 	qOpts := &query.Options{
 		Start:                    start,
 		End:                      end,
@@ -404,7 +411,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
-		DecodingConcurrency:      e.decodingConcurrency,
+		DecodingConcurrency:      decodingConcurrency,
 	}
 	return qOpts
 }
