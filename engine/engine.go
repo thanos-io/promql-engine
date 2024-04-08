@@ -62,8 +62,8 @@ type Opts struct {
 	// Defaults to 1 hour if not specified.
 	ExtLookbackDelta time.Duration
 
-	// MaxShards is the maximum number of shards to use for parallel execution. If not set, it defaults to GOMAXPROCS/2.
-	MaxShards int
+	// DecodingConcurrency is the maximum number of goroutines that can be used to decode samples. Defaults to GOMAXPROCS / 2.
+	DecodingConcurrency int
 
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
@@ -180,7 +180,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
-		maxShards: opts.MaxShards,
+		maxShards: opts.DecodingConcurrency,
 	}
 }
 
