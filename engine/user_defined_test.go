@@ -78,7 +78,7 @@ type logicalVectorSelector struct {
 	*logicalplan.VectorSelector
 }
 
-func (c logicalVectorSelector) MakeExecutionOperator(vectors *model.VectorPool, opts *query.Options, hints storage.SelectHints) (model.VectorOperator, error) {
+func (c logicalVectorSelector) MakeExecutionOperator(_ context.Context, vectors *model.VectorPool, opts *query.Options, _ storage.SelectHints) (model.VectorOperator, error) {
 	oper := &vectorSelectorOperator{
 		stepsBatch: opts.StepsBatch,
 		vectors:    vectors,

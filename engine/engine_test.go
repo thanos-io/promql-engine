@@ -28,7 +28,11 @@ import (
 	"golang.org/x/exp/maps"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/storage/prometheus"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -2088,6 +2092,47 @@ func TestWarnings(t *testing.T) {
 			})).Equals(t, tc.expectedWarns, res.Warnings)
 		})
 	}
+}
+
+type scannersWithWarns struct {
+	warn         error
+	promScanners *prometheus.Scanners
+}
+
+func newScannersWithWarns(warn error) *scannersWithWarns {
+	return &scannersWithWarns{
+		warn: warn,
+		promScanners: prometheus.NewPrometheusScanners(&storage.MockQueryable{
+			MockQuerier: storage.NoopQuerier(),
+		}),
+	}
+}
+
+func (s scannersWithWarns) NewVectorSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error) {
+	warnings.AddToContext(annotations.New().Add(s.warn), ctx)
+	return s.promScanners.NewVectorSelector(ctx, opts, hints, selector)
+}
+
+func (s scannersWithWarns) NewMatrixSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.MatrixSelector, call logicalplan.FunctionCall) (model.VectorOperator, error) {
+	warnings.AddToContext(annotations.New().Add(s.warn), ctx)
+	return s.promScanners.NewMatrixSelector(ctx, opts, hints, selector, call)
+}
+
+func TestWarningsPlanCreation(t *testing.T) {
+	var (
+		opts         = engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}}
+		expectedWarn = errors.New("test warning")
+	)
+	newEngine := engine.NewWithScanners(opts, newScannersWithWarns(expectedWarn))
+	q1, err := newEngine.NewRangeQuery(context.Background(), nil, nil, "http_requests_total", time.UnixMilli(0), time.UnixMilli(600), 30*time.Second)
+	testutil.Ok(t, err)
+
+	res := q1.Exec(context.Background())
+	testutil.Ok(t, res.Err)
+	testutil.WithGoCmp(cmp.Comparer(func(err1, err2 error) bool {
+		return err1.Error() == err2.Error()
+	})).Equals(t, annotations.New().Add(expectedWarn), res.Warnings)
+
 }
 
 func TestEdgeCases(t *testing.T) {

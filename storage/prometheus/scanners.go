@@ -4,6 +4,7 @@
 package prometheus
 
 import (
+	"context"
 	"runtime"
 
 	"github.com/efficientgo/core/errors"
@@ -16,15 +17,16 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 )
 
-type prometheusScanners struct {
+type Scanners struct {
 	selectors *SelectorPool
 }
 
-func NewPrometheusScanners(queryable storage.Queryable) *prometheusScanners {
-	return &prometheusScanners{selectors: NewSelectorPool(queryable)}
+func NewPrometheusScanners(queryable storage.Queryable) *Scanners {
+	return &Scanners{selectors: NewSelectorPool(queryable)}
 }
 
-func (p prometheusScanners) NewVectorSelector(
+func (p Scanners) NewVectorSelector(
+	_ context.Context,
 	opts *query.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
@@ -54,7 +56,8 @@ func (p prometheusScanners) NewVectorSelector(
 	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, logicalNode.BatchSize*int64(numShards), operators...), nil
 }
 
-func (p prometheusScanners) NewMatrixSelector(
+func (p Scanners) NewMatrixSelector(
+	_ context.Context,
 	opts *query.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.MatrixSelector,
