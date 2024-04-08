@@ -31,7 +31,7 @@ func (p Scanners) NewVectorSelector(
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
 ) (model.VectorOperator, error) {
-	numShards := getMaxShards(opts.MaxShards)
+	numShards := getMaxShards(opts.DecodingConcurrency)
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
 
 	operators := make([]model.VectorOperator, 0, numShards)
@@ -60,7 +60,7 @@ func (p Scanners) NewMatrixSelector(
 	logicalNode logicalplan.MatrixSelector,
 	call logicalplan.FunctionCall,
 ) (model.VectorOperator, error) {
-	numShards := getMaxShards(opts.MaxShards)
+	numShards := getMaxShards(opts.DecodingConcurrency)
 
 	arg := 0.0
 	switch call.Func.Name {

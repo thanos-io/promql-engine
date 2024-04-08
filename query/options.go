@@ -16,7 +16,7 @@ type Options struct {
 	ExtLookbackDelta         time.Duration
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
-	MaxShards                int
+	DecodingConcurrency      int
 }
 
 func (o *Options) NumSteps() int {

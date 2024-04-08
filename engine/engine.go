@@ -180,7 +180,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
-		maxShards: opts.DecodingConcurrency,
+		decodingConcurrency: opts.DecodingConcurrency,
 	}
 }
 
@@ -206,7 +206,7 @@ type Engine struct {
 	metrics           *engineMetrics
 
 	extLookbackDelta         time.Duration
-	maxShards                int
+	decodingConcurrency      int
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
@@ -404,7 +404,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
-		MaxShards:                e.maxShards,
+		DecodingConcurrency:      e.decodingConcurrency,
 	}
 	return qOpts
 }
