@@ -50,6 +50,7 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 		ExtLookbackDelta:         opts.ExtLookbackDelta,
 		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		EnableAnalysis:           opts.EnableAnalysis,
+		DecodingConcurrency:      opts.DecodingConcurrency,
 	}
 	if step != 0 {
 		nOpts.Step = step
