@@ -225,7 +225,6 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	resultSort := newResultSort(expr)
 
 	qOpts := &query.Options{
-		Context:                  ctx,
 		Start:                    ts,
 		End:                      ts,
 		Step:                     0,
@@ -243,7 +242,10 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
+
+	ctx = warnings.NewContext(ctx)
+	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -272,7 +274,7 @@ func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryabl
 		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
 	}
 
-	qOpts := e.makeQueryOpts(ctx, ts, ts, 0, opts)
+	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
@@ -280,7 +282,10 @@ func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryabl
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
+
+	ctx = warnings.NewContext(ctx)
+	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, root.String(), ts)
@@ -318,7 +323,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	if opts.LookbackDelta() <= 0 {
 		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
 	}
-	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
+	qOpts := e.makeQueryOpts(start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
@@ -326,7 +331,10 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
+
+	ctx = warnings.NewContext(ctx)
+	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -352,7 +360,7 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 	if opts.LookbackDelta() <= 0 {
 		opts = promql.NewPrometheusQueryOpts(opts.EnablePerStepStats(), e.lookbackDelta)
 	}
-	qOpts := e.makeQueryOpts(ctx, start, end, step, opts)
+	qOpts := e.makeQueryOpts(start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
@@ -360,7 +368,10 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.logicalOptimizers)
-	exec, err := execution.New(lplan.Root(), e.storageScanners(q), qOpts)
+
+	ctx = warnings.NewContext(ctx)
+	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, lplan.Root().String(), start, end, step)
@@ -369,7 +380,6 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 	if err != nil {
 		return nil, err
 	}
-
 	return &compatibilityQuery{
 		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
@@ -379,9 +389,8 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 	}, nil
 }
 
-func (e *Engine) makeQueryOpts(ctx context.Context, start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
+func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
 	qOpts := &query.Options{
-		Context:                  ctx,
 		Start:                    start,
 		End:                      end,
 		Step:                     step,
