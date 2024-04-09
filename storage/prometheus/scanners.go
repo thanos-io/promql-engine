@@ -5,6 +5,7 @@ package prometheus
 
 import (
 	"context"
+	"runtime"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/storage"
@@ -32,8 +33,12 @@ func (p Scanners) NewVectorSelector(
 ) (model.VectorOperator, error) {
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
 
-	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
-	for i := 0; i < opts.DecodingConcurrency; i++ {
+	concurrency := opts.DecodingConcurrency
+	if concurrency == 0 {
+		concurrency = defaultConcurrency()
+	}
+	operators := make([]model.VectorOperator, 0, concurrency)
+	for i := 0; i < concurrency; i++ {
 		operator := exchange.NewConcurrent(
 			NewVectorSelector(
 				model.NewVectorPool(opts.StepsBatch),
@@ -43,12 +48,12 @@ func (p Scanners) NewVectorSelector(
 				logicalNode.BatchSize,
 				logicalNode.SelectTimestamp,
 				i,
-				opts.DecodingConcurrency,
+				concurrency,
 			), 2, opts)
 		operators = append(operators, operator)
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, logicalNode.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, logicalNode.BatchSize*int64(concurrency), operators...), nil
 }
 
 func (p Scanners) NewMatrixSelector(
@@ -77,8 +82,12 @@ func (p Scanners) NewMatrixSelector(
 	vs := logicalNode.VectorSelector
 	filter := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
 
-	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
-	for i := 0; i < opts.DecodingConcurrency; i++ {
+	concurrency := opts.DecodingConcurrency
+	if concurrency == 0 {
+		concurrency = defaultConcurrency()
+	}
+	operators := make([]model.VectorOperator, 0, concurrency)
+	for i := 0; i < concurrency; i++ {
 		operator, err := NewMatrixSelector(
 			model.NewVectorPool(opts.StepsBatch),
 			filter,
@@ -89,7 +98,7 @@ func (p Scanners) NewMatrixSelector(
 			vs.Offset,
 			vs.BatchSize,
 			i,
-			opts.DecodingConcurrency,
+			concurrency,
 		)
 		if err != nil {
 			return nil, err
@@ -97,5 +106,13 @@ func (p Scanners) NewMatrixSelector(
 		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
 	}
 
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, vs.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, vs.BatchSize*int64(concurrency), operators...), nil
+}
+
+func defaultConcurrency() int {
+	concurrency := runtime.GOMAXPROCS(0) / 2
+	if concurrency < 1 {
+		return 1
+	}
+	return concurrency
 }

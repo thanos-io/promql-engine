@@ -162,6 +162,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		engine = opts.Engine
 	}
 
+	decodingConcurrency := opts.DecodingConcurrency
+	if opts.DecodingConcurrency < 1 {
+		decodingConcurrency = runtime.GOMAXPROCS(0) / 2
+		if decodingConcurrency < 1 {
+			decodingConcurrency = 1
+		}
+	}
+
 	return &Engine{
 		prom:      engine,
 		functions: functions,
@@ -180,7 +188,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
-		decodingConcurrency: opts.DecodingConcurrency,
+		decodingConcurrency: decodingConcurrency,
 	}
 }
 
@@ -238,6 +246,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+		DecodingConcurrency:      e.decodingConcurrency,
 	}
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
@@ -395,13 +404,6 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 }
 
 func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
-	decodingConcurrency := 0
-	if e.decodingConcurrency < 1 {
-		decodingConcurrency = runtime.GOMAXPROCS(0) / 2
-		if decodingConcurrency < 1 {
-			decodingConcurrency = 1
-		}
-	}
 	qOpts := &query.Options{
 		Start:                    start,
 		End:                      end,
@@ -411,7 +413,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
-		DecodingConcurrency:      decodingConcurrency,
+		DecodingConcurrency:      e.decodingConcurrency,
 	}
 	return qOpts
 }
