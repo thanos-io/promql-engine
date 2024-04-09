@@ -62,6 +62,9 @@ type Opts struct {
 	// Defaults to 1 hour if not specified.
 	ExtLookbackDelta time.Duration
 
+	// DecodingConcurrency is the maximum number of goroutines that can be used to decode samples. Defaults to GOMAXPROCS / 2.
+	DecodingConcurrency int
+
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
@@ -159,6 +162,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		engine = opts.Engine
 	}
 
+	decodingConcurrency := opts.DecodingConcurrency
+	if opts.DecodingConcurrency < 1 {
+		decodingConcurrency = runtime.GOMAXPROCS(0) / 2
+		if decodingConcurrency < 1 {
+			decodingConcurrency = 1
+		}
+	}
+
 	return &Engine{
 		prom:      engine,
 		functions: functions,
@@ -177,6 +188,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
+		decodingConcurrency: decodingConcurrency,
 	}
 }
 
@@ -202,6 +214,7 @@ type Engine struct {
 	metrics           *engineMetrics
 
 	extLookbackDelta         time.Duration
+	decodingConcurrency      int
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
@@ -233,6 +246,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+		DecodingConcurrency:      e.decodingConcurrency,
 	}
 	if qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
@@ -399,6 +413,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+		DecodingConcurrency:      e.decodingConcurrency,
 	}
 	return qOpts
 }

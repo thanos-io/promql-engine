@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -182,43 +183,80 @@ func TestQueryAnalyze(t *testing.T) {
 
 func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	t.Parallel()
-	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true})
+	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true, DecodingConcurrency: 2})
 	ctx := context.Background()
 
 	load := `load 30s
-				http_requests_total{pod="nginx-1"} 1+1x10
-				http_requests_total{pod="nginx-2"} 1+2x14`
+				http_requests_total{pod="nginx-1"} 1+1x100
+				http_requests_total{pod="nginx-2"} 1+1x100`
 
 	tstorage := promql.LoadedStorage(t, load)
 	defer tstorage.Close()
+	minT := tstorage.Head().Meta().MinTime
+	maxT := tstorage.Head().Meta().MaxTime
+
+	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
+	testutil.Ok(t, err)
+	queryResults := query.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
+	explainableQuery := query.(engine.ExplainableQuery)
+	analyzeOutput := explainableQuery.Analyze()
+	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
+	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
 		tstorage,
 		promql.NewPrometheusQueryOpts(false, 0),
-		"sum(rate(http_requests_total[1m])) by (pod)",
-		time.Unix(0, 0),
-		time.Unix(2*60*60, 0),
+		"sum(rate(http_requests_total[10m])) by (pod)", // Increase range to 60 minutes
+		time.Unix(minT, 0),
+		time.Unix(maxT, 0),
 		60*time.Second,
 	)
 	testutil.Ok(t, err)
-
-	queryResults := rangeQry.Exec(context.Background())
+	queryResults = rangeQry.Exec(context.Background())
 	testutil.Ok(t, queryResults.Err)
 
-	explainableQuery := rangeQry.(engine.ExplainableQuery)
-	analyzeOutput := explainableQuery.Analyze()
-	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
-	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
-
-	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
-	testutil.Ok(t, err)
-
-	queryResults = query.Exec(context.Background())
-	testutil.Ok(t, queryResults.Err)
-
-	explainableQuery = query.(engine.ExplainableQuery)
+	explainableQuery = rangeQry.(engine.ExplainableQuery)
 	analyzeOutput = explainableQuery.Analyze()
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
+	result := renderAnalysisTree(analyzeOutput, 0)
+	expected := `[duplicateLabelCheck]: 0 peak: 0
+|---[concurrent(buff=2)]: 0 peak: 0
+|   |---[aggregate] sum by ([pod]): 0 peak: 0
+|   |   |---[duplicateLabelCheck]: 0 peak: 0
+|   |   |   |---[coalesce]: 0 peak: 0
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): 1061 peak: 21
+|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): 1061 peak: 21
+`
+	require.EqualValues(t, expected, result)
+}
+
+func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
+	var result strings.Builder
+
+	totalSamples := int64(0)
+	samples := node.OperatorTelemetry.Samples()
+	if samples != nil {
+		totalSamples = samples.TotalSamples
+	}
+
+	peakSamples := int64(0)
+	if samples != nil {
+		peakSamples = int64(samples.PeakSamples)
+	}
+
+	if level > 0 {
+		result.WriteString(strings.Repeat("|   ", level-1) + "|---")
+	}
+
+	result.WriteString(fmt.Sprintf("%s: %d peak: %d\n", node.OperatorTelemetry.String(), totalSamples, peakSamples))
+	for _, child := range node.Children {
+		result.WriteString(renderAnalysisTree(&child, level+1))
+	}
+
+	return result.String()
 }

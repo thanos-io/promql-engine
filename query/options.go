@@ -16,6 +16,7 @@ type Options struct {
 	ExtLookbackDelta         time.Duration
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
+	DecodingConcurrency      int
 }
 
 func (o *Options) NumSteps() int {
@@ -49,6 +50,7 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 		ExtLookbackDelta:         opts.ExtLookbackDelta,
 		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		EnableAnalysis:           opts.EnableAnalysis,
+		DecodingConcurrency:      opts.DecodingConcurrency,
 	}
 	if step != 0 {
 		nOpts.Step = step
