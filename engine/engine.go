@@ -20,7 +20,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
-	v1 "github.com/prometheus/prometheus/web/api/v1"
 
 	"github.com/thanos-io/promql-engine/execution"
 	"github.com/thanos-io/promql-engine/execution/function"
@@ -71,7 +70,7 @@ type Opts struct {
 	EnableXFunctions bool
 
 	// FallbackEngine
-	Engine v1.QueryEngine
+	Engine promql.QueryEngine
 
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
@@ -156,7 +155,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		),
 	}
 
-	var engine v1.QueryEngine
+	var engine promql.QueryEngine
 	if opts.Engine == nil {
 		engine = promql.NewEngine(opts.EngineOpts)
 	} else {
@@ -201,7 +200,7 @@ var (
 )
 
 type Engine struct {
-	prom      v1.QueryEngine
+	prom      promql.QueryEngine
 	functions map[string]*parser.Function
 	scanners  engstorage.Scanners
 
