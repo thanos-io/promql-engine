@@ -32,3 +32,20 @@ sum(
 	testutil.Ok(t, err)
 	testutil.Equals(t, original.Root().String(), clone.String())
 }
+
+func TestUnmarshalMatchers(t *testing.T) {
+	expr := `metric{name=~"value"}`
+	ast, err := parser.ParseExpr(expr)
+	testutil.Ok(t, err)
+
+	original := NewFromAST(ast, &query.Options{}, PlanOptions{})
+	bytes, err := Marshal(original.Root())
+	testutil.Ok(t, err)
+	clone, err := Unmarshal(bytes)
+	testutil.Ok(t, err)
+	testutil.Equals(t, original.Root().String(), clone.String())
+
+	vs, ok := clone.(*VectorSelector)
+	testutil.Assert(t, true, ok)
+	testutil.Assert(t, true, vs.LabelMatchers[0].Matches("value"))
+}
