@@ -170,10 +170,16 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		}
 	}
 
+	var queryTracker promql.QueryTracker = nopQueryTracker{}
+	if opts.ActiveQueryTracker != nil {
+		queryTracker = opts.ActiveQueryTracker
+	}
+
 	return &Engine{
-		prom:      engine,
-		functions: functions,
-		scanners:  scanners,
+		prom:               engine,
+		functions:          functions,
+		scanners:           scanners,
+		activeQueryTracker: queryTracker,
 
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 		disableFallback:             opts.DisableFallback,
@@ -200,9 +206,10 @@ var (
 )
 
 type Engine struct {
-	prom      promql.QueryEngine
-	functions map[string]*parser.Function
-	scanners  engstorage.Scanners
+	prom               promql.QueryEngine
+	functions          map[string]*parser.Function
+	scanners           engstorage.Scanners
+	activeQueryTracker promql.QueryTracker
 
 	disableDuplicateLabelChecks bool
 	disableFallback             bool
@@ -220,6 +227,12 @@ type Engine struct {
 }
 
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	idx, err := e.activeQueryTracker.Insert(ctx, qs)
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -268,7 +281,6 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	if err != nil {
 		return nil, err
 	}
-
 	return &compatibilityQuery{
 		Query:      &Query{exec: exec, opts: opts},
 		engine:     e,
@@ -281,6 +293,12 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 }
 
 func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, ts time.Time) (promql.Query, error) {
+	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, e.lookbackDelta)
 	}
@@ -322,6 +340,12 @@ func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryabl
 }
 
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+	idx, err := e.activeQueryTracker.Insert(ctx, qs)
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -368,6 +392,12 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 }
 
 func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (promql.Query, error) {
+	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
 	if opts == nil {
 		opts = promql.NewPrometheusQueryOpts(false, e.lookbackDelta)
 	}
@@ -425,6 +455,14 @@ func (e *Engine) storageScanners(queryable storage.Queryable) engstorage.Scanner
 	return e.scanners
 }
 
+func (e *Engine) triggerFallback(err error) bool {
+	if e.disableFallback {
+		return false
+	}
+
+	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
+}
+
 type Query struct {
 	exec model.VectorOperator
 	opts promql.QueryOpts
@@ -456,6 +494,12 @@ type compatibilityQuery struct {
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
+	idx, err := q.engine.activeQueryTracker.Insert(ctx, q.String())
+	if err != nil {
+		return &promql.Result{Err: err}
+	}
+	defer q.engine.activeQueryTracker.Delete(idx)
+
 	ctx = warnings.NewContext(ctx)
 	defer func() {
 		ret.Warnings = ret.Warnings.Merge(warnings.FromContext(ctx))
@@ -633,13 +677,11 @@ func (q *compatibilityQuery) Cancel() {
 	}
 }
 
-func (e *Engine) triggerFallback(err error) bool {
-	if e.disableFallback {
-		return false
-	}
+type nopQueryTracker struct{}
 
-	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
-}
+func (n nopQueryTracker) GetMaxConcurrent() int                                 { return -1 }
+func (n nopQueryTracker) Insert(ctx context.Context, query string) (int, error) { return 0, nil }
+func (n nopQueryTracker) Delete(insertIndex int)                                {}
 
 func recoverEngine(logger log.Logger, plan logicalplan.Plan, errp *error) {
 	e := recover()

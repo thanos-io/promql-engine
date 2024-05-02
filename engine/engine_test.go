@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"reflect"
 	"runtime"
 	"runtime/pprof"
@@ -21,6 +22,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
+	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
@@ -4081,6 +4083,70 @@ func TestQueryCancellation(t *testing.T) {
 	testutil.Equals(t, context.Canceled, newResult.Err)
 }
 
+func TestQueryConcurrency(t *testing.T) {
+	const storageDelay = 200 * time.Millisecond
+	queryable := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return newSlowSeriesSet(storageDelay)
+			},
+		},
+	}
+
+	var (
+		ctx          = context.Background()
+		logger       = log.NewLogfmtLogger(os.Stdout)
+		concurrency  = 2
+		maxQueries   = 4
+		responseChan = make(chan struct{}, maxQueries)
+	)
+	newEngine := engine.New(engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			Timeout:            1 * time.Hour,
+			MaxSamples:         math.MaxInt64,
+			ActiveQueryTracker: promql.NewActiveQueryTracker(t.TempDir(), concurrency, logger),
+		}},
+	)
+	for i := 0; i < maxQueries; i++ {
+		go func() {
+			qry, err := newEngine.NewRangeQuery(ctx, queryable, nil, `count(metric)`, time.Unix(0, 0), time.Unix(300, 0), time.Second*30)
+			testutil.Ok(t, err)
+
+			resp := qry.Exec(ctx)
+			testutil.Ok(t, resp.Err)
+
+			responseChan <- struct{}{}
+		}()
+	}
+
+	var (
+		i           = 0
+		gracePeriod = storageDelay + 10*time.Millisecond
+	)
+	for i < concurrency {
+		select {
+		case <-time.After(gracePeriod):
+			t.Errorf("expected query to complete within %f seconds", gracePeriod.Seconds())
+		case <-responseChan:
+		}
+		i++
+	}
+	select {
+	case <-responseChan:
+		t.Error("Expected to block on a query but did not")
+	case <-time.After(10 * time.Millisecond):
+		break
+	}
+	for i < maxQueries {
+		select {
+		case <-time.After(gracePeriod):
+			t.Errorf("expected query to complete within %f seconds", gracePeriod.Seconds())
+		case <-responseChan:
+		}
+		i++
+	}
+}
+
 func TestQueryTimeout(t *testing.T) {
 	end := time.Unix(120, 0)
 	query := `http_requests_total{pod="nginx-1"}`
@@ -4641,6 +4707,32 @@ func (m *mockIterator) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *hi
 func (m *mockIterator) AtT() int64 { return m.timestamps[m.i] }
 
 func (m *mockIterator) Err() error { return nil }
+
+type slowSeriesSet struct {
+	empty bool
+	delay time.Duration
+}
+
+func newSlowSeriesSet(delay time.Duration) *slowSeriesSet {
+	return &slowSeriesSet{delay: delay}
+}
+
+func (s *slowSeriesSet) Next() bool {
+	if s.empty {
+		return false
+	}
+	s.empty = true
+	<-time.After(s.delay)
+	return true
+}
+
+func (s slowSeriesSet) At() storage.Series {
+	return storage.MockSeries([]int64{0}, []float64{0}, nil)
+}
+
+func (s slowSeriesSet) Err() error { return nil }
+
+func (s slowSeriesSet) Warnings() annotations.Annotations { return nil }
 
 type testSeriesSet struct {
 	i      int
