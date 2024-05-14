@@ -5043,6 +5043,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
 							testutil.Assert(t, len(promMatrix) == 0)
 							testutil.Equals(t, len(promResult.Warnings), len(newResult.Warnings))
+							testutil.Equals(t, "PromQL warning: encountered a mix of histograms and floats for aggregation", newResult.Warnings.AsErrors()[0].Error())
 						}
 						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult, queryExplanation(q1))
 					})
