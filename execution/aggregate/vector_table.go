@@ -11,6 +11,7 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -65,7 +66,7 @@ func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 			result.AppendHistogram(pool, 0, h)
 		}
 	case MixedTypeValue:
-		warn := annotations.New().Add(annotations.MixedFloatsHistogramsWarning)
+		warn := annotations.New().Add(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}))
 		warnings.AddToContext(warn, ctx)
 	}
 	return result
