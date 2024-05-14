@@ -18,6 +18,7 @@ type OperatorTelemetry interface {
 	AddExecutionTimeTaken(time.Duration)
 	ExecutionTimeTaken() time.Duration
 	IncrementSamplesAtStep(samples int, step int)
+	UpdatePeak(samples int)
 	Samples() *stats.QuerySamples
 }
 
@@ -26,12 +27,13 @@ func NewTelemetry(operator fmt.Stringer, enabled bool) OperatorTelemetry {
 		return NewTrackedTelemetry(operator)
 	}
 	return NewNoopTelemetry(operator)
-
 }
 
 type NoopTelemetry struct {
 	fmt.Stringer
 }
+
+func (tm *NoopTelemetry) UpdatePeak(_ int) {}
 
 func NewNoopTelemetry(operator fmt.Stringer) *NoopTelemetry {
 	return &NoopTelemetry{Stringer: operator}
@@ -52,6 +54,13 @@ type TrackedTelemetry struct {
 
 	ExecutionTime time.Duration
 	LoadedSamples *stats.QuerySamples
+}
+
+func (ti *TrackedTelemetry) UpdatePeak(samples int) {
+	if ti.LoadedSamples == nil {
+		ti.LoadedSamples = stats.NewQuerySamples(false)
+	}
+	ti.LoadedSamples.UpdatePeak(samples)
 }
 
 func NewTrackedTelemetry(operator fmt.Stringer) *TrackedTelemetry {

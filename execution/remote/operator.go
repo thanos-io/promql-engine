@@ -85,6 +85,7 @@ func (e *Execution) updateStats() {
 		return
 	}
 	e.IncrementSamplesAtStep(int(existingStats.Samples.TotalSamples), 0)
+	e.UpdatePeak(existingStats.Samples.PeakSamples)
 }
 
 type storageAdapter struct {
