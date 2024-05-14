@@ -169,7 +169,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		if a.tables[i].timestamp() == math.MinInt64 {
 			break
 		}
-		result = append(result, a.tables[i].toVector(a.vectorPool))
+		result = append(result, a.tables[i].toVector(ctx, a.vectorPool))
 	}
 	return result, nil
 }

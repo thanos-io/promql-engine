@@ -5016,6 +5016,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						// Make sure we're not getting back empty results.
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
 							testutil.Assert(t, len(promVector) == 0)
+							testutil.Equals(t, len(promResult.Warnings), len(newResult.Warnings))
 						}
 
 						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult, queryExplanation(q1))
@@ -5041,6 +5042,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 						// Make sure we're not getting back empty results.
 						if withMixedTypes && tc.wantEmptyForMixedTypes {
 							testutil.Assert(t, len(promMatrix) == 0)
+							testutil.Equals(t, len(promResult.Warnings), len(newResult.Warnings))
 						}
 						testutil.WithGoCmp(comparer).Equals(t, promResult, newResult, queryExplanation(q1))
 					})
