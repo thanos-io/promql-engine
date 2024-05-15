@@ -63,7 +63,7 @@ func NewVectorSelector(
 	batchSize int64,
 	selectTimestamp bool,
 	shard, numShards int,
-) model.VectorOperator {
+) model.ObservableVectorOperator {
 	o := &vectorSelector{
 		storage:    selector,
 		vectorPool: pool,
