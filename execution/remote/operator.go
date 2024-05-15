@@ -80,9 +80,8 @@ func (e *Execution) Explain() (next []model.VectorOperator) {
 }
 
 func (e *Execution) Samples() *stats.QuerySamples {
-	qryStats := e.storage.query.Stats()
-	if qryStats != nil {
-		return qryStats.Samples
+	if s := e.storage.query.Stats(); s != nil {
+		return s.Samples
 	}
 
 	return nil
