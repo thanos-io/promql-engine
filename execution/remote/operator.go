@@ -84,8 +84,11 @@ func (e *Execution) updateStats() {
 	if existingStats == nil || existingStats.Samples == nil {
 		return
 	}
-	e.IncrementSamplesAtStep(int(existingStats.Samples.TotalSamples), 0)
-	e.UpdatePeak(existingStats.Samples.PeakSamples)
+
+	if t, ok := e.OperatorTelemetry.(*model.TrackedTelemetry); ok {
+		t.LoadedSamples.UpdatePeak(existingStats.Samples.PeakSamples)
+		t.LoadedSamples.IncrementSamplesAtStep(0, existingStats.Samples.TotalSamples)
+	}
 }
 
 type storageAdapter struct {
