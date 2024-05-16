@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHistogramStatsDecoding(t *testing.T) {
+func TestHistogramStatsIterator_Decode(t *testing.T) {
 	numHistograms := 20
 	chk, err := createHistogramChunk(numHistograms)
 	require.NoError(t, err)
