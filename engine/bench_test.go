@@ -377,6 +377,10 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			query: "histogram_count(native_histogram_series)",
 		},
 		{
+			name:  "histogram_count with sum and rate",
+			query: "histogram_count(sum(rate(native_histogram_series[1m])))",
+		},
+		{
 			name:  "histogram_quantile",
 			query: "histogram_quantile(0.9, sum(native_histogram_series))",
 		},

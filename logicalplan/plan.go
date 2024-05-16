@@ -23,6 +23,7 @@ var (
 var DefaultOptimizers = []Optimizer{
 	SortMatchers{},
 	MergeSelectsOptimizer{},
+	DetectHistogramStatsOptimizer{},
 }
 
 type Plan interface {
