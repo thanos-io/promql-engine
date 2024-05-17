@@ -56,7 +56,11 @@ func (s *sumAcc) AddVector(float64s []float64, histograms []*histogram.FloatHist
 func (s *sumAcc) Add(v float64, h *histogram.FloatHistogram) {
 	if h == nil {
 		s.hasFloatVal = true
-		s.value += v
+		if v == -0 && s.value == 0 {
+			s.value = -s.value
+		} else {
+			s.value += v
+		}
 		return
 	}
 	if s.histSum == nil {
