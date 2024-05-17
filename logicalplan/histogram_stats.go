@@ -25,8 +25,17 @@ func (d DetectHistogramStatsOptimizer) optimize(plan Node, decodeStats bool) (No
 		case *VectorSelector:
 			n.DecodeNativeHistogramStats = decodeStats
 		case *FunctionCall:
-			if n.Func.Name == "histogram_count" || n.Func.Name == "histogram_sum" {
+			switch n.Func.Name {
+			case "histogram_count", "histogram_sum":
 				n.Args[0], _ = d.optimize(n.Args[0], true)
+				stop = true
+				return
+			case "histogram_quantile":
+				n.Args[1], _ = d.optimize(n.Args[1], false)
+				stop = true
+				return
+			case "histogram_fraction":
+				n.Args[2], _ = d.optimize(n.Args[2], false)
 				stop = true
 				return
 			}

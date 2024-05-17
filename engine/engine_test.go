@@ -4942,6 +4942,14 @@ func TestNativeHistograms(t *testing.T) {
 			query: "histogram_sum(native_histogram_series) / histogram_count(native_histogram_series)",
 		},
 		{
+			name:  "histogram_sum over histogram_fraction",
+			query: "histogram_sum(scalar(histogram_quantile(1, sum(native_histogram_series))) * native_histogram_series)",
+		},
+		{
+			name:  "histogram_sum over histogram_fraction",
+			query: "histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(native_histogram_series))) * native_histogram_series)",
+		},
+		{
 			name:  "histogram_quantile",
 			query: "histogram_quantile(0.7, native_histogram_series)",
 		},
