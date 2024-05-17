@@ -12,14 +12,11 @@ import (
 type DetectHistogramStatsOptimizer struct{}
 
 func (d DetectHistogramStatsOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
-	return d.optimize(plan)
+	return d.optimize(plan, false)
 }
 
-func (d DetectHistogramStatsOptimizer) optimize(plan Node) (Node, annotations.Annotations) {
-	var (
-		stop        bool
-		decodeStats bool
-	)
+func (d DetectHistogramStatsOptimizer) optimize(plan Node, decodeStats bool) (Node, annotations.Annotations) {
+	var stop bool
 	Traverse(&plan, func(node *Node) {
 		if stop {
 			return
@@ -27,18 +24,10 @@ func (d DetectHistogramStatsOptimizer) optimize(plan Node) (Node, annotations.An
 		switch n := (*node).(type) {
 		case *VectorSelector:
 			n.DecodeNativeHistogramStats = decodeStats
-		case *Binary:
-			n.LHS, _ = d.optimize(n.LHS)
-			n.RHS, _ = d.optimize(n.RHS)
-			stop = true
-			return
 		case *FunctionCall:
 			if n.Func.Name == "histogram_count" || n.Func.Name == "histogram_sum" {
-				decodeStats = true
-				return
-			}
-			if n.Func.Name == "histogram_quantile" || n.Func.Name == "histogram_fraction" {
-				decodeStats = false
+				n.Args[0], _ = d.optimize(n.Args[0], true)
+				stop = true
 				return
 			}
 		}
