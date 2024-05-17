@@ -4941,8 +4941,33 @@ func TestNativeHistograms(t *testing.T) {
 			query: "histogram_count(native_histogram_series)",
 		},
 		{
+			name:  "histogram_count of histogram product",
+			query: "histogram_count(native_histogram_series * native_histogram_series)",
+		},
+		{
+			name:  "histogram_sum / histogram_count",
+			query: "histogram_sum(native_histogram_series) / histogram_count(native_histogram_series)",
+		},
+		{
+			name:  "histogram_sum over histogram_fraction",
+			query: "histogram_sum(scalar(histogram_quantile(1, sum(native_histogram_series))) * native_histogram_series)",
+		},
+		{
+			name:  "histogram_sum over histogram_fraction",
+			query: "histogram_sum(scalar(histogram_fraction(-Inf, +Inf, sum(native_histogram_series))) * native_histogram_series)",
+		},
+		{
 			name:  "histogram_quantile",
 			query: "histogram_quantile(0.7, native_histogram_series)",
+		},
+		{
+			// Test strange query with a mix of histogram functions.
+			name:  "histogram_quantile(histogram_sum)",
+			query: "histogram_quantile(0.7, histogram_sum(native_histogram_series))",
+		},
+		{
+			name:  "histogram_count * histogram aggregation",
+			query: "scalar(histogram_count(sum(native_histogram_series))) * sum(native_histogram_series)",
 		},
 		{
 			name:  "histogram_fraction",
