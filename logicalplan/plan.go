@@ -65,6 +65,10 @@ func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions)
 	// the engine handles sorting at the presentation layer
 	expr = trimSorts(expr)
 
+	// some parameters are implicitly step invariant, i.e. topk(scalar(SERIES), X)
+	// morally that should be done by PreprocessExpr but we can also fix it here
+	expr = preprocessAggregationParameters(expr)
+
 	return &plan{
 		expr:     expr,
 		opts:     queryOpts,
@@ -218,6 +222,18 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 		return nil
 	}
 	panic("Unrecognized AST node")
+}
+
+func preprocessAggregationParameters(expr Node) Node {
+	Traverse(&expr, func(node *Node) {
+		switch t := (*node).(type) {
+		case *Aggregation:
+			if t.Param != nil {
+				t.Param = &StepInvariantExpr{Expr: t.Param}
+			}
+		}
+	})
+	return expr
 }
 
 func trimSorts(expr Node) Node {
