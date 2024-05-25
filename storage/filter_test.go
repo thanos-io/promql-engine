@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package prometheus_test
+package storage
 
 import (
 	"testing"
@@ -10,12 +10,10 @@ import (
 	promstg "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-
-	storage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 func TestFilter_MultipleMatcherWithSameName(t *testing.T) {
-	f := storage.NewFilter([]*labels.Matcher{
+	f := NewFilter([]*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchNotEqual, "phase", "Running"),
 		labels.MustNewMatcher(labels.MatchNotEqual, "phase", "Succeeded"),
 	})
@@ -76,7 +74,7 @@ func TestFilter_Matches(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			f := storage.NewFilter(tc.matchers)
+			f := NewFilter(tc.matchers)
 			if got := f.Matches(tc.series); got != tc.expected {
 				if tc.expected {
 					t.Errorf("expected %s to match %s, but it did not.", tc.series.Labels().String(), tc.matchers)

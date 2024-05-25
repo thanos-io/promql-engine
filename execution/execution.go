@@ -44,39 +44,39 @@ import (
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
-func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
+func New(ctx context.Context, expr logicalplan.Node, pool storage.SelectorPool, opts *query.Options) (model.VectorOperator, error) {
 	hints := promstorage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
 		Step:  opts.Step.Milliseconds(),
 	}
-	return newOperator(ctx, expr, storage, opts, hints)
+	return newOperator(ctx, expr, pool, opts, hints)
 }
 
-func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newOperator(ctx context.Context, expr logicalplan.Node, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
-		return newVectorSelector(ctx, e, storage, opts, hints)
+		return newVectorSelector(ctx, e, pool, opts, hints)
 	case *logicalplan.FunctionCall:
-		return newCall(ctx, e, storage, opts, hints)
+		return newCall(ctx, e, pool, opts, hints)
 	case *logicalplan.Aggregation:
-		return newAggregateExpression(ctx, e, storage, opts, hints)
+		return newAggregateExpression(ctx, e, pool, opts, hints)
 	case *logicalplan.Binary:
-		return newBinaryExpression(ctx, e, storage, opts, hints)
+		return newBinaryExpression(ctx, e, pool, opts, hints)
 	case *logicalplan.Parens:
-		return newOperator(ctx, e.Expr, storage, opts, hints)
+		return newOperator(ctx, e.Expr, pool, opts, hints)
 	case *logicalplan.Unary:
-		return newUnaryExpression(ctx, e, storage, opts, hints)
+		return newUnaryExpression(ctx, e, pool, opts, hints)
 	case *logicalplan.StepInvariantExpr:
-		return newStepInvariantExpression(ctx, e, storage, opts, hints)
+		return newStepInvariantExpression(ctx, e, pool, opts, hints)
 	case logicalplan.Deduplicate:
-		return newDeduplication(ctx, e, storage, opts, hints)
+		return newDeduplication(ctx, e, pool, opts, hints)
 	case logicalplan.RemoteExecution:
 		return newRemoteExecution(ctx, e, opts, hints)
 	case *logicalplan.CheckDuplicateLabels:
-		return newDuplicateLabelCheck(ctx, e, storage, opts, hints)
+		return newDuplicateLabelCheck(ctx, e, pool, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(), nil
 	case logicalplan.UserDefinedExpr:
@@ -86,26 +86,48 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 	}
 }
 
-func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
-	return scanners.NewVectorSelector(ctx, opts, hints, *e)
+
+	selector := pool.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), e.VectorSelector.LabelMatchers, e.Filters, hints)
+	if e.DecodeNativeHistogramStats {
+		selector = storage.NewHistogramStatsSelector(selector)
+	}
+
+	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
+	for i := 0; i < opts.DecodingConcurrency; i++ {
+		operator := exchange.NewConcurrent(
+			scan.NewVectorSelector(
+				model.NewVectorPool(opts.StepsBatch),
+				selector,
+				opts,
+				e.Offset,
+				e.BatchSize,
+				e.SelectTimestamp,
+				i,
+				opts.DecodingConcurrency,
+			), 2, opts)
+		operators = append(operators, operator)
+	}
+
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, e.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
 }
 
-func newCall(ctx context.Context, e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newCall(ctx context.Context, e *logicalplan.FunctionCall, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	hints.Func = e.Func.Name
 	hints.Grouping = nil
 	hints.By = false
 
 	if e.Func.Name == "absent_over_time" {
-		return newAbsentOverTimeOperator(ctx, e, scanners, opts, hints)
+		return newAbsentOverTimeOperator(ctx, e, pool, opts, hints)
 	}
 	if e.Func.Name == "timestamp" {
 		switch arg := e.Args[0].(type) {
 		case *logicalplan.VectorSelector:
 			arg.SelectTimestamp = true
-			return newVectorSelector(ctx, arg, scanners, opts, hints)
+			return newVectorSelector(ctx, arg, pool, opts, hints)
 		case *logicalplan.StepInvariantExpr:
 			// Step invariant expressions on vector selectors need to be unwrapped so that we
 			// can return the original timestamp rather than the step invariant one.
@@ -116,11 +138,11 @@ func newCall(ctx context.Context, e *logicalplan.FunctionCall, scanners storage.
 					vs.OriginalOffset = 0
 				}
 				vs.SelectTimestamp = true
-				return newVectorSelector(ctx, vs, scanners, opts, hints)
+				return newVectorSelector(ctx, vs, pool, opts, hints)
 			}
-			return newInstantVectorFunction(ctx, e, scanners, opts, hints)
+			return newInstantVectorFunction(ctx, e, pool, opts, hints)
 		}
-		return newInstantVectorFunction(ctx, e, scanners, opts, hints)
+		return newInstantVectorFunction(ctx, e, pool, opts, hints)
 	}
 
 	// TODO(saswatamcode): Range vector result might need new operator
@@ -128,21 +150,21 @@ func newCall(ctx context.Context, e *logicalplan.FunctionCall, scanners storage.
 	for i := range e.Args {
 		switch t := e.Args[i].(type) {
 		case *logicalplan.Subquery:
-			return newSubqueryFunction(ctx, e, t, scanners, opts, hints)
+			return newSubqueryFunction(ctx, e, t, pool, opts, hints)
 		case *logicalplan.MatrixSelector:
-			return newRangeVectorFunction(ctx, e, t, scanners, opts, hints)
+			return newRangeVectorFunction(ctx, e, t, pool, opts, hints)
 		}
 	}
-	return newInstantVectorFunction(ctx, e, scanners, opts, hints)
+	return newInstantVectorFunction(ctx, e, pool, opts, hints)
 }
 
-func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCall, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch arg := call.Args[0].(type) {
 	case *logicalplan.Subquery:
 		matrixCall := &logicalplan.FunctionCall{
 			Func: parser.Function{Name: "last_over_time"},
 		}
-		argOp, err := newSubqueryFunction(ctx, matrixCall, arg, scanners, opts, hints)
+		argOp, err := newSubqueryFunction(ctx, matrixCall, arg, pool, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -156,7 +178,7 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 			Func: parser.Function{Name: "last_over_time"},
 			Args: call.Args,
 		}
-		argOp, err := newRangeVectorFunction(ctx, matrixCall, arg, scanners, opts, hints)
+		argOp, err := newRangeVectorFunction(ctx, matrixCall, arg, pool, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -174,7 +196,7 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 	}
 }
 
-func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.MatrixSelector, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	milliSecondRange := t.Range.Milliseconds()
@@ -186,10 +208,54 @@ func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t 
 	hints.Start = start
 	hints.End = end
 	hints.Range = milliSecondRange
-	return scanners.NewMatrixSelector(ctx, opts, hints, *t, *e)
+
+	arg := 0.0
+	switch e.Func.Name {
+	case "quantile_over_time":
+		unwrap, err := logicalplan.UnwrapFloat(e.Args[0])
+		if err != nil {
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
+		}
+		arg = unwrap
+	case "predict_linear":
+		unwrap, err := logicalplan.UnwrapFloat(e.Args[1])
+		if err != nil {
+			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "predict_linear with expression as second argument is not supported")
+		}
+		arg = unwrap
+	}
+
+	vs := t.VectorSelector
+	selector := pool.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
+	if t.VectorSelector.DecodeNativeHistogramStats {
+		selector = storage.NewHistogramStatsSelector(selector)
+	}
+
+	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
+	for i := 0; i < opts.DecodingConcurrency; i++ {
+		operator, err := scan.NewMatrixSelector(
+			model.NewVectorPool(opts.StepsBatch),
+			selector,
+			e.Func.Name,
+			arg,
+			opts,
+			t.Range,
+			vs.Offset,
+			vs.BatchSize,
+			i,
+			opts.DecodingConcurrency,
+		)
+		if err != nil {
+			return nil, err
+		}
+		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
+	}
+
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, vs.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+
 }
 
-func newSubqueryFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.Subquery, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newSubqueryFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.Subquery, storage storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO: We dont implement ext functions
 	if parse.IsExtFunction(e.Func.Name) {
 		return nil, parse.ErrNotImplemented
@@ -233,7 +299,7 @@ func newSubqueryFunction(ctx context.Context, e *logicalplan.FunctionCall, t *lo
 	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, scalarArg, &outerOpts, e, t)
 }
 
-func newInstantVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newInstantVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, storage storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	nextOperators := make([]model.VectorOperator, 0, len(e.Args))
 	for i := range e.Args {
 		// Strings don't need an operator
@@ -250,12 +316,12 @@ func newInstantVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, 
 	return function.NewFunctionOperator(e, nextOperators, opts.StepsBatch, opts)
 }
 
-func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	hints.Func = e.Op.String()
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
 
-	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
+	next, err := newOperator(ctx, e.Expr, pool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
@@ -266,7 +332,7 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	case parser.COUNT_VALUES:
 		return nil, parse.UnsupportedOperationErr(parser.COUNT_VALUES)
 	case parser.QUANTILE, parser.TOPK, parser.BOTTOMK:
-		paramOp, err = newOperator(ctx, e.Param, scanners, opts, hints)
+		paramOp, err = newOperator(ctx, e.Param, pool, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -287,14 +353,14 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 
 }
 
-func newBinaryExpression(ctx context.Context, e *logicalplan.Binary, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newBinaryExpression(ctx context.Context, e *logicalplan.Binary, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	if e.LHS.ReturnType() == parser.ValueTypeScalar || e.RHS.ReturnType() == parser.ValueTypeScalar {
-		return newScalarBinaryOperator(ctx, e, scanners, opts, hints)
+		return newScalarBinaryOperator(ctx, e, pool, opts, hints)
 	}
-	return newVectorBinaryOperator(ctx, e, scanners, opts, hints)
+	return newVectorBinaryOperator(ctx, e, pool, opts, hints)
 }
 
-func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	leftOperator, err := newOperator(ctx, e.LHS, storage, opts, hints)
 	if err != nil {
 		return nil, err
@@ -306,7 +372,7 @@ func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage
 	return binary.NewVectorOperator(model.NewVectorPool(opts.StepsBatch), leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
 }
 
-func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	lhs, err := newOperator(ctx, e.LHS, storage, opts, hints)
 	if err != nil {
 		return nil, err
@@ -327,8 +393,8 @@ func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage
 	return binary.NewScalar(model.NewVectorPoolWithSize(opts.StepsBatch, 1), lhs, rhs, e.Op, scalarSide, e.ReturnBool, opts)
 }
 
-func newUnaryExpression(ctx context.Context, e *logicalplan.Unary, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
-	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
+func newUnaryExpression(ctx context.Context, e *logicalplan.Unary, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	next, err := newOperator(ctx, e.Expr, pool, opts, hints)
 	if err != nil {
 		return nil, err
 	}
@@ -344,19 +410,19 @@ func newUnaryExpression(ctx context.Context, e *logicalplan.Unary, scanners stor
 	}
 }
 
-func newStepInvariantExpression(ctx context.Context, e *logicalplan.StepInvariantExpr, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newStepInvariantExpression(ctx context.Context, e *logicalplan.StepInvariantExpr, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch t := e.Expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, t.Val), nil
 	}
-	next, err := newOperator(ctx, e.Expr, scanners, opts.WithEndTime(opts.Start), hints)
+	next, err := newOperator(ctx, e.Expr, pool, opts.WithEndTime(opts.Start), hints)
 	if err != nil {
 		return nil, err
 	}
 	return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(opts.StepsBatch, 1), next, e.Expr, opts)
 }
 
-func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, pool storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
 	// Sorting engines by MaxT ensures that samples produced due to
 	// staleness will be overwritten and corrected by samples coming from
@@ -367,7 +433,7 @@ func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, scanners s
 
 	operators := make([]model.VectorOperator, len(e.Expressions))
 	for i, expr := range e.Expressions {
-		operator, err := newOperator(ctx, expr, scanners, opts, hints)
+		operator, err := newOperator(ctx, expr, pool, opts, hints)
 		if err != nil {
 			return nil, err
 		}
@@ -394,7 +460,7 @@ func newRemoteExecution(ctx context.Context, e logicalplan.RemoteExecution, opts
 	return exchange.NewConcurrent(remoteExec, 2, opts), nil
 }
 
-func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLabels, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLabels, storage storage.SelectorPool, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	op, err := newOperator(ctx, e.Expr, storage, opts, hints)
 	if err != nil {
 		return nil, err

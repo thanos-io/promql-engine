@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package prometheus
+package storage
 
 import (
 	"github.com/prometheus/prometheus/model/labels"

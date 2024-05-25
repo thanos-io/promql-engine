@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package prometheus
+package storage
 
 import (
 	"context"
@@ -11,14 +11,14 @@ import (
 )
 
 type filteredSelector struct {
-	selector *seriesSelector
+	selector SeriesSelector
 	filter   Filter
 
 	once   sync.Once
 	series []SignedSeries
 }
 
-func NewFilteredSelector(selector *seriesSelector, filter Filter) SeriesSelector {
+func NewFilteredSelector(selector SeriesSelector, filter Filter) SeriesSelector {
 	return &filteredSelector{
 		selector: selector,
 		filter:   filter,
@@ -26,7 +26,7 @@ func NewFilteredSelector(selector *seriesSelector, filter Filter) SeriesSelector
 }
 
 func (f *filteredSelector) Matchers() []*labels.Matcher {
-	return append(f.selector.matchers, f.filter.Matchers()...)
+	return append(f.selector.Matchers(), f.filter.Matchers()...)
 }
 
 func (f *filteredSelector) GetSeries(ctx context.Context, shard, numShards int) ([]SignedSeries, error) {
@@ -36,7 +36,7 @@ func (f *filteredSelector) GetSeries(ctx context.Context, shard, numShards int) 
 		return nil, err
 	}
 
-	return seriesShard(f.series, shard, numShards), nil
+	return SeriesShard(f.series, shard, numShards), nil
 }
 
 func (f *filteredSelector) loadSeries(ctx context.Context) error {

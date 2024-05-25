@@ -10,6 +10,8 @@ import (
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
+
+	engstorage "github.com/thanos-io/promql-engine/storage"
 )
 
 var sep = []byte{'\xff'}
@@ -27,7 +29,7 @@ func NewSelectorPool(queryable storage.Queryable) *SelectorPool {
 	}
 }
 
-func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
+func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) engstorage.SeriesSelector {
 	key := hashMatchers(matchers, mint, maxt, hints)
 	if _, ok := p.selectors[key]; !ok {
 		p.selectors[key] = newSeriesSelector(p.queryable, mint, maxt, step, matchers, hints)
@@ -35,13 +37,13 @@ func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Ma
 	return p.selectors[key]
 }
 
-func (p *SelectorPool) GetFilteredSelector(mint, maxt, step int64, matchers, filters []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
+func (p *SelectorPool) GetFilteredSelector(mint, maxt, step int64, matchers, filters []*labels.Matcher, hints storage.SelectHints) engstorage.SeriesSelector {
 	key := hashMatchers(matchers, mint, maxt, hints)
 	if _, ok := p.selectors[key]; !ok {
 		p.selectors[key] = newSeriesSelector(p.queryable, mint, maxt, step, matchers, hints)
 	}
 
-	return NewFilteredSelector(p.selectors[key], NewFilter(filters))
+	return engstorage.NewFilteredSelector(p.selectors[key], engstorage.NewFilter(filters))
 }
 
 func hashMatchers(matchers []*labels.Matcher, mint, maxt int64, hints storage.SelectHints) uint64 {

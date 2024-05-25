@@ -100,14 +100,14 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 // use the storage passed in NewInstantQuery and NewRangeQuery for retrieving
 // data when executing queries.
 func New(opts Opts) *Engine {
-	return NewWithScanners(opts, nil)
+	return NewWithSelectorPool(opts, nil)
 }
 
-// NewWithScanners creates a new query engine with the given options and storage.Scanners.
-// When executing queries, the engine will create scanner operators using the storage.Scanners and will ignore the
+// NewWithSelectorPool creates a new query engine with the given options and storage.SelectorPool.
+// When executing queries, the engine will create operators using the storage.SelectorPool and will ignore the
 // Prometheus storage passed in NewInstantQuery and NewRangeQuery.
 // This method is useful when the data being queried does not easily fit into the Prometheus storage model.
-func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
+func NewWithSelectorPool(opts Opts, selectorPool engstorage.SelectorPool) *Engine {
 	if opts.Logger == nil {
 		opts.Logger = log.NewNopLogger()
 	}
@@ -178,7 +178,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	return &Engine{
 		prom:               engine,
 		functions:          functions,
-		scanners:           scanners,
+		selectorPool:       selectorPool,
 		activeQueryTracker: queryTracker,
 
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
@@ -208,7 +208,7 @@ var (
 type Engine struct {
 	prom               promql.QueryEngine
 	functions          map[string]*parser.Function
-	scanners           engstorage.Scanners
+	selectorPool       engstorage.SelectorPool
 	activeQueryTracker promql.QueryTracker
 
 	disableDuplicateLabelChecks bool
@@ -272,7 +272,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
-	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(ctx, lplan.Root(), e.storageSelectorPool(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
@@ -317,7 +317,7 @@ func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryabl
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
-	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(ctx, lplan.Root(), e.storageSelectorPool(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewInstantQuery(ctx, q, opts, root.String(), ts)
@@ -372,7 +372,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
-	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(ctx, lplan.Root(), e.storageSelectorPool(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
@@ -415,7 +415,7 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
-	exec, err := execution.New(ctx, lplan.Root(), e.storageScanners(q), qOpts)
+	exec, err := execution.New(ctx, lplan.Root(), e.storageSelectorPool(q), qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
 		return e.prom.NewRangeQuery(ctx, q, opts, lplan.Root().String(), start, end, step)
@@ -448,11 +448,11 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 	return qOpts
 }
 
-func (e *Engine) storageScanners(queryable storage.Queryable) engstorage.Scanners {
-	if e.scanners == nil {
-		return promstorage.NewPrometheusScanners(queryable)
+func (e *Engine) storageSelectorPool(queryable storage.Queryable) engstorage.SelectorPool {
+	if e.selectorPool == nil {
+		return promstorage.NewSelectorPool(queryable)
 	}
-	return e.scanners
+	return e.selectorPool
 }
 
 func (e *Engine) triggerFallback(err error) bool {

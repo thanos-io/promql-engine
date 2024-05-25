@@ -15,9 +15,10 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/scan"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
-	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
+	engstorage "github.com/thanos-io/promql-engine/storage"
 )
 
 type Execution struct {
@@ -36,7 +37,7 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart ti
 		query:           query,
 		opts:            opts,
 		queryRangeStart: queryRangeStart,
-		vectorSelector:  promstorage.NewVectorSelector(pool, storage, opts, 0, 0, false, 0, 1),
+		vectorSelector:  scan.NewVectorSelector(pool, storage, opts, 0, 0, false, 0, 1),
 	}
 
 	oper.OperatorTelemetry = model.NewTelemetry(oper, opts.EnableAnalysis)
@@ -93,7 +94,7 @@ type storageAdapter struct {
 
 	once   sync.Once
 	err    error
-	series []promstorage.SignedSeries
+	series []engstorage.SignedSeries
 }
 
 func newStorageFromQuery(query promql.Query, opts *query.Options) *storageAdapter {
@@ -105,7 +106,7 @@ func newStorageFromQuery(query promql.Query, opts *query.Options) *storageAdapte
 
 func (s *storageAdapter) Matchers() []*labels.Matcher { return nil }
 
-func (s *storageAdapter) GetSeries(ctx context.Context, _, _ int) ([]promstorage.SignedSeries, error) {
+func (s *storageAdapter) GetSeries(ctx context.Context, _, _ int) ([]engstorage.SignedSeries, error) {
 	s.once.Do(func() { s.executeQuery(ctx) })
 	if s.err != nil {
 		return nil, s.err
@@ -123,15 +124,15 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 	}
 	switch val := result.Value.(type) {
 	case promql.Matrix:
-		s.series = make([]promstorage.SignedSeries, len(val))
+		s.series = make([]engstorage.SignedSeries, len(val))
 		for i, series := range val {
-			s.series[i] = promstorage.SignedSeries{
+			s.series[i] = engstorage.SignedSeries{
 				Signature: uint64(i),
 				Series:    promql.NewStorageSeries(series),
 			}
 		}
 	case promql.Vector:
-		s.series = make([]promstorage.SignedSeries, len(val))
+		s.series = make([]engstorage.SignedSeries, len(val))
 		for i, sample := range val {
 			series := promql.Series{Metric: sample.Metric}
 			if sample.H == nil {
@@ -139,7 +140,7 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 			} else {
 				series.Histograms = []promql.HPoint{{T: sample.T, H: sample.H}}
 			}
-			s.series[i] = promstorage.SignedSeries{
+			s.series[i] = engstorage.SignedSeries{
 				Signature: uint64(i),
 				Series:    promql.NewStorageSeries(series),
 			}
