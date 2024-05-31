@@ -161,6 +161,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
 	})
+	engineLblSets := make([][]labels.Labels, 0, len(engines))
 
 	labelRanges := make(labelSetRanges)
 	engineLabels := make(map[string]struct{})
@@ -175,6 +176,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 				engineLabels[lbl.Name] = struct{}{}
 			})
 		}
+		engineLblSets = append(engineLblSets, e.LabelSets())
 	}
 	minEngineOverlap := labelRanges.minOverlap()
 
@@ -200,8 +202,8 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 				localAggregation = parser.SUM
 			}
 
-			remoteAggregation := newRemoteAggregation(aggr, engines)
-			subQueries := m.distributeQuery(&remoteAggregation, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
+			remoteAggregation := newRemoteAggregation(aggr, engineLblSets)
+			subQueries := m.distributeQuery(&remoteAggregation, engines, engineLblSets, m.subqueryOpts(parents, current, opts), minEngineOverlap)
 			*current = &Aggregation{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -221,7 +223,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 			return false
 		}
 
-		*current = m.distributeQuery(current, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
+		*current = m.distributeQuery(current, engines, engineLblSets, m.subqueryOpts(parents, current, opts), minEngineOverlap)
 		return true
 	})
 
@@ -246,14 +248,14 @@ func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*Node]*Node, cur
 	return opts
 }
 
-func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngine) Node {
+func newRemoteAggregation(rootAggregation *Aggregation, enginesLblSets [][]labels.Labels) Node {
 	groupingSet := make(map[string]struct{})
 	for _, lbl := range rootAggregation.Grouping {
 		groupingSet[lbl] = struct{}{}
 	}
 
-	for _, engine := range engines {
-		for _, lbls := range engine.LabelSets() {
+	for i := range enginesLblSets {
+		for _, lbls := range enginesLblSets[i] {
 			lbls.Range(func(lbl labels.Label) {
 				if rootAggregation.Without {
 					delete(groupingSet, lbl.Name)
@@ -278,7 +280,7 @@ func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngi
 // distributeQuery takes a PromQL expression in the form of *parser.Expr and a set of remote engines.
 // For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
-func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) Node {
+func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, sets [][]labels.Labels, opts *query.Options, allowedStartOffset time.Duration) Node {
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
 	if allowedStartOffset < startOffset {
 		return *expr
@@ -294,9 +296,17 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 		}
 	}
 
+	var selectorSet [][]*labels.Matcher
+	Traverse(expr, func(current *Node) {
+		vs, ok := (*current).(*VectorSelector)
+		if ok {
+			selectorSet = append(selectorSet, vs.LabelMatchers)
+		}
+	})
+
 	remoteQueries := make(RemoteExecutions, 0, len(engines))
-	for _, e := range engines {
-		if !matchesExternalLabelSet(*expr, e.LabelSets()) {
+	for i, e := range engines {
+		if !matchesExternalLabelSet(selectorSet, sets[i]) {
 			continue
 		}
 		if e.MinT() > opts.End.UnixMilli() {
@@ -499,19 +509,12 @@ func isBinaryExpressionWithDistributableMatching(expr *Binary) bool {
 }
 
 // matchesExternalLabels returns false if given matchers are not matching external labels.
-func matchesExternalLabelSet(expr Node, externalLabelSet []labels.Labels) bool {
+func matchesExternalLabelSet(sset [][]*labels.Matcher, externalLabelSet []labels.Labels) bool {
 	if len(externalLabelSet) == 0 {
 		return true
 	}
-	var selectorSet [][]*labels.Matcher
-	Traverse(&expr, func(current *Node) {
-		vs, ok := (*current).(*VectorSelector)
-		if ok {
-			selectorSet = append(selectorSet, vs.LabelMatchers)
-		}
-	})
 
-	for _, selectors := range selectorSet {
+	for _, selectors := range sset {
 		hasMatch := false
 		for _, externalLabels := range externalLabelSet {
 			hasMatch = hasMatch || matchesExternalLabels(selectors, externalLabels)
