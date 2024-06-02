@@ -284,6 +284,59 @@ func TestTrimSorts(t *testing.T) {
 	}
 }
 
+func TestReduceConstantExpressions(t *testing.T) {
+	cases := []struct {
+		name     string
+		expr     string
+		expected string
+	}{
+		{
+			name:     "binary add",
+			expr:     "5+3",
+			expected: "8",
+		},
+		{
+			name:     "binary pow",
+			expr:     "2^8",
+			expected: "256",
+		},
+		{
+			name:     "binary mod",
+			expr:     "12%5",
+			expected: "2",
+		},
+		{
+			name:     "unary negation",
+			expr:     "2+(-5)",
+			expected: "-3",
+		},
+		{
+			name:     "function",
+			expr:     "predict_linear(X[1h], 24*60)",
+			expected: "predict_linear(X[1h], 1440)",
+		},
+		{
+			name:     "function and parens",
+			expr:     "predict_linear(X[1h], (2*12)*60)",
+			expected: "predict_linear(X[1h], 1440)",
+		},
+		{
+			name:     "aggregation",
+			expr:     "topk((3), X)",
+			expected: "topk(3, X)",
+		},
+	}
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			exprPlan := NewFromAST(expr, &query.Options{}, PlanOptions{})
+			testutil.Equals(t, tcase.expected, exprPlan.Root().String())
+		})
+	}
+}
+
 func cleanUp(replacements map[string]*regexp.Regexp, expr string) string {
 	for replacement, match := range replacements {
 		expr = match.ReplaceAllString(expr, replacement)
