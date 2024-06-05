@@ -4,9 +4,16 @@
 package logicalplan
 
 import (
+	"bytes"
 	"encoding/json"
+	"math"
 
 	"github.com/prometheus/prometheus/model/labels"
+)
+
+const (
+	infVal    = `"+Inf"`
+	negInfVal = `"-Inf"`
 )
 
 type jsonNode struct {
@@ -29,9 +36,22 @@ func marshalNode(node Node) ([]byte, error) {
 		}
 		children = append(children, childData)
 	}
-	data, err := json.Marshal(node)
-	if err != nil {
-		return nil, err
+	var data json.RawMessage = nil
+	// Special handling for -Inf/+Inf values.
+	if n, ok := node.(*NumberLiteral); ok {
+		if math.IsInf(n.Val, 1) {
+			data = json.RawMessage(infVal)
+		}
+		if math.IsInf(n.Val, -1) {
+			data = json.RawMessage(negInfVal)
+		}
+	}
+	if data == nil {
+		var err error
+		data, err = json.Marshal(node)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return json.Marshal(jsonNode{
 		Type:     node.Type(),
@@ -122,8 +142,14 @@ func unmarshalNode(data []byte) (Node, error) {
 		return f, nil
 	case NumberLiteralNode:
 		n := &NumberLiteral{}
-		if err := json.Unmarshal(t.Data, n); err != nil {
-			return nil, err
+		if bytes.Equal(t.Data, []byte(infVal)) {
+			n.Val = math.Inf(1)
+		} else if bytes.Equal(t.Data, []byte(negInfVal)) {
+			n.Val = math.Inf(-1)
+		} else {
+			if err := json.Unmarshal(t.Data, n); err != nil {
+				return nil, err
+			}
 		}
 		return n, nil
 	case StringLiteralNode:
