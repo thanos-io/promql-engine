@@ -13,24 +13,44 @@ import (
 )
 
 func TestNodesMarshalJSON(t *testing.T) {
-	expr := `
+	var cases = []struct {
+		name  string
+		query string
+	}{
+		{
+			name: "complex query",
+			query: `
 sum(
   max_over_time(sum by (pod) (2 * -(rate(http_requests_total[1h])))[2m:1m]) 
   +
   http_requests_total{job="api-server"} @ end()
   + label_replace(metric, "new_label", "$1", "label", ".*")
-)`
-	ast, err := parser.ParseExpr(expr)
-	testutil.Ok(t, err)
-	original := NewFromAST(ast, &query.Options{}, PlanOptions{})
-	original, _ = original.Optimize(DefaultOptimizers)
+)`,
+		},
+		{
+			name:  "+Inf",
+			query: "clamp_max(metric, +Inf)",
+		},
+		{
+			name:  "-Inf",
+			query: "clamp_max(metric, -Inf)",
+		},
+	}
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			ast, err := parser.ParseExpr(tcase.query)
+			testutil.Ok(t, err)
+			original := NewFromAST(ast, &query.Options{}, PlanOptions{})
+			original, _ = original.Optimize(DefaultOptimizers)
 
-	bytes, err := Marshal(original.Root())
-	testutil.Ok(t, err)
+			bytes, err := Marshal(original.Root())
+			testutil.Ok(t, err)
 
-	clone, err := Unmarshal(bytes)
-	testutil.Ok(t, err)
-	testutil.Equals(t, original.Root().String(), clone.String())
+			clone, err := Unmarshal(bytes)
+			testutil.Ok(t, err)
+			testutil.Equals(t, original.Root().String(), clone.String())
+		})
+	}
 }
 
 func TestUnmarshalMatchers(t *testing.T) {
