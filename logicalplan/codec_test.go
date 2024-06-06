@@ -32,6 +32,10 @@ sum(
 			query: "clamp_max(metric, +Inf)",
 		},
 		{
+			name:  "NaN",
+			query: "clamp_max(metric, NaN)",
+		},
+		{
 			name:  "-Inf",
 			query: "clamp_max(metric, -Inf)",
 		},

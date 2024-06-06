@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	nanVal    = `"NaN"`
 	infVal    = `"+Inf"`
 	negInfVal = `"-Inf"`
 )
@@ -44,6 +45,9 @@ func marshalNode(node Node) ([]byte, error) {
 		}
 		if math.IsInf(n.Val, -1) {
 			data = json.RawMessage(negInfVal)
+		}
+		if math.IsNaN(n.Val) {
+			data = json.RawMessage(nanVal)
 		}
 	}
 	if data == nil {
@@ -146,6 +150,8 @@ func unmarshalNode(data []byte) (Node, error) {
 			n.Val = math.Inf(1)
 		} else if bytes.Equal(t.Data, []byte(negInfVal)) {
 			n.Val = math.Inf(-1)
+		} else if bytes.Equal(t.Data, []byte(nanVal)) {
+			n.Val = math.NaN()
 		} else {
 			if err := json.Unmarshal(t.Data, n); err != nil {
 				return nil, err
