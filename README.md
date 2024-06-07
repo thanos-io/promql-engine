@@ -15,7 +15,7 @@ The following table shows operations which are currently supported by the engine
 | Binary expressions     | Full support                                                                           |          |
 | Histograms             | Full support                                                                           |          |
 | Subqueries             | Full support                                                                           |          |
-| Aggregations           | Full support except for `count_values`                                                 | Medium   |
+| Aggregations           | Full support                                                                           |          |
 | Aggregations over time | Full support except for `quantile_over_time` with non-constant argument                | Medium   |
 | Functions              | Full support except for `holt_winters` and `predict_linear` with non-constant argument | Medium   |
 
