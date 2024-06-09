@@ -137,37 +137,37 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}{
 		{
 			name:    "vector selector",
-			query:   "http_requests_total",
+			query:   `http_requests_total`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "sum",
-			query:   "sum(http_requests_total)",
+			query:   `sum(http_requests_total)`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "sum by pod",
-			query:   "sum by (pod) (http_requests_total)",
+			query:   `sum by (pod) (http_requests_total)`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "topk",
-			query:   "topk(2,http_requests_total)",
+			query:   `topk(2, http_requests_total)`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "bottomk",
-			query:   "bottomk(2,http_requests_total)",
+			query:   `bottomk(2, http_requests_total)`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "rate",
-			query:   "rate(http_requests_total[1m])",
+			query:   `rate(http_requests_total[1m])`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "subquery",
-			query:   "sum_over_time(rate(http_requests_total[1m])[10m:1m])",
+			query:   `sum_over_time(rate(http_requests_total[1m])[10m:1m])`,
 			storage: sixHourDataset,
 		},
 		/*
@@ -189,27 +189,27 @@ func BenchmarkRangeQuery(b *testing.B) {
 		*/
 		{
 			name:    "sum rate",
-			query:   "sum(rate(http_requests_total[1m]))",
+			query:   `sum(rate(http_requests_total[1m]))`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "sum by rate",
-			query:   "sum by (pod) (rate(http_requests_total[1m]))",
+			query:   `sum by (pod) (rate(http_requests_total[1m]))`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "quantile with variable parameter",
-			query:   "quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)",
+			query:   `quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "binary operation with one to one",
-			query:   `http_requests_total{container="c1"} / ignoring(container) http_responses_total`,
+			query:   `http_requests_total{container="c1"} / ignoring (container) http_responses_total`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "binary operation with many to one",
-			query:   `http_requests_total / on (pod) group_left http_responses_total`,
+			query:   `http_requests_total / on (pod) group_left () http_responses_total`,
 			storage: sixHourDataset,
 		},
 		{
@@ -229,17 +229,17 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		{
 			name:    "positive offset vector",
-			query:   "http_requests_total offset 5m",
+			query:   `http_requests_total offset 5m`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "at modifier ",
-			query:   "http_requests_total @ 600",
+			query:   `http_requests_total @ 600.000`,
 			storage: sixHourDataset,
 		},
 		{
 			name:    "at modifier with positive offset vector",
-			query:   "http_requests_total @ 600 offset 5m",
+			query:   `http_requests_total @ 600.000 offset 5m`,
 			storage: sixHourDataset,
 		},
 		{
@@ -354,43 +354,43 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}{
 		{
 			name:  "selector",
-			query: "native_histogram_series",
+			query: `native_histogram_series`,
 		},
 		{
 			name:  "sum",
-			query: "sum(native_histogram_series)",
+			query: `sum(native_histogram_series)`,
 		},
 		{
 			name:  "rate",
-			query: "rate(native_histogram_series[1m])",
+			query: `rate(native_histogram_series[1m])`,
 		},
 		{
 			name:  "sum rate",
-			query: "sum(rate(native_histogram_series[1m]))",
+			query: `sum(rate(native_histogram_series[1m]))`,
 		},
 		{
 			name:  "histogram_sum",
-			query: "histogram_sum(native_histogram_series)",
+			query: `histogram_sum(native_histogram_series)`,
 		},
 		{
 			name:  "histogram_count with rate",
-			query: "histogram_count(rate(native_histogram_series[1m]))",
+			query: `histogram_count(rate(native_histogram_series[1m]))`,
 		},
 		{
 			name:  "histogram_count",
-			query: "histogram_count(native_histogram_series)",
+			query: `histogram_count(native_histogram_series)`,
 		},
 		{
 			name:  "histogram_count with sum and rate",
-			query: "histogram_count(sum(rate(native_histogram_series[1m])))",
+			query: `histogram_count(sum(rate(native_histogram_series[1m])))`,
 		},
 		{
 			name:  "histogram_quantile",
-			query: "histogram_quantile(0.9, sum(native_histogram_series))",
+			query: `histogram_quantile(0.9, sum(native_histogram_series))`,
 		},
 		{
 			name:  "histogram scalar binop",
-			query: "sum(native_histogram_series * 60)",
+			query: `sum(native_histogram_series * 60)`,
 		},
 	}
 
@@ -449,51 +449,51 @@ func BenchmarkInstantQuery(b *testing.B) {
 	}{
 		{
 			name:  "vector selector",
-			query: "http_requests_total",
+			query: `http_requests_total`,
 		},
 		{
 			name:  "count",
-			query: "count(http_requests_total)",
+			query: `count(http_requests_total)`,
 		},
 		{
 			name:  "count_values",
-			query: "count_values('val', http_requests_total)",
+			query: `count_values("val", http_requests_total)`,
 		},
 		{
 			name:  "round",
-			query: "round(http_requests_total)",
+			query: `round(http_requests_total)`,
 		},
 		{
 			name:  "round with argument",
-			query: "round(http_requests_total, 0.5)",
+			query: `round(http_requests_total, 0.5)`,
 		},
 		{
 			name:  "avg",
-			query: "avg(http_requests_total)",
+			query: `avg(http_requests_total)`,
 		},
 		{
 			name:  "sum",
-			query: "sum(http_requests_total)",
+			query: `sum(http_requests_total)`,
 		},
 		{
 			name:  "sum by pod",
-			query: "sum by (pod) (http_requests_total)",
+			query: `sum by (pod) (http_requests_total)`,
 		},
 		{
 			name:  "rate",
-			query: "rate(http_requests_total[1m])",
+			query: `rate(http_requests_total[1m])`,
 		},
 		{
 			name:  "sum rate",
-			query: "sum(rate(http_requests_total[1m]))",
+			query: `sum(rate(http_requests_total[1m]))`,
 		},
 		{
 			name:  "sum by rate",
-			query: "sum by (pod) (rate(http_requests_total[1m]))",
+			query: `sum by (pod) (rate(http_requests_total[1m]))`,
 		},
 		{
 			name:  "binary operation with many to one",
-			query: `http_requests_total / on (pod) group_left http_responses_total`,
+			query: `http_requests_total / on (pod) group_left () http_responses_total`,
 		},
 		{
 			name:  "unary negation",

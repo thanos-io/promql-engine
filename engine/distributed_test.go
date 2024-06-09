@@ -238,9 +238,9 @@ func TestDistributedAggregations(t *testing.T) {
 			rangeStart: time.Unix(7, 0),
 			query:      `max_over_time(min_over_time(sum(bar)[15s:15s])[15s:15s])`,
 		},
-		{name: "subquery over distributed binary expression", query: `max_over_time((bar/bar)[30s:15s])`},
+		{name: "subquery over distributed binary expression", query: `max_over_time((bar / bar)[30s:15s])`},
 		{name: "timestamp", query: `timestamp(bar)`},
-		{name: "timestamp - step invariant", query: `timestamp(bar @ 6000)`},
+		{name: "timestamp - step invariant", query: `timestamp(bar @ 6000.000)`},
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}

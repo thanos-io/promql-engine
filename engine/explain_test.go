@@ -48,7 +48,7 @@ func TestQueryExplain(t *testing.T) {
 		expected *engine.ExplainOutputNode
 	}{
 		{
-			query: "time()",
+			query: `time()`,
 			expected: &engine.ExplainOutputNode{OperatorName: "[duplicateLabelCheck]", Children: []engine.ExplainOutputNode{
 				{
 					OperatorName: "[noArgFunction]",
@@ -57,11 +57,11 @@ func TestQueryExplain(t *testing.T) {
 			}},
 		},
 		{
-			query:    "foo",
+			query:    `foo`,
 			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", Children: concurrencyOperators},
 		},
 		{
-			query: "sum(foo) by (job)",
+			query: `sum by (job) (foo)`,
 			expected: &engine.ExplainOutputNode{
 				OperatorName: "[duplicateLabelCheck]",
 				Children: []engine.ExplainOutputNode{
@@ -134,16 +134,16 @@ func TestQueryAnalyze(t *testing.T) {
 		query string
 	}{
 		{
-			query: "foo",
+			query: `foo`,
 		},
 		{
-			query: "time()",
+			query: `time()`,
 		},
 		{
-			query: "sum(foo) by (job)",
+			query: `sum by (job) (foo)`,
 		},
 		{
-			query: "rate(http_requests_total[30s]) > bool 0",
+			query: `rate(http_requests_total[30s]) > bool 0`,
 		},
 	} {
 		tc := tc

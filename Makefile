@@ -78,6 +78,9 @@ check-docs: $(MDOX)
 format: $(GOIMPORTS)
 	@echo ">> formatting go code"
 	@gofmt -s -w $(FILES_TO_FMT)
+	@echo ">> formatting promql tests"
+	@go run scripts/testvet/main.go -json -fix ./...
+	@echo ">> formatting imports"
 	@$(GOIMPORTS) -w $(FILES_TO_FMT)
 
 .PHONY:lint
