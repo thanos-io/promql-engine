@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/tsdb/tsdbutil"
@@ -62,7 +63,7 @@ func TestPromqlAcceptance(t *testing.T) {
 			Timeout:                  1 * time.Hour,
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 		}})
-	promql.RunBuiltinTests(t, engine)
+	promqltest.RunBuiltinTests(t, engine)
 }
 
 func TestVectorSelectorWithGaps(t *testing.T) {
@@ -1960,7 +1961,7 @@ avg by (storage_info) (
 			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
-				storage := promql.LoadedStorage(t, tc.load)
+				storage := promqltest.LoadedStorage(t, tc.load)
 				defer storage.Close()
 
 				if tc.start.Equal(time.Time{}) {
@@ -2250,7 +2251,7 @@ func TestDisabledXFunction(t *testing.T) {
 		},
 	}
 	for _, tc := range cases {
-		storage := promql.LoadedStorage(t, tc.load)
+		storage := promqltest.LoadedStorage(t, tc.load)
 		defer storage.Close()
 
 		optimizers := logicalplan.AllOptimizers
@@ -2514,7 +2515,7 @@ func TestXFunctions(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			storage := promql.LoadedStorage(t, tc.load)
+			storage := promqltest.LoadedStorage(t, tc.load)
 			defer storage.Close()
 
 			queryTime := defaultQueryTime
@@ -2831,7 +2832,7 @@ func TestRateVsXRate(t *testing.T) {
 				load = tc.load
 			}
 
-			storage := promql.LoadedStorage(t, load)
+			storage := promqltest.LoadedStorage(t, load)
 			defer storage.Close()
 
 			queryTime := defaultQueryTime
@@ -4025,7 +4026,7 @@ min without () (
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			testStorage := promql.LoadedStorage(t, tc.load)
+			testStorage := promqltest.LoadedStorage(t, tc.load)
 			defer testStorage.Close()
 			for _, disableOptimizers := range disableOptimizerOpts {
 				disableOptimizers := disableOptimizers
@@ -4191,7 +4192,7 @@ func TestQueryTimeout(t *testing.T) {
 		MaxSamples: math.MaxInt64,
 	}
 
-	storage := promql.LoadedStorage(t, load)
+	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
 
 	newEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts})
@@ -4567,7 +4568,7 @@ func TestFallback(t *testing.T) {
 				http_requests_total{pod="nginx-1"} 1+1x1
 				http_requests_total{pod="nginx-2"} 1+2x40`
 
-	storage := promql.LoadedStorage(t, load)
+	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
 
 	for _, tcase := range cases {
@@ -4607,7 +4608,7 @@ func TestQueryStats(t *testing.T) {
 		MaxSamples: math.MaxInt64,
 	}
 
-	storage := promql.LoadedStorage(t, load)
+	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
 
 	ctx := context.Background()

@@ -18,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
@@ -62,7 +63,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			EnableAtModifier:     true,
 		}
 
-		storage := promql.LoadedStorage(t, load)
+		storage := promqltest.LoadedStorage(t, load)
 		defer storage.Close()
 
 		start := time.Unix(int64(startTS), 0)
@@ -142,7 +143,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			EnableAtModifier:     true,
 		}
 
-		storage := promql.LoadedStorage(t, load)
+		storage := promqltest.LoadedStorage(t, load)
 		defer storage.Close()
 
 		queryTime := time.Unix(int64(ts), 0)
@@ -238,11 +239,11 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 		}
 
 		queryables := []*teststorage.TestStorage{}
-		storage1 := promql.LoadedStorage(t, load)
+		storage1 := promqltest.LoadedStorage(t, load)
 		defer storage1.Close()
 		queryables = append(queryables, storage1)
 
-		storage2 := promql.LoadedStorage(t, load2)
+		storage2 := promqltest.LoadedStorage(t, load2)
 		defer storage2.Close()
 		queryables = append(queryables, storage2)
 
@@ -344,11 +345,11 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 		engineOpts := engine.Opts{EngineOpts: opts, DisableFallback: true}
 
 		queryables := []*teststorage.TestStorage{}
-		storage1 := promql.LoadedStorage(t, load)
+		storage1 := promqltest.LoadedStorage(t, load)
 		defer storage1.Close()
 		queryables = append(queryables, storage1)
 
-		storage2 := promql.LoadedStorage(t, load2)
+		storage2 := promqltest.LoadedStorage(t, load2)
 		defer storage2.Close()
 		queryables = append(queryables, storage2)
 

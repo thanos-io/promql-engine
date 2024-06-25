@@ -14,6 +14,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 func TestRangeQuery(t *testing.T) {
@@ -127,7 +128,7 @@ func TestRangeQuery(t *testing.T) {
 		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
-			storage := promql.LoadedStorage(t, c.Load)
+			storage := promqltest.LoadedStorage(t, c.Load)
 			defer storage.Close()
 
 			qry, err := ng.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)

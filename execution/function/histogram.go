@@ -135,6 +135,7 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 	return o.processInputSeries(vectors)
 }
 
+// nolint: unparam
 func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]model.StepVector, error) {
 	out := o.pool.GetVectorBatch()
 	for stepIndex, vector := range vectors {

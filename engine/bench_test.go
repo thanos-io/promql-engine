@@ -15,6 +15,7 @@ import (
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/teststorage"
@@ -617,7 +618,7 @@ func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.Test
 // nolint: unparam
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *teststorage.TestStorage {
 	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
-	return promql.LoadedStorage(b, load)
+	return promqltest.LoadedStorage(b, load)
 }
 
 func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *tsdb.DB {
