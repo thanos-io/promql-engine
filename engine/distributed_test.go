@@ -198,6 +198,8 @@ func TestDistributedAggregations(t *testing.T) {
 		rangeStart     time.Time
 		expectFallback bool
 	}{
+		{name: "binop with selector and constant series", query: `bar or on () vector(0)`},
+		{name: "binop with aggregation and constant series", query: `sum(bar) or on () vector(0)`},
 		{name: "sum", query: `sum by (pod) (bar)`},
 		{name: "sum by __name__", query: `sum by (__name__) ({__name__=~".+"})`},
 		{name: "parenthesis", query: `sum by (pod) ((bar))`},

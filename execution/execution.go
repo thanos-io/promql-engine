@@ -78,7 +78,7 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 	case *logicalplan.CheckDuplicateLabels:
 		return newDuplicateLabelCheck(ctx, e, storage, opts, hints)
 	case logicalplan.Noop:
-		return noop.NewOperator(), nil
+		return noop.NewOperator(opts), nil
 	case logicalplan.UserDefinedExpr:
 		return e.MakeExecutionOperator(ctx, model.NewVectorPool(opts.StepsBatch), opts, hints)
 	default:
@@ -227,7 +227,7 @@ func newSubqueryFunction(ctx context.Context, e *logicalplan.FunctionCall, t *lo
 			return nil, err
 		}
 	default:
-		scalarArg = noop.NewOperator()
+		scalarArg = noop.NewOperator(opts)
 	}
 
 	return scan.NewSubqueryOperator(model.NewVectorPool(opts.StepsBatch), inner, scalarArg, &outerOpts, e, t)
@@ -273,7 +273,7 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 			return nil, err
 		}
 	default:
-		paramOp = noop.NewOperator()
+		paramOp = noop.NewOperator(opts)
 	}
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK {
 		next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
