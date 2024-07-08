@@ -108,18 +108,20 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		return nil, err
 	}
 
-	args, err := o.paramOp.Next(ctx)
-	if err != nil {
-		return nil, err
-	}
-	for i := range args {
-		o.params[i] = math.NaN()
-		if len(args[i].Samples) == 1 {
-			o.params[i] = args[i].Samples[0]
+	if o.paramOp != nil {
+		args, err := o.paramOp.Next(ctx)
+		if err != nil {
+			return nil, err
 		}
-		o.paramOp.GetPool().PutStepVector(args[i])
+		for i := range args {
+			o.params[i] = math.NaN()
+			if len(args[i].Samples) == 1 {
+				o.params[i] = args[i].Samples[0]
+			}
+			o.paramOp.GetPool().PutStepVector(args[i])
+		}
+		o.paramOp.GetPool().PutVectors(args)
 	}
-	o.paramOp.GetPool().PutVectors(args)
 
 	res := o.pool.GetVectorBatch()
 	for i := 0; o.currentStep <= o.maxt && i < o.stepsBatch; i++ {
