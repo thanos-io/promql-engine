@@ -311,7 +311,7 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 		{
 			name:     "binary expression with no arg function",
 			expr:     `time() - last_update_timestamp`,
-			expected: `dedup(remote(time() - last_update_timestamp), remote(time() - last_update_timestamp))`,
+			expected: `time() - dedup(remote(last_update_timestamp), remote(last_update_timestamp))`,
 		},
 		{
 			name:     "subquery",

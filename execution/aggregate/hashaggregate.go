@@ -125,15 +125,17 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		return nil, err
 	}
 
-	args, err := a.paramOp.Next(ctx)
-	if err != nil {
-		return nil, err
+	if a.paramOp != nil {
+		args, err := a.paramOp.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for i := range args {
+			a.params[i] = args[i].Samples[0]
+			a.paramOp.GetPool().PutStepVector(args[i])
+		}
+		a.paramOp.GetPool().PutVectors(args)
 	}
-	for i := range args {
-		a.params[i] = args[i].Samples[0]
-		a.paramOp.GetPool().PutStepVector(args[i])
-	}
-	a.paramOp.GetPool().PutVectors(args)
 
 	for i, p := range a.params {
 		a.tables[i].reset(p)
