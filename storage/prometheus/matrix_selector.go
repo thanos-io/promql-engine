@@ -108,7 +108,7 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = model.NewTelemetry(m, opts.EnableAnalysis)
+	m.OperatorTelemetry = model.NewTelemetry(m, opts)
 
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.

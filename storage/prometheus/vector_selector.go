@@ -82,7 +82,7 @@ func NewVectorSelector(
 
 		selectTimestamp: selectTimestamp,
 	}
-	o.OperatorTelemetry = model.NewTelemetry(o, queryOpts.EnableAnalysis)
+	o.OperatorTelemetry = model.NewTelemetry(o, queryOpts)
 
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.

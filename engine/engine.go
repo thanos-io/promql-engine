@@ -184,13 +184,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 		disableFallback:             opts.DisableFallback,
 
-		logger:            opts.Logger,
-		lookbackDelta:     opts.LookbackDelta,
-		logicalOptimizers: opts.getLogicalOptimizers(),
-		timeout:           opts.Timeout,
-		metrics:           metrics,
-		extLookbackDelta:  opts.ExtLookbackDelta,
-		enableAnalysis:    opts.EnableAnalysis,
+		logger:             opts.Logger,
+		lookbackDelta:      opts.LookbackDelta,
+		enablePerStepStats: opts.EnablePerStepStats,
+		logicalOptimizers:  opts.getLogicalOptimizers(),
+		timeout:            opts.Timeout,
+		metrics:            metrics,
+		extLookbackDelta:   opts.ExtLookbackDelta,
+		enableAnalysis:     opts.EnableAnalysis,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
@@ -214,11 +215,12 @@ type Engine struct {
 	disableDuplicateLabelChecks bool
 	disableFallback             bool
 
-	logger            log.Logger
-	lookbackDelta     time.Duration
-	logicalOptimizers []logicalplan.Optimizer
-	timeout           time.Duration
-	metrics           *engineMetrics
+	logger             log.Logger
+	lookbackDelta      time.Duration
+	enablePerStepStats bool
+	logicalOptimizers  []logicalplan.Optimizer
+	timeout            time.Duration
+	metrics            *engineMetrics
 
 	extLookbackDelta         time.Duration
 	decodingConcurrency      int
@@ -256,6 +258,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		Step:                     0,
 		StepsBatch:               stepsBatch,
 		LookbackDelta:            opts.LookbackDelta(),
+		EnablePerStepStats:       e.enablePerStepStats && opts.EnablePerStepStats(),
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
@@ -440,6 +443,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		Step:                     step,
 		StepsBatch:               stepsBatch,
 		LookbackDelta:            opts.LookbackDelta(),
+		EnablePerStepStats:       e.enablePerStepStats && opts.EnablePerStepStats(),
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
@@ -661,6 +665,7 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 	if analysis != nil {
 		samples.PeakSamples = int(analysis.PeakSamples())
 		samples.TotalSamples = analysis.TotalSamples()
+		samples.TotalSamplesPerStep = analysis.TotalSamplesPerStep()
 	}
 
 	return &stats.Statistics{Timers: stats.NewQueryTimers(), Samples: samples}

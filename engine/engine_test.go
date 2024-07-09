@@ -4602,31 +4602,130 @@ func TestFallback(t *testing.T) {
 }
 
 func TestQueryStats(t *testing.T) {
-	start := time.Unix(0, 0)
-	end := time.Unix(120, 0)
-	step := time.Second * 30
-
-	query := `http_requests_total{pod="nginx-1"}`
-	load := `load 30s
-				http_requests_total{pod="nginx-1"} 1+1x1
-				http_requests_total{pod="nginx-2"} 1+2x1`
-	opts := promql.EngineOpts{
-		Timeout:    2 * time.Second,
-		MaxSamples: math.MaxInt64,
+	cases := []struct {
+		name  string
+		load  string
+		query string
+		start time.Time
+		end   time.Time
+		step  time.Duration
+	}{
+		{
+			name: "nested subquery",
+			load: `load 15s
+			    http_requests_total{pod="nginx-1"} 1+2x18
+			    http_requests_total{pod="nginx-2"} 1+3x18`,
+			query: `sum_over_time(deriv(rate(http_requests_total[30s])[1m:30s])[2m:])`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(300, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "subquery",
+			load: `load 15s
+			    http_requests_total{pod="nginx-1"} 1+2x10
+			    http_requests_total{pod="nginx-2"} 1+3x10`,
+			query: `max_over_time(sum(http_requests_total)[30s:15s])`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(150, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "subquery different time range",
+			load: `load 15s
+			    http_requests_total{pod="nginx-1"} 1+2x10
+			    http_requests_total{pod="nginx-2"} 1+3x10`,
+			query: `max_over_time(sum(http_requests_total)[30s:15s])`,
+			start: time.Unix(60, 0),
+			end:   time.Unix(100, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "vector selector",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1+1x1
+			    http_requests_total{pod="nginx-2"} 1+2x1`,
+			query: `http_requests_total{pod="nginx-1"}`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(120, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "sum",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1+1x1
+			    http_requests_total{pod="nginx-2"} 1+2x1`,
+			query: `sum(http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(120, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "sum rate",
+			load: `load 2m
+			    http_requests_total{pod="nginx-1"} 1+1x1
+			    http_requests_total{pod="nginx-2"} 1+2x1`,
+			query: `sum(rate(http_requests_total[1m]))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(180, 0),
+			step:  time.Second * 30,
+		},
 	}
 
-	storage := promqltest.LoadedStorage(t, load)
-	defer storage.Close()
+	for _, tc := range cases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	ctx := context.Background()
-	newEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts})
-	q, err := newEngine.NewRangeQuery(ctx, storage, nil, query, start, end, step)
-	testutil.Ok(t, err)
-	stats.NewQueryStats(q.Stats())
+			opts := promql.EngineOpts{
+				Timeout:                  300 * time.Second,
+				MaxSamples:               math.MaxInt64,
+				EnablePerStepStats:       true,
+				NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
+			}
+			qOpts := promql.NewPrometheusQueryOpts(true, 5*time.Minute)
 
-	q, err = newEngine.NewInstantQuery(ctx, storage, nil, query, end)
-	testutil.Ok(t, err)
-	stats.NewQueryStats(q.Stats())
+			storage := promqltest.LoadedStorage(t, tc.load)
+			defer storage.Close()
+
+			ctx := context.Background()
+
+			oldEngine := promql.NewEngine(opts)
+			newEngine := engine.New(engine.Opts{DisableFallback: true, EnableAnalysis: true, EngineOpts: opts})
+
+			// Instant query
+			oldQ, err := oldEngine.NewInstantQuery(ctx, storage, qOpts, tc.query, tc.end)
+			testutil.Ok(t, err)
+			oldQ.Exec(ctx)
+			oldStats := oldQ.Stats()
+			stats.NewQueryStats(oldStats)
+
+			newQ, err := newEngine.NewInstantQuery(ctx, storage, qOpts, tc.query, tc.end)
+			testutil.Ok(t, err)
+			newQ.Exec(ctx)
+			newStats := newQ.Stats()
+			stats.NewQueryStats(newStats)
+
+			testutil.Equals(t, oldStats.Samples.TotalSamples, newStats.Samples.TotalSamples)
+			testutil.Equals(t, oldStats.Samples.TotalSamplesPerStep, newStats.Samples.TotalSamplesPerStep)
+
+			// Range query
+			oldQ, err = oldEngine.NewRangeQuery(ctx, storage, qOpts, tc.query, tc.start, tc.end, tc.step)
+			testutil.Ok(t, err)
+			oldQ.Exec(ctx)
+			oldStats = oldQ.Stats()
+			stats.NewQueryStats(oldStats)
+
+			newQ, err = newEngine.NewRangeQuery(ctx, storage, qOpts, tc.query, tc.start, tc.end, tc.step)
+			testutil.Ok(t, err)
+			newQ.Exec(ctx)
+			newStats = newQ.Stats()
+			stats.NewQueryStats(newStats)
+
+			testutil.Equals(t, oldStats.Samples.TotalSamples, newStats.Samples.TotalSamples)
+			testutil.Equals(t, oldStats.Samples.TotalSamplesPerStep, newStats.Samples.TotalSamplesPerStep)
+		})
+	}
 }
 
 func storageWithMockSeries(mockSeries ...*mockSeries) *storage.MockQueryable {
