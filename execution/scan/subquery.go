@@ -167,13 +167,16 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok := o.call(FunctionArgs{
+			f, h, ok, err := o.call(FunctionArgs{
 				ScalarPoint: o.params[i],
 				Samples:     rangeSamples.Samples(),
 				StepTime:    maxt + o.subQuery.Offset.Milliseconds(),
 				SelectRange: o.subQuery.Range.Milliseconds(),
 				Offset:      o.subQuery.Offset.Milliseconds(),
 			})
+			if err != nil {
+				return nil, err
+			}
 			if ok {
 				if h != nil {
 					sv.AppendHistogram(o.pool, uint64(sampleId), h)
