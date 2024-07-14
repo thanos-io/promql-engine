@@ -44,7 +44,7 @@ func newSumAcc() *sumAcc {
 
 func (s *sumAcc) AddVector(float64s []float64, histograms []*histogram.FloatHistogram) {
 	if len(float64s) > 0 {
-		s.value += floats.Sum(float64s)
+		s.value += floats.SumCompensated(float64s)
 		s.hasFloatVal = true
 	}
 
