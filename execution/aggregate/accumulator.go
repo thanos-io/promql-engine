@@ -44,7 +44,7 @@ func newSumAcc() *sumAcc {
 
 func (s *sumAcc) AddVector(float64s []float64, histograms []*histogram.FloatHistogram) error {
 	if len(float64s) > 0 {
-		s.value += floats.SumCompensated(float64s)
+		s.value += SumCompensated(float64s)
 		s.hasFloatVal = true
 	}
 
@@ -445,4 +445,30 @@ func (q *quantileAcc) Reset(f float64) {
 	q.hasValue = false
 	q.arg = f
 	q.points = q.points[:0]
+}
+
+// SumCompensated returns the sum of the elements of the slice calculated with greater
+// accuracy than Sum at the expense of additional computation.
+func SumCompensated(s []float64) float64 {
+	// SumCompensated uses an improved version of Kahan's compensated
+	// summation algorithm proposed by Neumaier.
+	// See https://en.wikipedia.org/wiki/Kahan_summation_algorithm for details.
+	var sum, c float64
+	for _, x := range s {
+		// This type conversion is here to prevent a sufficiently smart compiler
+		// from optimising away these operations.
+		t := sum + x
+		switch {
+		case math.IsInf(t, 0):
+			c = 0
+
+		// Using Neumaier improvement, swap if next term larger than sum.
+		case math.Abs(sum) >= math.Abs(x):
+			c += (sum - t) + x
+		default:
+			c += (x - t) + sum
+		}
+		sum = t
+	}
+	return sum + c
 }

@@ -128,6 +128,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		step  time.Duration
 	}{
 		{
+			name: "fuzz",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 46.00+13.00x40
+			    http_requests_total{pod="nginx-2", route="/"}  2+5.25x40`,
+			query: `sum(quantile by (route) (-0.5044968945760265, {__name__="http_requests_total",route="/"}))`,
+		},
+		{
 			name: "predict_linear fuzz",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", route="/"} 48.00+9.17x40
