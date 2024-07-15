@@ -54,7 +54,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestPromqlAcceptance(t *testing.T) {
-	t.Parallel()
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
 			EnableAtModifier:         true,
