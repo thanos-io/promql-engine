@@ -456,7 +456,7 @@ func SumCompensated(s []float64) float64 {
 	var sum, c float64
 	for _, x := range s {
 		// This type conversion is here to prevent a sufficiently smart compiler
-		// from optimising away these operations.
+		// from optimizing away these operations.
 		t := sum + x
 		switch {
 		case math.IsInf(t, 0):
