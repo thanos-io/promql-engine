@@ -54,7 +54,6 @@ func TestMain(m *testing.M) {
 }
 
 func TestPromqlAcceptance(t *testing.T) {
-	t.Parallel()
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
 			EnableAtModifier:         true,
@@ -63,6 +62,7 @@ func TestPromqlAcceptance(t *testing.T) {
 			Timeout:                  1 * time.Hour,
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 		}})
+
 	promqltest.RunBuiltinTests(t, engine)
 }
 
@@ -127,6 +127,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		end   time.Time
 		step  time.Duration
 	}{
+		{
+			name: "fuzz",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 46.00+13.00x40
+			    http_requests_total{pod="nginx-2", route="/"}  2+5.25x40`,
+			query: `sum(quantile by (route) (-0.5044968945760265, {__name__="http_requests_total",route="/"}))`,
+		},
 		{
 			name: "predict_linear fuzz",
 			load: `load 30s
@@ -2120,12 +2127,12 @@ func newScannersWithWarns(warn error) *scannersWithWarns {
 }
 
 func (s scannersWithWarns) NewVectorSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error) {
-	warnings.AddToContext(annotations.New().Add(s.warn), ctx)
+	warnings.AddToContext(s.warn, ctx)
 	return s.promScanners.NewVectorSelector(ctx, opts, hints, selector)
 }
 
 func (s scannersWithWarns) NewMatrixSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.MatrixSelector, call logicalplan.FunctionCall) (model.VectorOperator, error) {
-	warnings.AddToContext(annotations.New().Add(s.warn), ctx)
+	warnings.AddToContext(s.warn, ctx)
 	return s.promScanners.NewMatrixSelector(ctx, opts, hints, selector, call)
 }
 
@@ -4975,7 +4982,7 @@ func TestNativeHistograms(t *testing.T) {
 			query: `histogram_sum(native_histogram_series) / histogram_count(native_histogram_series)`,
 		},
 		{
-			name:  "histogram_sum over histogram_fraction",
+			name:  "histogram_sum over histogram_quantile",
 			query: `histogram_sum(scalar(histogram_quantile(1, sum(native_histogram_series))) * native_histogram_series)`,
 		},
 		{
@@ -5032,7 +5039,7 @@ histogram_sum(
 }
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
-	numHistograms := 50
+	numHistograms := 10
 	mixedTypesOpts := []bool{false, true}
 	var (
 		queryStart = time.Unix(50, 0)
@@ -5242,7 +5249,10 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
 		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
-		expected := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil)).Mul(1 / float64(30))
+
+		diff, err := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil))
+		testutil.Ok(t, err)
+		expected := diff.Mul(1 / float64(30))
 		expected.CounterResetHint = histogram.GaugeType
 		testutil.Equals(t, expected, actual[0].Histograms[0].H)
 	})

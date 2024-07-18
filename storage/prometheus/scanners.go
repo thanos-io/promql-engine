@@ -5,14 +5,18 @@ package prometheus
 
 import (
 	"context"
+	"math"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/execution/exchange"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -56,7 +60,7 @@ func (p Scanners) NewVectorSelector(
 }
 
 func (p Scanners) NewMatrixSelector(
-	_ context.Context,
+	ctx context.Context,
 	opts *query.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.MatrixSelector,
@@ -70,6 +74,9 @@ func (p Scanners) NewMatrixSelector(
 			return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "quantile_over_time with expression as first argument is not supported")
 		}
 		arg = unwrap
+		if math.IsNaN(unwrap) || unwrap < 0 || unwrap > 1 {
+			warnings.AddToContext(annotations.NewInvalidQuantileWarning(unwrap, posrange.PositionRange{}), ctx)
+		}
 	case "predict_linear":
 		unwrap, err := logicalplan.UnwrapFloat(call.Args[1])
 		if err != nil {
