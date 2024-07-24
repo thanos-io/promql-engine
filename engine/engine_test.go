@@ -4613,8 +4613,8 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "nested subquery",
 			load: `load 15s
-			    http_requests_total{pod="nginx-1"} 1+2x18
-			    http_requests_total{pod="nginx-2"} 1+3x18`,
+			    http_requests_total{pod="nginx-1"} 1+2x20
+			    http_requests_total{pod="nginx-2"} 1+3x20`,
 			query: `sum_over_time(deriv(rate(http_requests_total[30s])[1m:30s])[2m:])`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(300, 0),
@@ -4623,8 +4623,8 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "subquery",
 			load: `load 15s
-			    http_requests_total{pod="nginx-1"} 1+2x10
-			    http_requests_total{pod="nginx-2"} 1+3x10`,
+			    http_requests_total{pod="nginx-1"} 1+2x20
+			    http_requests_total{pod="nginx-2"} 1+3x20`,
 			query: `max_over_time(sum(http_requests_total)[30s:15s])`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(150, 0),
@@ -4633,8 +4633,8 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "subquery different time range",
 			load: `load 15s
-			    http_requests_total{pod="nginx-1"} 1+2x10
-			    http_requests_total{pod="nginx-2"} 1+3x10`,
+			    http_requests_total{pod="nginx-1"} 1+2x20
+			    http_requests_total{pod="nginx-2"} 1+3x20`,
 			query: `max_over_time(sum(http_requests_total)[30s:15s])`,
 			start: time.Unix(60, 0),
 			end:   time.Unix(100, 0),
@@ -4643,8 +4643,8 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "vector selector",
 			load: `load 30s
-			    http_requests_total{pod="nginx-1"} 1+1x1
-			    http_requests_total{pod="nginx-2"} 1+2x1`,
+			    http_requests_total{pod="nginx-1"} 1+1x10
+			    http_requests_total{pod="nginx-2"} 1+2x10`,
 			query: `http_requests_total{pod="nginx-1"}`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(120, 0),
@@ -4653,8 +4653,8 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "sum",
 			load: `load 30s
-			    http_requests_total{pod="nginx-1"} 1+1x1
-			    http_requests_total{pod="nginx-2"} 1+2x1`,
+			    http_requests_total{pod="nginx-1"} 1+1x10
+			    http_requests_total{pod="nginx-2"} 1+2x10`,
 			query: `sum(http_requests_total)`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(120, 0),
@@ -4663,8 +4663,8 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "sum rate",
 			load: `load 2m
-			    http_requests_total{pod="nginx-1"} 1+1x1
-			    http_requests_total{pod="nginx-2"} 1+2x1`,
+			    http_requests_total{pod="nginx-1"} 1+1x10
+			    http_requests_total{pod="nginx-2"} 1+2x10`,
 			query: `sum(rate(http_requests_total[1m]))`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(180, 0),
