@@ -4613,61 +4613,91 @@ func TestQueryStats(t *testing.T) {
 		{
 			name: "nested subquery",
 			load: `load 15s
-			    http_requests_total{pod="nginx-1"} 1+2x20
-			    http_requests_total{pod="nginx-2"} 1+3x20`,
+			    http_requests_total{pod="nginx-1"} 1+2x1000
+			    http_requests_total{pod="nginx-2"} 1+3x10`,
 			query: `sum_over_time(deriv(rate(http_requests_total[30s])[1m:30s])[2m:])`,
 			start: time.Unix(0, 0),
-			end:   time.Unix(300, 0),
-			step:  time.Second * 30,
+			end:   time.Unix(3600, 0),
+			step:  time.Second * 10,
 		},
 		{
 			name: "subquery",
 			load: `load 15s
-			    http_requests_total{pod="nginx-1"} 1+2x20
-			    http_requests_total{pod="nginx-2"} 1+3x20`,
+			    http_requests_total{pod="nginx-1"} 1+2x200
+			    http_requests_total{pod="nginx-2"} 1+3x200`,
 			query: `max_over_time(sum(http_requests_total)[30s:15s])`,
 			start: time.Unix(0, 0),
-			end:   time.Unix(150, 0),
+			end:   time.Unix(1500, 0),
 			step:  time.Second * 30,
 		},
 		{
 			name: "subquery different time range",
 			load: `load 15s
-			    http_requests_total{pod="nginx-1"} 1+2x20
-			    http_requests_total{pod="nginx-2"} 1+3x20`,
+			    http_requests_total{pod="nginx-1"} 1+2x200
+			    http_requests_total{pod="nginx-2"} 1+3x200`,
 			query: `max_over_time(sum(http_requests_total)[30s:15s])`,
 			start: time.Unix(60, 0),
-			end:   time.Unix(100, 0),
+			end:   time.Unix(1000, 0),
 			step:  time.Second * 30,
 		},
 		{
 			name: "vector selector",
 			load: `load 30s
-			    http_requests_total{pod="nginx-1"} 1+1x10
-			    http_requests_total{pod="nginx-2"} 1+2x10`,
+			    http_requests_total{pod="nginx-1"} 1+1x100
+			    http_requests_total{pod="nginx-2"} 1+2x100`,
 			query: `http_requests_total{pod="nginx-1"}`,
 			start: time.Unix(0, 0),
-			end:   time.Unix(120, 0),
+			end:   time.Unix(1800, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "vector selector sparse",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1+1x100
+			    http_requests_total{pod="nginx-2"} 1+2x20`,
+			query: `rate(http_requests_total{pod="nginx-2"}[10s])`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(1800, 0),
 			step:  time.Second * 30,
 		},
 		{
 			name: "sum",
 			load: `load 30s
-			    http_requests_total{pod="nginx-1"} 1+1x10
-			    http_requests_total{pod="nginx-2"} 1+2x10`,
+			    http_requests_total{pod="nginx-1"} 1+1x100
+			    http_requests_total{pod="nginx-2"} 1+2x100`,
 			query: `sum(http_requests_total)`,
 			start: time.Unix(0, 0),
-			end:   time.Unix(120, 0),
+			end:   time.Unix(1200, 0),
 			step:  time.Second * 30,
 		},
 		{
 			name: "sum rate",
-			load: `load 2m
-			    http_requests_total{pod="nginx-1"} 1+1x10
-			    http_requests_total{pod="nginx-2"} 1+2x10`,
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1+1x100
+			    http_requests_total{pod="nginx-2"} 1+2x100`,
 			query: `sum(rate(http_requests_total[1m]))`,
 			start: time.Unix(0, 0),
-			end:   time.Unix(180, 0),
+			end:   time.Unix(1800, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "sum rate large window",
+			load: `load 2m
+			    http_requests_total{pod="nginx-1"} 1+1x100
+			    http_requests_total{pod="nginx-2"} 1+2x100`,
+			query: `sum(rate(http_requests_total[1m]))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(1800, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "sum rate sparse",
+			load: `load 2m
+			    http_requests_total{pod="nginx-1"} 1+1x5
+			    http_requests_total{pod="nginx-2"} 1+2x5`,
+			query: `sum(rate(http_requests_total[1m]))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(1800, 0),
 			step:  time.Second * 30,
 		},
 	}
@@ -4696,32 +4726,34 @@ func TestQueryStats(t *testing.T) {
 			// Instant query
 			oldQ, err := oldEngine.NewInstantQuery(ctx, storage, qOpts, tc.query, tc.end)
 			testutil.Ok(t, err)
-			oldQ.Exec(ctx)
+			oldResult := oldQ.Exec(ctx)
 			oldStats := oldQ.Stats()
 			stats.NewQueryStats(oldStats)
 
 			newQ, err := newEngine.NewInstantQuery(ctx, storage, qOpts, tc.query, tc.end)
 			testutil.Ok(t, err)
-			newQ.Exec(ctx)
+			newResult := newQ.Exec(ctx)
 			newStats := newQ.Stats()
 			stats.NewQueryStats(newStats)
 
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
 			testutil.Equals(t, oldStats.Samples.TotalSamples, newStats.Samples.TotalSamples)
 			testutil.Equals(t, oldStats.Samples.TotalSamplesPerStep, newStats.Samples.TotalSamplesPerStep)
 
 			// Range query
 			oldQ, err = oldEngine.NewRangeQuery(ctx, storage, qOpts, tc.query, tc.start, tc.end, tc.step)
 			testutil.Ok(t, err)
-			oldQ.Exec(ctx)
+			oldResult = oldQ.Exec(ctx)
 			oldStats = oldQ.Stats()
 			stats.NewQueryStats(oldStats)
 
 			newQ, err = newEngine.NewRangeQuery(ctx, storage, qOpts, tc.query, tc.start, tc.end, tc.step)
 			testutil.Ok(t, err)
-			newQ.Exec(ctx)
+			newResult = newQ.Exec(ctx)
 			newStats = newQ.Stats()
 			stats.NewQueryStats(newStats)
 
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
 			testutil.Equals(t, oldStats.Samples.TotalSamples, newStats.Samples.TotalSamples)
 			testutil.Equals(t, oldStats.Samples.TotalSamplesPerStep, newStats.Samples.TotalSamplesPerStep)
 		})

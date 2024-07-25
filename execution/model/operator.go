@@ -19,7 +19,6 @@ type OperatorTelemetry interface {
 
 	AddExecutionTimeTaken(time.Duration)
 	ExecutionTimeTaken() time.Duration
-	IncrementSamplesAtStep(samples int, step int)
 	IncrementSamplesAtTimestamp(samples int, t int64)
 	Samples() *stats.QuerySamples
 	SubQuery() bool
@@ -53,7 +52,6 @@ func (tm *NoopTelemetry) ExecutionTimeTaken() time.Duration {
 	return time.Duration(0)
 }
 
-func (tm *NoopTelemetry) IncrementSamplesAtStep(_, _ int)            {}
 func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(_ int, _ int64) {}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
@@ -88,11 +86,6 @@ func (ti *TrackedTelemetry) AddExecutionTimeTaken(t time.Duration) { ti.Executio
 
 func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
 	return ti.ExecutionTime
-}
-
-func (ti *TrackedTelemetry) IncrementSamplesAtStep(samples, step int) {
-	ti.updatePeak(samples)
-	ti.LoadedSamples.IncrementSamplesAtStep(step, int64(samples))
 }
 
 func (ti *TrackedTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) {
