@@ -4,13 +4,18 @@
 package logicalplan
 
 import (
+	"math/rand"
 	"testing"
 
+	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/query"
 )
+
+const testRuns = 100
 
 func TestNodesMarshalJSON(t *testing.T) {
 	var cases = []struct {
@@ -72,4 +77,40 @@ func TestUnmarshalMatchers(t *testing.T) {
 	vs, ok := clone.(*VectorSelector)
 	testutil.Assert(t, true, ok)
 	testutil.Assert(t, true, vs.LabelMatchers[0].Matches("value"))
+}
+
+func FuzzNodesMarshalJSON(f *testing.F) {
+	f.Add(int64(0))
+	f.Fuzz(func(t *testing.T, seed int64) {
+		lbls := []labels.Labels{
+			labels.FromStrings("__name__", "http_requests_total"),
+		}
+		opts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(true),
+			promqlsmith.WithEnableAtModifier(true),
+		}
+		rnd := rand.New(rand.NewSource(seed))
+		pqSmith := promqlsmith.New(rnd, lbls, opts...)
+		for i := 0; i < testRuns; i++ {
+			qry := pqSmith.WalkRangeQuery()
+			parser.Inspect(qry, func(node parser.Node, nodes []parser.Node) error {
+				switch vs := (node).(type) {
+				case *parser.VectorSelector:
+					vs.Series = nil
+					vs.UnexpandedSeriesSet = nil
+				}
+				return nil
+			})
+
+			original := NewFromAST(qry, &query.Options{}, PlanOptions{})
+			original, _ = original.Optimize(DefaultOptimizers)
+
+			bytes, err := Marshal(original.Root())
+			testutil.Ok(t, err)
+
+			clone, err := Unmarshal(bytes)
+			testutil.Ok(t, err)
+			testutil.Equals(t, original.Root().String(), clone.String())
+		}
+	})
 }
