@@ -41,7 +41,7 @@ type subqueryOperator struct {
 
 	lastVectors   []model.StepVector
 	lastCollected int
-	buffers       []*ringbuffer.RingBuffer[Value]
+	buffers       []*ringbuffer.RingBuffer
 
 	// params holds the function parameter for each step.
 	params []float64
@@ -202,14 +202,14 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 		if buffer.Len() > 0 && v.T <= buffer.MaxT() {
 			continue
 		}
-		buffer.Push(v.T, Value{F: s})
+		buffer.Push(v.T, ringbuffer.Value{F: s})
 	}
 	for i, s := range v.Histograms {
 		buffer := o.buffers[v.HistogramIDs[i]]
 		if buffer.Len() > 0 && v.T < buffer.MaxT() {
 			continue
 		}
-		buffer.Push(v.T, Value{H: s})
+		buffer.Push(v.T, ringbuffer.Value{H: s})
 	}
 	o.next.GetPool().PutStepVector(v)
 }
@@ -234,9 +234,9 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		}
 
 		o.series = make([]labels.Labels, len(series))
-		o.buffers = make([]*ringbuffer.RingBuffer[Value], len(series))
+		o.buffers = make([]*ringbuffer.RingBuffer, len(series))
 		for i := range o.buffers {
-			o.buffers[i] = ringbuffer.New[Value](8)
+			o.buffers[i] = ringbuffer.New(8)
 		}
 		var b labels.ScratchBuilder
 		for i, s := range series {

@@ -28,9 +28,9 @@ type matrixScanner struct {
 	labels    labels.Labels
 	signature uint64
 
-	buffer           *ringbuffer.RingBuffer[scan.Value]
+	buffer           *ringbuffer.RingBuffer
 	iterator         chunkenc.Iterator
-	lastSample       ringbuffer.Sample[scan.Value]
+	lastSample       ringbuffer.Sample
 	metricAppearedTs *int64
 }
 
@@ -43,7 +43,7 @@ type matrixSelector struct {
 	scalarArg    float64
 	call         scan.FunctionCall
 	scanners     []matrixScanner
-	bufferTail   []ringbuffer.Sample[scan.Value]
+	bufferTail   []ringbuffer.Sample
 	series       []labels.Labels
 	once         sync.Once
 
@@ -90,7 +90,7 @@ func NewMatrixSelector(
 		functionName: functionName,
 		vectorPool:   pool,
 		scalarArg:    arg,
-		bufferTail:   make([]ringbuffer.Sample[scan.Value], 16),
+		bufferTail:   make([]ringbuffer.Sample, 16),
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
@@ -245,8 +245,8 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				labels:     lbls,
 				signature:  s.Signature,
 				iterator:   s.Iterator(nil),
-				lastSample: ringbuffer.Sample[scan.Value]{T: math.MinInt64},
-				buffer:     ringbuffer.New[scan.Value](8),
+				lastSample: ringbuffer.Sample{T: math.MinInt64},
+				buffer:     ringbuffer.New(8),
 			}
 			o.series[i] = lbls
 		}
@@ -284,7 +284,7 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T >= mint {
-		m.buffer.ReadIntoNext(func(s *ringbuffer.Sample[scan.Value]) bool {
+		m.buffer.ReadIntoNext(func(s *ringbuffer.Sample) bool {
 			s.T, s.V.F = m.lastSample.T, m.lastSample.V.F
 			if m.lastSample.V.H != nil {
 				if s.V.H == nil {
@@ -303,7 +303,7 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			var stop bool
-			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample[scan.Value]) (keep bool) {
+			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample) (keep bool) {
 				if s.V.H == nil {
 					s.V.H = &histogram.FloatHistogram{}
 				}
@@ -334,7 +334,7 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 				return nil
 			}
 			if t >= mint {
-				m.buffer.Push(t, scan.Value{F: v})
+				m.buffer.Push(t, ringbuffer.Value{F: v})
 			}
 		}
 	}
@@ -358,7 +358,7 @@ func (m *matrixScanner) selectExtPoints(mint, maxt, extLookbackDelta int64) erro
 
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T >= mint {
-		m.buffer.Push(m.lastSample.T, scan.Value{F: m.lastSample.V.F, H: m.lastSample.V.H})
+		m.buffer.Push(m.lastSample.T, ringbuffer.Value{F: m.lastSample.V.F, H: m.lastSample.V.H})
 		m.lastSample.T = math.MinInt64
 		mint = maxInt64(m.buffer.MaxT()+1, mint)
 	}
@@ -381,10 +381,10 @@ func (m *matrixScanner) selectExtPoints(mint, maxt, extLookbackDelta int64) erro
 				return nil
 			}
 			if t >= mint || !appendedPointBeforeMint {
-				m.buffer.Push(t, scan.Value{F: v})
+				m.buffer.Push(t, ringbuffer.Value{F: v})
 				appendedPointBeforeMint = true
 			} else {
-				m.buffer.ReadIntoLast(func(s *ringbuffer.Sample[scan.Value]) {
+				m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
 					s.T, s.V.F, s.V.H = t, v, nil
 				})
 			}
