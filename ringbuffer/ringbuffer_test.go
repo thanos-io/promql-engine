@@ -10,34 +10,34 @@ import (
 )
 
 func TestRingBuffer(t *testing.T) {
-	floats := newFloatReader([]Sample[float64]{{30, 1}, {60, 2}, {90, 3}})
-	buffer := New[float64](4)
+	floats := newReader([]Sample{{30, Value{F: 1}}, {60, Value{F: 2}}, {90, Value{F: 3}}})
+	buffer := New(4)
 
 	buffer.ReadIntoNext(floats.ReadNext)
-	testutil.Equals(t, []Sample[float64]{{30, 1}}, buffer.Samples())
+	testutil.Equals(t, []Sample{{30, Value{F: 1}}}, buffer.Samples())
 
 	buffer.ReadIntoNext(floats.ReadNext)
-	testutil.Equals(t, []Sample[float64]{{30, 1}, {60, 2}}, buffer.Samples())
+	testutil.Equals(t, []Sample{{30, Value{F: 1}}, {60, Value{F: 2}}}, buffer.Samples())
 
 	buffer.DropBefore(60)
-	testutil.Equals(t, []Sample[float64]{{60, 2}}, buffer.Samples())
+	testutil.Equals(t, []Sample{{60, Value{F: 2}}}, buffer.Samples())
 
 	buffer.ReadIntoNext(floats.ReadNext)
-	testutil.Equals(t, []Sample[float64]{{60, 2}, {90, 3}}, buffer.Samples())
+	testutil.Equals(t, []Sample{{60, Value{F: 2}}, {90, Value{F: 3}}}, buffer.Samples())
 }
 
-type floatReader struct {
+type reader struct {
 	i     int
-	items []Sample[float64]
+	items []Sample
 }
 
-func newFloatReader(items []Sample[float64]) *floatReader {
-	return &floatReader{
+func newReader(items []Sample) *reader {
+	return &reader{
 		items: items,
 	}
 }
 
-func (f *floatReader) ReadNext(item *Sample[float64]) bool {
+func (f *reader) ReadNext(item *Sample) bool {
 	item.T = f.items[f.i].T
 	item.V = f.items[f.i].V
 	f.i++

@@ -3,31 +3,40 @@
 
 package ringbuffer
 
-import "math"
+import (
+	"math"
 
-type Sample[T any] struct {
+	"github.com/prometheus/prometheus/model/histogram"
+)
+
+type Value struct {
+	F float64
+	H *histogram.FloatHistogram
+}
+
+type Sample struct {
 	T int64
-	V T
+	V Value
 }
 
-type RingBuffer[T any] struct {
-	items []Sample[T]
-	tail  []Sample[T]
+type RingBuffer struct {
+	items []Sample
+	tail  []Sample
 }
 
-func New[T any](size int) *RingBuffer[T] {
-	return &RingBuffer[T]{
-		items: make([]Sample[T], 0, size),
+func New(size int) *RingBuffer {
+	return &RingBuffer{
+		items: make([]Sample, 0, size),
 	}
 }
 
-func (r *RingBuffer[T]) Len() int {
+func (r *RingBuffer) Len() int {
 	return len(r.items)
 }
 
 // MaxT returns the maximum timestamp of the ring buffer.
 // If the ring buffer is empty, it returns math.MinInt64.
-func (r *RingBuffer[T]) MaxT() int64 {
+func (r *RingBuffer) MaxT() int64 {
 	if len(r.items) == 0 {
 		return math.MinInt64
 	}
@@ -36,33 +45,33 @@ func (r *RingBuffer[T]) MaxT() int64 {
 
 // ReadIntoNext can be used to read a sample into the next ring buffer slot through the passed in callback.
 // If the callback function returns false, the sample is not kept in the buffer.
-func (r *RingBuffer[T]) ReadIntoNext(f func(*Sample[T]) bool) {
+func (r *RingBuffer) ReadIntoNext(f func(*Sample) bool) {
 	n := len(r.items)
 	if cap(r.items) > len(r.items) {
 		r.items = r.items[:n+1]
 	} else {
-		r.items = append(r.items, Sample[T]{})
+		r.items = append(r.items, Sample{})
 	}
 	if keep := f(&r.items[n]); !keep {
 		r.items = r.items[:n]
 	}
 }
 
-func (r *RingBuffer[T]) ReadIntoLast(f func(*Sample[T])) {
+func (r *RingBuffer) ReadIntoLast(f func(*Sample)) {
 	f(&r.items[len(r.items)-1])
 }
 
-func (r *RingBuffer[T]) Push(t int64, v T) {
+func (r *RingBuffer) Push(t int64, v Value) {
 	if n := len(r.items); n < cap(r.items) {
 		r.items = r.items[:n+1]
 		r.items[n].T = t
 		r.items[n].V = v
 	} else {
-		r.items = append(r.items, Sample[T]{T: t, V: v})
+		r.items = append(r.items, Sample{T: t, V: v})
 	}
 }
 
-func (r *RingBuffer[T]) DropBefore(ts int64) {
+func (r *RingBuffer) DropBefore(ts int64) {
 	if len(r.items) == 0 || r.items[len(r.items)-1].T < ts {
 		r.items = r.items[:0]
 		return
@@ -79,7 +88,7 @@ func (r *RingBuffer[T]) DropBefore(ts int64) {
 	r.items = r.items[:keep]
 }
 
-func (r *RingBuffer[T]) DropBeforeWithExtLookback(ts int64, extMint int64) {
+func (r *RingBuffer) DropBeforeWithExtLookback(ts int64, extMint int64) {
 	if len(r.items) == 0 || r.items[len(r.items)-1].T < ts {
 		r.items = r.items[:0]
 		return
@@ -99,13 +108,13 @@ func (r *RingBuffer[T]) DropBeforeWithExtLookback(ts int64, extMint int64) {
 	r.items = r.items[:keep]
 }
 
-func (r *RingBuffer[T]) Samples() []Sample[T] {
+func (r *RingBuffer) Samples() []Sample {
 	return r.items
 }
 
-func resize[T any](s []Sample[T], n int) []Sample[T] {
+func resize(s []Sample, n int) []Sample {
 	if cap(s) >= n {
 		return s[:n]
 	}
-	return make([]Sample[T], n)
+	return make([]Sample, n)
 }
