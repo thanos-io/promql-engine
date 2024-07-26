@@ -108,7 +108,7 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = model.NewTelemetry(m, opts.EnableAnalysis)
+	m.OperatorTelemetry = model.NewTelemetry(m, opts)
 
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
@@ -208,7 +208,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, f)
 				}
 			}
-			o.IncrementSamplesAtStep(len(series.buffer.Samples()), currStep)
+			o.IncrementSamplesAtTimestamp(len(series.buffer.Samples()), seriesTs)
 			seriesTs += o.step
 		}
 	}

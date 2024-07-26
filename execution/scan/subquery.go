@@ -72,7 +72,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOpera
 		lastCollected: -1,
 		params:        make([]float64, opts.StepsBatch),
 	}
-	o.OperatorTelemetry = model.NewTelemetry(o, opts.EnableAnalysis)
+	o.OperatorTelemetry = model.NewSubqueryTelemetry(o, opts)
 
 	return o, nil
 }
@@ -183,6 +183,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 				} else {
 					sv.AppendSample(o.pool, uint64(sampleId), f)
 				}
+				o.IncrementSamplesAtTimestamp(len(rangeSamples.Samples()), sv.T)
 			}
 		}
 		res = append(res, sv)
