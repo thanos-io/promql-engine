@@ -6,6 +6,7 @@ package logicalplan
 import (
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -493,7 +494,7 @@ func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string
 	case Deduplicate, RemoteExecution:
 		return false
 	case *Binary:
-		return isBinaryExpressionWithOneScalarSide(e) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(e))
+		return isBinaryExpressionWithOneScalarSide(e) || (!skipBinaryPushdown && isBinaryExpressionWithDistributableMatching(e, engineLabels))
 	case *Aggregation:
 		// Certain aggregations are currently not supported.
 		if _, ok := distributiveAggregations[e.Op]; !ok {
@@ -518,14 +519,31 @@ func isBinaryExpressionWithOneScalarSide(expr *Binary) bool {
 	return lhsConstant || rhsConstant
 }
 
-func isBinaryExpressionWithDistributableMatching(expr *Binary) bool {
+func isBinaryExpressionWithDistributableMatching(expr *Binary, engineLabels map[string]struct{}) bool {
 	if expr.VectorMatching == nil {
 		return false
 	}
+	// TODO: think about "or" but for safety we dont push it down for now.
+	if expr.Op == parser.LOR {
+		return false
+	}
 
-	// we can distribute if the vector matching contains the external labels so that
-	// all potential matching partners are contained in one engine
-	return !expr.VectorMatching.On && len(expr.VectorMatching.MatchingLabels) == 0
+	if expr.VectorMatching.On {
+		// on (...) - if ... contains all partition labels we can distribute
+		for lbl := range engineLabels {
+			if !slices.Contains(expr.VectorMatching.MatchingLabels, lbl) {
+				return false
+			}
+		}
+		return true
+	}
+	// ignoring (...) - if ... does contain any engine labels we cannot distribute
+	for lbl := range engineLabels {
+		if slices.Contains(expr.VectorMatching.MatchingLabels, lbl) {
+			return false
+		}
+	}
+	return true
 }
 
 // matchesExternalLabels returns false if given matchers are not matching external labels.

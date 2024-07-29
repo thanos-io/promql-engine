@@ -11,7 +11,6 @@ import (
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/api"
@@ -362,6 +361,26 @@ sum_over_time(max(dedup(
 			name:     "label based pruning with grouping matches single engine",
 			expr:     `sum by (pod) (rate(http_requests_total{region="south"}[2m]))`,
 			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="south"}[2m])))))`,
+		},
+		{
+			name:     "binary matching where hash contains partitioning label with on",
+			expr:     `X * on (region) Y`,
+			expected: `dedup(remote(X * on (region) Y), remote(X * on (region) Y))`,
+		},
+		{
+			name:     "binary matching where hash contains partitioning label with ignoring",
+			expr:     `X * ignoring (foo) Y`,
+			expected: `dedup(remote(X * ignoring (foo) Y), remote(X * ignoring (foo) Y))`,
+		},
+		{
+			name:     "binary matching where hash doesnt contain partitioning label with ignoring",
+			expr:     `X * ignoring (region) Y`,
+			expected: `dedup(remote(X), remote(X)) * ignoring (region) dedup(remote(Y), remote(Y))`,
+		},
+		{
+			name:     "binary matching where hash doesnt contain partitioning label with on",
+			expr:     `X * on (foo) Y`,
+			expected: `dedup(remote(X), remote(X)) * on (foo) dedup(remote(Y), remote(Y))`,
 		},
 	}
 
