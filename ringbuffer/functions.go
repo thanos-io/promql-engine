@@ -1,7 +1,7 @@
 // Copyright (c) The Thanos Community Authors.
 // Licensed under the Apache License 2.0.
 
-package scan
+package ringbuffer
 
 import (
 	"math"
@@ -10,14 +10,12 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/ringbuffer"
 )
 
-type Sample ringbuffer.Sample
-type SamplesBuffer ringbuffer.RingBuffer
+type SamplesBuffer RingBuffer
 
 type FunctionArgs struct {
-	Samples          []ringbuffer.Sample
+	Samples          []Sample
 	StepTime         int64
 	SelectRange      int64
 	Offset           int64
@@ -30,7 +28,7 @@ type FunctionArgs struct {
 
 type FunctionCall func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error)
 
-func instantValue(samples []ringbuffer.Sample, isRate bool) (float64, bool) {
+func instantValue(samples []Sample, isRate bool) (float64, bool) {
 	lastSample := samples[len(samples)-1]
 	previousSample := samples[len(samples)-2]
 
@@ -254,7 +252,7 @@ func NewRangeVectorFunc(name string) (FunctionCall, error) {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []ringbuffer.Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram, error) {
+func extrapolatedRate(samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram, error) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -337,7 +335,7 @@ func extrapolatedRate(samples []ringbuffer.Sample, isCounter, isRate bool, stepT
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // taking into account the last sample before the range start, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extendedRate(samples []ringbuffer.Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64, metricAppearedTs int64) (float64, *histogram.FloatHistogram, error) {
+func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64, metricAppearedTs int64) (float64, *histogram.FloatHistogram, error) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -429,7 +427,7 @@ func extendedRate(samples []ringbuffer.Sample, isCounter, isRate bool, stepTime 
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram.
-func histogramRate(points []ringbuffer.Sample, isCounter bool) (*histogram.FloatHistogram, error) {
+func histogramRate(points []Sample, isCounter bool) (*histogram.FloatHistogram, error) {
 	// Calculating a rate on a single sample is not defined.
 	if len(points) < 2 {
 		return nil, nil
@@ -484,7 +482,7 @@ func histogramRate(points []ringbuffer.Sample, isCounter bool) (*histogram.Float
 	return h.Compact(0), nil
 }
 
-func maxOverTime(points []ringbuffer.Sample) float64 {
+func maxOverTime(points []Sample) float64 {
 	max := points[0].V.F
 	for _, v := range points {
 		if v.V.F > max || math.IsNaN(max) {
@@ -494,7 +492,7 @@ func maxOverTime(points []ringbuffer.Sample) float64 {
 	return max
 }
 
-func minOverTime(points []ringbuffer.Sample) float64 {
+func minOverTime(points []Sample) float64 {
 	min := points[0].V.F
 	for _, v := range points {
 		if v.V.F < min || math.IsNaN(min) {
@@ -504,11 +502,11 @@ func minOverTime(points []ringbuffer.Sample) float64 {
 	return min
 }
 
-func countOverTime(points []ringbuffer.Sample) float64 {
+func countOverTime(points []Sample) float64 {
 	return float64(len(points))
 }
 
-func avgOverTime(points []ringbuffer.Sample) float64 {
+func avgOverTime(points []Sample) float64 {
 	var mean, count, c float64
 	for _, v := range points {
 		count++
@@ -538,7 +536,7 @@ func avgOverTime(points []ringbuffer.Sample) float64 {
 	return mean + c
 }
 
-func sumOverTime(points []ringbuffer.Sample) float64 {
+func sumOverTime(points []Sample) float64 {
 	var sum, c float64
 	for _, v := range points {
 		sum, c = kahanSumInc(v.V.F, sum, c)
@@ -549,7 +547,7 @@ func sumOverTime(points []ringbuffer.Sample) float64 {
 	return sum + c
 }
 
-func stddevOverTime(points []ringbuffer.Sample) float64 {
+func stddevOverTime(points []Sample) float64 {
 	var count float64
 	var mean, cMean float64
 	var aux, cAux float64
@@ -562,7 +560,7 @@ func stddevOverTime(points []ringbuffer.Sample) float64 {
 	return math.Sqrt((aux + cAux) / count)
 }
 
-func stdvarOverTime(points []ringbuffer.Sample) float64 {
+func stdvarOverTime(points []Sample) float64 {
 	var count float64
 	var mean, cMean float64
 	var aux, cAux float64
@@ -575,7 +573,7 @@ func stdvarOverTime(points []ringbuffer.Sample) float64 {
 	return (aux + cAux) / count
 }
 
-func changes(points []ringbuffer.Sample) float64 {
+func changes(points []Sample) float64 {
 	var count float64
 	prev := points[0].V.F
 	count = 0
@@ -589,7 +587,7 @@ func changes(points []ringbuffer.Sample) float64 {
 	return count
 }
 
-func deriv(points []ringbuffer.Sample) float64 {
+func deriv(points []Sample) float64 {
 	// We pass in an arbitrary timestamp that is near the values in use
 	// to avoid floating point accuracy issues, see
 	// https://github.com/prometheus/prometheus/issues/2674
@@ -597,12 +595,12 @@ func deriv(points []ringbuffer.Sample) float64 {
 	return slope
 }
 
-func predictLinear(points []ringbuffer.Sample, duration float64, stepTime int64) float64 {
+func predictLinear(points []Sample, duration float64, stepTime int64) float64 {
 	slope, intercept := linearRegression(points, stepTime)
 	return slope*duration + intercept
 }
 
-func resets(points []ringbuffer.Sample) float64 {
+func resets(points []Sample) float64 {
 	count := 0
 	prev := points[0].V.F
 	for _, sample := range points[1:] {
@@ -616,7 +614,7 @@ func resets(points []ringbuffer.Sample) float64 {
 	return float64(count)
 }
 
-func linearRegression(Samples []ringbuffer.Sample, interceptTime int64) (slope, intercept float64) {
+func linearRegression(Samples []Sample, interceptTime int64) (slope, intercept float64) {
 	var (
 		n          float64
 		sumX, cX   float64
@@ -659,7 +657,7 @@ func linearRegression(Samples []ringbuffer.Sample, interceptTime int64) (slope, 
 	return slope, intercept
 }
 
-func filterFloatOnlySamples(samples []ringbuffer.Sample) []ringbuffer.Sample {
+func filterFloatOnlySamples(samples []Sample) []Sample {
 	i := 0
 	for _, sample := range samples {
 		if sample.V.H == nil {
