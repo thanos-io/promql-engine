@@ -164,7 +164,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	firstSeries := o.currentSeries
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
-			series   = &o.scanners[o.currentSeries]
+			scanner  = &o.scanners[o.currentSeries]
 			seriesTs = ts
 		)
 
@@ -172,33 +172,26 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			if err := series.selectPoints(mint, maxt, o.isExtFunction); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.isExtFunction); err != nil {
 				return nil, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
 			// https://github.com/thanos-io/promql-engine/issues/39
-			f, h, ok, err := o.call(ringbuffer.FunctionArgs{
-				Samples:          series.buffer.Samples(),
-				StepTime:         seriesTs,
-				SelectRange:      o.selectRange,
-				Offset:           o.offset,
-				ScalarPoint:      o.scalarArg,
-				MetricAppearedTs: series.metricAppearedTs,
-			})
+			f, h, ok, err := scanner.buffer.Eval(o.scalarArg, scanner.metricAppearedTs)
 			if err != nil {
 				return nil, err
 			}
 			if ok {
 				vectors[currStep].T = seriesTs
 				if h != nil {
-					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, h)
+					vectors[currStep].AppendHistogram(o.vectorPool, scanner.signature, h)
 				} else {
-					vectors[currStep].AppendSample(o.vectorPool, series.signature, f)
+					vectors[currStep].AppendSample(o.vectorPool, scanner.signature, f)
 				}
 			}
-			o.IncrementSamplesAtTimestamp(len(series.buffer.Samples()), seriesTs)
+			o.IncrementSamplesAtTimestamp(scanner.buffer.Len(), seriesTs)
 			seriesTs += o.step
 		}
 	}
@@ -233,9 +226,9 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			}
 			var buf *ringbuffer.RingBuffer
 			if o.isExtFunction {
-				buf = ringbuffer.NewWithExtLookback(8, o.extLookbackDelta)
+				buf = ringbuffer.NewWithExtLookback(8, o.selectRange, o.offset, o.extLookbackDelta, o.call)
 			} else {
-				buf = ringbuffer.New(8)
+				buf = ringbuffer.New(8, o.selectRange, o.offset, o.call)
 			}
 			o.scanners[i] = matrixScanner{
 				labels:     lbls,
@@ -272,8 +265,8 @@ func (o *matrixSelector) String() string {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func (m *matrixScanner) selectPoints(mint, maxt int64, isExtFunction bool) error {
-	m.buffer.DropBefore(mint)
+func (m *matrixScanner) selectPoints(mint, maxt, evalt int64, isExtFunction bool) error {
+	m.buffer.Reset(mint, evalt)
 	if m.lastSample.T > maxt {
 		return nil
 	}
