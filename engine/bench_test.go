@@ -134,6 +134,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 	cases := []struct {
 		name    string
 		query   string
+		step    time.Duration
 		storage *teststorage.TestStorage
 	}{
 		{
@@ -165,6 +166,12 @@ func BenchmarkRangeQuery(b *testing.B) {
 			name:    "rate",
 			query:   `rate(http_requests_total[1m])`,
 			storage: sixHourDataset,
+		},
+		{
+			name:    "rate with longer window",
+			query:   `rate(http_requests_total[10m])`,
+			storage: sixHourDataset,
+			step:    5 * time.Minute,
 		},
 		{
 			name:    "subquery",
@@ -308,6 +315,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 
 	for _, tc := range cases {
+		testStep := step
+		if tc.step != 0 {
+			testStep = tc.step
+		}
 		b.Run(tc.name, func(b *testing.B) {
 			b.ReportAllocs()
 			b.Run("old_engine", func(b *testing.B) {
@@ -317,7 +328,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, step)
+					qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, testStep)
 					testutil.Ok(b, err)
 
 					oldResult := qry.Exec(context.Background())
@@ -329,7 +340,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ReportAllocs()
 
 				for i := 0; i < b.N; i++ {
-					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, step, opts)
+					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, testStep, opts)
 					testutil.Ok(b, newResult.Err)
 				}
 			})
@@ -352,6 +363,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	cases := []struct {
 		name  string
 		query string
+		step  time.Duration
 	}{
 		{
 			name:  "selector",
@@ -364,6 +376,11 @@ func BenchmarkNativeHistograms(b *testing.B) {
 		{
 			name:  "rate",
 			query: `rate(native_histogram_series[1m])`,
+		},
+		{
+			name:  "rate with longer window",
+			query: `rate(native_histogram_series[10m])`,
+			step:  5 * time.Minute,
 		},
 		{
 			name:  "sum rate",
@@ -405,13 +422,17 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	}
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
+			testStep := step
+			if tc.step != 0 {
+				testStep = tc.step
+			}
 			b.Run("old_engine", func(b *testing.B) {
 				engine := promql.NewEngine(opts)
 
 				b.ResetTimer()
 				b.ReportAllocs()
 				for i := 0; i < b.N; i++ {
-					qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
+					qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, testStep)
 					testutil.Ok(b, err)
 
 					oldResult := qry.Exec(context.Background())
@@ -427,7 +448,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 						EngineOpts: opts,
 					})
 
-					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
+					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, testStep)
 					testutil.Ok(b, err)
 
 					newResult := qry.Exec(context.Background())
@@ -483,6 +504,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 		{
 			name:  "rate",
 			query: `rate(http_requests_total[1m])`,
+		},
+		{
+			name:  "rate with long window",
+			query: `rate(http_requests_total[1h])`,
 		},
 		{
 			name:  "sum rate",

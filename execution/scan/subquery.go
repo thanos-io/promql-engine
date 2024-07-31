@@ -32,6 +32,7 @@ type subqueryOperator struct {
 	currentStep int64
 	step        int64
 	stepsBatch  int
+	opts        *query.Options
 
 	funcExpr *logicalplan.FunctionCall
 	subQuery *logicalplan.Subquery
@@ -41,7 +42,7 @@ type subqueryOperator struct {
 
 	lastVectors   []model.StepVector
 	lastCollected int
-	buffers       []*ringbuffer.RingBuffer
+	buffers       []*ringbuffer.GenericRingBuffer
 
 	// params holds the function parameter for each step.
 	params []float64
@@ -64,6 +65,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOpera
 		pool:          pool,
 		funcExpr:      funcExpr,
 		subQuery:      subQuery,
+		opts:          opts,
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		currentStep:   opts.Start.UnixMilli(),
@@ -229,14 +231,9 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		}
 
 		o.series = make([]labels.Labels, len(series))
-		o.buffers = make([]*ringbuffer.RingBuffer, len(series))
+		o.buffers = make([]*ringbuffer.GenericRingBuffer, len(series))
 		for i := range o.buffers {
-			o.buffers[i] = ringbuffer.New(
-				8,
-				o.subQuery.Range.Milliseconds(),
-				o.subQuery.Offset.Milliseconds(),
-				o.call,
-			)
+			o.buffers[i] = ringbuffer.New(8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call)
 		}
 		var b labels.ScratchBuilder
 		for i, s := range series {

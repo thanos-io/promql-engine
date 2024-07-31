@@ -19,7 +19,7 @@ type Sample struct {
 	V Value
 }
 
-type RingBuffer struct {
+type GenericRingBuffer struct {
 	items []Sample
 	tail  []Sample
 
@@ -30,27 +30,25 @@ type RingBuffer struct {
 	call        FunctionCall
 }
 
-func New(size int, selectRange, offset int64, call FunctionCall) *RingBuffer {
+func New(size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
 	return NewWithExtLookback(size, selectRange, offset, 0, call)
 }
 
-func NewWithExtLookback(size int, selectRange, offset int64, lookback int64, call FunctionCall) *RingBuffer {
-	return &RingBuffer{
+func NewWithExtLookback(size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
+	return &GenericRingBuffer{
 		items:       make([]Sample, 0, size),
 		selectRange: selectRange,
 		offset:      offset,
-		extLookback: lookback,
+		extLookback: extLookback,
 		call:        call,
 	}
 }
 
-func (r *RingBuffer) Len() int {
-	return len(r.items)
-}
+func (r *GenericRingBuffer) Len() int { return len(r.items) }
 
 // MaxT returns the maximum timestamp of the ring buffer.
 // If the ring buffer is empty, it returns math.MinInt64.
-func (r *RingBuffer) MaxT() int64 {
+func (r *GenericRingBuffer) MaxT() int64 {
 	if len(r.items) == 0 {
 		return math.MinInt64
 	}
@@ -58,12 +56,12 @@ func (r *RingBuffer) MaxT() int64 {
 }
 
 // ReadIntoLast reads a sample into the last slot in the buffer, replacing the existing sample.
-func (r *RingBuffer) ReadIntoLast(f func(*Sample)) {
+func (r *GenericRingBuffer) ReadIntoLast(f func(*Sample)) {
 	f(&r.items[len(r.items)-1])
 }
 
 // Push adds a new sample to the buffer.
-func (r *RingBuffer) Push(t int64, v Value) {
+func (r *GenericRingBuffer) Push(t int64, v Value) {
 	n := len(r.items)
 	if n < cap(r.items) {
 		r.items = r.items[:n+1]
@@ -84,9 +82,8 @@ func (r *RingBuffer) Push(t int64, v Value) {
 	}
 }
 
-func (r *RingBuffer) Reset(mint int64, evalt int64) {
+func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	r.currentStep = evalt
-
 	if len(r.items) == 0 || r.items[len(r.items)-1].T < mint {
 		r.items = r.items[:0]
 		return
@@ -106,7 +103,7 @@ func (r *RingBuffer) Reset(mint int64, evalt int64) {
 	r.items = r.items[:keep]
 }
 
-func (r *RingBuffer) Eval(scalarArg float64, metricAppearedTs *int64) (float64, *histogram.FloatHistogram, bool, error) {
+func (r *GenericRingBuffer) Eval(scalarArg float64, metricAppearedTs *int64) (float64, *histogram.FloatHistogram, bool, error) {
 	return r.call(FunctionArgs{
 		Samples:          r.items,
 		StepTime:         r.currentStep,
