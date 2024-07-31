@@ -18,7 +18,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/execution/scan"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
@@ -41,7 +40,7 @@ type matrixSelector struct {
 	functionName string
 	storage      SeriesSelector
 	scalarArg    float64
-	call         scan.FunctionCall
+	call         ringbuffer.FunctionCall
 	scanners     []matrixScanner
 	bufferTail   []ringbuffer.Sample
 	series       []labels.Labels
@@ -79,11 +78,10 @@ func NewMatrixSelector(
 	batchSize int64,
 	shard, numShard int,
 ) (model.VectorOperator, error) {
-	call, err := scan.NewRangeVectorFunc(functionName)
+	call, err := ringbuffer.NewRangeVectorFunc(functionName)
 	if err != nil {
 		return nil, err
 	}
-	isExtFunction := function.IsExtFunction(functionName)
 	m := &matrixSelector{
 		storage:      selector,
 		call:         call,
@@ -96,7 +94,7 @@ func NewMatrixSelector(
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		step:          opts.Step.Milliseconds(),
-		isExtFunction: isExtFunction,
+		isExtFunction: function.IsExtFunction(functionName),
 
 		selectRange:     selectRange.Milliseconds(),
 		offset:          offset.Milliseconds(),
@@ -174,22 +172,14 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			var err error
-
-			if !o.isExtFunction {
-				err = series.selectPoints(mint, maxt)
-			} else {
-				err = series.selectExtPoints(mint, maxt, o.extLookbackDelta)
-			}
-			if err != nil {
+			if err := series.selectPoints(mint, maxt, o.isExtFunction); err != nil {
 				return nil, err
 			}
-
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
 			// https://github.com/thanos-io/promql-engine/issues/39
-			f, h, ok, err := o.call(scan.FunctionArgs{
+			f, h, ok, err := o.call(ringbuffer.FunctionArgs{
 				Samples:          series.buffer.Samples(),
 				StepTime:         seriesTs,
 				SelectRange:      o.selectRange,
@@ -241,12 +231,18 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// is reused between Select() calls?
 				lbls, _ = extlabels.DropMetricName(lbls, b)
 			}
+			var buf *ringbuffer.RingBuffer
+			if o.isExtFunction {
+				buf = ringbuffer.NewWithExtLookback(8, o.extLookbackDelta)
+			} else {
+				buf = ringbuffer.New(8)
+			}
 			o.scanners[i] = matrixScanner{
 				labels:     lbls,
 				signature:  s.Signature,
 				iterator:   s.Iterator(nil),
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
-				buffer:     ringbuffer.New(8),
+				buffer:     buf,
 			}
 			o.series[i] = lbls
 		}
@@ -276,7 +272,7 @@ func (o *matrixSelector) String() string {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func (m *matrixScanner) selectPoints(mint, maxt int64) error {
+func (m *matrixScanner) selectPoints(mint, maxt int64, isExtFunction bool) error {
 	m.buffer.DropBefore(mint)
 	if m.lastSample.T > maxt {
 		return nil
@@ -299,9 +295,13 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 		mint = maxInt64(mint, m.buffer.MaxT()+1)
 	}
 
+	appendedPointBeforeMint := m.buffer.Len() > 0
 	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			if isExtFunction {
+				return ErrNativeHistogramsNotSupported
+			}
 			var stop bool
 			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample) (keep bool) {
 				if s.V.H == nil {
@@ -329,64 +329,27 @@ func (m *matrixScanner) selectPoints(mint, maxt int64) error {
 			if value.IsStaleNaN(v) {
 				continue
 			}
-			if t > maxt {
-				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil
-				return nil
-			}
-			if t >= mint {
-				m.buffer.Push(t, ringbuffer.Value{F: v})
-			}
-		}
-	}
-	return m.iterator.Err()
-}
-
-// matrixIterSlice populates a matrix vector covering the requested range for a
-// single time series, with points retrieved from an iterator.
-//
-// As an optimization, the matrix vector may already contain points of the same
-// time series from the evaluation of an earlier step (with lower mint and maxt
-// values). Any such points falling before mint are discarded; points that fall
-// into the [mint, maxt] range are retained; only points with later timestamps
-// are populated from the iterator.
-// TODO(fpetkovski): Add max samples limit.
-func (m *matrixScanner) selectExtPoints(mint, maxt, extLookbackDelta int64) error {
-	m.buffer.DropBeforeWithExtLookback(mint, mint-extLookbackDelta)
-	if m.lastSample.T > maxt {
-		return nil
-	}
-
-	mint = maxInt64(mint, m.buffer.MaxT()+1)
-	if m.lastSample.T >= mint {
-		m.buffer.Push(m.lastSample.T, ringbuffer.Value{F: m.lastSample.V.F, H: m.lastSample.V.H})
-		m.lastSample.T = math.MinInt64
-		mint = maxInt64(m.buffer.MaxT()+1, mint)
-	}
-
-	appendedPointBeforeMint := m.buffer.Len() > 0
-	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
-		switch valType {
-		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
-			return ErrNativeHistogramsNotSupported
-		case chunkenc.ValFloat:
-			t, v := m.iterator.At()
-			if value.IsStaleNaN(v) {
-				continue
-			}
 			if m.metricAppearedTs == nil {
-				m.metricAppearedTs = &t
+				tCopy := t
+				m.metricAppearedTs = &tCopy
 			}
 			if t > maxt {
 				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil
 				return nil
 			}
-			if t >= mint || !appendedPointBeforeMint {
-				m.buffer.Push(t, ringbuffer.Value{F: v})
-				appendedPointBeforeMint = true
+			if isExtFunction {
+				if t >= mint || !appendedPointBeforeMint {
+					m.buffer.Push(t, ringbuffer.Value{F: v})
+					appendedPointBeforeMint = true
+				} else {
+					m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
+						s.T, s.V.F, s.V.H = t, v, nil
+					})
+				}
 			} else {
-				m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
-					s.T, s.V.F, s.V.H = t, v, nil
-				})
+				if t >= mint {
+					m.buffer.Push(t, ringbuffer.Value{F: v})
+				}
 			}
 		}
 	}

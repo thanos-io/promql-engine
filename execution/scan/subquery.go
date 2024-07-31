@@ -26,7 +26,7 @@ type subqueryOperator struct {
 	paramOp model.VectorOperator
 
 	pool        *model.VectorPool
-	call        FunctionCall
+	call        ringbuffer.FunctionCall
 	mint        int64
 	maxt        int64
 	currentStep int64
@@ -48,7 +48,7 @@ type subqueryOperator struct {
 }
 
 func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
-	call, err := NewRangeVectorFunc(funcExpr.Func.Name)
+	call, err := ringbuffer.NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -167,7 +167,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := o.call(FunctionArgs{
+			f, h, ok, err := o.call(ringbuffer.FunctionArgs{
 				ScalarPoint: o.params[i],
 				Samples:     rangeSamples.Samples(),
 				StepTime:    maxt + o.subQuery.Offset.Milliseconds(),

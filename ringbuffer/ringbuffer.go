@@ -22,11 +22,18 @@ type Sample struct {
 type RingBuffer struct {
 	items []Sample
 	tail  []Sample
+
+	extLookback int64
 }
 
 func New(size int) *RingBuffer {
+	return NewWithExtLookback(size, 0)
+}
+
+func NewWithExtLookback(size int, lookback int64) *RingBuffer {
 	return &RingBuffer{
-		items: make([]Sample, 0, size),
+		items:       make([]Sample, 0, size),
+		extLookback: lookback,
 	}
 }
 
@@ -79,26 +86,10 @@ func (r *RingBuffer) DropBefore(ts int64) {
 	var drop int
 	for drop = 0; drop < len(r.items) && r.items[drop].T < ts; drop++ {
 	}
-	keep := len(r.items) - drop
-
-	r.tail = resize(r.tail, drop)
-	copy(r.tail, r.items[:drop])
-	copy(r.items, r.items[drop:])
-	copy(r.items[keep:], r.tail)
-	r.items = r.items[:keep]
-}
-
-func (r *RingBuffer) DropBeforeWithExtLookback(ts int64, extMint int64) {
-	if len(r.items) == 0 || r.items[len(r.items)-1].T < ts {
-		r.items = r.items[:0]
-		return
-	}
-	var drop int
-	for drop = 0; drop < len(r.items) && r.items[drop].T < ts; drop++ {
-	}
-	if drop > 0 && r.items[drop-1].T >= extMint {
+	if r.extLookback > 0 && drop > 0 && r.items[drop-1].T >= ts-r.extLookback {
 		drop--
 	}
+
 	keep := len(r.items) - drop
 
 	r.tail = resize(r.tail, drop)
