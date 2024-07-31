@@ -128,7 +128,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
 		maxt := o.currentStep - o.subQuery.OriginalOffset.Milliseconds()
 		for _, b := range o.buffers {
-			b.DropBefore(mint)
+			b.Reset(mint, maxt+o.subQuery.Offset.Milliseconds())
 		}
 		if len(o.lastVectors) > 0 {
 			for _, v := range o.lastVectors[o.lastCollected+1:] {
@@ -167,13 +167,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := o.call(ringbuffer.FunctionArgs{
-				ScalarPoint: o.params[i],
-				Samples:     rangeSamples.Samples(),
-				StepTime:    maxt + o.subQuery.Offset.Milliseconds(),
-				SelectRange: o.subQuery.Range.Milliseconds(),
-				Offset:      o.subQuery.Offset.Milliseconds(),
-			})
+			f, h, ok, err := rangeSamples.Eval(o.params[i], nil)
 			if err != nil {
 				return nil, err
 			}
@@ -183,7 +177,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 				} else {
 					sv.AppendSample(o.pool, uint64(sampleId), f)
 				}
-				o.IncrementSamplesAtTimestamp(len(rangeSamples.Samples()), sv.T)
+				o.IncrementSamplesAtTimestamp(rangeSamples.Len(), sv.T)
 			}
 		}
 		res = append(res, sv)
@@ -237,7 +231,12 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		o.series = make([]labels.Labels, len(series))
 		o.buffers = make([]*ringbuffer.RingBuffer, len(series))
 		for i := range o.buffers {
-			o.buffers[i] = ringbuffer.New(8)
+			o.buffers[i] = ringbuffer.New(
+				8,
+				o.subQuery.Range.Milliseconds(),
+				o.subQuery.Offset.Milliseconds(),
+				o.call,
+			)
 		}
 		var b labels.ScratchBuilder
 		for i, s := range series {
