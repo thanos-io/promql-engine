@@ -57,20 +57,6 @@ func (r *RingBuffer) MaxT() int64 {
 	return r.items[len(r.items)-1].T
 }
 
-// ReadIntoNext can be used to read a sample into the next ring buffer slot through the passed in callback.
-// If the callback function returns false, the sample is not kept in the buffer.
-func (r *RingBuffer) ReadIntoNext(f func(*Sample) bool) {
-	n := len(r.items)
-	if cap(r.items) > len(r.items) {
-		r.items = r.items[:n+1]
-	} else {
-		r.items = append(r.items, Sample{})
-	}
-	if keep := f(&r.items[n]); !keep {
-		r.items = r.items[:n]
-	}
-}
-
 // ReadIntoLast reads a sample into the last slot in the buffer, replacing the existing sample.
 func (r *RingBuffer) ReadIntoLast(f func(*Sample)) {
 	f(&r.items[len(r.items)-1])
@@ -78,12 +64,23 @@ func (r *RingBuffer) ReadIntoLast(f func(*Sample)) {
 
 // Push adds a new sample to the buffer.
 func (r *RingBuffer) Push(t int64, v Value) {
-	if n := len(r.items); n < cap(r.items) {
+	n := len(r.items)
+	if n < cap(r.items) {
 		r.items = r.items[:n+1]
-		r.items[n].T = t
-		r.items[n].V = v
 	} else {
-		r.items = append(r.items, Sample{T: t, V: v})
+		r.items = append(r.items, Sample{})
+	}
+
+	r.items[n].T = t
+	r.items[n].V.F = v.F
+	if v.H != nil {
+		if r.items[n].V.H == nil {
+			r.items[n].V.H = v.H.Copy()
+		} else {
+			v.H.CopyTo(r.items[n].V.H)
+		}
+	} else {
+		r.items[n].V.H = nil
 	}
 }
 
