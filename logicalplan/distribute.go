@@ -12,9 +12,8 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/util/annotations"
-
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
@@ -185,7 +184,38 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		return false
 	})
 
+	// Preprocess rewrite distributable averages as sum/count
 	var warns = annotations.New()
+	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
+		if !(isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(current)) {
+			return true
+		}
+		// If the current node is avg(), distribute the operation and
+		// stop the traversal.
+		if aggr, ok := (*current).(*Aggregation); ok {
+			if aggr.Op != parser.AVG {
+				return true
+			}
+
+			sum := *(*current).(*Aggregation)
+			sum.Op = parser.SUM
+			count := *(*current).(*Aggregation)
+			count.Op = parser.COUNT
+			*current = &Binary{
+				Op:  parser.DIV,
+				LHS: &sum,
+				RHS: &count,
+				VectorMatching: &parser.VectorMatching{
+					Include:        aggr.Grouping,
+					MatchingLabels: aggr.Grouping,
+					On:             true,
+				},
+			}
+			return true
+		}
+		return !(isDistributive(parent, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(parent))
+	})
+
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) {
