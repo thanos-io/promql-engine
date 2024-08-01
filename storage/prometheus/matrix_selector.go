@@ -36,15 +36,16 @@ type matrixScanner struct {
 type matrixSelector struct {
 	model.OperatorTelemetry
 
-	vectorPool   *model.VectorPool
+	vectorPool *model.VectorPool
+	storage    SeriesSelector
+	scalarArg  float64
+	scanners   []matrixScanner
+	series     []labels.Labels
+	once       sync.Once
+
 	functionName string
-	storage      SeriesSelector
-	scalarArg    float64
 	call         ringbuffer.FunctionCall
-	scanners     []matrixScanner
-	bufferTail   []ringbuffer.Sample
-	series       []labels.Labels
-	once         sync.Once
+	fhReader     *histogram.FloatHistogram
 
 	numSteps      int
 	mint          int64
@@ -88,7 +89,6 @@ func NewMatrixSelector(
 		functionName: functionName,
 		vectorPool:   pool,
 		scalarArg:    arg,
-		bufferTail:   make([]ringbuffer.Sample, 16),
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
@@ -172,7 +172,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			if err := scanner.selectPoints(mint, maxt, seriesTs, o.isExtFunction); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.isExtFunction); err != nil {
 				return nil, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
@@ -265,7 +265,11 @@ func (o *matrixSelector) String() string {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func (m *matrixScanner) selectPoints(mint, maxt, evalt int64, isExtFunction bool) error {
+func (m *matrixScanner) selectPoints(
+	mint, maxt, evalt int64,
+	fh *histogram.FloatHistogram,
+	isExtFunction bool,
+) error {
 	m.buffer.Reset(mint, evalt)
 	if m.lastSample.T > maxt {
 		return nil
@@ -273,17 +277,7 @@ func (m *matrixScanner) selectPoints(mint, maxt, evalt int64, isExtFunction bool
 
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T >= mint {
-		m.buffer.ReadIntoNext(func(s *ringbuffer.Sample) bool {
-			s.T, s.V.F = m.lastSample.T, m.lastSample.V.F
-			if m.lastSample.V.H != nil {
-				if s.V.H == nil {
-					s.V.H = m.lastSample.V.H.Copy()
-				} else {
-					m.lastSample.V.H.CopyTo(s.V.H)
-				}
-			}
-			return true
-		})
+		m.buffer.Push(m.lastSample.T, m.lastSample.V)
 		m.lastSample.T = math.MinInt64
 		mint = maxInt64(mint, m.buffer.MaxT()+1)
 	}
@@ -295,27 +289,22 @@ func (m *matrixScanner) selectPoints(mint, maxt, evalt int64, isExtFunction bool
 			if isExtFunction {
 				return ErrNativeHistogramsNotSupported
 			}
-			var stop bool
-			m.buffer.ReadIntoNext(func(s *ringbuffer.Sample) (keep bool) {
-				if s.V.H == nil {
-					s.V.H = &histogram.FloatHistogram{}
+			var t int64
+			t, fh = m.iterator.AtFloatHistogram(fh)
+			if value.IsStaleNaN(fh.Sum) || t < mint {
+				continue
+			}
+			if t > maxt {
+				m.lastSample.T = t
+				if m.lastSample.V.H == nil {
+					m.lastSample.V.H = fh.Copy()
+				} else {
+					fh.CopyTo(m.lastSample.V.H)
 				}
-				s.T, s.V.H = m.iterator.AtFloatHistogram(s.V.H)
-				if value.IsStaleNaN(s.V.H.Sum) {
-					return false
-				}
-				if s.T < mint {
-					return false
-				}
-				if s.T > maxt {
-					m.lastSample.T, m.lastSample.V.H = s.T, s.V.H.Copy()
-					stop = true
-					return false
-				}
-				return true
-			})
-			if stop {
 				return nil
+			}
+			if t >= mint {
+				m.buffer.Push(t, ringbuffer.Value{H: fh})
 			}
 		case chunkenc.ValFloat:
 			t, v := m.iterator.At()
