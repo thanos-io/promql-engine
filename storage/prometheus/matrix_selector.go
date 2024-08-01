@@ -89,6 +89,7 @@ func NewMatrixSelector(
 		functionName: functionName,
 		vectorPool:   pool,
 		scalarArg:    arg,
+		fhReader:     &histogram.FloatHistogram{},
 
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
