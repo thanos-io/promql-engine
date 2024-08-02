@@ -203,14 +203,25 @@ max by (location) (dedup(
 			expectWarn: true,
 		},
 		{
-			name: "label replace to external label before an avg",
-			expr: `avg by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
-			expected: `
-sum by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)")) 
-/ on (location)
-count by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)")
-)`,
+			name:       "label replace to external label before an avg",
+			expr:       `avg by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
+			expected:   `avg by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
 			expectWarn: true,
+		},
+		{
+			name: "label replace to internal label before an avg",
+			expr: `avg by (location) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))`,
+			expected: `
+sum by (location) (
+  dedup(
+    remote(sum by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))),
+    remote(sum by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))))) 
+  / on (location)
+sum by (location) (
+  dedup(
+    remote(count by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))),
+    remote(count by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))))) 
+`,
 		},
 		{
 			name: "label replace after an aggregation",
@@ -359,7 +370,6 @@ sum_over_time(max(dedup(
 		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
 	optimizers := []Optimizer{
-		DistributeAvgOptimizer{},
 		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 	}
 
@@ -511,7 +521,6 @@ dedup(
 				newEngineMock(tcase.secondEngineOpts.mint(), tcase.secondEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
 			}
 			optimizers := []Optimizer{
-				DistributeAvgOptimizer{},
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
@@ -579,7 +588,6 @@ sum(
 				newEngineMock(secondEngineOpts.mint(), secondEngineOpts.maxt(), []labels.Labels{labels.FromStrings("region", "east")}),
 			}
 			optimizers := []Optimizer{
-				DistributeAvgOptimizer{},
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
