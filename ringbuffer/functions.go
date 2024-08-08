@@ -12,7 +12,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/parse"
 )
 
-type SamplesBuffer RingBuffer
+type SamplesBuffer GenericRingBuffer
 
 type FunctionArgs struct {
 	Samples          []Sample
@@ -166,7 +166,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) < 2 {
 			return 0., nil, false, nil
 		}
-		v, h, err := extrapolatedRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset)
+		v, h, err := extrapolatedRate(f.Samples, len(f.Samples), true, true, f.StepTime, f.SelectRange, f.Offset)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -176,7 +176,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) < 2 {
 			return 0., nil, false, nil
 		}
-		v, h, err := extrapolatedRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset)
+		v, h, err := extrapolatedRate(f.Samples, len(f.Samples), false, false, f.StepTime, f.SelectRange, f.Offset)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -186,7 +186,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) < 2 {
 			return 0., nil, false, nil
 		}
-		v, h, err := extrapolatedRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset)
+		v, h, err := extrapolatedRate(f.Samples, len(f.Samples), true, false, f.StepTime, f.SelectRange, f.Offset)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -252,7 +252,7 @@ func NewRangeVectorFunc(name string) (FunctionCall, error) {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram, error) {
+func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram, error) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -284,7 +284,7 @@ func extrapolatedRate(samples []Sample, isCounter, isRate bool, stepTime int64, 
 	durationToEnd := float64(rangeEnd-samples[len(samples)-1].T) / 1000
 
 	sampledInterval := float64(samples[len(samples)-1].T-samples[0].T) / 1000
-	averageDurationBetweenSamples := sampledInterval / float64(len(samples)-1)
+	averageDurationBetweenSamples := sampledInterval / float64(numSamples-1)
 
 	// If the first/last samples are close to the boundaries of the range,
 	// extrapolate the result. This is as we expect that another sample

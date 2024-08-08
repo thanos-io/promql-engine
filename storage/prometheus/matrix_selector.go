@@ -16,8 +16,8 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 
-	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
@@ -27,7 +27,7 @@ type matrixScanner struct {
 	labels    labels.Labels
 	signature uint64
 
-	buffer           *ringbuffer.RingBuffer
+	buffer           ringbuffer.Buffer
 	iterator         chunkenc.Iterator
 	lastSample       ringbuffer.Sample
 	metricAppearedTs *int64
@@ -46,6 +46,7 @@ type matrixSelector struct {
 	functionName string
 	call         ringbuffer.FunctionCall
 	fhReader     *histogram.FloatHistogram
+	opts         *query.Options
 
 	numSteps      int
 	mint          int64
@@ -91,11 +92,12 @@ func NewMatrixSelector(
 		scalarArg:    arg,
 		fhReader:     &histogram.FloatHistogram{},
 
+		opts:          opts,
 		numSteps:      opts.NumSteps(),
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		step:          opts.Step.Milliseconds(),
-		isExtFunction: function.IsExtFunction(functionName),
+		isExtFunction: parse.IsExtFunction(functionName),
 
 		selectRange:     selectRange.Milliseconds(),
 		offset:          offset.Milliseconds(),
@@ -225,18 +227,12 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// is reused between Select() calls?
 				lbls, _ = extlabels.DropMetricName(lbls, b)
 			}
-			var buf *ringbuffer.RingBuffer
-			if o.isExtFunction {
-				buf = ringbuffer.NewWithExtLookback(8, o.selectRange, o.offset, o.extLookbackDelta, o.call)
-			} else {
-				buf = ringbuffer.New(8, o.selectRange, o.offset, o.call)
-			}
 			o.scanners[i] = matrixScanner{
 				labels:     lbls,
 				signature:  s.Signature,
 				iterator:   s.Iterator(nil),
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
-				buffer:     buf,
+				buffer:     o.newBuffer(),
 			}
 			o.series[i] = lbls
 		}
@@ -247,6 +243,23 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		o.vectorPool.SetStepSize(int(o.seriesBatchSize))
 	})
 	return err
+}
+
+func (o *matrixSelector) newBuffer() ringbuffer.Buffer {
+	switch o.functionName {
+	case "rate":
+		return ringbuffer.NewRateBuffer(*o.opts, true, true, o.selectRange, o.offset)
+	case "increase":
+		return ringbuffer.NewRateBuffer(*o.opts, true, false, o.selectRange, o.offset)
+	case "delta":
+		return ringbuffer.NewRateBuffer(*o.opts, false, false, o.selectRange, o.offset)
+	}
+
+	if o.isExtFunction {
+		return ringbuffer.NewWithExtLookback(8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds(), o.call)
+	}
+	return ringbuffer.New(8, o.selectRange, o.offset, o.call)
+
 }
 
 func (o *matrixSelector) String() string {
@@ -276,6 +289,9 @@ func (m *matrixScanner) selectPoints(
 		return nil
 	}
 
+	if bufMaxt := m.buffer.MaxT() + 1; bufMaxt > mint {
+		mint = bufMaxt
+	}
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T >= mint {
 		m.buffer.Push(m.lastSample.T, m.lastSample.V)
