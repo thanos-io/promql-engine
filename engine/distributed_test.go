@@ -375,3 +375,46 @@ func TestDistributedEngineWarnings(t *testing.T) {
 	res := q.Exec(context.Background())
 	testutil.Equals(t, 1, len(res.Warnings))
 }
+
+func TestDistributedEnginePartialResponses(t *testing.T) {
+	t.Parallel()
+
+	querierErr := &storage.MockQueryable{
+		MockQuerier: &storage.MockQuerier{
+			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
+				return newErrorSeriesSet(errors.New("test error"))
+			},
+		},
+	}
+	querierOk := storageWithMockSeries(newMockSeries([]string{labels.MetricName, "foo", "zone", "west"}, []int64{0, 30, 60, 90}, []float64{0, 3, 4, 5}))
+	querierNoop := &storage.MockQueryable{MockQuerier: storage.NoopQuerier()}
+
+	opts := engine.Opts{
+		EnablePartialResponses: true,
+		EngineOpts: promql.EngineOpts{
+			MaxSamples: math.MaxInt64,
+			Timeout:    1 * time.Minute,
+		},
+	}
+
+	remoteErr := engine.NewRemoteEngine(opts, querierErr, math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("zone", "east")})
+	remoteOk := engine.NewRemoteEngine(opts, querierOk, math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("zone", "west")})
+	ng := engine.NewDistributedEngine(opts, api.NewStaticEndpoints([]api.RemoteEngine{remoteErr, remoteOk}))
+	var (
+		start = time.UnixMilli(0)
+		end   = time.UnixMilli(600 * 1000)
+		step  = 30 * time.Second
+	)
+	q, err := ng.NewRangeQuery(context.Background(), querierNoop, nil, "sum by (zone) (foo)", start, end, step)
+	testutil.Ok(t, err)
+
+	res := q.Exec(context.Background())
+	testutil.Ok(t, res.Err)
+	testutil.Equals(t, 1, len(res.Warnings))
+	testutil.Equals(t, `remote exec error [[{zone="east"}]]: test error`, res.Warnings.AsErrors()[0].Error())
+
+	m, err := res.Matrix()
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, m.Len())
+	testutil.Equals(t, labels.FromStrings("zone", "west"), m[0].Metric)
+}
