@@ -40,6 +40,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -50,10 +51,15 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	parser.EnableExperimentalFunctions = true
 	goleak.VerifyTestMain(m)
 }
 
 func TestPromqlAcceptance(t *testing.T) {
+	// promql acceptance tests disable experimental functions again
+	// since we use them in our tests too we need to enable them afterwards again
+	t.Cleanup(func() { parser.EnableExperimentalFunctions = true })
+
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
 			EnableAtModifier:         true,
@@ -2886,6 +2892,7 @@ func createVectorResult(vector promql.Vector) *promql.Result {
 
 func TestInstantQuery(t *testing.T) {
 	t.Parallel()
+
 	defaultQueryTime := time.Unix(50, 0)
 	cases := []struct {
 		load      string
@@ -4025,6 +4032,21 @@ min without () (
 >
   absent_over_time({__name__="http_requests_total",route="/"}[3m] offset 1m45s)`,
 		},
+		{
+			name: "sort_by_label",
+			load: `load 30s
+			    http_requests{job="api-server", instance="0", group="production"}	0+10x10
+			    http_requests{job="api-server", instance="1", group="production"}	0+20x10
+			    http_requests{job="api-server", instance="0", group="canary"}		0+30x10
+			    http_requests{job="api-server", instance="1", group="canary"}		0+40x10
+			    http_requests{job="api-server", instance="2", group="canary"}		NaN NaN NaN NaN NaN NaN NaN NaN NaN NaN
+			    http_requests{job="app-server", instance="0", group="production"}	0+50x10
+			    http_requests{job="app-server", instance="1", group="production"}	0+60x10
+			    http_requests{job="app-server", instance="0", group="canary"}		0+70x10
+			    http_requests{job="app-server", instance="1", group="canary"}		0+80x10
+			    http_requests{job="api-server", instance="2", group="production"}	0+10x10`,
+			query: `sort_by_label_desc(http_requests, "instance")`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -4081,7 +4103,6 @@ min without () (
 								defer q2.Close()
 
 								oldResult := q2.Exec(ctx)
-
 								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 							})
 						}

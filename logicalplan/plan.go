@@ -269,7 +269,7 @@ func trimSorts(expr Node) Node {
 		switch e := (*parent).(type) {
 		case *FunctionCall:
 			switch e.Func.Name {
-			case "sort", "sort_desc":
+			case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
 				*parent = *current
 			}
 		}
