@@ -638,6 +638,15 @@ or
 			step:  2 * time.Second,
 		},
 		{
+			name: "rate with counter reset and step larger than window",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 0+1x3 0+1x2 0+1x3`,
+			query: `rate(http_requests_total[1m])`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(200, 0),
+			step:  90 * time.Second,
+		},
+		{
 			name: "sum rate",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} 1+1x4
