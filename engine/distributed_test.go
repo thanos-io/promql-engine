@@ -367,7 +367,7 @@ func TestDistributedEngineWarnings(t *testing.T) {
 		end   = time.UnixMilli(600)
 		step  = 30 * time.Second
 	)
-	q, err := ng.NewRangeQuery(context.Background(), nil, nil, "test", start, end, step)
+	q, err := ng.NewRangeQuery(context.Background(), querier, nil, "test", start, end, step)
 	testutil.Ok(t, err)
 
 	res := q.Exec(context.Background())

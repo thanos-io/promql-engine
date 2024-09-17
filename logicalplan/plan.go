@@ -127,6 +127,14 @@ func Traverse(expr *Node, transform func(*Node)) {
 	}
 }
 
+func TraverseWithParents(parents []*Node, current *Node, transform func(parents []*Node, node *Node)) {
+	children := (*current).Children()
+	transform(parents, current)
+	for _, c := range children {
+		TraverseWithParents(append(parents, current), c, transform)
+	}
+}
+
 func TraverseBottomUp(parent *Node, current *Node, transform func(parent *Node, node *Node) bool) bool {
 	var stop bool
 	for _, c := range (*current).Children() {

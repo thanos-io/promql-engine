@@ -6,8 +6,10 @@ package prometheus
 import (
 	"context"
 	"math"
+	"time"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -23,10 +25,149 @@ import (
 
 type Scanners struct {
 	selectors *SelectorPool
+
+	querier storage.Querier
 }
 
-func NewPrometheusScanners(queryable storage.Queryable) *Scanners {
-	return &Scanners{selectors: NewSelectorPool(queryable)}
+func (s *Scanners) Close() error {
+	return s.querier.Close()
+}
+
+// subqueryTimes returns the sum of offsets and ranges of all subqueries in the path.
+// If the @ modifier is used, then the offset and range is w.r.t. that timestamp
+// (i.e. the sum is reset when we have @ modifier).
+// The returned *int64 is the closest timestamp that was seen. nil for no @ modifier.
+func subqueryTimes(path []*logicalplan.Node) (time.Duration, time.Duration, *int64) {
+	var (
+		subqOffset, subqRange time.Duration
+		ts                    int64 = math.MaxInt64
+	)
+	for _, node := range path {
+		switch n := (*node).(type) {
+		case *logicalplan.Subquery:
+			subqOffset += n.OriginalOffset
+			subqRange += n.Range
+			if n.Timestamp != nil {
+				// The @ modifier on subquery invalidates all the offset and
+				// range till now. Hence resetting it here.
+				subqOffset = n.OriginalOffset
+				subqRange = n.Range
+				ts = *n.Timestamp
+			}
+		}
+	}
+	var tsp *int64
+	if ts != math.MaxInt64 {
+		tsp = &ts
+	}
+	return subqOffset, subqRange, tsp
+}
+
+func getTimeRangesForSelector(qOpts *query.Options, n *parser.VectorSelector, parents []*logicalplan.Node, evalRange time.Duration) (int64, int64) {
+	start, end := qOpts.Start.UnixMilli(), qOpts.End.UnixMilli()
+	subqOffset, subqRange, subqTs := subqueryTimes(parents)
+
+	if subqTs != nil {
+		// The timestamp on the subquery overrides the eval statement time ranges.
+		start = *subqTs
+		end = *subqTs
+	}
+
+	if n.Timestamp != nil {
+		// The timestamp on the selector overrides everything.
+		start = *n.Timestamp
+		end = *n.Timestamp
+	} else {
+		offsetMilliseconds := subqOffset.Milliseconds()
+		start = start - offsetMilliseconds - subqRange.Milliseconds()
+		end -= offsetMilliseconds
+	}
+
+	if evalRange == 0 {
+		start -= qOpts.LookbackDelta.Milliseconds()
+	} else {
+		start -= evalRange.Milliseconds()
+	}
+
+	start -= n.OriginalOffset.Milliseconds()
+	end -= n.OriginalOffset.Milliseconds()
+
+	if parse.IsExtFunction(extractFuncFromPath(parents)) {
+		// Buffer more so that we could reasonably
+		// inject a zero if there is only one point.
+		start -= int64(qOpts.ExtLookbackDelta.Milliseconds())
+	}
+
+	return start, end
+}
+
+func extractFuncFromPath(p []*logicalplan.Node) string {
+	if len(p) == 0 {
+		return ""
+	}
+	switch n := (*(p[len(p)-1])).(type) {
+	case *logicalplan.Aggregation:
+		return n.Op.String()
+	case *logicalplan.FunctionCall:
+		return n.Func.Name
+	case *logicalplan.Binary:
+		// If we hit a binary expression we terminate since we only care about functions
+		// or aggregations over a single metric.
+		return ""
+	}
+	return extractFuncFromPath(p[:len(p)-1])
+}
+
+// findMinMaxTime returns the time in milliseconds of the earliest and latest point in time the statement will try to process.
+// This takes into account offsets, @ modifiers, range selectors, and X functions.
+// If the statement does not select series, then FindMinMaxTime returns (0, 0).
+func findMinMaxTime(lplan logicalplan.Plan, qOpts *query.Options) (int64, int64) {
+	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
+	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
+	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
+	// the variable.
+	var evalRange time.Duration
+
+	root := lplan.Root()
+
+	logicalplan.TraverseWithParents(nil, &root, func(parents []*logicalplan.Node, node *logicalplan.Node) {
+		switch n := (*node).(type) {
+		case *logicalplan.VectorSelector:
+			start, end := getTimeRangesForSelector(qOpts, n.VectorSelector, parents, evalRange)
+			if start < minTimestamp {
+				minTimestamp = start
+			}
+			if end > maxTimestamp {
+				maxTimestamp = end
+			}
+			evalRange = 0
+		case *logicalplan.MatrixSelector:
+			evalRange = n.Range
+		}
+	})
+
+	if maxTimestamp == math.MinInt64 {
+		// This happens when there was no selector. Hence no time range to select.
+		minTimestamp = 0
+		maxTimestamp = 0
+	}
+
+	return minTimestamp, maxTimestamp
+}
+
+func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (*Scanners, error) {
+	var min, max int64
+	if lplan != nil {
+		min, max = findMinMaxTime(lplan, qOpts)
+	} else {
+		min, max = qOpts.Start.UnixMilli(), qOpts.End.UnixMilli()
+	}
+
+	querier, err := queryable.Querier(min, max)
+	if err != nil {
+		return nil, errors.Wrap(err, "create querier")
+	}
+	return &Scanners{querier: querier, selectors: NewSelectorPool(querier)}, nil
 }
 
 func (p Scanners) NewVectorSelector(
