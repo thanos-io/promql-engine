@@ -80,7 +80,7 @@ func TestScannersMinMaxTime(t *testing.T) {
 
 			lplan := logicalplan.NewFromAST(p, qOpts, logicalplan.PlanOptions{})
 
-			min, max := findMinMaxTime(lplan, qOpts)
+			min, max := lplan.MinMaxTime(qOpts)
 
 			require.Equal(t, tcase.min, min)
 			require.Equal(t, tcase.max, max)
