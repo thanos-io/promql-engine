@@ -687,6 +687,7 @@ type nopQueryTracker struct{}
 func (n nopQueryTracker) GetMaxConcurrent() int                                 { return -1 }
 func (n nopQueryTracker) Insert(ctx context.Context, query string) (int, error) { return 0, nil }
 func (n nopQueryTracker) Delete(insertIndex int)                                {}
+func (n nopQueryTracker) Close() error                                          { return nil }
 
 func recoverEngine(logger log.Logger, plan logicalplan.Plan, errp *error) {
 	e := recover()
