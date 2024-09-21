@@ -111,6 +111,71 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 }
 
+type queryableCloseChecker struct {
+	closed bool
+
+	storage.Queryable
+}
+
+func (q *queryableCloseChecker) Querier(mint, maxt int64) (storage.Querier, error) {
+	qr, err := q.Queryable.Querier(mint, maxt)
+	if err != nil {
+		return nil, err
+	}
+	return &querierCloseChecker{Querier: qr, closed: &q.closed}, nil
+}
+
+type querierCloseChecker struct {
+	storage.Querier
+
+	closed *bool
+}
+
+func (q *querierCloseChecker) Close() error {
+	*q.closed = true
+	return q.Querier.Close()
+}
+
+// TestQuerierClosedAfterQueryClosed tests that the querier is only closed
+// after the query is closed.
+func TestQuerierClosedAfterQueryClosed(t *testing.T) {
+	t.Parallel()
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	load := `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41.00+0.20x40
+			    http_requests_total{pod="nginx-2", route="/"} 51+21.71x40`
+
+	storage := promqltest.LoadedStorage(t, load)
+	defer storage.Close()
+
+	optimizers := logicalplan.AllOptimizers
+	newEngine := engine.New(engine.Opts{
+		EngineOpts:        opts,
+		DisableFallback:   true,
+		LogicalOptimizers: optimizers,
+		// Set to 1 to make sure batching is tested.
+		SelectorBatchSize: 1,
+	})
+	ctx := context.Background()
+	qr := &queryableCloseChecker{
+		Queryable: storage,
+	}
+	q1, err := newEngine.NewInstantQuery(ctx, qr, nil, "sum(http_requests_total)", time.Unix(0, 0))
+	testutil.Ok(t, err)
+	_ = q1.Exec(ctx)
+
+	require.Equal(t, false, qr.closed)
+	q1.Close()
+
+	require.Equal(t, true, qr.closed)
+}
+
 func TestQueriesAgainstOldEngine(t *testing.T) {
 	t.Parallel()
 	start := time.Unix(0, 0)
@@ -2132,14 +2197,20 @@ type scannersWithWarns struct {
 	promScanners *prometheus.Scanners
 }
 
-func newScannersWithWarns(warn error) *scannersWithWarns {
-	return &scannersWithWarns{
-		warn: warn,
-		promScanners: prometheus.NewPrometheusScanners(&storage.MockQueryable{
-			MockQuerier: storage.NoopQuerier(),
-		}),
+func newScannersWithWarns(warn error, qOpts *query.Options, lplan logicalplan.Plan) (*scannersWithWarns, error) {
+	scanners, err := prometheus.NewPrometheusScanners(&storage.MockQueryable{
+		MockQuerier: storage.NoopQuerier(),
+	}, qOpts, lplan)
+	if err != nil {
+		return nil, err
 	}
+	return &scannersWithWarns{
+		warn:         warn,
+		promScanners: scanners,
+	}, nil
 }
+
+func (s *scannersWithWarns) Close() error { return nil }
 
 func (s scannersWithWarns) NewVectorSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error) {
 	warnings.AddToContext(s.warn, ctx)
@@ -2156,7 +2227,10 @@ func TestWarningsPlanCreation(t *testing.T) {
 		opts         = engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}}
 		expectedWarn = errors.New("test warning")
 	)
-	newEngine := engine.NewWithScanners(opts, newScannersWithWarns(expectedWarn))
+
+	scnrs, err := newScannersWithWarns(expectedWarn, &query.Options{}, nil)
+	testutil.Ok(t, err)
+	newEngine := engine.NewWithScanners(opts, scnrs)
 	q1, err := newEngine.NewRangeQuery(context.Background(), nil, nil, "http_requests_total", time.UnixMilli(0), time.UnixMilli(600), 30*time.Second)
 	testutil.Ok(t, err)
 
