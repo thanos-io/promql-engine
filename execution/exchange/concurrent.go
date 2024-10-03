@@ -35,7 +35,7 @@ func NewConcurrent(next model.VectorOperator, bufferSize int, opts *query.Option
 		bufferSize: bufferSize,
 	}
 
-	oper.OperatorTelemetry = model.NewTelemetry(oper, opts)
+	oper.OperatorTelemetry = model.NewTelemetry(context.Background(), oper, opts)
 	return oper
 }
 

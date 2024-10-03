@@ -78,7 +78,7 @@ func NewKHashAggregate(
 		params:      make([]float64, opts.StepsBatch),
 	}
 
-	op.OperatorTelemetry = model.NewTelemetry(op, opts)
+	op.OperatorTelemetry = model.NewTelemetry(context.Background(), op, opts)
 
 	return op, nil
 }

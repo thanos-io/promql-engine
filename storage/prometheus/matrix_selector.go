@@ -71,6 +71,7 @@ var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supp
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
+	ctx context.Context,
 	pool *model.VectorPool,
 	selector SeriesSelector,
 	functionName string,
@@ -109,7 +110,7 @@ func NewMatrixSelector(
 
 		extLookbackDelta: opts.ExtLookbackDelta.Milliseconds(),
 	}
-	m.OperatorTelemetry = model.NewTelemetry(m, opts)
+	m.OperatorTelemetry = model.NewTelemetry(ctx, m, opts)
 
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.

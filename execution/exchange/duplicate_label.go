@@ -31,7 +31,7 @@ func NewDuplicateLabelCheck(next model.VectorOperator, opts *query.Options) mode
 	oper := &duplicateLabelCheckOperator{
 		next: next,
 	}
-	oper.OperatorTelemetry = model.NewTelemetry(oper, opts)
+	oper.OperatorTelemetry = model.NewTelemetry(context.Background(), oper, opts)
 
 	return oper
 }

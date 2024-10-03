@@ -47,7 +47,7 @@ func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lp
 }
 
 func (p Scanners) NewVectorSelector(
-	_ context.Context,
+	ctx context.Context,
 	opts *query.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
@@ -61,6 +61,7 @@ func (p Scanners) NewVectorSelector(
 	for i := 0; i < opts.DecodingConcurrency; i++ {
 		operator := exchange.NewConcurrent(
 			NewVectorSelector(
+				ctx,
 				model.NewVectorPool(opts.StepsBatch),
 				selector,
 				opts,
@@ -111,6 +112,7 @@ func (p Scanners) NewMatrixSelector(
 	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
 	for i := 0; i < opts.DecodingConcurrency; i++ {
 		operator, err := NewMatrixSelector(
+			ctx,
 			model.NewVectorPool(opts.StepsBatch),
 			selector,
 			call.Func.Name,

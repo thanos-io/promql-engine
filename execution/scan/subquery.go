@@ -48,7 +48,7 @@ type subqueryOperator struct {
 	params []float64
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
+func NewSubqueryOperator(ctx context.Context, pool *model.VectorPool, next, paramOp model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOpera
 		lastCollected: -1,
 		params:        make([]float64, opts.StepsBatch),
 	}
-	o.OperatorTelemetry = model.NewSubqueryTelemetry(o, opts)
+	o.OperatorTelemetry = model.NewSubqueryTelemetry(ctx, o, opts)
 
 	return o, nil
 }

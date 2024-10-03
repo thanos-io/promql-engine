@@ -392,7 +392,6 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	if err != nil {
 		return nil, errors.Wrap(err, "creating storage scanners")
 	}
-
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
@@ -442,6 +441,7 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
 	if e.triggerFallback(err) {
 		e.metrics.queries.WithLabelValues("true").Inc()
