@@ -5114,7 +5114,56 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		r := q.Exec(ctx)
 		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
 	})
+}
 
+func TestNativeHistogramRateWithNaN(t *testing.T) {
+	type HPoint struct {
+		T int64
+		H *histogram.Histogram
+	}
+
+	testStorage := teststorage.New(t)
+	defer testStorage.Close()
+
+	app := testStorage.Appender(context.TODO())
+	points := []HPoint{
+		{T: 5574708, H: tsdbutil.GenerateTestHistogram(1)},
+		{T: 5604708, H: tsdbutil.GenerateTestHistogram(2)},
+		{T: 5634708, H: tsdbutil.GenerateTestHistogram(3)},
+
+		{T: 6146221, H: &histogram.Histogram{Sum: math.NaN()}},
+		{T: 6176221, H: tsdbutil.GenerateTestHistogram(1)},
+		{T: 6206221, H: tsdbutil.GenerateTestHistogram(1)},
+		{T: 6236221, H: tsdbutil.GenerateTestHistogram(1)},
+	}
+	for _, point := range points {
+		_, err := app.AppendHistogram(0, labels.FromStrings(labels.MetricName, "test_metric"), point.T, point.H, nil)
+		require.NoError(t, err)
+	}
+	require.NoError(t, app.Commit())
+
+	var (
+		opts = engine.Opts{
+			EngineOpts: promql.EngineOpts{
+				Timeout:              1 * time.Hour,
+				MaxSamples:           1e16,
+				EnableNegativeOffset: true,
+				EnableAtModifier:     true,
+			},
+		}
+		start = time.UnixMilli(6146221)
+		end   = time.UnixMilli(6236221)
+		step  = 60 * time.Second
+	)
+	execQuery := func(ng promql.QueryEngine) *promql.Result {
+		qry, err := ng.NewRangeQuery(context.TODO(), testStorage, nil, "histogram_count(rate(test_metric[10m]))", start, end, step)
+		require.NoError(t, err)
+		return qry.Exec(context.Background())
+	}
+
+	promResult := execQuery(promql.NewEngine(opts.EngineOpts))
+	newResult := execQuery(engine.New(opts))
+	testutil.WithGoCmp(comparer).Equals(t, promResult, newResult)
 }
 
 type histogramTestCase struct {
