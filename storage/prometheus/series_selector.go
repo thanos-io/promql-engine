@@ -56,6 +56,7 @@ func (o *seriesSelector) GetSeries(ctx context.Context, shard int, numShards int
 
 func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	seriesSet := o.storage.Select(ctx, false, &o.hints, o.matchers...)
+
 	i := 0
 	for seriesSet.Next() {
 		s := seriesSet.At()

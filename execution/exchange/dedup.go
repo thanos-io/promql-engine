@@ -48,7 +48,7 @@ func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator, opts *q
 		next: next,
 		pool: pool,
 	}
-	oper.OperatorTelemetry = model.NewTelemetry(oper, opts)
+	oper.OperatorTelemetry = model.NewTelemetry(context.Background(), oper, opts)
 
 	return oper
 }
