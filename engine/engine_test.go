@@ -5218,6 +5218,16 @@ func TestNativeHistograms(t *testing.T) {
 			wantEmptyForMixedTypes: true,
 		},
 		{
+			name:                   "avg()",
+			query:                  `avg(native_histogram_series)`,
+			wantEmptyForMixedTypes: true,
+		},
+		{
+			name:                   "avg by (foo)",
+			query:                  `avg by (foo) (native_histogram_series)`,
+			wantEmptyForMixedTypes: true,
+		},
+		{
 			name:  "count",
 			query: `count(native_histogram_series)`,
 		},
@@ -5256,6 +5266,10 @@ func TestNativeHistograms(t *testing.T) {
 		{
 			name:  "histogram_count",
 			query: `histogram_count(native_histogram_series)`,
+		},
+		{
+			name:  "histogram_avg",
+			query: `histogram_avg(native_histogram_series)`,
 		},
 		{
 			name:  "histogram_count of histogram product",
