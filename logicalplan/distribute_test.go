@@ -26,10 +26,11 @@ var replacements = map[string]*regexp.Regexp{
 func TestDistributedExecution(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
-		name       string
-		expr       string
-		expectWarn bool
-		expected   string
+		name              string
+		expr              string
+		skipBinopPushdown bool
+		expectWarn        bool
+		expected          string
 	}{
 		{
 			name:     "selector",
@@ -412,18 +413,27 @@ count by (cluster) (
 )`,
 			expectWarn: true,
 		},
+		{
+			name:              "skip binary pushdown when configured",
+			expr:              `metric_a / metric_b`,
+			expected:          `dedup(remote(metric_a), remote(metric_a)) / dedup(remote(metric_b), remote(metric_b))`,
+			skipBinopPushdown: true,
+		},
 	}
 
 	engines := []api.RemoteEngine{
 		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
 		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
 	}
-	optimizers := []Optimizer{
-		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
-	}
-
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
+			optimizers := []Optimizer{
+				DistributedExecutionOptimizer{
+					Endpoints:          api.NewStaticEndpoints(engines),
+					SkipBinaryPushdown: tcase.skipBinopPushdown,
+				},
+			}
+
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 

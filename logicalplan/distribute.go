@@ -494,10 +494,11 @@ func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string
 	case Deduplicate, RemoteExecution:
 		return false
 	case *Binary:
-		if isBinaryExpressionWithOneScalarSide(e) || skipBinaryPushdown {
+		if isBinaryExpressionWithOneScalarSide(e) {
 			return true
 		}
-		return isBinaryExpressionWithDistributableMatching(e, engineLabels) &&
+		return !skipBinaryPushdown &&
+			isBinaryExpressionWithDistributableMatching(e, engineLabels) &&
 			isDistributive(&e.LHS, skipBinaryPushdown, engineLabels, warns) &&
 			isDistributive(&e.RHS, skipBinaryPushdown, engineLabels, warns)
 	case *Aggregation:
