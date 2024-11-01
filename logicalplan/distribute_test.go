@@ -382,6 +382,36 @@ sum_over_time(max(dedup(
 			expr:     `X * on (foo) Y`,
 			expected: `dedup(remote(X), remote(X)) * on (foo) dedup(remote(Y), remote(Y))`,
 		},
+
+		{
+			name: "binary matching and label replace with local label",
+			expr: `
+count by (cluster) (
+	label_replace(up, "ns", "$0", "namespace", ".*")
+	* on(region) group_left(project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*")
+)`,
+			expected: `
+sum by (cluster) (dedup(
+	remote(count by (cluster, region) (label_replace(up, "ns", "$0", "namespace", ".*") * on (region) group_left (project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))), 
+	remote(count by (cluster, region) (label_replace(up, "ns", "$0", "namespace", ".*") * on (region) group_left (project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))))
+)`,
+		},
+		{
+			name: "binary matching and label replace with engine label",
+			expr: `
+count by (cluster) (
+    label_replace(up, "region", "$0", "k8s_region", ".*")
+    * on(region) group_left(project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))`,
+			expected: `
+count by (cluster) (
+ 	label_replace(dedup(remote(up), remote(up)), "region", "$0", "k8s_region", ".*")
+	* on (region) group_left (project) dedup(
+		remote(label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*")),
+		remote(label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))
+	)
+)`,
+			expectWarn: true,
+		},
 	}
 
 	engines := []api.RemoteEngine{
