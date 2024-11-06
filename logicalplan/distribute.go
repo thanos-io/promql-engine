@@ -198,9 +198,9 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 				return true
 			}
 
-			sum := *(*current).(*Aggregation)
+			sum := *(*current).Clone().(*Aggregation)
 			sum.Op = parser.SUM
-			count := *(*current).(*Aggregation)
+			count := *(*current).Clone().(*Aggregation)
 			count.Op = parser.COUNT
 			*current = &Binary{
 				Op:  parser.DIV,

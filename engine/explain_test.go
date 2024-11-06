@@ -114,7 +114,7 @@ func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) boo
 		}
 		for i := range got.Children {
 			child := got.Children[i]
-			return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, &child)
+			return got.OperatorTelemetry.ExecutionTimeTaken() > 0 && assertExecutionTimeNonZero(t, child)
 		}
 	}
 	return true
@@ -256,7 +256,7 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 
 	result.WriteString(fmt.Sprintf("%s: %d peak: %d\n", node.OperatorTelemetry.String(), totalSamples, peakSamples))
 	for _, child := range node.Children {
-		result.WriteString(renderAnalysisTree(&child, level+1))
+		result.WriteString(renderAnalysisTree(child, level+1))
 	}
 
 	return result.String()
