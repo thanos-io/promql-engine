@@ -127,7 +127,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 	res := o.pool.GetVectorBatch()
 	for i := 0; o.currentStep <= o.maxt && i < o.stepsBatch; i++ {
-		mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
+		mint := o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds() + 1
 		maxt := o.currentStep - o.subQuery.OriginalOffset.Milliseconds()
 		for _, b := range o.buffers {
 			b.Reset(mint, maxt+o.subQuery.Offset.Milliseconds())

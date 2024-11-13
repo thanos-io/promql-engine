@@ -89,7 +89,7 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 		return
 	}
 	var drop int
-	for drop = 0; drop < len(r.items) && r.items[drop].T < mint; drop++ {
+	for drop = 0; drop < len(r.items) && r.items[drop].T <= mint; drop++ {
 	}
 	if r.extLookback > 0 && drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
 		drop--
