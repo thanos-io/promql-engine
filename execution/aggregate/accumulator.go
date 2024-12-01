@@ -287,9 +287,12 @@ func (c *countAcc) Reset(_ float64) {
 }
 
 type avgAcc struct {
-	avg      float64
-	count    int64
-	hasValue bool
+	kahanSum    float64
+	kahanC      float64
+	avg         float64
+	incremental bool
+	count       int64
+	hasValue    bool
 
 	histSum        *histogram.FloatHistogram
 	histScratch    *histogram.FloatHistogram
@@ -326,30 +329,55 @@ func (a *avgAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	a.count++
 	if !a.hasValue {
 		a.hasValue = true
-		a.avg = v
+		a.kahanSum = v
 		return nil
 	}
 
 	a.hasValue = true
+
+	if !a.incremental {
+		newSum, newC := kahanSumInc(v, a.kahanSum, a.kahanC)
+
+		if !math.IsInf(newSum, 0) {
+			// The sum doesn't overflow, so we propagate it to the
+			// group struct and continue with the regular
+			// calculation of the mean value.
+			a.kahanSum, a.kahanC = newSum, newC
+			return nil
+		}
+
+		// If we are here, we know that the sum _would_ overflow. So
+		// instead of continue to sum up, we revert to incremental
+		// calculation of the mean value from here on.
+		a.incremental = true
+		a.avg = a.kahanSum / float64(a.count-1)
+		a.kahanC /= float64(a.count) - 1
+	}
+
 	if math.IsInf(a.avg, 0) {
 		if math.IsInf(v, 0) && (a.avg > 0) == (v > 0) {
-			// The `avg` and `v` values are `Inf` of the same sign.  They
-			// can't be subtracted, but the value of `avg` is correct
+			// The `floatMean` and `s.F` values are `Inf` of the same sign.  They
+			// can't be subtracted, but the value of `floatMean` is correct
 			// already.
 			return nil
 		}
 		if !math.IsInf(v, 0) && !math.IsNaN(v) {
-			// At this stage, the avg is an infinite. If the added
-			// value is neither an Inf or a Nan, we can keep that avg
+			// At this stage, the mean is an infinite. If the added
+			// value is neither an Inf or a Nan, we can keep that mean
 			// value.
 			// This is required because our calculation below removes
-			// the avg value, which would look like Inf += x - Inf and
+			// the mean value, which would look like Inf += x - Inf and
 			// end up as a NaN.
 			return nil
 		}
 	}
-
-	a.avg += v/float64(a.count) - a.avg/float64(a.count)
+	currentMean := a.avg + a.kahanC
+	a.avg, a.kahanC = kahanSumInc(
+		// Divide each side of the `-` by `group.groupCount` to avoid float64 overflows.
+		v/float64(a.count)-currentMean/float64(a.count),
+		a.avg,
+		a.kahanC,
+	)
 	return nil
 }
 
@@ -368,7 +396,10 @@ func (a *avgAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 }
 
 func (a *avgAcc) Value() (float64, *histogram.FloatHistogram) {
-	return a.avg, a.histSum
+	if a.incremental {
+		return a.avg + a.kahanC, a.histSum
+	}
+	return (a.kahanSum + a.kahanC) / float64(a.count), a.histSum
 }
 
 func (a *avgAcc) ValueType() ValueType {
@@ -561,4 +592,19 @@ func SumCompensated(s []float64) float64 {
 		sum = t
 	}
 	return sum + c
+}
+
+func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
+	t := sum + inc
+	switch {
+	case math.IsInf(t, 0):
+		c = 0
+
+	// Using Neumaier improvement, swap if next term larger than sum.
+	case math.Abs(sum) >= math.Abs(inc):
+		c += (sum - t) + inc
+	default:
+		c += (inc - t) + sum
+	}
+	return t, c
 }

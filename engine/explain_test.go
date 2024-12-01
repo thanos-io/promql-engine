@@ -229,9 +229,9 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 |   |   |---[duplicateLabelCheck]: 0 peak: 0
 |   |   |   |---[coalesce]: 0 peak: 0
 |   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): 1061 peak: 21
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): 1010 peak: 20
 |   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): 1061 peak: 21
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): 1010 peak: 20
 `
 	require.EqualValues(t, expected, result)
 }

@@ -469,6 +469,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 				newRes: newResult,
 				oldRes: oldResult,
 				loads:  []string{load, load2},
+				start:  queryTime,
 			}
 		}
 		validateTestCases(t, cases)
