@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"github.com/prometheus/common/promslog"
 	"log/slog"
 	"math"
 	"runtime"
@@ -15,6 +14,7 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
