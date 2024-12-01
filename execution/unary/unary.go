@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"gonum.org/v1/gonum/floats"
 
@@ -90,6 +91,13 @@ func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 	for i := range in {
 		floats.Scale(-1, in[i].Samples)
+		negateHistograms(in[i].Histograms)
 	}
 	return in, nil
+}
+
+func negateHistograms(hists []*histogram.FloatHistogram) {
+	for i := range hists {
+		hists[i] = hists[i].Copy().Mul(-1)
+	}
 }

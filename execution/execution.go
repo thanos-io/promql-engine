@@ -407,9 +407,9 @@ func getTimeRangesForVectorSelector(n *logicalplan.VectorSelector, opts *query.O
 		end = *n.Timestamp
 	}
 	if evalRange == 0 {
-		start -= opts.LookbackDelta.Milliseconds()
+		start -= opts.LookbackDelta.Milliseconds() - 1
 	} else {
-		start -= evalRange
+		start -= evalRange - 1
 	}
 	offset := n.OriginalOffset.Milliseconds()
 	return start - offset, end - offset

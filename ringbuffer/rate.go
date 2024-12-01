@@ -58,7 +58,7 @@ func NewRateBuffer(opts query.Options, isCounter, isRate bool, selectRange, offs
 	var (
 		step     = max(1, opts.Step.Milliseconds())
 		numSteps = min(
-			selectRange/step+1,
+			(selectRange-1)/step+1,
 			querySteps(opts),
 		)
 
@@ -125,7 +125,7 @@ func (r *RateBuffer) Push(t int64, v Value) {
 	}
 
 	// Set the first sample for each evaluation step where the currently read sample is used.
-	for i := 0; i < len(r.stepRanges) && t >= r.stepRanges[i].mint && t <= r.stepRanges[i].maxt; i++ {
+	for i := 0; i < len(r.stepRanges) && t > r.stepRanges[i].mint && t <= r.stepRanges[i].maxt; i++ {
 		r.stepRanges[i].numSamples++
 		sample := &r.firstSamples[i]
 		if t >= sample.T {
@@ -150,7 +150,7 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 		return
 	}
 	dropResets := 0
-	for ; dropResets < len(r.resets) && r.resets[dropResets].T < mint; dropResets++ {
+	for ; dropResets < len(r.resets) && r.resets[dropResets].T <= mint; dropResets++ {
 	}
 	r.resets = r.resets[dropResets:]
 
