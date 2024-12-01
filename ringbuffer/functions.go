@@ -286,10 +286,18 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 	sampledInterval := float64(samples[len(samples)-1].T-samples[0].T) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamples-1)
 
-	// If the first/last samples are close to the boundaries of the range,
-	// extrapolate the result. This is as we expect that another sample
-	// will exist given the spacing between samples we've seen thus far,
-	// with an allowance for noise.
+	// If samples are close enough to the (lower or upper) boundary of the
+	// range, we extrapolate the rate all the way to the boundary in
+	// question. "Close enough" is defined as "up to 10% more than the
+	// average duration between samples within the range", see
+	// extrapolationThreshold below. Essentially, we are assuming a more or
+	// less regular spacing between samples, and if we don't see a sample
+	// where we would expect one, we assume the series does not cover the
+	// whole range, but starts and/or ends within the range. We still
+	// extrapolate the rate in this case, but not all the way to the
+	// boundary, but only by half of the average duration between samples
+	// (which is our guess for where the series actually starts or ends).
+
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 	extrapolateToInterval := sampledInterval
 
@@ -319,7 +327,7 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 
 	factor := extrapolateToInterval / sampledInterval
 	if isRate {
-		factor /= float64(selectRange / 1000)
+		factor /= float64(selectRange) / 1000
 	}
 	if resultHistogram == nil {
 		resultValue *= factor
@@ -507,9 +515,28 @@ func countOverTime(points []Sample) float64 {
 }
 
 func avgOverTime(points []Sample) float64 {
-	var mean, count, c float64
+	var (
+		sum, mean, count, kahanC float64
+		incrementalMean          bool
+	)
 	for _, v := range points {
 		count++
+		if !incrementalMean {
+			newSum, newC := kahanSumInc(v.V.F, sum, kahanC)
+			// Perform regular mean calculation as long as
+			// the sum doesn't overflow and (in any case)
+			// for the first iteration (even if we start
+			// with ±Inf) to not run into division-by-zero
+			// problems below.
+			if count == 1 || !math.IsInf(newSum, 0) {
+				sum, kahanC = newSum, newC
+				continue
+			}
+			// Handle overflow by reverting to incremental calculation of the mean value.
+			incrementalMean = true
+			mean = sum / (count - 1)
+			kahanC /= count - 1
+		}
 		if math.IsInf(mean, 0) {
 			if math.IsInf(v.V.F, 0) && (mean > 0) == (v.V.F > 0) {
 				// The `mean` and `v.V.F` values are `Inf` of the same sign.  They
@@ -527,13 +554,14 @@ func avgOverTime(points []Sample) float64 {
 				continue
 			}
 		}
-		mean, c = kahanSumInc(v.V.F/count-mean/count, mean, c)
+		correctedMean := mean + kahanC
+		mean, kahanC = kahanSumInc(v.V.F/count-correctedMean/count, mean, kahanC)
 	}
 
-	if math.IsInf(mean, 0) {
-		return mean
+	if incrementalMean {
+		return mean + kahanC
 	}
-	return mean + c
+	return (sum + kahanC) / count
 }
 
 func sumOverTime(points []Sample) float64 {
@@ -671,10 +699,14 @@ func filterFloatOnlySamples(samples []Sample) []Sample {
 
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
 	t := sum + inc
+	switch {
+	case math.IsInf(t, 0):
+		c = 0
+
 	// Using Neumaier improvement, swap if next term larger than sum.
-	if math.Abs(sum) >= math.Abs(inc) {
+	case math.Abs(sum) >= math.Abs(inc):
 		c += (sum - t) + inc
-	} else {
+	default:
 		c += (inc - t) + sum
 	}
 	return t, c

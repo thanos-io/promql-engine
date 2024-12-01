@@ -206,6 +206,13 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `sum(quantile by (route) (-0.5044968945760265, {__name__="http_requests_total",route="/"}))`,
 		},
 		{
+			name: "fuzz -0",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 46.00+1.00x40
+			    http_requests_total{pod="nginx-2", route="/"} -6+4.20x40`,
+			query: `count_values without (pod, route) ("value", -1 * http_requests_total * 0)`,
+		},
+		{
 			name: "predict_linear fuzz",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", route="/"} 48.00+9.17x40
@@ -2461,6 +2468,15 @@ func TestXFunctions(t *testing.T) {
 			load:  defaultLoad,
 			query: "xincrease(http_requests[5s])",
 			expected: []promql.Sample{
+				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/foo")),
+				createSample(defaultQueryTime.UnixMilli(), 10, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:  "eval instant at 50s xincrease, with 10s lookback",
+			load:  defaultLoad,
+			query: "xincrease(http_requests[10s])",
+			expected: []promql.Sample{
 				createSample(defaultQueryTime.UnixMilli(), 20, labels.FromStrings("path", "/foo")),
 				createSample(defaultQueryTime.UnixMilli(), 20, labels.FromStrings("path", "/bar")),
 			},
@@ -2598,13 +2614,23 @@ func TestXFunctions(t *testing.T) {
 			},
 		},
 		{
+			name: "eval instant at 4m xincrease(http_requests[2m1s]), with 1m lookback",
+			load: `load 30s
+			    http_requests	0 0 0 0 1 1 1 1`,
+			query:     "xincrease(http_requests[2m1s])",
+			queryTime: time.Unix(240, 0),
+			expected: []promql.Sample{
+				createSample(240000, 1, labels.Labels{}),
+			},
+		},
+		{
 			name: "eval instant at 4m xincrease(http_requests[2m]), with 1m lookback",
 			load: `load 30s
 			    http_requests	0 0 0 0 1 1 1 1`,
 			query:     "xincrease(http_requests[2m])",
 			queryTime: time.Unix(240, 0),
 			expected: []promql.Sample{
-				createSample(240000, 1, labels.Labels{}),
+				createSample(240000, 0, labels.Labels{}),
 			},
 		},
 	}
@@ -2737,17 +2763,17 @@ func TestRateVsXRate(t *testing.T) {
 			query:     `rate(http_requests[50s])`,
 			queryTime: time.Unix(75, 0),
 			expected: []promql.Sample{
-				createSample(75000, 0.022, labels.FromStrings("path", "/foo")),
+				createSample(75000, 0.0275, labels.FromStrings("path", "/foo")),
 				createSample(75000, 0.11, labels.FromStrings("path", "/bar")),
 			},
 		},
 		{
-			name:      "eval instant at 75s xrate(http_requests[50s]), with 50s lookback",
+			name:      "eval instant at 75s xrate(http_requests[51s]), with 50s lookback",
 			query:     "xrate(http_requests[50s])",
 			queryTime: time.Unix(75, 0),
 			expected: []promql.Sample{
 				createSample(75000, 0.02, labels.FromStrings("path", "/foo")),
-				createSample(75000, 0.12, labels.FromStrings("path", "/bar")),
+				createSample(75000, 0.1, labels.FromStrings("path", "/bar")),
 			},
 		},
 		// 5. Eval 1s earlier compared to (4)
@@ -2914,7 +2940,7 @@ func TestRateVsXRate(t *testing.T) {
 			queryTime: time.Unix(55, 0),
 			expected: []promql.Sample{
 				createSample(55000, 0, labels.FromStrings("path", "/foo")),
-				createSample(55000, 2, labels.FromStrings("path", "/bar")),
+				createSample(55000, 1, labels.FromStrings("path", "/bar")),
 			},
 		},
 	}
@@ -4345,271 +4371,271 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		{
 			query: `foo`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 5000, End: 10000},
+				{Start: 5000 + 1, End: 10000},
 			},
 		}, {
 			query: `foo @ 15.000`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 10000, End: 15000},
+				{Start: 10000 + 1, End: 15000},
 			},
 		}, {
 			query: `foo @ 1.000`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: -4000, End: 1000},
+				{Start: -4000 + 1, End: 1000},
 			},
 		}, {
 			query: `foo[2m]`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 80000, End: 200000, Range: 120000},
+				{Start: 80000 + 1, End: 200000, Range: 120000},
 			},
 		}, {
 			query: `foo[2m] @ 180.000`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 60000, End: 180000, Range: 120000},
+				{Start: 60000 + 1, End: 180000, Range: 120000},
 			},
 		}, {
 			query: `foo[2m] @ 300.000`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 180000, End: 300000, Range: 120000},
+				{Start: 180000 + 1, End: 300000, Range: 120000},
 			},
 		}, {
 			query: `foo[2m] @ 60.000`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -60000, End: 60000, Range: 120000},
+				{Start: -60000 + 1, End: 60000, Range: 120000},
 			},
 		}, {
 			query: `foo[2m] offset 2m`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 60000, End: 180000, Range: 120000},
+				{Start: 60000 + 1, End: 180000, Range: 120000},
 			},
 		}, {
 			query: `foo[2m] @ 200.000 offset 2m`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -40000, End: 80000, Range: 120000},
+				{Start: -40000 + 1, End: 80000, Range: 120000},
 			},
 		}, {
 			query: `foo[2m:1s]`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Step: 1000},
+				{Start: 175000 + 1, End: 300000, Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s])`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+				{Start: 175000 + 1, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] @ 300.000)`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+				{Start: 175000 + 1, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] @ 200.000)`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
+				{Start: 75000 + 1, End: 200000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] @ 100.000)`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
+				{Start: -25000 + 1, End: 100000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] offset 10s)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 290000, Func: "count_over_time", Step: 1000},
+				{Start: 165000 + 1, End: 290000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time((foo offset 10s)[2m:1s] offset 10s)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 280000, Func: "count_over_time", Step: 1000},
+				{Start: 155000 + 1, End: 280000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: `count_over_time((foo @ 200.000 offset 10s)[2m:1s] offset 10s)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000 + 1, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: `count_over_time((foo @ 200.000 offset 10s)[2m:1s] @ 100.000 offset 10s)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000 + 1, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time((foo offset 10s)[2m:1s] @ 100.000 offset 10s)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
+				{Start: -45000 + 1, End: 80000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `foo`, start: 10000, end: 20000,
 			expected: []*storage.SelectHints{
-				{Start: 5000, End: 20000, Step: 1000},
+				{Start: 5000 + 1, End: 20000, Step: 1000},
 			},
 		}, {
 			query: `foo @ 15.000`, start: 10000, end: 20000,
 			expected: []*storage.SelectHints{
-				{Start: 10000, End: 15000, Step: 1000},
+				{Start: 10000 + 1, End: 15000, Step: 1000},
 			},
 		}, {
 			query: `foo @ 1.000`, start: 10000, end: 20000,
 			expected: []*storage.SelectHints{
-				{Start: -4000, End: 1000, Step: 1000},
+				{Start: -4000 + 1, End: 1000, Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2m] @ 180.000)`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 60000, End: 180000, Range: 120000, Func: "rate", Step: 1000},
+				{Start: 60000 + 1, End: 180000, Range: 120000, Func: "rate", Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2m] @ 300.000)`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 180000, End: 300000, Range: 120000, Func: "rate", Step: 1000},
+				{Start: 180000 + 1, End: 300000, Range: 120000, Func: "rate", Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2m] @ 60.000)`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: -60000, End: 60000, Range: 120000, Func: "rate", Step: 1000},
+				{Start: -60000 + 1, End: 60000, Range: 120000, Func: "rate", Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2m])`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 80000, End: 500000, Range: 120000, Func: "rate", Step: 1000},
+				{Start: 80000 + 1, End: 500000, Range: 120000, Func: "rate", Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2m] offset 2m)`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 60000, End: 380000, Range: 120000, Func: "rate", Step: 1000},
+				{Start: 60000 + 1, End: 380000, Range: 120000, Func: "rate", Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2m:1s])`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 500000, Func: "rate", Step: 1000},
+				{Start: 175000 + 1, End: 500000, Func: "rate", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s])`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 500000, Func: "count_over_time", Step: 1000},
+				{Start: 175000 + 1, End: 500000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] offset 10s)`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 165000, End: 490000, Func: "count_over_time", Step: 1000},
+				{Start: 165000 + 1, End: 490000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] @ 300.000)`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 175000, End: 300000, Func: "count_over_time", Step: 1000},
+				{Start: 175000 + 1, End: 300000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] @ 200.000)`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 75000, End: 200000, Func: "count_over_time", Step: 1000},
+				{Start: 75000 + 1, End: 200000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s] @ 100.000)`, start: 200000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: -25000, End: 100000, Func: "count_over_time", Step: 1000},
+				{Start: -25000 + 1, End: 100000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time((foo offset 10s)[2m:1s] offset 10s)`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 155000, End: 480000, Func: "count_over_time", Step: 1000},
+				{Start: 155000 + 1, End: 480000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: `count_over_time((foo @ 200.000 offset 10s)[2m:1s] offset 10s)`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000 + 1, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			// When the @ is on the vector selector, the enclosing subquery parameters
 			// don't affect the hint ranges.
 			query: `count_over_time((foo @ 200.000 offset 10s)[2m:1s] @ 100.000 offset 10s)`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 185000, End: 190000, Func: "count_over_time", Step: 1000},
+				{Start: 185000 + 1, End: 190000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `count_over_time((foo offset 10s)[2m:1s] @ 100.000 offset 10s)`, start: 300000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: -45000, End: 80000, Func: "count_over_time", Step: 1000},
+				{Start: -45000 + 1, End: 80000, Func: "count_over_time", Step: 1000},
 			},
 		}, {
 			query: `sum by (dim1) (foo)`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 5000, End: 10000, Func: "sum", By: true, Grouping: []string{"dim1"}},
+				{Start: 5000 + 1, End: 10000, Func: "sum", By: true, Grouping: []string{"dim1"}},
 			},
 		}, {
 			query: `sum without (dim1) (foo)`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 5000, End: 10000, Func: "sum", Grouping: []string{"dim1"}},
+				{Start: 5000 + 1, End: 10000, Func: "sum", Grouping: []string{"dim1"}},
 			},
 		}, {
 			query: `sum by (dim1) (avg_over_time(foo[1s]))`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 9000, End: 10000, Func: "avg_over_time", Range: 1000},
+				{Start: 9000 + 1, End: 10000, Func: "avg_over_time", Range: 1000},
 			},
 		}, {
 			query: `sum by (dim1) (max by (dim2) (foo))`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 5000, End: 10000, Func: "max", By: true, Grouping: []string{"dim2"}},
+				{Start: 5000 + 1, End: 10000, Func: "max", By: true, Grouping: []string{"dim2"}},
 			},
 		}, {
 			query: `(max by (dim1) (foo))[5s:1s]`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 0, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
+				{Start: 0 + 1, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
 			},
 		}, {
 			query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
 			expected: []*storage.SelectHints{
-				{Start: 95000, End: 120000, Func: "sum", By: true, Step: 5000},
-				{Start: 95000, End: 120000, Func: "max", By: true, Step: 5000},
+				{Start: 95000 + 1, End: 120000, Func: "sum", By: true, Step: 5000},
+				{Start: 95000 + 1, End: 120000, Func: "max", By: true, Step: 5000},
 			},
 		}, {
 			query: `foo @ 50.000 + bar @ 250.000 + baz @ 900.000`, start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 45000, End: 50000, Step: 1000},
-				{Start: 245000, End: 250000, Step: 1000},
-				{Start: 895000, End: 900000, Step: 1000},
+				{Start: 45000 + 1, End: 50000, Step: 1000},
+				{Start: 245000 + 1, End: 250000, Step: 1000},
+				{Start: 895000 + 1, End: 900000, Step: 1000},
 			},
 		}, {
 			query: `foo @ 50.000 + bar + baz @ 900.000`, start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 45000, End: 50000, Step: 1000},
-				{Start: 95000, End: 500000, Step: 1000},
-				{Start: 895000, End: 900000, Step: 1000},
+				{Start: 45000 + 1, End: 50000, Step: 1000},
+				{Start: 95000 + 1, End: 500000, Step: 1000},
+				{Start: 895000 + 1, End: 900000, Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2s] @ 50.000) + bar @ 250.000 + baz @ 900.000`, start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 48000, End: 50000, Step: 1000, Func: "rate", Range: 2000},
-				{Start: 245000, End: 250000, Step: 1000},
-				{Start: 895000, End: 900000, Step: 1000},
+				{Start: 48000 + 1, End: 50000, Step: 1000, Func: "rate", Range: 2000},
+				{Start: 245000 + 1, End: 250000, Step: 1000},
+				{Start: 895000 + 1, End: 900000, Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2s:1s] @ 50.000) + bar + baz`, start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
-				{Start: 95000, End: 500000, Step: 1000},
-				{Start: 95000, End: 500000, Step: 1000},
+				{Start: 43000 + 1, End: 50000, Step: 1000, Func: "rate"},
+				{Start: 95000 + 1, End: 500000, Step: 1000},
+				{Start: 95000 + 1, End: 500000, Step: 1000},
 			},
 		}, {
 			query: `rate(foo[2s:1s] @ 50.000) + bar + rate(baz[2m:1s] @ 900.000 offset 2m)`, start: 100000, end: 500000,
 			expected: []*storage.SelectHints{
-				{Start: 43000, End: 50000, Step: 1000, Func: "rate"},
-				{Start: 95000, End: 500000, Step: 1000},
-				{Start: 655000, End: 780000, Step: 1000, Func: "rate"},
+				{Start: 43000 + 1, End: 50000, Step: 1000, Func: "rate"},
+				{Start: 95000 + 1, End: 500000, Step: 1000},
+				{Start: 655000 + 1, End: 780000, Step: 1000, Func: "rate"},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 50.000)[3s:1s] @ 3000.000`, start: 100000,
 			expected: []*storage.SelectHints{
-				{Start: -150000, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
+				{Start: -150000 + 1, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
 			query: `sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 3000.000)[3s:1s] @ 50.000`,
 			expected: []*storage.SelectHints{
-				{Start: 2800000, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
+				{Start: 2800000 + 1, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		},
 	} {
@@ -5601,7 +5627,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 	})
 
 	t.Run("matrix_select", func(t *testing.T) {
-		qry, err := engine.NewRangeQuery(ctx, storage, nil, "rate(native_histogram_series[1m])", time.Unix(0, 0), time.Unix(60, 0), 60*time.Second)
+		qry, err := engine.NewRangeQuery(ctx, storage, nil, "rate(native_histogram_series[1m1s])", time.Unix(0, 0), time.Unix(60, 0), 60*time.Second)
 		testutil.Ok(t, err)
 		res := qry.Exec(context.Background())
 		testutil.Ok(t, res.Err)

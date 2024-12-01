@@ -4,7 +4,7 @@ on:
   push:
     branches: [ main ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, prometheus-update-65f610353919 ]
 
 jobs:
   skip-check:

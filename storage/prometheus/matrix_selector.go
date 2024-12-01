@@ -258,7 +258,7 @@ func (o *matrixSelector) newBuffer() ringbuffer.Buffer {
 	}
 
 	if o.isExtFunction {
-		return ringbuffer.NewWithExtLookback(8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds(), o.call)
+		return ringbuffer.NewWithExtLookback(8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
 	}
 	return ringbuffer.New(8, o.selectRange, o.offset, o.call)
 
@@ -295,7 +295,7 @@ func (m *matrixScanner) selectPoints(
 		mint = bufMaxt
 	}
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
-	if m.lastSample.T >= mint {
+	if m.lastSample.T > mint {
 		m.buffer.Push(m.lastSample.T, m.lastSample.V)
 		m.lastSample.T = math.MinInt64
 		mint = maxInt64(mint, m.buffer.MaxT()+1)
@@ -322,7 +322,7 @@ func (m *matrixScanner) selectPoints(
 				}
 				return nil
 			}
-			if t >= mint {
+			if t > mint {
 				m.buffer.Push(t, ringbuffer.Value{H: fh})
 			}
 		case chunkenc.ValFloat:
@@ -339,7 +339,7 @@ func (m *matrixScanner) selectPoints(
 				return nil
 			}
 			if isExtFunction {
-				if t >= mint || !appendedPointBeforeMint {
+				if t > mint || !appendedPointBeforeMint {
 					m.buffer.Push(t, ringbuffer.Value{F: v})
 					appendedPointBeforeMint = true
 				} else {
@@ -348,7 +348,7 @@ func (m *matrixScanner) selectPoints(
 					})
 				}
 			} else {
-				if t >= mint {
+				if t > mint {
 					m.buffer.Push(t, ringbuffer.Value{F: v})
 				}
 			}
