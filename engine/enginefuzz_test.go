@@ -35,6 +35,9 @@ type testCase struct {
 	query          string
 	loads          []string
 	oldRes, newRes *promql.Result
+	start          time.Time
+	end            time.Time
+	step           time.Duration
 }
 
 func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
@@ -116,6 +119,9 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 				newRes: newResult,
 				oldRes: oldResult,
 				loads:  []string{load},
+				start:  start,
+				end:    end,
+				step:   interval,
 			}
 		}
 		validateTestCases(t, cases)
@@ -198,6 +204,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 				newRes: newResult,
 				oldRes: oldResult,
 				loads:  []string{load},
+				start:  queryTime,
 			}
 		}
 		validateTestCases(t, cases)
@@ -314,6 +321,9 @@ func FuzzDistributedEnginePromQLSmithRangeQuery(f *testing.F) {
 				newRes: newResult,
 				oldRes: oldResult,
 				loads:  []string{load, load2},
+				start:  start,
+				end:    end,
+				step:   interval,
 			}
 		}
 		validateTestCases(t, cases)
@@ -419,6 +429,7 @@ func FuzzDistributedEnginePromQLSmithInstantQuery(f *testing.F) {
 				newRes: newResult,
 				oldRes: oldResult,
 				loads:  []string{load, load2},
+				start:  queryTime,
 			}
 		}
 		validateTestCases(t, cases)
@@ -450,6 +461,7 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 				t.Logf(load)
 			}
 			t.Logf(c.query)
+			t.Logf("start: %v, end: %v, step: %v\n", c.start.Unix(), c.end.Unix(), c.step.Seconds())
 
 			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
 			failures++
