@@ -13,7 +13,7 @@ require (
 	github.com/google/go-cmp v0.6.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/common v0.60.1
-	github.com/prometheus/prometheus v0.300.0-beta.0.0.20241007135006-65f610353919
+	github.com/prometheus/prometheus v0.300.0-beta.0.0.20241007202516-805954d8f8ba
 	github.com/stretchr/testify v1.9.0
 	github.com/zhangyunhao116/umap v0.0.0-20221211160557-cb7705fafa39
 	go.uber.org/goleak v1.3.0
