@@ -19,6 +19,7 @@ type operator struct {
 
 func NewOperator(opts *query.Options) model.VectorOperator {
 	scanner := prometheus.NewVectorSelector(
+		context.Background(),
 		model.NewVectorPool(0),
 		noopSelector{},
 		opts,

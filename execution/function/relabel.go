@@ -37,7 +37,7 @@ func newRelabelOperator(
 		next:     next,
 		funcExpr: funcExpr,
 	}
-	oper.OperatorTelemetry = model.NewTelemetry(oper, opts)
+	oper.OperatorTelemetry = model.NewTelemetry(context.Background(), oper, opts)
 
 	return oper
 }

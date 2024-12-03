@@ -27,14 +27,6 @@ func NewSelectorPool(querier storage.Querier) *SelectorPool {
 	}
 }
 
-func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
-	key := hashMatchers(matchers, mint, maxt, hints)
-	if _, ok := p.selectors[key]; !ok {
-		p.selectors[key] = newSeriesSelector(p.querier, matchers, hints)
-	}
-	return p.selectors[key]
-}
-
 func (p *SelectorPool) GetFilteredSelector(mint, maxt, step int64, matchers, filters []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
 	key := hashMatchers(matchers, mint, maxt, hints)
 	if _, ok := p.selectors[key]; !ok {
