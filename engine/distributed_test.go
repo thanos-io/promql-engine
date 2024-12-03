@@ -232,7 +232,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "absent for existing metric with aggregation", query: `sum(absent(foo))`},
 		{name: "absent for existing metric", query: `absent(bar{pod="nginx-1"})`},
 		{name: "absent for existing metric with aggregation", query: `sum(absent(bar{pod="nginx-1"}))`},
-		{name: "subquery with sum/count", query: `max_over_time((sum(bar)/count(bar))[30s:15s])`},
+		{name: "subquery with sum/count", query: `max_over_time((sum(bar) / count(bar))[30s:15s])`},
 		{name: "subquery with avg", query: `max_over_time(avg(bar)[30s:15s])`},
 		{name: "subquery with window within engine range", query: `max_over_time(sum_over_time(bar[30s])[30s:15s])`},
 		{name: "subquery with window outside of engine range", query: `max_over_time(sum_over_time(bar[1m])[10m:1m])`},
