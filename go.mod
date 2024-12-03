@@ -9,11 +9,10 @@ require (
 	github.com/cortexproject/promqlsmith v0.0.0-20240506042652-6cfdd9739a5e
 	github.com/efficientgo/core v1.0.0-rc.2
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
-	github.com/go-kit/log v0.2.1
 	github.com/google/go-cmp v0.6.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/common v0.60.1
-	github.com/prometheus/prometheus v0.300.0-beta.0.0.20241007135006-65f610353919
+	github.com/prometheus/prometheus v0.300.0-beta.0.0.20241007202516-805954d8f8ba
 	github.com/stretchr/testify v1.9.0
 	github.com/zhangyunhao116/umap v0.0.0-20221211160557-cb7705fafa39
 	go.uber.org/goleak v1.3.0
@@ -38,7 +37,6 @@ require (
 	github.com/dennwc/varint v1.0.0 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/go-logfmt/logfmt v0.6.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
