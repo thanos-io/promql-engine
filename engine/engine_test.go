@@ -22,20 +22,13 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
-	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"golang.org/x/exp/maps"
 
-	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/execution/warnings"
-	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
-	"github.com/thanos-io/promql-engine/storage/prometheus"
-
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
@@ -48,11 +41,21 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
+
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 func TestMain(m *testing.M) {
 	parser.EnableExperimentalFunctions = true
-	goleak.VerifyTestMain(m)
+	goleak.VerifyTestMain(m,
+		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
+		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
+	)
 }
 
 func TestPromqlAcceptance(t *testing.T) {
@@ -4265,7 +4268,7 @@ func TestQueryConcurrency(t *testing.T) {
 
 	var (
 		ctx          = context.Background()
-		logger       = log.NewLogfmtLogger(os.Stdout)
+		logger       = promslog.New(&promslog.Config{Writer: os.Stdout})
 		concurrency  = 2
 		maxQueries   = 4
 		responseChan = make(chan struct{}, maxQueries)
