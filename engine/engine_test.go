@@ -22,9 +22,9 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
-	"github.com/go-kit/log"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"github.com/prometheus/common/promslog"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/goleak"
 	"golang.org/x/exp/maps"
@@ -4239,7 +4239,7 @@ func TestQueryConcurrency(t *testing.T) {
 
 	var (
 		ctx          = context.Background()
-		logger       = log.NewLogfmtLogger(os.Stdout)
+		logger       = promslog.New(&promslog.Config{Writer: os.Stdout})
 		concurrency  = 2
 		maxQueries   = 4
 		responseChan = make(chan struct{}, maxQueries)

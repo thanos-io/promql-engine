@@ -5,16 +5,16 @@ package engine
 
 import (
 	"context"
+	"log/slog"
 	"math"
 	"runtime"
 	"sort"
 	"time"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/storage"
@@ -109,15 +109,15 @@ func New(opts Opts) *Engine {
 // This method is useful when the data being queried does not easily fit into the Prometheus storage model.
 func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	if opts.Logger == nil {
-		opts.Logger = log.NewNopLogger()
+		opts.Logger = promslog.NewNopLogger()
 	}
 	if opts.LookbackDelta == 0 {
 		opts.LookbackDelta = 5 * time.Minute
-		level.Debug(opts.Logger).Log("msg", "lookback delta is zero, setting to default value", "value", 5*time.Minute)
+		opts.Logger.Debug("lookback delta is zero, setting to default value", "value", 5*time.Minute)
 	}
 	if opts.ExtLookbackDelta == 0 {
 		opts.ExtLookbackDelta = 1 * time.Hour
-		level.Debug(opts.Logger).Log("msg", "externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
+		opts.Logger.Debug("externallookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
 	if opts.SelectorBatchSize != 0 {
 		opts.LogicalOptimizers = append(
@@ -215,7 +215,7 @@ type Engine struct {
 	disableDuplicateLabelChecks bool
 	disableFallback             bool
 
-	logger             log.Logger
+	logger             *slog.Logger
 	lookbackDelta      time.Duration
 	enablePerStepStats bool
 	logicalOptimizers  []logicalplan.Optimizer
@@ -700,7 +700,7 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 
 func (q *compatibilityQuery) Close() {
 	if err := q.scanners.Close(); err != nil {
-		level.Warn(q.engine.logger).Log("msg", "error closing storage scanners, some memory might have leaked", "err", err)
+		q.engine.logger.Warn("error closing storage scanners, some memory might have leaked", "err", err)
 	}
 }
 
@@ -720,7 +720,7 @@ func (n nopQueryTracker) Insert(ctx context.Context, query string) (int, error) 
 func (n nopQueryTracker) Delete(insertIndex int)                                {}
 func (n nopQueryTracker) Close() error                                          { return nil }
 
-func recoverEngine(logger log.Logger, plan logicalplan.Plan, errp *error) {
+func recoverEngine(logger *slog.Logger, plan logicalplan.Plan, errp *error) {
 	e := recover()
 	if e == nil {
 		return
@@ -732,7 +732,7 @@ func recoverEngine(logger log.Logger, plan logicalplan.Plan, errp *error) {
 		buf := make([]byte, 64<<10)
 		buf = buf[:runtime.Stack(buf, false)]
 
-		level.Error(logger).Log("msg", "runtime panic in engine", "expr", plan.Root().String(), "err", e, "stacktrace", string(buf))
+		logger.Error("runtime panic in engine", "expr", plan.Root().String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
 	}
 }
