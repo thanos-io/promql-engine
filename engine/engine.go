@@ -98,10 +98,25 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
 type QueryOpts struct {
-	promql.QueryOpts
+	lookbackDelta time.Duration
+
+	enablePerStepStats bool
 
 	// DecodingConcurrency can be used to override the DecodingConcurrency engine setting.
 	DecodingConcurrency int
+}
+
+func (opts QueryOpts) LookbackDelta() time.Duration { return opts.lookbackDelta }
+func (opts QueryOpts) EnablePerStepStats() bool     { return opts.enablePerStepStats }
+
+func fromPromQLOpts(opts promql.QueryOpts) *QueryOpts {
+	if opts == nil {
+		return &QueryOpts{}
+	}
+	return &QueryOpts{
+		lookbackDelta:      opts.LookbackDelta(),
+		enablePerStepStats: opts.EnablePerStepStats(),
+	}
 }
 
 // New creates a new query engine with the given options. The query engine will
@@ -236,13 +251,7 @@ type Engine struct {
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
-func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	idx, err := e.activeQueryTracker.Insert(ctx, qs)
-	if err != nil {
-		return nil, err
-	}
-	defer e.activeQueryTracker.Delete(idx)
-
+func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -290,7 +299,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 	}, nil
 }
 
-func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, ts time.Time) (promql.Query, error) {
+func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts *QueryOpts, root logicalplan.Node, ts time.Time) (promql.Query, error) {
 	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
 	if err != nil {
 		return nil, err
@@ -337,7 +346,7 @@ func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryabl
 	}, nil
 }
 
-func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
 	idx, err := e.activeQueryTracker.Insert(ctx, qs)
 	if err != nil {
 		return nil, err
@@ -389,7 +398,7 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	}, nil
 }
 
-func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (promql.Query, error) {
+func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts *QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (promql.Query, error) {
 	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
 	if err != nil {
 		return nil, err
@@ -431,7 +440,19 @@ func (e *Engine) NewRangeQueryFromPlan(ctx context.Context, q storage.Queryable,
 	}, nil
 }
 
-func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts promql.QueryOpts) *query.Options {
+// PromQL compatibility constructors
+
+// NewInstantQuery implements the promql.Engine interface.
+func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	return e.MakeInstantQuery(ctx, q, fromPromQLOpts(opts), qs, ts)
+}
+
+// NewRangeQuery implements the promql.Engine interface.
+func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+	return e.MakeRangeQuery(ctx, q, fromPromQLOpts(opts), qs, start, end, step)
+}
+
+func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts *QueryOpts) *query.Options {
 	res := &query.Options{
 		Start:                    start,
 		End:                      end,
@@ -455,13 +476,8 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		res.EnablePerStepStats = opts.EnablePerStepStats()
 	}
 
-	extOpts, ok := opts.(*QueryOpts)
-	if !ok {
-		return res
-	}
-
-	if extOpts.DecodingConcurrency != 0 {
-		res.DecodingConcurrency = extOpts.DecodingConcurrency
+	if opts.DecodingConcurrency != 0 {
+		res.DecodingConcurrency = opts.DecodingConcurrency
 	}
 	return res
 }
