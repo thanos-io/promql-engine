@@ -50,7 +50,7 @@ func NewCountValues(pool *model.VectorPool, next model.VectorOperator, param str
 		by:         by,
 		grouping:   grouping,
 	}
-	op.OperatorTelemetry = model.NewTelemetry(op, opts)
+	op.OperatorTelemetry = model.NewTelemetry(context.Background(), op, opts)
 
 	return op
 }
