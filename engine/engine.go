@@ -101,9 +101,10 @@ func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
 type QueryOpts struct {
-	lookbackDelta time.Duration
-
-	enablePerStepStats bool
+	// These values are used to implement promql.QueryOpts, they have weird "Param" suffix because
+	// they are accessed by methods of the same name.
+	LookbackDeltaParam      time.Duration
+	EnablePerStepStatsParam bool
 
 	// DecodingConcurrency can be used to override the DecodingConcurrency engine setting.
 	DecodingConcurrency int
@@ -112,16 +113,16 @@ type QueryOpts struct {
 	EnablePartialResponses bool
 }
 
-func (opts QueryOpts) LookbackDelta() time.Duration { return opts.lookbackDelta }
-func (opts QueryOpts) EnablePerStepStats() bool     { return opts.enablePerStepStats }
+func (opts QueryOpts) LookbackDelta() time.Duration { return opts.LookbackDeltaParam }
+func (opts QueryOpts) EnablePerStepStats() bool     { return opts.EnablePerStepStatsParam }
 
 func fromPromQLOpts(opts promql.QueryOpts) *QueryOpts {
 	if opts == nil {
 		return &QueryOpts{}
 	}
 	return &QueryOpts{
-		lookbackDelta:      opts.LookbackDelta(),
-		enablePerStepStats: opts.EnablePerStepStats(),
+		LookbackDeltaParam:      opts.LookbackDelta(),
+		EnablePerStepStatsParam: opts.EnablePerStepStats(),
 	}
 }
 
