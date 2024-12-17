@@ -75,6 +75,9 @@ type Opts struct {
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
 
+	// EnablePartialResponses enables partial responses in distributed mode.
+	EnablePartialResponses bool
+
 	// SelectorBatchSize specifies the maximum number of samples to be returned by selectors in a single batch.
 	SelectorBatchSize int64
 
@@ -104,6 +107,9 @@ type QueryOpts struct {
 
 	// DecodingConcurrency can be used to override the DecodingConcurrency engine setting.
 	DecodingConcurrency int
+
+	// EnablePartialResponses can be used to override the EnablePartialResponses engine setting.
+	EnablePartialResponses bool
 }
 
 func (opts QueryOpts) LookbackDelta() time.Duration { return opts.lookbackDelta }
@@ -207,14 +213,15 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 		disableFallback:             opts.DisableFallback,
 
-		logger:             opts.Logger,
-		lookbackDelta:      opts.LookbackDelta,
-		enablePerStepStats: opts.EnablePerStepStats,
-		logicalOptimizers:  opts.getLogicalOptimizers(),
-		timeout:            opts.Timeout,
-		metrics:            metrics,
-		extLookbackDelta:   opts.ExtLookbackDelta,
-		enableAnalysis:     opts.EnableAnalysis,
+		logger:                 opts.Logger,
+		lookbackDelta:          opts.LookbackDelta,
+		enablePerStepStats:     opts.EnablePerStepStats,
+		logicalOptimizers:      opts.getLogicalOptimizers(),
+		timeout:                opts.Timeout,
+		metrics:                metrics,
+		extLookbackDelta:       opts.ExtLookbackDelta,
+		enableAnalysis:         opts.EnableAnalysis,
+		enablePartialResponses: opts.EnablePartialResponses,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
@@ -248,6 +255,7 @@ type Engine struct {
 	extLookbackDelta         time.Duration
 	decodingConcurrency      int
 	enableAnalysis           bool
+	enablePartialResponses   bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
@@ -462,6 +470,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnablePerStepStats:       e.enablePerStepStats,
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
+		EnablePartialResponses:   e.enablePartialResponses,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
@@ -478,6 +487,9 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 
 	if opts.DecodingConcurrency != 0 {
 		res.DecodingConcurrency = opts.DecodingConcurrency
+	}
+	if opts.EnablePartialResponses {
+		res.EnablePartialResponses = opts.EnablePartialResponses
 	}
 	return res
 }

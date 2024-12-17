@@ -5043,6 +5043,7 @@ type testSeriesSet struct {
 	i      int
 	series []storage.Series
 	warns  annotations.Annotations
+	err    error
 }
 
 func newTestSeriesSet(series ...storage.Series) storage.SeriesSet {
@@ -5059,9 +5060,16 @@ func newWarningsSeriesSet(warns annotations.Annotations) storage.SeriesSet {
 	}
 }
 
+func newErrorSeriesSet(err error) storage.SeriesSet {
+	return &testSeriesSet{
+		i:   -1,
+		err: err,
+	}
+}
+
 func (s *testSeriesSet) Next() bool                        { s.i++; return s.i < len(s.series) }
 func (s *testSeriesSet) At() storage.Series                { return s.series[s.i] }
-func (s *testSeriesSet) Err() error                        { return nil }
+func (s *testSeriesSet) Err() error                        { return s.err }
 func (s *testSeriesSet) Warnings() annotations.Annotations { return s.warns }
 
 type slowSeries struct{}
