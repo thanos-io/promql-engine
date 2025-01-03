@@ -221,8 +221,7 @@ func (a *aggregate) initializeTables(ctx context.Context) error {
 
 func (a *aggregate) initializeVectorizedTables(ctx context.Context) ([]aggregateTable, []labels.Labels, error) {
 	// perform initialization of the underlying operator even if we are aggregating the labels away
-	_, err := a.next.Series(ctx)
-	if err != nil {
+	if _, err := a.next.Series(ctx); err != nil {
 		return nil, nil, err
 	}
 	tables, err := newVectorizedTables(a.stepsBatch, a.aggregation)
