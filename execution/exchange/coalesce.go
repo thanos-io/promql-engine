@@ -59,7 +59,7 @@ func NewCoalesce(pool *model.VectorPool, opts *query.Options, batchSize int64, o
 		batchSize:     batchSize,
 	}
 
-	oper.OperatorTelemetry = model.NewTelemetry(oper, opts)
+	oper.OperatorTelemetry = model.NewTelemetry(context.Background(), oper, opts)
 
 	return oper
 }

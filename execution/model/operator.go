@@ -6,6 +6,7 @@ package model
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -13,6 +14,44 @@ import (
 
 	"github.com/thanos-io/promql-engine/query"
 )
+
+type metadataKey string
+
+const key metadataKey = "promql-metadata"
+
+func AddMetadataStorage(ctx context.Context) context.Context {
+	return context.WithValue(ctx, key, &FanoutMetadata{
+		storage: make(map[string]map[string]any),
+	})
+}
+
+func GetMetadataStorage(ctx context.Context) *FanoutMetadata {
+	v := ctx.Value(key)
+	if v == nil {
+		return nil
+	}
+	return v.(*FanoutMetadata)
+}
+
+type FanoutMetadata struct {
+	m sync.Mutex
+
+	storage map[string]map[string]any
+}
+
+func (m *FanoutMetadata) SetMetadata(endpoint string, data map[string]any) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.storage[endpoint] = data
+}
+
+func (m *FanoutMetadata) GetMetadata() map[string]map[string]any {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	return m.storage
+}
 
 type OperatorTelemetry interface {
 	fmt.Stringer
@@ -22,18 +61,20 @@ type OperatorTelemetry interface {
 	IncrementSamplesAtTimestamp(samples int, t int64)
 	Samples() *stats.QuerySamples
 	SubQuery() bool
+
+	FanoutMetadata() *FanoutMetadata
 }
 
-func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
+func NewTelemetry(ctx context.Context, operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, false)
+		return NewTrackedTelemetry(ctx, operator, opts, false)
 	}
 	return NewNoopTelemetry(operator)
 }
 
-func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
+func NewSubqueryTelemetry(ctx context.Context, operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, true)
+		return NewTrackedTelemetry(ctx, operator, opts, true)
 	}
 	return NewNoopTelemetry(operator)
 }
@@ -52,6 +93,10 @@ func (tm *NoopTelemetry) ExecutionTimeTaken() time.Duration {
 	return time.Duration(0)
 }
 
+func (tm *NoopTelemetry) FanoutMetadata() *FanoutMetadata {
+	return nil
+}
+
 func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(_ int, _ int64) {}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
@@ -63,15 +108,17 @@ type TrackedTelemetry struct {
 	ExecutionTime time.Duration
 	LoadedSamples *stats.QuerySamples
 	subquery      bool
+	ctx           context.Context
 }
 
-func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, subquery bool) *TrackedTelemetry {
+func NewTrackedTelemetry(ctx context.Context, operator fmt.Stringer, opts *query.Options, subquery bool) *TrackedTelemetry {
 	ss := stats.NewQuerySamples(opts.EnablePerStepStats)
 	ss.InitStepTracking(opts.Start.UnixMilli(), opts.End.UnixMilli(), stepTrackingInterval(opts.Step))
 	return &TrackedTelemetry{
 		Stringer:      operator,
 		LoadedSamples: ss,
 		subquery:      subquery,
+		ctx:           ctx,
 	}
 }
 
@@ -86,6 +133,10 @@ func (ti *TrackedTelemetry) AddExecutionTimeTaken(t time.Duration) { ti.Executio
 
 func (ti *TrackedTelemetry) ExecutionTimeTaken() time.Duration {
 	return ti.ExecutionTime
+}
+
+func (ti *TrackedTelemetry) FanoutMetadata() *FanoutMetadata {
+	return GetMetadataStorage(ti.ctx)
 }
 
 func (ti *TrackedTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) {

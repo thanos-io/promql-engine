@@ -74,7 +74,7 @@ func NewHashAggregate(
 		stepsBatch:  opts.StepsBatch,
 	}
 
-	a.OperatorTelemetry = model.NewTelemetry(a, opts)
+	a.OperatorTelemetry = model.NewTelemetry(context.Background(), a, opts)
 
 	return a, nil
 }

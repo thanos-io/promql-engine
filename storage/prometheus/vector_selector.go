@@ -56,6 +56,7 @@ type vectorSelector struct {
 
 // NewVectorSelector creates operator which selects vector of series.
 func NewVectorSelector(
+	ctx context.Context,
 	pool *model.VectorPool,
 	selector SeriesSelector,
 	queryOpts *query.Options,
@@ -82,7 +83,7 @@ func NewVectorSelector(
 
 		selectTimestamp: selectTimestamp,
 	}
-	o.OperatorTelemetry = model.NewTelemetry(o, queryOpts)
+	o.OperatorTelemetry = model.NewTelemetry(ctx, o, queryOpts)
 
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
