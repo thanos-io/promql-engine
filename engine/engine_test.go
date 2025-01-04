@@ -4834,6 +4834,16 @@ func TestQueryStats(t *testing.T) {
 			end:   time.Unix(1800, 0),
 			step:  time.Second * 30,
 		},
+		{
+			name: "label_replace",
+			load: `load 2m
+			    http_requests_total{pod="nginx-1"} 1+1x5
+			    http_requests_total{pod="nginx-2"} 1+2x5`,
+			query: `label_replace(http_requests_total, "replace", "$1", "pod", "(.*)")`,
+			start: time.Unix(1, 0),
+			end:   time.Unix(1800, 0),
+			step:  time.Second * 30,
+		},
 	}
 
 	for _, tc := range cases {
