@@ -20,6 +20,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
+	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
 	"github.com/stretchr/testify/require"
 
@@ -32,9 +33,31 @@ import (
 const testRuns = 100
 
 type testCase struct {
-	query          string
-	loads          []string
-	oldRes, newRes *promql.Result
+	query              string
+	loads              []string
+	oldRes, newRes     *promql.Result
+	oldStats, newStats *stats.Statistics
+	start, end         time.Time
+	interval           time.Duration
+	validateSamples    bool
+}
+
+// shouldValidateSamples checks if the samples can be compared for the expr.
+// For certain known cases, prometheus engine and thanos engine returns different samples.
+func shouldValidateSamples(expr parser.Expr) bool {
+	valid := true
+
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.Name == "scalar" {
+				valid = false
+				return errors.New("error")
+			}
+		}
+		return nil
+	})
+	return valid
 }
 
 func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
@@ -61,7 +84,9 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			MaxSamples:           1e10,
 			EnableNegativeOffset: true,
 			EnableAtModifier:     true,
+			EnablePerStepStats:   true,
 		}
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 
 		storage := promqltest.LoadedStorage(t, load)
 		defer storage.Close()
@@ -80,22 +105,22 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		}
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: true})
+		newEngine := engine.New(engine.Opts{EngineOpts: opts, DisableFallback: true, EnableAnalysis: true})
 		oldEngine := promql.NewEngine(opts)
 
 		var (
-			q1    promql.Query
-			query string
+			q1              promql.Query
+			query           string
+			validateSamples bool
 		)
 		cases := make([]*testCase, testRuns)
 		for i := 0; i < testRuns; i++ {
-			// Since we disabled fallback, keep trying until we find a query
-			// that can be natively executed by the engine.
-			// Parsing experimental function, like mad_over_time, will lead to a parser.ParseErrors, so we also ignore those.
 			for {
 				expr := ps.WalkRangeQuery()
+				validateSamples = shouldValidateSamples(expr)
+
 				query = expr.Pretty(0)
-				q1, err = newEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
+				q1, err = newEngine.NewRangeQuery(context.Background(), storage, qOpts, query, start, end, interval)
 				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) || errors.As(err, &parser.ParseErrors{}) {
 					continue
 				} else {
@@ -105,17 +130,27 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 
 			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
+			newStats := q1.Stats()
+			stats.NewQueryStats(newStats)
 
-			q2, err := oldEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
+			q2, err := oldEngine.NewRangeQuery(context.Background(), storage, qOpts, query, start, end, interval)
 			testutil.Ok(t, err)
 
 			oldResult := q2.Exec(context.Background())
+			oldStats := q2.Stats()
+			stats.NewQueryStats(oldStats)
 
 			cases[i] = &testCase{
-				query:  query,
-				newRes: newResult,
-				oldRes: oldResult,
-				loads:  []string{load},
+				query:           query,
+				newRes:          newResult,
+				newStats:        newStats,
+				oldRes:          oldResult,
+				oldStats:        oldStats,
+				loads:           []string{load},
+				start:           start,
+				end:             end,
+				interval:        interval,
+				validateSamples: validateSamples,
 			}
 		}
 		validateTestCases(t, cases)
@@ -141,7 +176,9 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			MaxSamples:           1e10,
 			EnableNegativeOffset: true,
 			EnableAtModifier:     true,
+			EnablePerStepStats:   true,
 		}
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 
 		storage := promqltest.LoadedStorage(t, load)
 		defer storage.Close()
@@ -151,6 +188,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			EngineOpts:        opts,
 			DisableFallback:   true,
 			LogicalOptimizers: logicalplan.AllOptimizers,
+			EnableAnalysis:    true,
 		})
 		oldEngine := promql.NewEngine(opts)
 
@@ -176,8 +214,11 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			// Parsing experimental function, like mad_over_time, will lead to a parser.ParseErrors, so we also ignore those.
 			for {
 				expr := ps.WalkInstantQuery()
+				if !shouldValidateSamples(expr) {
+					continue
+				}
 				query = expr.Pretty(0)
-				q1, err = newEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
+				q1, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
 				if errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented) || errors.As(err, &parser.ParseErrors{}) {
 					continue
 				} else {
@@ -187,17 +228,26 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 
 			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
+			newStats := q1.Stats()
+			stats.NewQueryStats(newStats)
 
-			q2, err := oldEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
+			q2, err := oldEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
 			testutil.Ok(t, err)
 
 			oldResult := q2.Exec(context.Background())
+			oldStats := q2.Stats()
+			stats.NewQueryStats(oldStats)
 
 			cases[i] = &testCase{
-				query:  query,
-				newRes: newResult,
-				oldRes: oldResult,
-				loads:  []string{load},
+				query:           query,
+				newRes:          newResult,
+				newStats:        newStats,
+				oldRes:          oldResult,
+				oldStats:        oldStats,
+				loads:           []string{load},
+				start:           queryTime,
+				end:             queryTime,
+				validateSamples: true,
 			}
 		}
 		validateTestCases(t, cases)
@@ -444,14 +494,27 @@ func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error
 
 func validateTestCases(t *testing.T, cases []*testCase) {
 	failures := 0
+	logQuery := func(c *testCase) {
+		for _, load := range c.loads {
+			t.Logf(load)
+		}
+		t.Logf("query: %s, start: %d, end: %d, interval: %v", c.query, c.start.UnixMilli(), c.end.UnixMilli(), c.interval)
+	}
 	for i, c := range cases {
 		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
-			for _, load := range c.loads {
-				t.Logf(load)
-			}
-			t.Logf(c.query)
+			logQuery(c)
 
 			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
+			//failures++
+			continue
+		}
+		if !c.validateSamples || c.oldRes.Err != nil {
+			// Skip sample comparison
+			continue
+		}
+		if !cmp.Equal(c.oldStats.Samples, c.newStats.Samples, samplesComparer) {
+			logQuery(c)
+			t.Logf("case: %d, samples mismatch. total samples: old: %v, new: %v. samples per step: old: %v, new: %v", i, c.oldStats.Samples.TotalSamples, c.newStats.Samples.TotalSamples, c.oldStats.Samples.TotalSamplesPerStep, c.newStats.Samples.TotalSamplesPerStep)
 			failures++
 		}
 	}

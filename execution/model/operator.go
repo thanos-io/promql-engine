@@ -22,18 +22,26 @@ type OperatorTelemetry interface {
 	IncrementSamplesAtTimestamp(samples int, t int64)
 	Samples() *stats.QuerySamples
 	SubQuery() bool
+	StepInvariant() bool
 }
 
 func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, false)
+		return NewTrackedTelemetry(operator, opts, false, false)
 	}
 	return NewNoopTelemetry(operator)
 }
 
 func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, true)
+		return NewTrackedTelemetry(operator, opts, true, false)
+	}
+	return NewNoopTelemetry(operator)
+}
+
+func NewInvariantTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
+	if opts.EnableAnalysis {
+		return NewTrackedTelemetry(operator, opts, false, true)
 	}
 	return NewNoopTelemetry(operator)
 }
@@ -56,6 +64,7 @@ func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(_ int, _ int64) {}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
 func (tm *NoopTelemetry) SubQuery() bool               { return false }
+func (tm *NoopTelemetry) StepInvariant() bool          { return false }
 
 type TrackedTelemetry struct {
 	fmt.Stringer
@@ -63,15 +72,17 @@ type TrackedTelemetry struct {
 	ExecutionTime time.Duration
 	LoadedSamples *stats.QuerySamples
 	subquery      bool
+	invariant     bool
 }
 
-func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, subquery bool) *TrackedTelemetry {
+func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, subquery bool, invariant bool) *TrackedTelemetry {
 	ss := stats.NewQuerySamples(opts.EnablePerStepStats)
 	ss.InitStepTracking(opts.Start.UnixMilli(), opts.End.UnixMilli(), stepTrackingInterval(opts.Step))
 	return &TrackedTelemetry{
 		Stringer:      operator,
 		LoadedSamples: ss,
 		subquery:      subquery,
+		invariant:     invariant,
 	}
 }
 
@@ -95,6 +106,10 @@ func (ti *TrackedTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) {
 
 func (ti *TrackedTelemetry) SubQuery() bool {
 	return ti.subquery
+}
+
+func (ti *TrackedTelemetry) StepInvariant() bool {
+	return ti.invariant
 }
 
 func (ti *TrackedTelemetry) updatePeak(samples int) {

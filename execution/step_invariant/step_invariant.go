@@ -59,7 +59,7 @@ func NewStepInvariantOperator(
 		stepsBatch:  opts.StepsBatch,
 		cacheResult: true,
 	}
-	u.OperatorTelemetry = model.NewTelemetry(u, opts)
+	u.OperatorTelemetry = model.NewInvariantTelemetry(u, opts)
 	if u.step == 0 {
 		u.step = 1
 	}

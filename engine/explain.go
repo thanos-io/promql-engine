@@ -61,12 +61,24 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 		for _, child := range a.Children {
 			childPeak := child.PeakSamples()
 			a.peakSamples = max(a.peakSamples, childPeak)
+
+			if a.OperatorTelemetry.SubQuery() {
+				// Skip aggregating from subquery to avoid double counting samples from children.
+				continue
+			}
+			if a.OperatorTelemetry.StepInvariant() {
+				// Children of step invariant operator outputs one step, but they should be counted towards all the steps.
+				childSamples := child.TotalSamples()
+				for i := 0; i < len(a.totalSamplesPerStep); i++ {
+					a.totalSamples += childSamples
+					a.totalSamplesPerStep[i] += childSamples
+				}
+				continue
+			}
+
+			a.totalSamples += child.TotalSamples()
 			for i, s := range child.TotalSamplesPerStep() {
 				a.totalSamplesPerStep[i] += s
-			}
-			// Aggregate only if the node is not a subquery to avoid double counting samples from children.
-			if !a.OperatorTelemetry.SubQuery() {
-				a.totalSamples += child.TotalSamples()
 			}
 		}
 	})
