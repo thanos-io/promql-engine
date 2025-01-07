@@ -10,6 +10,8 @@ import (
 	"sort"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/telemetry"
+
 	"github.com/efficientgo/core/errors"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -522,7 +524,7 @@ func (q *Query) Explain() *ExplainOutputNode {
 }
 
 func (q *Query) Analyze() *AnalyzeOutputNode {
-	if observableRoot, ok := q.exec.(model.ObservableVectorOperator); ok {
+	if observableRoot, ok := q.exec.(telemetry.ObservableVectorOperator); ok {
 		return analyzeQuery(observableRoot)
 	}
 	return nil
