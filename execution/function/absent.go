@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -20,7 +21,7 @@ type absentOperator struct {
 
 	once     sync.Once
 	funcExpr *logicalplan.FunctionCall
-	series   []labels.Labels
+	series   []promql.Series
 	pool     *model.VectorPool
 	next     model.VectorOperator
 }
@@ -49,7 +50,7 @@ func (o *absentOperator) Explain() (next []model.VectorOperator) {
 	return []model.VectorOperator{o.next}
 }
 
-func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {
+func (o *absentOperator) Series(_ context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -71,7 +72,7 @@ func (o *absentOperator) loadSeries() {
 			v := n.VectorSelector
 			lm = append(v.LabelMatchers, v.Filters...)
 		default:
-			o.series = []labels.Labels{labels.EmptyLabels()}
+			o.series = []promql.Series{{}}
 			return
 		}
 
@@ -88,7 +89,7 @@ func (o *absentOperator) loadSeries() {
 				delete(lmap, l.Name)
 			}
 		}
-		o.series = []labels.Labels{labels.FromMap(lmap)}
+		o.series = []promql.Series{{Metric: labels.FromMap(lmap), DropName: true}}
 	})
 }
 

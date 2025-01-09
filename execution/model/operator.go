@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/util/stats"
 
 	"github.com/thanos-io/promql-engine/query"
@@ -116,7 +116,7 @@ type VectorOperator interface {
 	// Series returns all series that the operator will process during Next results.
 	// The result can be used by upstream operators to allocate output tables and buffers
 	// before starting to process samples.
-	Series(ctx context.Context) ([]labels.Labels, error)
+	Series(ctx context.Context) ([]promql.Series, error)
 
 	// GetPool returns pool of vectors that can be shared across operators.
 	GetPool() *VectorPool

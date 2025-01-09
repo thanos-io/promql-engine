@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/query"
@@ -32,7 +33,7 @@ type countValuesOperator struct {
 
 	ts     []int64
 	counts []map[int]int
-	series []labels.Labels
+	series []promql.Series
 
 	once sync.Once
 }
@@ -70,7 +71,7 @@ func (c *countValuesOperator) String() string {
 	return fmt.Sprintf("[countValues] without (%v) - param (%v)", c.grouping, c.param)
 }
 
-func (c *countValuesOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (c *countValuesOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -141,7 +142,7 @@ func (c *countValuesOperator) initSeriesOnce(ctx context.Context) error {
 
 	ts := make([]int64, 0)
 	counts := make([]map[int]int, 0)
-	series := make([]labels.Labels, 0)
+	series := make([]promql.Series, 0)
 
 	b := labels.NewBuilder(labels.EmptyLabels())
 	for {
@@ -180,7 +181,7 @@ func (c *countValuesOperator) initSeriesOnce(ctx context.Context) error {
 					hash := lbls.Hash()
 					outputId, ok := hashToOutputId[hash]
 					if !ok {
-						series = append(series, lbls)
+						series = append(series, promql.Series{Metric: lbls})
 						outputId = len(series) - 1
 						hashToOutputId[hash] = outputId
 					}

@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 )
@@ -73,7 +72,7 @@ func newNoArgsFunctionOperator(funcExpr *logicalplan.FunctionCall, stepsBatch in
 		op.sampleIDs = []uint64{0}
 	default:
 		// Other functions require non-nil labels.
-		op.series = []labels.Labels{{}}
+		op.series = []promql.Series{{}}
 		op.sampleIDs = []uint64{0}
 	}
 
@@ -85,14 +84,15 @@ type functionOperator struct {
 	model.OperatorTelemetry
 
 	funcExpr *logicalplan.FunctionCall
-	series   []labels.Labels
+	series   []promql.Series
 	once     sync.Once
 
 	vectorIndex int
 	nextOps     []model.VectorOperator
 
-	call         functionCall
-	scalarPoints [][]float64
+	call                     functionCall
+	scalarPoints             [][]float64
+	enableDelayedNameRemoval bool
 }
 
 func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
@@ -106,11 +106,12 @@ func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOp
 		scalarPoints[i] = make([]float64, len(nextOps)-1)
 	}
 	f := &functionOperator{
-		nextOps:      nextOps,
-		call:         call,
-		funcExpr:     funcExpr,
-		vectorIndex:  0,
-		scalarPoints: scalarPoints,
+		nextOps:                  nextOps,
+		call:                     call,
+		funcExpr:                 funcExpr,
+		vectorIndex:              0,
+		scalarPoints:             scalarPoints,
+		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 	}
 	f.OperatorTelemetry = model.NewTelemetry(f, opts)
 
@@ -138,7 +139,7 @@ func (o *functionOperator) String() string {
 	return fmt.Sprintf("[function] %v(%v)", o.funcExpr.Func.Name, o.funcExpr.Args)
 }
 
-func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *functionOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -232,7 +233,7 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
 		if o.funcExpr.Func.Name == "vector" {
-			o.series = []labels.Labels{labels.New()}
+			o.series = []promql.Series{{}}
 			return
 		}
 
@@ -241,12 +242,14 @@ func (o *functionOperator) loadSeries(ctx context.Context) error {
 			err = loadErr
 			return
 		}
-		o.series = make([]labels.Labels, len(series))
-
-		b := labels.ScratchBuilder{}
+		o.series = make([]promql.Series, len(series))
 		for i, s := range series {
-			lbls, _ := extlabels.DropMetricName(s, b)
-			o.series[i] = lbls
+			o.series[i] = s
+			if !o.enableDelayedNameRemoval {
+				o.series[i].Metric = o.series[i].Metric.DropMetricName()
+			} else {
+				o.series[i].DropName = true
+			}
 		}
 	})
 
