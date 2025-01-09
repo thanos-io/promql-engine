@@ -13,6 +13,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 
@@ -33,7 +34,7 @@ type histogramSeries struct {
 type histogramOperator struct {
 	model.OperatorTelemetry
 	once   sync.Once
-	series []labels.Labels
+	series []promql.Series
 
 	pool     *model.VectorPool
 	funcArgs logicalplan.Nodes
@@ -79,7 +80,7 @@ func (o *histogramOperator) Explain() (next []model.VectorOperator) {
 	return []model.VectorOperator{o.scalarOp, o.vectorOp}
 }
 
-func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *histogramOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -213,12 +214,12 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 		seriesHashes = make(map[uint64]int, len(series))
 	)
 
-	o.series = make([]labels.Labels, 0)
+	o.series = make([]promql.Series, 0)
 	o.outputIndex = make([]*histogramSeries, len(series))
 	b := labels.ScratchBuilder{}
 	for i, s := range series {
 		hasBucketValue := true
-		lbls, bucketLabel := extlabels.DropBucketLabel(s, b)
+		lbls, bucketLabel := extlabels.DropBucketLabel(s.Metric, b)
 		value, err := strconv.ParseFloat(bucketLabel.Value, 64)
 		if err != nil {
 			hasBucketValue = false
@@ -238,7 +239,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 		seriesHash := hasher.Sum64()
 		seriesID, ok := seriesHashes[seriesHash]
 		if !ok {
-			o.series = append(o.series, lbls)
+			o.series = append(o.series, promql.Series{Metric: lbls, DropName: s.DropName})
 			seriesID = len(o.series) - 1
 			seriesHashes[seriesHash] = seriesID
 		}

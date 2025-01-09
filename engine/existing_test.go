@@ -34,8 +34,9 @@ func TestRangeQuery(t *testing.T) {
 			Query: `sum_over_time(bar[30s])`,
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 10, T: 60000}, {F: 1000, T: 120000}},
-					Metric: labels.Labels{},
+					Floats:   []promql.FPoint{{F: 0, T: 0}, {F: 10, T: 60000}, {F: 1000, T: 120000}},
+					Metric:   labels.Labels{},
+					DropName: true,
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -49,8 +50,9 @@ func TestRangeQuery(t *testing.T) {
 			Query: `sum_over_time(bar[45s])`,
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Floats:   []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+					Metric:   labels.Labels{},
+					DropName: true,
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -64,8 +66,9 @@ func TestRangeQuery(t *testing.T) {
 			Query: `sum_over_time(bar[45s])`,
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
-					Metric: labels.Labels{},
+					Floats:   []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}},
+					Metric:   labels.Labels{},
+					DropName: true,
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -79,8 +82,9 @@ func TestRangeQuery(t *testing.T) {
 			Query: `sum_over_time(bar[45s])`,
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
-					Metric: labels.Labels{},
+					Floats:   []promql.FPoint{{F: 0, T: 0}, {F: 11, T: 60000}, {F: 1100, T: 120000}, {F: 110000, T: 180000}, {F: 11000000, T: 240000}},
+					Metric:   labels.Labels{},
+					DropName: true,
 				},
 			},
 			Start:    time.Unix(0, 0),
@@ -94,8 +98,9 @@ func TestRangeQuery(t *testing.T) {
 			Query: `sum_over_time(bar[45s])`,
 			Result: promql.Matrix{
 				promql.Series{
-					Floats: []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
-					Metric: labels.Labels{},
+					Floats:   []promql.FPoint{{F: 5, T: 0}, {F: 59, T: 60000}, {F: 9, T: 120000}, {F: 956, T: 180000}},
+					Metric:   labels.Labels{},
+					DropName: true,
 				},
 			},
 			Start:    time.Unix(0, 0),
