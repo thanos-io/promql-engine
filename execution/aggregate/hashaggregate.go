@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/telemetry"
+
 	"github.com/efficientgo/core/errors"
 	"golang.org/x/exp/slices"
 
@@ -25,7 +27,7 @@ import (
 )
 
 type aggregate struct {
-	model.OperatorTelemetry
+	telemetry.OperatorTelemetry
 
 	next    model.VectorOperator
 	paramOp model.VectorOperator
@@ -74,7 +76,7 @@ func NewHashAggregate(
 		stepsBatch:  opts.StepsBatch,
 	}
 
-	a.OperatorTelemetry = model.NewTelemetry(a, opts)
+	a.OperatorTelemetry = telemetry.NewTelemetry(a, opts)
 
 	return a, nil
 }
