@@ -77,7 +77,7 @@ type TrackedTelemetry struct {
 
 func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, logicalPlanNode logicalplan.Node) *TrackedTelemetry {
 	ss := stats.NewQuerySamples(opts.EnablePerStepStats)
-	ss.InitStepTracking(opts.Start.UnixMilli(), opts.End.UnixMilli(), stepTrackingInterval(opts.Step))
+	ss.InitStepTracking(opts.Start.UnixMilli(), opts.End.UnixMilli(), StepTrackingInterval(opts.Step))
 	return &TrackedTelemetry{
 		Stringer:      operator,
 		LoadedSamples: ss,
@@ -85,7 +85,7 @@ func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, logicalPlan
 	}
 }
 
-func stepTrackingInterval(step time.Duration) int64 {
+func StepTrackingInterval(step time.Duration) int64 {
 	if step == 0 {
 		return 1
 	}

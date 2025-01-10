@@ -5780,13 +5780,13 @@ var (
 		if x.TotalSamples != y.TotalSamples {
 			return false
 		}
-		if len(x.TotalSamplesPerStep) != len(y.TotalSamplesPerStep) {
+
+		if !cmp.Equal(x.TotalSamplesPerStep, y.TotalSamplesPerStep) {
 			return false
 		}
-		for i, xSample := range x.TotalSamplesPerStep {
-			if y.TotalSamplesPerStep[i] != xSample {
-				return false
-			}
+
+		if !cmp.Equal(x.TotalSamplesPerStepMap(), y.TotalSamplesPerStepMap()) {
+			return false
 		}
 		return true
 	})
