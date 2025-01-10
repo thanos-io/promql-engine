@@ -4814,6 +4814,47 @@ func TestQueryStats(t *testing.T) {
 			end:   time.Unix(1800, 0),
 			step:  time.Second * 30,
 		},
+		{
+			name: "step invariant with samples",
+			load: `load 5m
+			    http_requests_total{pod="nginx-1"} 1+1x5
+			    http_requests_total{pod="nginx-2"} 1+2x5`,
+			query: `sum without (__name__) (http_requests_total @ end())`,
+			start: time.Unix(1, 0),
+			end:   time.Unix(600, 0),
+			step:  time.Second * 34,
+		},
+		{
+			name: "step invariant without samples",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1.00+1.00x15
+			    http_requests_total{pod="nginx-2"}  1+2.00x21`,
+			query: `pi()`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(120000),
+			step:  time.Second * 30,
+		},
+		{
+			name: "fuzz subquery without enough samples",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1.00+1.00x15
+			    http_requests_total{pod="nginx-2"}  1+2.00x21`,
+			query: `rate({__name__="http_requests_total"} offset -6s[1h:1m] offset 1m29s)`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(120000),
+			step:  time.Second * 30,
+		},
+		// TODO (harry671003): This is a known case which needs to be fixed upstream.
+		//{
+		//	name: "fuzz aggregation with scalar param",
+		//	load: `load 30s
+		//		http_requests_total{pod="nginx-1"} -77.00+1.00x15
+		//		http_requests_total{pod="nginx-2"}  1+0.67x21`,
+		//	query: `quantile without (pod) (scalar({__name__="http_requests_total"} offset 2m58s), {__name__="http_requests_total"})`,
+		//	start: time.UnixMilli(0),
+		//	end:   time.UnixMilli(221000),
+		//	step:  time.Second * 30,
+		//},
 	}
 
 	for _, tc := range cases {
@@ -4825,6 +4866,8 @@ func TestQueryStats(t *testing.T) {
 				Timeout:                  300 * time.Second,
 				MaxSamples:               math.MaxInt64,
 				EnablePerStepStats:       true,
+				EnableAtModifier:         true,
+				EnableNegativeOffset:     true,
 				NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 			}
 			qOpts := promql.NewPrometheusQueryOpts(true, 5*time.Minute)
@@ -4851,8 +4894,9 @@ func TestQueryStats(t *testing.T) {
 			stats.NewQueryStats(newStats)
 
 			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
-			testutil.Equals(t, oldStats.Samples.TotalSamples, newStats.Samples.TotalSamples)
-			testutil.Equals(t, oldStats.Samples.TotalSamplesPerStep, newStats.Samples.TotalSamplesPerStep)
+			if oldResult.Err == nil {
+				testutil.WithGoCmp(samplesComparer).Equals(t, oldStats.Samples, newStats.Samples)
+			}
 
 			// Range query
 			oldQ, err = oldEngine.NewRangeQuery(ctx, storage, qOpts, tc.query, tc.start, tc.end, tc.step)
@@ -4868,8 +4912,9 @@ func TestQueryStats(t *testing.T) {
 			stats.NewQueryStats(newStats)
 
 			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult)
-			testutil.Equals(t, oldStats.Samples.TotalSamples, newStats.Samples.TotalSamples)
-			testutil.Equals(t, oldStats.Samples.TotalSamplesPerStep, newStats.Samples.TotalSamplesPerStep)
+			if oldResult.Err == nil {
+				testutil.WithGoCmp(samplesComparer).Equals(t, oldStats.Samples, newStats.Samples)
+			}
 		})
 	}
 }
@@ -5726,6 +5771,24 @@ var (
 			return compareFloats(sx.V, sy.V)
 		}
 		return false
+	})
+
+	samplesComparer = cmp.Comparer(func(x, y *stats.QuerySamples) bool {
+		if x == nil && y == nil {
+			return true
+		}
+		if x.TotalSamples != y.TotalSamples {
+			return false
+		}
+
+		if !cmp.Equal(x.TotalSamplesPerStep, y.TotalSamplesPerStep) {
+			return false
+		}
+
+		if !cmp.Equal(x.TotalSamplesPerStepMap(), y.TotalSamplesPerStepMap()) {
+			return false
+		}
+		return true
 	})
 )
 
