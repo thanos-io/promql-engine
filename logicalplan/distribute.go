@@ -83,6 +83,7 @@ type RemoteExecution struct {
 	Engine          api.RemoteEngine
 	Query           Node
 	QueryRangeStart time.Time
+	QueryRangeEnd   time.Time
 }
 
 func (r RemoteExecution) Clone() Node {
@@ -95,7 +96,7 @@ func (r RemoteExecution) String() string {
 	if r.QueryRangeStart.UnixMilli() == 0 {
 		return fmt.Sprintf("remote(%s)", r.Query)
 	}
-	return fmt.Sprintf("remote(%s) [%s]", r.Query, r.QueryRangeStart.UTC().String())
+	return fmt.Sprintf("remote(%s) [%s, %s]", r.Query, r.QueryRangeStart.UTC().String(), r.QueryRangeEnd.UTC().String())
 }
 
 func (r RemoteExecution) Type() NodeType { return RemoteExecutionNode }
@@ -316,6 +317,34 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 		return *expr
 	}
 
+	// If a query is scoped to a single timestamp, we distribute it to all engines which have sufficient scope
+	// for the timestamp and range of the query.
+	// One example of such a query is `sum(metric @ end())`.
+	if ts := getQueryTimestamp(expr); ts != nil && !opts.IsInstantQuery() {
+		remoteQueries := make(RemoteExecutions, 0, len(engines))
+		for _, e := range engines {
+			if !matchesExternalLabelSet(*expr, e.LabelSets()) {
+				continue
+			}
+			if e.MinT() > *ts-startOffset.Milliseconds() {
+				continue
+			}
+			if e.MaxT() < *ts {
+				continue
+			}
+			remoteQueries = append(remoteQueries, RemoteExecution{
+				Engine:          e,
+				Query:           (*expr).Clone(),
+				QueryRangeStart: opts.Start,
+				QueryRangeEnd:   opts.End,
+			})
+		}
+		if len(remoteQueries) == 0 {
+			return *expr
+		}
+		return Deduplicate{Expressions: remoteQueries}
+	}
+
 	var globalMinT int64 = math.MaxInt64
 	for _, e := range engines {
 		if e.MinT() < globalMinT {
@@ -344,6 +373,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 			Engine:          e,
 			Query:           (*expr).Clone(),
 			QueryRangeStart: start,
+			QueryRangeEnd:   opts.End,
 		})
 	}
 
@@ -369,6 +399,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 			Engine:          engines[i],
 			Query:           expr.Clone(),
 			QueryRangeStart: opts.Start,
+			QueryRangeEnd:   opts.End,
 		})
 	}
 	// We need to make sure that absent is at least evaluated against one engine.
@@ -380,6 +411,7 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 			Engine:          engines[len(engines)-1],
 			Query:           expr,
 			QueryRangeStart: opts.Start,
+			QueryRangeEnd:   opts.End,
 		}
 	}
 
@@ -464,8 +496,10 @@ func calculateStartOffset(expr *Node, lookbackDelta time.Duration) time.Duration
 		return lookbackDelta
 	}
 
-	var selectRange time.Duration
-	var offset time.Duration
+	var (
+		selectRange time.Duration
+		offset      time.Duration
+	)
 	Traverse(expr, func(node *Node) {
 		switch n := (*node).(type) {
 		case *Subquery:
@@ -477,6 +511,20 @@ func calculateStartOffset(expr *Node, lookbackDelta time.Duration) time.Duration
 		}
 	})
 	return maxDuration(offset+selectRange, lookbackDelta)
+}
+
+func getQueryTimestamp(expr *Node) *int64 {
+	var timestamp *int64
+	Traverse(expr, func(node *Node) {
+		switch n := (*node).(type) {
+		case *VectorSelector:
+			if n.Timestamp != nil {
+				timestamp = n.Timestamp
+				return
+			}
+		}
+	})
+	return timestamp
 }
 
 func numSteps(start, end time.Time, step time.Duration) int64 {
