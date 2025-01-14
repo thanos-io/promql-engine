@@ -171,6 +171,16 @@ func (c *countValuesOperator) initSeriesOnce(ctx context.Context) error {
 				countPerHashbucket[hash][fStr]++
 			}
 
+			for j := range in[i].Histograms {
+				hash := inputIdToHashBucket[int(in[i].HistogramIDs[j])]
+				if _, ok := countPerHashbucket[hash]; !ok {
+					countPerHashbucket[hash] = make(map[string]int)
+				}
+				// Using string as the key to the map so that -0 and 0 are treated as separate values.
+				fStr := in[i].Histograms[j].String()
+				countPerHashbucket[hash][fStr]++
+			}
+
 			countsPerOutputId := make(map[int]int)
 			for hash, counts := range countPerHashbucket {
 				b.Reset(hashToBucketLabels[hash])
