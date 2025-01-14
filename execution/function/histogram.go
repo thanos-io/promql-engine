@@ -189,8 +189,11 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				continue
 			}
 
-			val := bucketQuantile(o.scalarPoints[stepIndex], stepBuckets)
+			val, forcedMonotonicity, _ := bucketQuantile(o.scalarPoints[stepIndex], stepBuckets)
 			step.AppendSample(o.pool, uint64(i), val)
+			if forcedMonotonicity {
+				warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo("", posrange.PositionRange{}), ctx)
+			}
 		}
 
 		out = append(out, step)
