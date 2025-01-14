@@ -653,6 +653,9 @@ loop:
 			}
 		}
 		sort.Slice(vector, q.resultSort.comparer(&vector))
+		if vector.ContainsSameLabelset() {
+			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+		}
 		result = vector
 	case parser.ValueTypeScalar:
 		v := math.NaN()
