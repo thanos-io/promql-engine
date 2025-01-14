@@ -507,13 +507,26 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histo
 	}
 
 	prev := points[0].V.H // We already know that this is a histogram.
+	usingCustomBuckets := prev.UsesCustomBuckets()
 	last := points[len(points)-1].V.H
 	if last == nil {
+		warnings.AddToContext(annotations.MixedFloatsHistogramsWarning, ctx)
 		return nil, nil // Range contains a mix of histograms and floats.
 	}
 	minSchema := prev.Schema
 	if last.Schema < minSchema {
 		minSchema = last.Schema
+	}
+
+	if last.UsesCustomBuckets() != usingCustomBuckets {
+		warnings.AddToContext(annotations.MixedExponentialCustomHistogramsWarning, ctx)
+		return nil, nil
+	}
+
+	// We check for gauge type histograms in the loop below, but the loop below does not run on the first and last point,
+	// so check the first and last point now.
+	if isCounter && (prev.CounterResetHint == histogram.GaugeType || last.CounterResetHint == histogram.GaugeType) {
+		warnings.AddToContext(annotations.NativeHistogramNotCounterWarning, ctx)
 	}
 
 	// https://github.com/prometheus/prometheus/blob/ccea61c7bf1e6bce2196ba8189a209945a204c5b/promql/functions.go#L183
@@ -524,18 +537,31 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histo
 	for _, currPoint := range points[1 : len(points)-1] {
 		curr := currPoint.V.H
 		if curr == nil {
+			warnings.AddToContext(annotations.MixedFloatsHistogramsWarning, ctx)
 			return nil, nil // Range contains a mix of histograms and floats.
 		}
 		if !isCounter {
 			continue
 		}
+		if curr.CounterResetHint == histogram.GaugeType {
+			warnings.AddToContext(annotations.NativeHistogramNotCounterWarning, ctx)
+		}
 		if curr.Schema < minSchema {
 			minSchema = curr.Schema
+		}
+		if curr.UsesCustomBuckets() != usingCustomBuckets {
+			warnings.AddToContext(annotations.MixedExponentialCustomHistogramsWarning, ctx)
+			return nil, nil
 		}
 	}
 
 	h := last.CopyToSchema(minSchema)
 	if _, err := h.Sub(prev); err != nil {
+		if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+			warnings.AddToContext(annotations.MixedExponentialCustomHistogramsWarning, ctx)
+		} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+			warnings.AddToContext(annotations.IncompatibleCustomBucketsHistogramsWarning, ctx)
+		}
 		return nil, err
 	}
 
@@ -545,12 +571,20 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histo
 			curr := currPoint.V.H
 			if curr.DetectReset(prev) {
 				if _, err := h.Add(prev); err != nil {
+					if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+						warnings.AddToContext(annotations.MixedExponentialCustomHistogramsWarning, ctx)
+					} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+						warnings.AddToContext(annotations.IncompatibleCustomBucketsHistogramsWarning, ctx)
+					}
 					return nil, err
 				}
 			}
 			prev = curr
 		}
+	} else if points[0].V.H.CounterResetHint != histogram.GaugeType || points[len(points)-1].V.H.CounterResetHint != histogram.GaugeType {
+		warnings.AddToContext(annotations.NativeHistogramNotGaugeWarning, ctx)
 	}
+
 	h.CounterResetHint = histogram.GaugeType
 	return h.Compact(0), nil
 }
