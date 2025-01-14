@@ -65,6 +65,7 @@ func TestPromqlAcceptance(t *testing.T) {
 
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
+			Logger:                   promslog.NewNopLogger(),
 			EnableAtModifier:         true,
 			EnableNegativeOffset:     true,
 			MaxSamples:               5e10,
@@ -5148,7 +5149,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 func TestNativeHistogramRateWithNaN(t *testing.T) {
 	type HPoint struct {
 		T int64
-		H *histogram.Histogram
+		H *histogram.FloatHistogram
 	}
 
 	testStorage := teststorage.New(t)
@@ -5156,17 +5157,17 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 
 	app := testStorage.Appender(context.TODO())
 	points := []HPoint{
-		{T: 5574708, H: tsdbutil.GenerateTestHistogram(1)},
-		{T: 5604708, H: tsdbutil.GenerateTestHistogram(2)},
-		{T: 5634708, H: tsdbutil.GenerateTestHistogram(3)},
+		{T: 5574708, H: tsdbutil.GenerateTestFloatHistogram(1)},
+		{T: 5604708, H: tsdbutil.GenerateTestFloatHistogram(2)},
+		{T: 5634708, H: tsdbutil.GenerateTestFloatHistogram(3)},
 
-		{T: 6146221, H: &histogram.Histogram{Sum: math.NaN()}},
-		{T: 6176221, H: tsdbutil.GenerateTestHistogram(1)},
-		{T: 6206221, H: tsdbutil.GenerateTestHistogram(1)},
-		{T: 6236221, H: tsdbutil.GenerateTestHistogram(1)},
+		{T: 6146221, H: &histogram.FloatHistogram{Sum: math.NaN()}},
+		{T: 6176221, H: tsdbutil.GenerateTestFloatHistogram(1)},
+		{T: 6206221, H: tsdbutil.GenerateTestFloatHistogram(1)},
+		{T: 6236221, H: tsdbutil.GenerateTestFloatHistogram(1)},
 	}
 	for _, point := range points {
-		_, err := app.AppendHistogram(0, labels.FromStrings(labels.MetricName, "test_metric"), point.T, point.H, nil)
+		_, err := app.AppendHistogram(0, labels.FromStrings(labels.MetricName, "test_metric"), point.T, nil, point.H)
 		require.NoError(t, err)
 	}
 	require.NoError(t, app.Commit())
