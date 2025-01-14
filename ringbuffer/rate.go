@@ -56,7 +56,7 @@ type stepRange struct {
 }
 
 // NewRateBuffer creates a new RateBuffer.
-func NewRateBuffer(opts query.Options, isCounter, isRate bool, selectRange, offset int64) *RateBuffer {
+func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bool, selectRange, offset int64) *RateBuffer {
 	var (
 		step     = max(1, opts.Step.Milliseconds())
 		numSteps = min(
@@ -173,7 +173,7 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 
 func (r *RateBuffer) Eval(ctx context.Context, _ float64, _ *int64) (*float64, *histogram.FloatHistogram, bool, error) {
 	if r.firstSamples[0].T == math.MaxInt64 || r.firstSamples[0].T == r.last.T {
-		return 0, nil, false, nil
+		return nil, nil, false, nil
 	}
 
 	r.rateBuffer = append(append(
