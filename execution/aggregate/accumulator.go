@@ -587,7 +587,12 @@ func newQuantileAcc() accumulator {
 	return &quantileAcc{}
 }
 
-func (q *quantileAcc) Add(v float64, h *histogram.FloatHistogram) error {
+func (q *quantileAcc) Add(ctx context.Context, v float64, h *histogram.FloatHistogram) error {
+	if h != nil {
+		warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo("quantile", posrange.PositionRange{}), ctx)
+		return nil
+	}
+
 	q.hasValue = true
 	q.points = append(q.points, v)
 	return nil
