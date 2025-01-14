@@ -728,6 +728,11 @@ func linearRegression(Samples []Sample, interceptTime int64) (slope, intercept f
 	initY = Samples[0].V.F
 	constY = true
 	for i, sample := range Samples {
+		if sample.V.H != nil {
+			// should ignore histograms
+			continue
+		}
+
 		// Set constY to false if any new y values are encountered.
 		if constY && i > 0 && sample.V.F != initY {
 			constY = false
