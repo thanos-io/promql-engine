@@ -12,6 +12,8 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/zhangyunhao116/umap"
 	"golang.org/x/exp/slices"
 
@@ -20,13 +22,15 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/query"
 )
 
 type joinBucket struct {
-	ats, bts int64
-	sid      uint64
-	val      float64
+	ats, bts     int64
+	sid          uint64
+	val          float64
+	histogramVal *histogram.FloatHistogram
 }
 
 // vectorOperator evaluates an expression between two step vectors.
@@ -231,6 +235,17 @@ func (o *vectorOperator) execBinaryAnd(lhs, rhs model.StepVector) (model.StepVec
 			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, jp.sid+1), lhs.Samples[i])
 		}
 	}
+
+	for _, histogramID := range rhs.HistogramIDs {
+		jp := o.lcJoinBuckets[histogramID]
+		jp.sid = histogramID
+		jp.ats = ts
+	}
+	for i, histogramID := range lhs.HistogramIDs {
+		if jp := o.hcJoinBuckets[histogramID]; jp.ats == ts {
+			step.AppendHistogram(o.pool, o.outputSeriesID(histogramID+1, jp.sid+1), lhs.Histograms[i])
+		}
+	}
 	return step, nil
 }
 
@@ -294,10 +309,11 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 		return step, errors.Newf("Unexpected matching cardinality: %s", o.matching.Card.String())
 	}
 
-	// shortcut: if we have no samples on the high card side we cannot compute pairings
-	if len(hcs.Samples) == 0 {
+	// shortcut: if we have no samples and histograms on the high card side we cannot compute pairings
+	if len(hcs.Samples) == 0 && len(hcs.Histograms) == 0 {
 		return step, nil
 	}
+	var lastErr error
 
 	for i, sampleID := range lcs.SampleIDs {
 		jp := o.lcJoinBuckets[sampleID]
@@ -308,6 +324,65 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 		jp.sid = sampleID
 		jp.val = lcs.Samples[i]
 		jp.ats = ts
+	}
+
+	for i, histogramID := range lcs.HistogramIDs {
+		jp := o.lcJoinBuckets[histogramID]
+		// Hash collisions on the low-card-side would imply a many-to-many relation.
+		if jp.ats == ts {
+			return model.StepVector{}, o.newManyToManyMatchErrorOnLowCardSide(jp.sid, histogramID)
+		}
+		jp.sid = histogramID
+		jp.histogramVal = lcs.Histograms[i]
+		jp.ats = ts
+	}
+
+	for i, histogramID := range hcs.HistogramIDs {
+		jp := o.hcJoinBuckets[histogramID]
+		if jp.ats != ts {
+			continue
+		}
+		// Hash collisions on the high card side are expected except if a one-to-one
+		// matching was requested and we have an implicit many-to-one match instead.
+		if jp.bts == ts && o.matching.Card == parser.CardOneToOne {
+			return model.StepVector{}, o.newImplicitManyToOneError()
+		}
+		jp.bts = ts
+
+		var h *histogram.FloatHistogram
+		var keep bool
+		var err error
+
+		if jp.histogramVal != nil {
+			_, h, keep, err = o.computeBinaryPairing(ctx, 0, 0, hcs.Histograms[i], jp.histogramVal)
+		} else {
+			_, h, keep, err = o.computeBinaryPairing(ctx, 0, jp.val, hcs.Histograms[i], nil)
+		}
+		if err != nil {
+			if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
+				// just continue when the errors are info and warn
+				continue
+			} else {
+				lastErr = err
+				continue
+			}
+		}
+
+		switch {
+		case o.returnBool:
+			h = nil
+			if keep {
+				step.AppendSample(o.pool, jp.sid, 1.0)
+			} else {
+				step.AppendSample(o.pool, jp.sid, 0.0)
+			}
+		case !keep:
+			continue
+		}
+
+		if h != nil {
+			step.AppendHistogram(o.pool, histogramID, h)
+		}
 	}
 
 	for i, sampleID := range hcs.SampleIDs {
@@ -321,22 +396,41 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 			return model.StepVector{}, o.newImplicitManyToOneError()
 		}
 		jp.bts = ts
+		var val float64
+		var h *histogram.FloatHistogram
+		var keep bool
+		var err error
 
-		val, keep, err := o.computeBinaryPairing(hcs.Samples[i], jp.val)
-		if err != nil {
-			return model.StepVector{}, err
-		}
-		if o.returnBool {
-			val = 0
-			if keep {
-				val = 1
+		if jp.histogramVal != nil {
+			_, h, _, err = o.computeBinaryPairing(ctx, hcs.Samples[i], 0, nil, jp.histogramVal)
+			if err != nil {
+				if errors.Is(err, annotations.PromQLInfo) || errors.Is(err, annotations.PromQLWarning) {
+					// just continue when the errors are info and warn
+					continue
+				} else {
+					lastErr = err
+					continue
+				}
 			}
-		} else if !keep {
-			continue
+			step.AppendHistogram(o.pool, jp.sid, h)
+		} else {
+			val, _, keep, err = o.computeBinaryPairing(ctx, hcs.Samples[i], jp.val, nil, nil)
+			if err != nil {
+				return model.StepVector{}, err
+			}
+			if o.returnBool {
+				val = 0
+				if keep {
+					val = 1
+				}
+			} else if !keep {
+				continue
+			}
+			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, jp.sid+1), val)
 		}
-		step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, jp.sid+1), val)
+
 	}
-	return step, nil
+	return step, lastErr
 }
 func (o *vectorOperator) newManyToManyMatchErrorOnLowCardSide(originalSampleId, duplicateSampleId uint64) error {
 	side := rhBinOpSide
@@ -506,78 +600,94 @@ func signatureFunc(on bool, names ...string) func(labels.Labels) uint64 {
 	}
 }
 
-// Lifted from: https://github.com/prometheus/prometheus/blob/a38179c4e183d9b50b271167bf90050eda8ec3d1/promql/engine.go#L2430.
-// TODO: call with histogram values in followup PR.
+// Lifted from: https://github.com/prometheus/prometheus/blob/v3.1.0/promql/engine.go#L2797.
 // nolint: unparam
-func vectorElemBinop(op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
-	switch op {
-	case parser.ADD:
-		if hlhs != nil && hrhs != nil {
-			// The histogram being added must have the larger schema
-			// code (i.e. the higher resolution).
-			if hrhs.Schema >= hlhs.Schema {
-				sum, err := hlhs.Copy().Add(hrhs)
+// vectorElemBinop evaluates a binary operation between two Vector elements.
+func vectorElemBinop(ctx context.Context, op parser.ItemType, lhs, rhs float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+	opName := parser.ItemTypeStr[op]
+	switch {
+	case hlhs == nil && hrhs == nil:
+		{
+			switch op {
+			case parser.ADD:
+				return lhs + rhs, nil, true, nil
+			case parser.SUB:
+				return lhs - rhs, nil, true, nil
+			case parser.MUL:
+				return lhs * rhs, nil, true, nil
+			case parser.DIV:
+				return lhs / rhs, nil, true, nil
+			case parser.POW:
+				return math.Pow(lhs, rhs), nil, true, nil
+			case parser.MOD:
+				return math.Mod(lhs, rhs), nil, true, nil
+			case parser.EQLC:
+				return lhs, nil, lhs == rhs, nil
+			case parser.NEQ:
+				return lhs, nil, lhs != rhs, nil
+			case parser.GTR:
+				return lhs, nil, lhs > rhs, nil
+			case parser.LSS:
+				return lhs, nil, lhs < rhs, nil
+			case parser.GTE:
+				return lhs, nil, lhs >= rhs, nil
+			case parser.LTE:
+				return lhs, nil, lhs <= rhs, nil
+			case parser.ATAN2:
+				return math.Atan2(lhs, rhs), nil, true, nil
+			}
+		}
+	case hlhs == nil && hrhs != nil:
+		{
+			switch op {
+			case parser.MUL:
+				return 0, hrhs.Copy().Mul(lhs).Compact(0), true, nil
+			case parser.ADD, parser.SUB, parser.DIV, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+				err := annotations.NewIncompatibleTypesInBinOpInfo("float", opName, "histogram", posrange.PositionRange{})
+				warnings.AddToContext(err, ctx)
+				return 0, nil, false, err
+			}
+		}
+	case hlhs != nil && hrhs == nil:
+		{
+			switch op {
+			case parser.MUL:
+				return 0, hlhs.Copy().Mul(rhs).Compact(0), true, nil
+			case parser.DIV:
+				return 0, hlhs.Copy().Div(rhs).Compact(0), true, nil
+			case parser.ADD, parser.SUB, parser.POW, parser.MOD, parser.EQLC, parser.NEQ, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+				err := annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "float", posrange.PositionRange{})
+				warnings.AddToContext(err, ctx)
+				return 0, nil, false, err
+			}
+		}
+	case hlhs != nil && hrhs != nil:
+		{
+			switch op {
+			case parser.ADD:
+				res, err := hlhs.Copy().Add(hrhs)
 				if err != nil {
 					return 0, nil, false, err
 				}
-				return 0, sum.Compact(0), true, nil
-			}
-			sum, err := hrhs.Copy().Add(hlhs)
-			if err != nil {
-				return 0, nil, false, err
-			}
-			return 0, sum.Compact(0), true, nil
-		}
-		return lhs + rhs, nil, true, nil
-	case parser.SUB:
-		if hlhs != nil && hrhs != nil {
-			// The histogram being subtracted must have the larger schema
-			// code (i.e. the higher resolution).
-			if hrhs.Schema >= hlhs.Schema {
-				diff, err := hlhs.Copy().Sub(hrhs)
+				return 0, res.Compact(0), true, nil
+			case parser.SUB:
+				res, err := hlhs.Copy().Sub(hrhs)
 				if err != nil {
 					return 0, nil, false, err
 				}
-				return 0, diff.Compact(0), true, nil
-			}
-			diff, err := hrhs.Copy().Mul(-1).Add(hlhs)
-			if err != nil {
+				return 0, res.Compact(0), true, nil
+			case parser.EQLC:
+				// This operation expects that both histograms are compacted.
+				return 0, hlhs, hlhs.Equals(hrhs), nil
+			case parser.NEQ:
+				// This operation expects that both histograms are compacted.
+				return 0, hlhs, !hlhs.Equals(hrhs), nil
+			case parser.MUL, parser.DIV, parser.POW, parser.MOD, parser.GTR, parser.LSS, parser.GTE, parser.LTE, parser.ATAN2:
+				err := annotations.NewIncompatibleTypesInBinOpInfo("histogram", opName, "histogram", posrange.PositionRange{})
+				warnings.AddToContext(err, ctx)
 				return 0, nil, false, err
 			}
-			return 0, diff.Compact(0), true, nil
 		}
-		return lhs - rhs, nil, true, nil
-	case parser.MUL:
-		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Mul(rhs), true, nil
-		}
-		if hlhs == nil && hrhs != nil {
-			return 0, hrhs.Copy().Mul(lhs), true, nil
-		}
-		return lhs * rhs, nil, true, nil
-	case parser.DIV:
-		if hlhs != nil && hrhs == nil {
-			return 0, hlhs.Copy().Div(rhs), true, nil
-		}
-		return lhs / rhs, nil, true, nil
-	case parser.POW:
-		return math.Pow(lhs, rhs), nil, true, nil
-	case parser.MOD:
-		return math.Mod(lhs, rhs), nil, true, nil
-	case parser.EQLC:
-		return lhs, nil, lhs == rhs, nil
-	case parser.NEQ:
-		return lhs, nil, lhs != rhs, nil
-	case parser.GTR:
-		return lhs, nil, lhs > rhs, nil
-	case parser.LSS:
-		return lhs, nil, lhs < rhs, nil
-	case parser.GTE:
-		return lhs, nil, lhs >= rhs, nil
-	case parser.LTE:
-		return lhs, nil, lhs <= rhs, nil
-	case parser.ATAN2:
-		return math.Atan2(lhs, rhs), nil, true, nil
 	}
 	panic(errors.Newf("operator %q not allowed for operations between Vectors", op))
 }
