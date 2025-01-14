@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,10 +15,13 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+	"github.com/prometheus/prometheus/util/annotations"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
@@ -65,6 +69,7 @@ type matrixSelector struct {
 
 	// Lookback delta for extended range functions.
 	extLookbackDelta int64
+	inputSeries      []SignedSeries
 }
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
@@ -190,8 +195,21 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 				vectors[currStep].T = seriesTs
 				if h != nil {
 					vectors[currStep].AppendHistogram(o.vectorPool, scanner.signature, h)
-				} else {
-					vectors[currStep].AppendSample(o.vectorPool, scanner.signature, f)
+				} else if f != nil {
+					if o.functionName == "rate" || o.functionName == "increase" {
+						if len(o.inputSeries) > 0 {
+							metricName := o.inputSeries[0].Labels().Get(labels.MetricName)
+							if metricName != "" &&
+								!strings.HasSuffix(metricName, "_total") &&
+								!strings.HasSuffix(metricName, "_sum") &&
+								!strings.HasSuffix(metricName, "_count") &&
+								!strings.HasSuffix(metricName, "_bucket") {
+								warnings.AddToContext(annotations.NewPossibleNonCounterInfo(metricName, posrange.PositionRange{}), ctx)
+							}
+						}
+					}
+
+					vectors[currStep].AppendSample(o.vectorPool, scanner.signature, *f)
 				}
 			}
 			o.IncrementSamplesAtTimestamp(scanner.buffer.Len(), seriesTs)
@@ -213,6 +231,8 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			err = loadErr
 			return
 		}
+
+		o.inputSeries = series
 
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
