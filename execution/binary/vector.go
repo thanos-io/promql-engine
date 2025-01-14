@@ -148,7 +148,7 @@ func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	batch := o.pool.GetVectorBatch()
 	for i, vector := range lhs {
 		if i < len(rhs) {
-			step, err := o.execBinaryOperation(lhs[i], rhs[i])
+			step, err := o.execBinaryOperation(ctx, lhs[i], rhs[i])
 			if err != nil {
 				return nil, err
 			}
@@ -204,7 +204,7 @@ func (o *vectorOperator) init(ctx context.Context) error {
 	return nil
 }
 
-func (o *vectorOperator) execBinaryOperation(lhs, rhs model.StepVector) (model.StepVector, error) {
+func (o *vectorOperator) execBinaryOperation(ctx context.Context, lhs, rhs model.StepVector) (model.StepVector, error) {
 	switch o.opType {
 	case parser.LAND:
 		return o.execBinaryAnd(lhs, rhs)
@@ -213,7 +213,7 @@ func (o *vectorOperator) execBinaryOperation(lhs, rhs model.StepVector) (model.S
 	case parser.LUNLESS:
 		return o.execBinaryUnless(lhs, rhs)
 	default:
-		return o.execBinaryArithmetic(lhs, rhs)
+		return o.execBinaryArithmetic(ctx, lhs, rhs)
 	}
 }
 
@@ -267,18 +267,17 @@ func (o *vectorOperator) execBinaryUnless(lhs, rhs model.StepVector) (model.Step
 	return step, nil
 }
 
-// TODO: add support for histogram.
-func (o *vectorOperator) computeBinaryPairing(hval, lval float64) (float64, bool, error) {
+func (o *vectorOperator) computeBinaryPairing(ctx context.Context, hval, lval float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
 	// operand is not commutative so we need to address potential swapping
 	if o.matching.Card == parser.CardOneToMany {
-		v, _, keep, err := vectorElemBinop(o.opType, lval, hval, nil, nil)
-		return v, keep, err
+		v, h, keep, err := vectorElemBinop(ctx, o.opType, lval, hval, hlhs, hrhs)
+		return v, h, keep, err
 	}
-	v, _, keep, err := vectorElemBinop(o.opType, hval, lval, nil, nil)
-	return v, keep, err
+	v, h, keep, err := vectorElemBinop(ctx, o.opType, hval, lval, hlhs, hrhs)
+	return v, h, keep, err
 }
 
-func (o *vectorOperator) execBinaryArithmetic(lhs, rhs model.StepVector) (model.StepVector, error) {
+func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs model.StepVector) (model.StepVector, error) {
 	ts := lhs.T
 	step := o.pool.GetStepVector(ts)
 

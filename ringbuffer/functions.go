@@ -4,6 +4,7 @@
 package ringbuffer
 
 import (
+	"context"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -15,6 +16,7 @@ import (
 type SamplesBuffer GenericRingBuffer
 
 type FunctionArgs struct {
+	ctx              context.Context
 	Samples          []Sample
 	StepTime         int64
 	SelectRange      int64
@@ -166,7 +168,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) < 2 {
 			return 0., nil, false, nil
 		}
-		v, h, err := extrapolatedRate(f.Samples, len(f.Samples), true, true, f.StepTime, f.SelectRange, f.Offset)
+		v, h, err := extrapolatedRate(f.ctx, f.Samples, len(f.Samples), true, true, f.StepTime, f.SelectRange, f.Offset)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -176,7 +178,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) < 2 {
 			return 0., nil, false, nil
 		}
-		v, h, err := extrapolatedRate(f.Samples, len(f.Samples), false, false, f.StepTime, f.SelectRange, f.Offset)
+		v, h, err := extrapolatedRate(f.ctx, f.Samples, len(f.Samples), false, false, f.StepTime, f.SelectRange, f.Offset)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -186,7 +188,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) < 2 {
 			return 0., nil, false, nil
 		}
-		v, h, err := extrapolatedRate(f.Samples, len(f.Samples), true, false, f.StepTime, f.SelectRange, f.Offset)
+		v, h, err := extrapolatedRate(f.ctx, f.Samples, len(f.Samples), true, false, f.StepTime, f.SelectRange, f.Offset)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -212,7 +214,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if f.MetricAppearedTs == nil {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
-		v, h, err := extendedRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
+		v, h, err := extendedRate(f.ctx, f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -225,7 +227,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if f.MetricAppearedTs == nil {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
-		v, h, err := extendedRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
+		v, h, err := extendedRate(f.ctx, f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -252,7 +254,7 @@ func NewRangeVectorFunc(name string) (FunctionCall, error) {
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (float64, *histogram.FloatHistogram, error) {
+func extrapolatedRate(ctx context.Context, samples []Sample, numSamples int, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (*float64, *histogram.FloatHistogram, error) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -262,7 +264,7 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 
 	var err error
 	if samples[0].V.H != nil {
-		resultHistogram, err = histogramRate(samples, isCounter)
+		resultHistogram, err = histogramRate(ctx, samples, isCounter)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -343,7 +345,7 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 // It calculates the rate (allowing for counter resets if isCounter is true),
 // taking into account the last sample before the range start, and returns
 // the result as either per-second (if isRate is true) or overall.
-func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64, metricAppearedTs int64) (float64, *histogram.FloatHistogram, error) {
+func extendedRate(ctx context.Context, samples []Sample, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64, metricAppearedTs int64) (float64, *histogram.FloatHistogram, error) {
 	var (
 		rangeStart      = stepTime - (selectRange + offset)
 		rangeEnd        = stepTime - offset
@@ -354,7 +356,7 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 	if samples[0].V.H != nil {
 		var err error
 		// TODO - support extended rate for histograms
-		resultHistogram, err = histogramRate(samples, isCounter)
+		resultHistogram, err = histogramRate(ctx, samples, isCounter)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -435,7 +437,7 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 // histogramRate is a helper function for extrapolatedRate. It requires
 // points[0] to be a histogram. It returns nil if any other Point in points is
 // not a histogram.
-func histogramRate(points []Sample, isCounter bool) (*histogram.FloatHistogram, error) {
+func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histogram.FloatHistogram, error) {
 	// Calculating a rate on a single sample is not defined.
 	if len(points) < 2 {
 		return nil, nil
