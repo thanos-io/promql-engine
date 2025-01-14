@@ -182,7 +182,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
 			// https://github.com/thanos-io/promql-engine/issues/39
-			f, h, ok, err := scanner.buffer.Eval(o.scalarArg, scanner.metricAppearedTs)
+			f, h, ok, err := scanner.buffer.Eval(ctx, o.scalarArg, scanner.metricAppearedTs)
 			if err != nil {
 				return nil, err
 			}
@@ -217,6 +217,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
 		b := labels.ScratchBuilder{}
+
 		for i, s := range series {
 			lbls := s.Labels()
 			if o.functionName != "last_over_time" {
@@ -232,7 +233,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				signature:  s.Signature,
 				iterator:   s.Iterator(nil),
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
-				buffer:     o.newBuffer(),
+				buffer:     o.newBuffer(ctx),
 			}
 			o.series[i] = lbls
 		}
@@ -245,20 +246,20 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func (o *matrixSelector) newBuffer() ringbuffer.Buffer {
+func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 	switch o.functionName {
 	case "rate":
-		return ringbuffer.NewRateBuffer(*o.opts, true, true, o.selectRange, o.offset)
+		return ringbuffer.NewRateBuffer(ctx, *o.opts, true, true, o.selectRange, o.offset)
 	case "increase":
-		return ringbuffer.NewRateBuffer(*o.opts, true, false, o.selectRange, o.offset)
+		return ringbuffer.NewRateBuffer(ctx, *o.opts, true, false, o.selectRange, o.offset)
 	case "delta":
-		return ringbuffer.NewRateBuffer(*o.opts, false, false, o.selectRange, o.offset)
+		return ringbuffer.NewRateBuffer(ctx, *o.opts, false, false, o.selectRange, o.offset)
 	}
 
 	if o.isExtFunction {
-		return ringbuffer.NewWithExtLookback(8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
+		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
 	}
-	return ringbuffer.New(8, o.selectRange, o.offset, o.call)
+	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call)
 
 }
 

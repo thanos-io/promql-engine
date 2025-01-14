@@ -139,11 +139,11 @@ func (o *histogramOperator) Next(ctx context.Context) ([]model.StepVector, error
 	}
 	o.scalarOp.GetPool().PutVectors(scalars)
 
-	return o.processInputSeries(vectors)
+	return o.processInputSeries(ctx, vectors)
 }
 
 // nolint: unparam
-func (o *histogramOperator) processInputSeries(vectors []model.StepVector) ([]model.StepVector, error) {
+func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []model.StepVector) ([]model.StepVector, error) {
 	out := o.pool.GetVectorBatch()
 	for stepIndex, vector := range vectors {
 		o.resetBuckets()

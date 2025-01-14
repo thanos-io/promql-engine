@@ -169,7 +169,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := rangeSamples.Eval(o.params[i], nil)
+			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], nil)
 			if err != nil {
 				return nil, err
 			}
@@ -233,7 +233,7 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		o.series = make([]labels.Labels, len(series))
 		o.buffers = make([]*ringbuffer.GenericRingBuffer, len(series))
 		for i := range o.buffers {
-			o.buffers[i] = ringbuffer.New(8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call)
+			o.buffers[i] = ringbuffer.New(ctx, 8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call)
 		}
 		var b labels.ScratchBuilder
 		for i, s := range series {
