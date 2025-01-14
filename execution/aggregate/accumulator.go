@@ -7,8 +7,13 @@ import (
 	"context"
 	"math"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 	"gonum.org/v1/gonum/floats"
+
+	"github.com/thanos-io/promql-engine/execution/warnings"
 )
 
 type ValueType int
@@ -152,7 +157,6 @@ func (c *maxAcc) Add(ctx context.Context, v float64, h *histogram.FloatHistogram
 		return nil
 	}
 
-func (c *maxAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if !c.hasValue {
 		c.value = v
 		c.hasValue = true
@@ -499,11 +503,35 @@ type stdDevAcc struct {
 	statAcc
 }
 
-func newStdDevAcc() accumulator {
+func newStdDevAcc() *stdDevAcc {
 	return &stdDevAcc{}
 }
 
+func (s *stdDevAcc) Add(ctx context.Context, v float64, h *histogram.FloatHistogram) error {
+	if h != nil {
+		// ignore native histogram for STDDEV.
+		warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo("stddev", posrange.PositionRange{}), ctx)
+		return nil
+	}
+
+	s.hasValue = true
+	s.count++
+
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		s.value = math.NaN()
+	} else {
+		delta := v - s.mean
+		s.mean += delta / s.count
+		s.value += delta * (v - s.mean)
+	}
+	return nil
+}
+
 func (s *stdDevAcc) Value() (float64, *histogram.FloatHistogram) {
+	if math.IsNaN(s.value) {
+		return math.NaN(), nil
+	}
+
 	if s.count == 1 {
 		return 0, nil
 	}
@@ -514,11 +542,35 @@ type stdVarAcc struct {
 	statAcc
 }
 
-func newStdVarAcc() accumulator {
+func newStdVarAcc() *stdVarAcc {
 	return &stdVarAcc{}
 }
 
+func (s *stdVarAcc) Add(ctx context.Context, v float64, h *histogram.FloatHistogram) error {
+	if h != nil {
+		// ignore native histogram for STDVAR.
+		warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo("stdvar", posrange.PositionRange{}), ctx)
+		return nil
+	}
+
+	s.hasValue = true
+	s.count++
+
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		s.value = math.NaN()
+	} else {
+		delta := v - s.mean
+		s.mean += delta / s.count
+		s.value += delta * (v - s.mean)
+	}
+	return nil
+}
+
 func (s *stdVarAcc) Value() (float64, *histogram.FloatHistogram) {
+	if math.IsNaN(s.value) {
+		return math.NaN(), nil
+	}
+
 	if s.count == 1 {
 		return 0, nil
 	}
@@ -571,7 +623,7 @@ func newHistogramAvg() *histogramAvg {
 	}
 }
 
-func (acc *histogramAvg) Add(v float64, h *histogram.FloatHistogram) error {
+func (acc *histogramAvg) Add(ctx context.Context, v float64, h *histogram.FloatHistogram) error {
 	if h == nil {
 		acc.hasFloat = true
 	}
