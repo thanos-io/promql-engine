@@ -64,6 +64,21 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return nil, nil, false, nil
 		}
+
+		if f.Samples[0].V.H != nil {
+			// histogram
+			sum := f.Samples[0].V.H.Copy()
+			for _, sample := range f.Samples[1:] {
+				h := sample.V.H
+				_, err := sum.Add(h)
+				if err != nil {
+					return nil, sum, true, nil
+				}
+			}
+
+			return nil, sum, true, nil
+		}
+
 		v := sumOverTime(f.Samples)
 		return &v, nil, true, nil
 	},
@@ -84,6 +99,26 @@ var rangeVectorFuncs = map[string]FunctionCall{
 	"avg_over_time": func(f FunctionArgs) (*float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
 			return nil, nil, false, nil
+		}
+
+		if f.Samples[0].V.H != nil {
+			// histogram
+			count := 1
+			mean := f.Samples[0].V.H.Copy()
+			for _, sample := range f.Samples[1:] {
+				count++
+				left := sample.V.H.Copy().Div(float64(count))
+				right := mean.Copy().Div(float64(count))
+				toAdd, err := left.Sub(right)
+				if err != nil {
+					return nil, mean, true, nil
+				}
+				_, err = mean.Add(toAdd)
+				if err != nil {
+					return nil, mean, true, nil
+				}
+			}
+			return nil, mean, true, nil
 		}
 
 		v := avgOverTime(f.Samples)
