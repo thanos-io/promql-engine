@@ -4,6 +4,7 @@
 package ringbuffer
 
 import (
+	"context"
 	"math"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -20,6 +21,7 @@ type Sample struct {
 }
 
 type GenericRingBuffer struct {
+	ctx   context.Context
 	items []Sample
 	tail  []Sample
 
@@ -30,12 +32,13 @@ type GenericRingBuffer struct {
 	call        FunctionCall
 }
 
-func New(size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
-	return NewWithExtLookback(size, selectRange, offset, 0, call)
+func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
+	return NewWithExtLookback(ctx, size, selectRange, offset, 0, call)
 }
 
-func NewWithExtLookback(size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
+func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
 	return &GenericRingBuffer{
+		ctx:         ctx,
 		items:       make([]Sample, 0, size),
 		selectRange: selectRange,
 		offset:      offset,
@@ -103,8 +106,9 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	r.items = r.items[:keep]
 }
 
-func (r *GenericRingBuffer) Eval(scalarArg float64, metricAppearedTs *int64) (float64, *histogram.FloatHistogram, bool, error) {
+func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, metricAppearedTs *int64) (*float64, *histogram.FloatHistogram, bool, error) {
 	return r.call(FunctionArgs{
+		ctx:              ctx,
 		Samples:          r.items,
 		StepTime:         r.currentStep,
 		SelectRange:      r.selectRange,
