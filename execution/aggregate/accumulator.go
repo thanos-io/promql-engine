@@ -8,10 +8,11 @@ import (
 	"math"
 
 	"github.com/efficientgo/core/errors"
+	"gonum.org/v1/gonum/floats"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
-	"gonum.org/v1/gonum/floats"
 
 	"github.com/thanos-io/promql-engine/execution/warnings"
 )
