@@ -9,6 +9,7 @@ import (
 
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 
