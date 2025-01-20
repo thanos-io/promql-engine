@@ -317,32 +317,32 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 		return *expr
 	}
 
-	// If a query is scoped to a single timestamp, we distribute it to all engines which have sufficient scope
-	// for the timestamp and range of the query.
-	// One example of such a query is `sum(metric @ end())`.
-	if ts := getQueryTimestamp(expr); ts != nil && !opts.IsInstantQuery() {
-		remoteQueries := make(RemoteExecutions, 0, len(engines))
+	// Selectors in queries can be scoped to a single timestamp. This case is hard to
+	// distribute properly and can lead to flaky results.
+	// We only do it if all engines have sufficient scope for the full range of the query,
+	// adjusted for the timestamp.
+	// Otherwise, we fall back to the default mode of not executing the query remotely.
+	if timestamps := getQueryTimestamps(expr); len(timestamps) > 0 {
+		var numMatches int
 		for _, e := range engines {
-			if !matchesExternalLabelSet(*expr, e.LabelSets()) {
-				continue
+			containsTimestamps := true
+			for _, ts := range timestamps {
+				if e.MinT() > ts-startOffset.Milliseconds() {
+					containsTimestamps = false
+					break
+				}
+				if e.MaxT() < ts {
+					containsTimestamps = false
+					break
+				}
 			}
-			if e.MinT() > *ts-startOffset.Milliseconds() {
-				continue
+			if containsTimestamps {
+				numMatches++
 			}
-			if e.MaxT() < *ts {
-				continue
-			}
-			remoteQueries = append(remoteQueries, RemoteExecution{
-				Engine:          e,
-				Query:           (*expr).Clone(),
-				QueryRangeStart: opts.Start,
-				QueryRangeEnd:   opts.End,
-			})
 		}
-		if len(remoteQueries) == 0 {
+		if numMatches != len(engines) {
 			return *expr
 		}
-		return Deduplicate{Expressions: remoteQueries}
 	}
 
 	var globalMinT int64 = math.MaxInt64
@@ -513,18 +513,18 @@ func calculateStartOffset(expr *Node, lookbackDelta time.Duration) time.Duration
 	return maxDuration(offset+selectRange, lookbackDelta)
 }
 
-func getQueryTimestamp(expr *Node) *int64 {
-	var timestamp *int64
+func getQueryTimestamps(expr *Node) []int64 {
+	var timestamps []int64
 	Traverse(expr, func(node *Node) {
 		switch n := (*node).(type) {
 		case *VectorSelector:
 			if n.Timestamp != nil {
-				timestamp = n.Timestamp
+				timestamps = append(timestamps, *n.Timestamp)
 				return
 			}
 		}
 	})
-	return timestamp
+	return timestamps
 }
 
 func numSteps(start, end time.Time, step time.Duration) int64 {

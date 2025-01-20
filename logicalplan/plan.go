@@ -45,6 +45,7 @@ type plan struct {
 
 type PlanOptions struct {
 	DisableDuplicateLabelCheck bool
+	StripStepInvariant         bool
 }
 
 // New creates a new logical plan from logical node.
@@ -244,6 +245,9 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 	case *parser.NumberLiteral:
 		return &NumberLiteral{Val: t.Val}
 	case *parser.StepInvariantExpr:
+		//if opts.StripStepInvariant {
+		//	return replacePrometheusNodes(t.Expr, opts)
+		//}
 		return &StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
 	case *parser.MatrixSelector:
 		return &MatrixSelector{
