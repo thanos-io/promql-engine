@@ -339,9 +339,9 @@ remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
 			expr: `sum_over_time(max(http_requests_total)[5m:1m])`,
 			expected: `
 sum_over_time(max(dedup(
-  remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC],
-  remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC]
-))[5m:1m])`,
+	remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC, 1970-01-01 00:00:00 +0000 UTC], 
+	remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC, 1970-01-01 00:00:00 +0000 UTC])
+)[5m:1m])`,
 		},
 		{
 			name:     "label based pruning matches one engine",
@@ -493,7 +493,7 @@ func TestDistributedExecutionWithLongSelectorRanges(t *testing.T) {
 			expected: `
 dedup(
   remote(sum_over_time(metric[5m])),
-  remote(sum_over_time(metric[5m])) [1970-01-01 06:05:00 +0000 UTC]
+  remote(sum_over_time(metric[5m])) [1970-01-01 06:05:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
 )`,
 		},
 		{
@@ -510,7 +510,7 @@ dedup(
 			expected: `
 dedup(
   remote(sum_over_time(metric[2h])),
-  remote(sum_over_time(metric[2h])) [1970-01-01 08:00:00 +0000 UTC]
+  remote(sum_over_time(metric[2h])) [1970-01-01 08:00:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
 )`,
 		},
 		{
@@ -527,7 +527,7 @@ dedup(
 			expected: `
 dedup(
   remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])), 
-  remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])) [1970-01-01 08:00:00 +0000 UTC]
+  remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])) [1970-01-01 08:00:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
 )`,
 		},
 		{
@@ -543,7 +543,7 @@ dedup(
 			expr: `max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])`,
 			expected: `dedup(
   remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])),
-  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC])`,
+  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC])`,
 		},
 		{
 			name: "subquery with a total 4h range is cannot be distributed",
@@ -616,14 +616,14 @@ func TestDistributedExecutionPruningByTime(t *testing.T) {
 			expr:       `sum(metric)`,
 			queryStart: time.Unix(0, 0).Add(7 * time.Hour),
 			queryEnd:   time.Unix(0, 0).Add(8 * time.Hour),
-			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 07:00:00 +0000 UTC]))`,
+			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 07:00:00 +0000 UTC, 1970-01-01 08:00:00 +0000 UTC]))`,
 		},
 		{
 			name:       "1 hour range query at the start of the range prunes the second engine",
 			expr:       `sum(metric)`,
 			queryStart: time.Unix(0, 0).Add(1 * time.Hour),
 			queryEnd:   time.Unix(0, 0).Add(2 * time.Hour),
-			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 01:00:00 +0000 UTC]))`,
+			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 01:00:00 +0000 UTC, 1970-01-01 02:00:00 +0000 UTC]))`,
 		},
 		{
 			name:       "instant query in the overlapping range queries both engines",
@@ -633,8 +633,8 @@ func TestDistributedExecutionPruningByTime(t *testing.T) {
 			expected: `
 sum(
   dedup(
-    remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC],
-    remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC]
+    remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 06:00:00 +0000 UTC], 
+    remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 06:00:00 +0000 UTC]
   )
 )`,
 		},
