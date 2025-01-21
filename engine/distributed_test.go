@@ -245,6 +245,11 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "subquery over distributed binary expression", query: `max_over_time((bar / bar)[30s:15s])`},
 		{name: "timestamp", query: `timestamp(bar)`},
 		{name: "timestamp - step invariant", query: `timestamp(bar @ 6000.000)`},
+		{name: "query with @start() absolute timestamp", query: `sum(bar @ start())`},
+		{name: "query with @end() timestamp", query: `sum(bar @ end())`},
+		{name: "query with numeric timestamp", query: `sum(bar @ 140.000)`},
+		{name: "query with range and @end() timestamp", query: `sum(count_over_time(bar[1h] @ end()))`, expectFallback: true},
+		{name: `subquery with @end() timestamp`, query: `bar @ 100.000 - bar @ 150.000`},
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
