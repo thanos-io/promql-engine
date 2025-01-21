@@ -571,6 +571,36 @@ dedup(
 			expr:     `sum_over_time(metric[3h])`,
 			expected: `sum_over_time(metric[3h])`,
 		},
+		{
+			name: "distribute queries with timestamp",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr: `sum(metric @ 25200)`,
+			expected: `
+sum(dedup(
+  remote(sum by (region) (metric @ 25200.000)), 
+  remote(sum by (region) (metric @ 25200.000)) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
+))`,
+		},
+		{
+			name: "skip distributing queries with timestamps outside of the range of an engine",
+			firstEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: time.Unix(0, 0).Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: time.Unix(0, 0).Add(sixHours),
+				maxTime: queryEnd,
+			},
+			expr:     `sum(metric @ 18000)`,
+			expected: `sum(sum by (region) (metric @ 18000.000))`,
+		},
 	}
 
 	for _, tcase := range cases {
