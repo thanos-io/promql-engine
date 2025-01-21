@@ -45,7 +45,6 @@ type plan struct {
 
 type PlanOptions struct {
 	DisableDuplicateLabelCheck bool
-	StripStepInvariant         bool
 }
 
 // New creates a new logical plan from logical node.
