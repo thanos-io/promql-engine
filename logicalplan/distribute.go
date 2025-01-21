@@ -323,25 +323,12 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 	// adjusted for the timestamp.
 	// Otherwise, we fall back to the default mode of not executing the query remotely.
 	if timestamps := getQueryTimestamps(expr); len(timestamps) > 0 {
-		var numMatches int
 		for _, e := range engines {
-			containsTimestamps := true
 			for _, ts := range timestamps {
-				if e.MinT() > ts-startOffset.Milliseconds() {
-					containsTimestamps = false
-					break
-				}
-				if e.MaxT() < ts {
-					containsTimestamps = false
-					break
+				if e.MinT() > ts-startOffset.Milliseconds() || e.MaxT() < ts {
+					return *expr
 				}
 			}
-			if containsTimestamps {
-				numMatches++
-			}
-		}
-		if numMatches != len(engines) {
-			return *expr
 		}
 	}
 
@@ -517,6 +504,11 @@ func getQueryTimestamps(expr *Node) []int64 {
 	var timestamps []int64
 	Traverse(expr, func(node *Node) {
 		switch n := (*node).(type) {
+		case *Subquery:
+			if n.Timestamp != nil {
+				timestamps = append(timestamps, *n.Timestamp)
+				return
+			}
 		case *VectorSelector:
 			if n.Timestamp != nil {
 				timestamps = append(timestamps, *n.Timestamp)
