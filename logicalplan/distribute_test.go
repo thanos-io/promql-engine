@@ -43,6 +43,11 @@ func TestDistributedExecution(t *testing.T) {
 			expected: `dedup(remote((http_requests_total)), remote((http_requests_total)))`,
 		},
 		{
+			name:     "scalar",
+			expr:     `scalar(redis::shard_price_per_month)`,
+			expected: `scalar(dedup(remote(redis::shard_price_per_month), remote(redis::shard_price_per_month)))`,
+		},
+		{
 			name:     "rate",
 			expr:     `rate(http_requests_total[5m])`,
 			expected: `dedup(remote(rate(http_requests_total[5m])), remote(rate(http_requests_total[5m])))`,
