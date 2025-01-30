@@ -552,6 +552,12 @@ func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string
 				return false
 			}
 		}
+		// scalar() returns NaN if the vector selector returns nothing
+		// so it's not possible to know which result is correct. Hence,
+		// it is not distributive.
+		if e.Func.Name == "scalar" {
+			return false
+		}
 	}
 
 	return true
