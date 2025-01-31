@@ -184,14 +184,15 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 		disableFallback:             opts.DisableFallback,
 
-		logger:             opts.Logger,
-		lookbackDelta:      opts.LookbackDelta,
-		enablePerStepStats: opts.EnablePerStepStats,
-		logicalOptimizers:  opts.getLogicalOptimizers(),
-		timeout:            opts.Timeout,
-		metrics:            metrics,
-		extLookbackDelta:   opts.ExtLookbackDelta,
-		enableAnalysis:     opts.EnableAnalysis,
+		logger:                   opts.Logger,
+		lookbackDelta:            opts.LookbackDelta,
+		enablePerStepStats:       opts.EnablePerStepStats,
+		logicalOptimizers:        opts.getLogicalOptimizers(),
+		timeout:                  opts.Timeout,
+		metrics:                  metrics,
+		extLookbackDelta:         opts.ExtLookbackDelta,
+		enableAnalysis:           opts.EnableAnalysis,
+		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
@@ -225,6 +226,7 @@ type Engine struct {
 	extLookbackDelta         time.Duration
 	decodingConcurrency      int
 	enableAnalysis           bool
+	enableDelayedNameRemoval bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
@@ -262,6 +264,7 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
+		EnableDelayedNameRemoval: e.enableDelayedNameRemoval,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
 	if qOpts.StepsBatch > 64 {
@@ -290,14 +293,15 @@ func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts 
 		return nil, err
 	}
 	return &compatibilityQuery{
-		Query:      &Query{exec: exec, opts: opts},
-		engine:     e,
-		plan:       lplan,
-		ts:         ts,
-		warns:      warns,
-		t:          InstantQuery,
-		resultSort: resultSort,
-		scanners:   scanners,
+		Query:                    &Query{exec: exec, opts: opts},
+		engine:                   e,
+		plan:                     lplan,
+		ts:                       ts,
+		warns:                    warns,
+		t:                        InstantQuery,
+		resultSort:               resultSort,
+		scanners:                 scanners,
+		enableDelayedNameRemoval: e.enableDelayedNameRemoval,
 	}, nil
 }
 
@@ -350,8 +354,9 @@ func (e *Engine) NewInstantQueryFromPlan(ctx context.Context, q storage.Queryabl
 		warns:  warns,
 		t:      InstantQuery,
 		// TODO(fpetkovski): Infer the sort order from the plan, ideally without copying the newResultSort function.
-		resultSort: noSortResultSort{},
-		scanners:   scnrs,
+		resultSort:               noSortResultSort{},
+		scanners:                 scnrs,
+		enableDelayedNameRemoval: e.enableDelayedNameRemoval,
 	}, nil
 }
 
@@ -404,12 +409,13 @@ func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts pr
 	}
 
 	return &compatibilityQuery{
-		Query:    &Query{exec: exec, opts: opts},
-		engine:   e,
-		plan:     lplan,
-		warns:    warns,
-		t:        RangeQuery,
-		scanners: scnrs,
+		Query:                    &Query{exec: exec, opts: opts},
+		engine:                   e,
+		plan:                     lplan,
+		warns:                    warns,
+		t:                        RangeQuery,
+		scanners:                 scnrs,
+		enableDelayedNameRemoval: e.enableDelayedNameRemoval,
 	}, nil
 }
 
@@ -473,6 +479,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
+		EnableDelayedNameRemoval: e.enableDelayedNameRemoval,
 	}
 	return qOpts
 }
@@ -517,9 +524,10 @@ type compatibilityQuery struct {
 	ts     time.Time // Empty for range queries.
 	warns  annotations.Annotations
 
-	t          QueryType
-	resultSort resultSorter
-	cancel     context.CancelFunc
+	t                        QueryType
+	resultSort               resultSorter
+	cancel                   context.CancelFunc
+	enableDelayedNameRemoval bool
 
 	scanners engstorage.Scanners
 }
@@ -561,7 +569,10 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 
 	series := make([]promql.Series, len(resultSeries))
 	for i, s := range resultSeries {
-		series[i].Metric = s
+		if s.DropName && q.enableDelayedNameRemoval {
+			s.Metric = s.Metric.DropMetricName()
+		}
+		series[i] = s
 	}
 loop:
 	for {
