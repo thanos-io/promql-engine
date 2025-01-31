@@ -84,7 +84,7 @@ sum(
 )`,
 		},
 		{
-			name: "avg with grouping",
+			name: "avg with by-grouping",
 			expr: `avg by (pod) (http_requests_total)`,
 			expected: `
 sum by (pod) (
@@ -97,6 +97,23 @@ sum by (pod) (
   dedup(
     remote(count by (pod, region) (http_requests_total)),
     remote(count by (pod, region) (http_requests_total))
+  )
+)`,
+		},
+		{
+			name: "avg with without-grouping",
+			expr: `avg without (pod) (http_requests_total)`,
+			expected: `
+sum without (pod) (
+  dedup(
+    remote(sum without (pod) (http_requests_total)),
+    remote(sum without (pod) (http_requests_total))
+  )
+) / ignoring (pod)
+sum without (pod) (
+  dedup(
+    remote(count without (pod) (http_requests_total)),
+    remote(count without (pod) (http_requests_total))
   )
 )`,
 		},
