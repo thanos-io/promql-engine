@@ -51,7 +51,6 @@ load 30s
 
 	expected := promql.Matrix{
 		promql.Series{
-			Metric: labels.EmptyLabels(),
 			Floats: []promql.FPoint{{T: 0, F: 14}, {T: 30000, F: 14}, {T: 60000, F: 14}, {T: 90000, F: 14}},
 		},
 	}
@@ -122,10 +121,10 @@ func (c *vectorSelectorOperator) Next(ctx context.Context) ([]model.StepVector, 
 	return vectors, nil
 }
 
-func (c *vectorSelectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
-	return []labels.Labels{
-		labels.FromStrings(labels.MetricName, "http_requests_total", "container", "a"),
-		labels.FromStrings(labels.MetricName, "http_requests_total", "container", "b"),
+func (c *vectorSelectorOperator) Series(ctx context.Context) ([]promql.Series, error) {
+	return []promql.Series{
+		{Metric: labels.FromStrings(labels.MetricName, "http_requests_total", "container", "a")},
+		{Metric: labels.FromStrings(labels.MetricName, "http_requests_total", "container", "b")},
 	}, nil
 }
 

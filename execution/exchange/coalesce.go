@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/query"
@@ -37,7 +37,7 @@ type coalesce struct {
 	model.OperatorTelemetry
 
 	once   sync.Once
-	series []labels.Labels
+	series []promql.Series
 
 	pool      *model.VectorPool
 	wg        sync.WaitGroup
@@ -76,7 +76,7 @@ func (c *coalesce) GetPool() *model.VectorPool {
 	return c.pool
 }
 
-func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
+func (c *coalesce) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -183,7 +183,7 @@ func (c *coalesce) Next(ctx context.Context) ([]model.StepVector, error) {
 func (c *coalesce) loadSeries(ctx context.Context) error {
 	var wg sync.WaitGroup
 	var numSeries uint64
-	allSeries := make([][]labels.Labels, len(c.operators))
+	allSeries := make([][]promql.Series, len(c.operators))
 	errChan := make(errorChan, len(c.operators))
 	for i := 0; i < len(c.operators); i++ {
 		wg.Add(1)
@@ -218,7 +218,7 @@ func (c *coalesce) loadSeries(ctx context.Context) error {
 	}
 
 	c.sampleOffsets = make([]uint64, len(c.operators))
-	c.series = make([]labels.Labels, 0, numSeries)
+	c.series = make([]promql.Series, 0, numSeries)
 	for i, series := range allSeries {
 		c.sampleOffsets[i] = uint64(len(c.series))
 		c.series = append(c.series, series...)

@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
@@ -82,7 +82,7 @@ func (d *duplicateLabelCheckOperator) Next(ctx context.Context) ([]model.StepVec
 	return in, nil
 }
 
-func (d *duplicateLabelCheckOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (d *duplicateLabelCheckOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { d.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -116,7 +116,7 @@ func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 		p := make([]pair, 0)
 		c := make([]uint64, len(series))
 		for i := range series {
-			h := series[i].Hash()
+			h := series[i].Metric.Hash()
 			if j, ok := m[h]; ok {
 				p = append(p, pair{a: i, b: j})
 			} else {
