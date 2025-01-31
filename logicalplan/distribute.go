@@ -203,7 +203,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 				VectorMatching: &parser.VectorMatching{
 					Include:        aggr.Grouping,
 					MatchingLabels: aggr.Grouping,
-					On:             true,
+					On:             !aggr.Without,
 				},
 			}
 			return true
