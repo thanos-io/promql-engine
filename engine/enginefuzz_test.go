@@ -498,7 +498,7 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	failures := 0
 	logQuery := func(c *testCase) {
 		for _, load := range c.loads {
-			t.Logf(load)
+			t.Log(load)
 		}
 		t.Logf("query: %s, start: %d, end: %d, interval: %v", c.query, c.start.UnixMilli(), c.end.UnixMilli(), c.interval)
 	}

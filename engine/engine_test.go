@@ -2056,7 +2056,6 @@ avg by (storage_info) (
 	for _, lookbackDelta := range lookbackDeltas {
 		opts.LookbackDelta = lookbackDelta
 		for _, tc := range cases {
-			tc := tc
 			t.Run(tc.name, func(t *testing.T) {
 				t.Parallel()
 				storage := promqltest.LoadedStorage(t, tc.load)
@@ -2187,7 +2186,6 @@ func TestWarnings(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
@@ -2308,7 +2306,6 @@ func TestEdgeCases(t *testing.T) {
 	}
 	step := time.Second * 30
 	for _, tc := range testCases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
@@ -2950,7 +2947,6 @@ func TestRateVsXRate(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			load := defaultLoad
@@ -4165,16 +4161,13 @@ min without () (
 	disableOptimizerOpts := []bool{true, false}
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, time.Minute, 5 * time.Minute, 10 * time.Minute}
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			testStorage := promqltest.LoadedStorage(t, tc.load)
 			defer testStorage.Close()
 			for _, disableOptimizers := range disableOptimizerOpts {
-				disableOptimizers := disableOptimizers
 				t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
-						lookbackDelta := lookbackDelta
 						// Negative offset and at modifier are enabled by default
 						// since Prometheus v2.33.0, so we also enable them.
 						opts := promql.EngineOpts{
@@ -4643,7 +4636,6 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 			},
 		},
 	} {
-		tc := tc
 		t.Run(tc.query, func(t *testing.T) {
 			t.Parallel()
 			opts := promql.EngineOpts{
@@ -4888,7 +4880,6 @@ func TestQueryStats(t *testing.T) {
 	}
 
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
@@ -5438,7 +5429,6 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 		queryStep  = 30 * time.Second
 	)
 	for _, tc := range cases {
-		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			for _, withMixedTypes := range mixedTypesOpts {
