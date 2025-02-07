@@ -6,6 +6,8 @@ github.com/fatih/faillint v1.11.0 h1:EhmAKe8k0Cx2gnf+/JiX/IAeeKjwsQao5dY8oG6cQB4
 github.com/fatih/faillint v1.11.0/go.mod h1:d9kdQwFcr+wD4cLXOdjTw1ENUUvv5+z0ctJ5Wm0dTvA=
 github.com/fatih/faillint v1.13.0 h1:9Dn9ZvK7bPTFmAkQ0FvhBRF4qD+LZg0ZgelyeBc7kKE=
 github.com/fatih/faillint v1.13.0/go.mod h1:YiTDDtwQSL6MNRPtYG0n/rGE9orYt92aohq/P2QYBLA=
+github.com/fatih/faillint v1.14.0 h1:yVeG72pXWTig3kuXp0vNUOQiidlgyqyknstFy930RIE=
+github.com/fatih/faillint v1.14.0/go.mod h1:sxEE5kG6lAmpGAQky+RQErQkpZTCrFkvU4Bb0ha70O4=
 github.com/yuin/goldmark v1.4.1/go.mod h1:mwnBkeHKe2W/ZEtQ+71ViKU8L12m81fl3OWwC1Zlc8k=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
