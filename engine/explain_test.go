@@ -68,12 +68,14 @@ func TestQueryExplain(t *testing.T) {
 				Children: []engine.ExplainOutputNode{
 					{
 						OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
-							{OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
-								{
-									OperatorName: "[coalesce]",
-									Children:     concurrencyOperators,
+							{
+								OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
+									{
+										OperatorName: "[coalesce]",
+										Children:     concurrencyOperators,
+									},
 								},
-							}},
+							},
 						},
 					},
 				},
@@ -147,7 +149,6 @@ func TestQueryAnalyze(t *testing.T) {
 			query: `rate(http_requests_total[30s]) > bool 0`,
 		},
 	} {
-		tc := tc
 		{
 			t.Run(tc.query, func(t *testing.T) {
 				t.Parallel()

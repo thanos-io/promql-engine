@@ -139,7 +139,6 @@ func TestRangeQuery(t *testing.T) {
 	}
 	ng := engine.New(engine.Opts{EngineOpts: opts})
 	for _, c := range cases {
-		c := c
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
 			storage := promqltest.LoadedStorage(t, c.Load)

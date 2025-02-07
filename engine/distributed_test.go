@@ -260,11 +260,9 @@ func TestDistributedAggregations(t *testing.T) {
 	}
 
 	for _, query := range queries {
-		query := query
 		t.Run(query.name, func(t *testing.T) {
 			t.Parallel()
 			for _, test := range tests {
-				test := test
 				var allSeries []*mockSeries
 				remoteEngines := make([]api.RemoteEngine, 0, len(test.seriesSets)+1)
 				for _, s := range test.seriesSets {
