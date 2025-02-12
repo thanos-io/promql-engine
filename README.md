@@ -17,7 +17,7 @@ The following table shows operations which are currently supported by the engine
 | Subqueries             | Full support                                                                           |          |
 | Aggregations           | Full support                                                                           |          |
 | Aggregations over time | Full support except for `quantile_over_time` with non-constant argument                | Medium   |
-| Functions              | Full support except for `holt_winters` and `predict_linear` with non-constant argument | Medium   |
+| Functions              | Full support except for `predict_linear` with non-constant argument                    | Medium   |
 
 ## Design
 

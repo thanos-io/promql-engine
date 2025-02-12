@@ -5872,3 +5872,109 @@ func queryExplanation(q promql.Query) string {
 
 	return fmt.Sprintf("Query: %s\nExplanation:\n%s\n", q.String(), b.String())
 }
+
+// Adapted from: https://github.com/prometheus/prometheus/blob/906f6a33b60cec2596018ac8cc97ac41b16b06b7/promql/promqltest/testdata/functions.test#L814
+func TestDoubleExponentialSmoothing(t *testing.T) {
+	t.Parallel()
+
+	const (
+		testTimeout    = 1 * time.Hour
+		testMaxSamples = math.MaxInt64
+		testQueryStart = 0
+		testQueryEnd   = 3600
+		testQueryStep  = 30
+	)
+
+	defaultStart := time.Unix(testQueryStart, 0)
+	defaultEnd := time.Unix(testQueryEnd, 0)
+	defaultStep := testQueryStep * time.Second
+
+	cases := []struct {
+		name string
+
+		load  string
+		query string
+
+		start time.Time
+		end   time.Time
+		step  time.Duration
+	}{
+		{
+			name: "double exponential smoothing basic",
+			load: `load 30s
+               http_requests_total{pod="nginx-1"} 1+1x15
+               http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: `double_exponential_smoothing(http_requests_total[5m], 0.1, 0.1)`,
+		},
+		{
+			name: "double exponential smoothing with positive trend",
+			load: `load 10s
+               http_requests{job="api-server", instance="0", group="production"}    0+10x1000 100+30x1000
+               http_requests{job="api-server", instance="1", group="production"}    0+20x1000 200+30x1000`,
+			query: `double_exponential_smoothing(http_requests[5m], 0.01, 0.1)`,
+		},
+		{
+			name: "double exponential smoothing with negative trend",
+			load: `load 10s
+               http_requests{job="api-server", instance="0", group="production"}    8000-10x1000
+               http_requests{job="api-server", instance="1", group="production"}    0-20x1000`,
+			query: `double_exponential_smoothing(http_requests[5m], 0.01, 0.1)`,
+		},
+		{
+			name: "double exponential smoothing with mixed histogram data",
+			load: `load 30s
+               http_requests_mix{job="api-server", instance="0"} 0+10x1000 100+30x1000 {{schema:0 count:1 sum:2}}x1000
+               http_requests_mix{job="api-server", instance="1"} 0+20x1000 200+30x1000 {{schema:0 count:1 sum:2}}x1000`,
+			query: `double_exponential_smoothing(http_requests_mix[5m], 0.01, 0.1)`,
+		},
+		{
+			name: "double exponential smoothing with pure histogram data",
+			load: `load 30s
+               http_requests_histogram{job="api-server", instance="1"} {{schema:0 count:1 sum:2}}x1000`,
+			query: `double_exponential_smoothing(http_requests_histogram[5m], 0.01, 0.1)`,
+		},
+	}
+
+	for _, tcase := range cases {
+		tcase := tcase
+		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
+
+			storage := promqltest.LoadedStorage(t, tcase.load)
+			defer storage.Close()
+
+			opts := promql.EngineOpts{
+				Timeout:              testTimeout,
+				MaxSamples:           testMaxSamples,
+				EnableNegativeOffset: true,
+				EnableAtModifier:     true,
+			}
+
+			start := defaultStart
+			if !tcase.start.IsZero() {
+				start = tcase.start
+			}
+			end := defaultEnd
+			if !tcase.end.IsZero() {
+				end = tcase.end
+			}
+			step := defaultStep
+			if tcase.step != 0 {
+				step = tcase.step
+			}
+
+			ctx := context.Background()
+			oldEngine := promql.NewEngine(opts)
+			q1, err := oldEngine.NewRangeQuery(ctx, storage, nil, tcase.query, start, end, step)
+			testutil.Ok(t, errors.Wrap(err, "create old engine range query"))
+			oldResult := q1.Exec(ctx)
+
+			newEngine := engine.New(engine.Opts{EngineOpts: opts})
+			q2, err := newEngine.NewRangeQuery(ctx, storage, nil, tcase.query, start, end, step)
+			testutil.Ok(t, errors.Wrap(err, "create new engine range query"))
+			newResult := q2.Exec(ctx)
+
+			testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q2))
+		})
+	}
+}
