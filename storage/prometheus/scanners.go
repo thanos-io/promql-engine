@@ -133,7 +133,7 @@ func (p Scanners) NewMatrixSelector(
 			selector,
 			call.Func.Name,
 			arg,
-			arg2, // Pass the second argument
+			arg2,
 			opts,
 			logicalNode.Range,
 			vs.Offset,

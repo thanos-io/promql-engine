@@ -18,7 +18,7 @@ type Buffer interface {
 	MaxT() int64
 	Push(t int64, v Value)
 	Reset(mint int64, evalt int64)
-	Eval(ctx context.Context, scalarArg, scalarArg2 float64, metricAppearedTs *int64) (*float64, *histogram.FloatHistogram, bool, error)
+	Eval(ctx context.Context, _, _ float64, _ *int64) (*float64, *histogram.FloatHistogram, bool, error)
 	ReadIntoLast(f func(*Sample))
 }
 
