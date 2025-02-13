@@ -5902,35 +5902,35 @@ func TestDoubleExponentialSmoothing(t *testing.T) {
 		{
 			name: "double exponential smoothing basic",
 			load: `load 30s
-               http_requests_total{pod="nginx-1"} 1+1x15
-               http_requests_total{pod="nginx-2"} 1+2x18`,
+			    http_requests_total{pod="nginx-1"} 1+1x15
+			    http_requests_total{pod="nginx-2"} 1+2x18`,
 			query: `double_exponential_smoothing(http_requests_total[5m], 0.1, 0.1)`,
 		},
 		{
 			name: "double exponential smoothing with positive trend",
 			load: `load 10s
-               http_requests{job="api-server", instance="0", group="production"}    0+10x1000 100+30x1000
-               http_requests{job="api-server", instance="1", group="production"}    0+20x1000 200+30x1000`,
+			    http_requests{job="api-server", instance="0", group="production"}    0+10x1000 100+30x1000
+			    http_requests{job="api-server", instance="1", group="production"}    0+20x1000 200+30x1000`,
 			query: `double_exponential_smoothing(http_requests[5m], 0.01, 0.1)`,
 		},
 		{
 			name: "double exponential smoothing with negative trend",
 			load: `load 10s
-               http_requests{job="api-server", instance="0", group="production"}    8000-10x1000
-               http_requests{job="api-server", instance="1", group="production"}    0-20x1000`,
+			    http_requests{job="api-server", instance="0", group="production"}    8000-10x1000
+			    http_requests{job="api-server", instance="1", group="production"}    0-20x1000`,
 			query: `double_exponential_smoothing(http_requests[5m], 0.01, 0.1)`,
 		},
 		{
 			name: "double exponential smoothing with mixed histogram data",
 			load: `load 30s
-               http_requests_mix{job="api-server", instance="0"} 0+10x1000 100+30x1000 {{schema:0 count:1 sum:2}}x1000
-               http_requests_mix{job="api-server", instance="1"} 0+20x1000 200+30x1000 {{schema:0 count:1 sum:2}}x1000`,
+			    http_requests_mix{job="api-server", instance="0"} 0+10x1000 100+30x1000 {{schema:0 count:1 sum:2}}x1000
+			    http_requests_mix{job="api-server", instance="1"} 0+20x1000 200+30x1000 {{schema:0 count:1 sum:2}}x1000`,
 			query: `double_exponential_smoothing(http_requests_mix[5m], 0.01, 0.1)`,
 		},
 		{
 			name: "double exponential smoothing with pure histogram data",
 			load: `load 30s
-               http_requests_histogram{job="api-server", instance="1"} {{schema:0 count:1 sum:2}}x1000`,
+			    http_requests_histogram{job="api-server", instance="1"} {{schema:0 count:1 sum:2}}x1000`,
 			query: `double_exponential_smoothing(http_requests_histogram[5m], 0.01, 0.1)`,
 		},
 	}

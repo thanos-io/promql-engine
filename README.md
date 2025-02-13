@@ -10,14 +10,14 @@ The engine intends to have full compatibility with the original engine used in P
 
 The following table shows operations which are currently supported by the engine
 
-| Type                   | Supported                                                                              | Priority |
-|------------------------|----------------------------------------------------------------------------------------|----------|
-| Binary expressions     | Full support                                                                           |          |
-| Histograms             | Full support                                                                           |          |
-| Subqueries             | Full support                                                                           |          |
-| Aggregations           | Full support                                                                           |          |
-| Aggregations over time | Full support except for `quantile_over_time` with non-constant argument                | Medium   |
-| Functions              | Full support except for `predict_linear` with non-constant argument                    | Medium   |
+| Type                   | Supported                                                               | Priority |
+|------------------------|-------------------------------------------------------------------------|----------|
+| Binary expressions     | Full support                                                            |          |
+| Histograms             | Full support                                                            |          |
+| Subqueries             | Full support                                                            |          |
+| Aggregations           | Full support                                                            |          |
+| Aggregations over time | Full support except for `quantile_over_time` with non-constant argument | Medium   |
+| Functions              | Full support except for `predict_linear` with non-constant argument     | Medium   |
 
 ## Design
 
