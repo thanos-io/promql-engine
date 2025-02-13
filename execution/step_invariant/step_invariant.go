@@ -11,7 +11,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -24,7 +24,7 @@ type stepInvariantOperator struct {
 	cacheResult bool
 
 	seriesOnce      sync.Once
-	series          []labels.Labels
+	series          []promql.Series
 	cacheVectorOnce sync.Once
 	cachedVector    model.StepVector
 
@@ -75,7 +75,7 @@ func NewStepInvariantOperator(
 	return u, nil
 }
 
-func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (u *stepInvariantOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
 

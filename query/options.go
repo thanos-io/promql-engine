@@ -18,6 +18,7 @@ type Options struct {
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
 	EnablePartialResponses   bool
+	EnableDelayedNameRemoval bool
 	DecodingConcurrency      int
 }
 

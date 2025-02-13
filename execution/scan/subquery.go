@@ -13,6 +13,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
@@ -40,7 +41,7 @@ type subqueryOperator struct {
 	subQuery *logicalplan.Subquery
 
 	onceSeries sync.Once
-	series     []labels.Labels
+	series     []promql.Series
 
 	lastVectors   []model.StepVector
 	lastCollected int
@@ -213,7 +214,7 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 	o.next.GetPool().PutStepVector(v)
 }
 
-func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *subqueryOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -226,24 +227,28 @@ func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 func (o *subqueryOperator) initSeries(ctx context.Context) error {
 	var err error
 	o.onceSeries.Do(func() {
-		var series []labels.Labels
+		var series []promql.Series
 		series, err = o.next.Series(ctx)
 		if err != nil {
 			return
 		}
 
-		o.series = make([]labels.Labels, len(series))
+		o.series = make([]promql.Series, len(series))
 		o.buffers = make([]*ringbuffer.GenericRingBuffer, len(series))
 		for i := range o.buffers {
 			o.buffers[i] = ringbuffer.New(ctx, 8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call)
 		}
 		var b labels.ScratchBuilder
+		dropName := o.funcExpr.Func.Name != "last_over_time"
 		for i, s := range series {
-			lbls := s
-			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls, _ = extlabels.DropMetricName(s, b)
+			lbls := s.Metric
+			if !o.opts.EnableDelayedNameRemoval && dropName {
+				lbls, _ = extlabels.DropMetricName(lbls, b)
 			}
-			o.series[i] = lbls
+			o.series[i] = promql.Series{
+				Metric:   lbls,
+				DropName: dropName,
+			}
 		}
 		o.pool.SetStepSize(len(o.series))
 	})

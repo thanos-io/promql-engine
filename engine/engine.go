@@ -11,8 +11,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/thanos-io/promql-engine/execution/telemetry"
-
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -27,6 +25,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -216,15 +215,16 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 		disableFallback:             opts.DisableFallback,
 
-		logger:                 opts.Logger,
-		lookbackDelta:          opts.LookbackDelta,
-		enablePerStepStats:     opts.EnablePerStepStats,
-		logicalOptimizers:      opts.getLogicalOptimizers(),
-		timeout:                opts.Timeout,
-		metrics:                metrics,
-		extLookbackDelta:       opts.ExtLookbackDelta,
-		enableAnalysis:         opts.EnableAnalysis,
-		enablePartialResponses: opts.EnablePartialResponses,
+		logger:                   opts.Logger,
+		lookbackDelta:            opts.LookbackDelta,
+		enablePerStepStats:       opts.EnablePerStepStats,
+		logicalOptimizers:        opts.getLogicalOptimizers(),
+		timeout:                  opts.Timeout,
+		metrics:                  metrics,
+		extLookbackDelta:         opts.ExtLookbackDelta,
+		enableAnalysis:           opts.EnableAnalysis,
+		enablePartialResponses:   opts.EnablePartialResponses,
+		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
@@ -259,6 +259,7 @@ type Engine struct {
 	decodingConcurrency      int
 	enableAnalysis           bool
 	enablePartialResponses   bool
+	enableDelayedNameRemoval bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
@@ -299,17 +300,18 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 		return nil, err
 	}
 	return &compatibilityQuery{
-		Query:      &Query{exec: exec, opts: opts},
-		engine:     e,
-		plan:       lplan,
-		ts:         ts,
-		warns:      warns,
-		t:          InstantQuery,
-		resultSort: resultSort,
-		scanners:   scanners,
-		start:      ts,
-		end:        ts,
-		step:       0,
+		Query:                    &Query{exec: exec, opts: opts},
+		engine:                   e,
+		plan:                     lplan,
+		ts:                       ts,
+		warns:                    warns,
+		t:                        InstantQuery,
+		resultSort:               resultSort,
+		scanners:                 scanners,
+		enableDelayedNameRemoval: e.enableDelayedNameRemoval,
+		start:                    ts,
+		end:                      ts,
+		step:                     0,
 	}, nil
 }
 
@@ -355,11 +357,12 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 		warns:  warns,
 		t:      InstantQuery,
 		// TODO(fpetkovski): Infer the sort order from the plan, ideally without copying the newResultSort function.
-		resultSort: noSortResultSort{},
-		scanners:   scnrs,
-		start:      ts,
-		end:        ts,
-		step:       0,
+		resultSort:               noSortResultSort{},
+		scanners:                 scnrs,
+		enableDelayedNameRemoval: e.enableDelayedNameRemoval,
+		start:                    ts,
+		end:                      ts,
+		step:                     0,
 	}, nil
 }
 
@@ -406,15 +409,16 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 
 	return &compatibilityQuery{
-		Query:    &Query{exec: exec, opts: opts},
-		engine:   e,
-		plan:     lplan,
-		warns:    warns,
-		t:        RangeQuery,
-		scanners: scnrs,
-		start:    start,
-		end:      end,
-		step:     step,
+		Query:                    &Query{exec: exec, opts: opts},
+		engine:                   e,
+		plan:                     lplan,
+		warns:                    warns,
+		t:                        RangeQuery,
+		scanners:                 scnrs,
+		enableDelayedNameRemoval: e.enableDelayedNameRemoval,
+		start:                    start,
+		end:                      end,
+		step:                     step,
 	}, nil
 }
 
@@ -486,6 +490,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
 		EnablePartialResponses:   e.enablePartialResponses,
+		EnableDelayedNameRemoval: e.enableDelayedNameRemoval,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
@@ -552,9 +557,10 @@ type compatibilityQuery struct {
 	end    time.Time
 	step   time.Duration
 
-	t          QueryType
-	resultSort resultSorter
-	cancel     context.CancelFunc
+	t                        QueryType
+	resultSort               resultSorter
+	cancel                   context.CancelFunc
+	enableDelayedNameRemoval bool
 
 	scanners engstorage.Scanners
 }
@@ -596,7 +602,10 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 
 	series := make([]promql.Series, len(resultSeries))
 	for i, s := range resultSeries {
-		series[i].Metric = s
+		if s.DropName && q.enableDelayedNameRemoval {
+			s.Metric = s.Metric.DropMetricName()
+		}
+		series[i] = s
 	}
 loop:
 	for {
