@@ -171,7 +171,14 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], nil)
+			var param2 float64
+			if o.funcExpr.Func.Name == "double_exponential_smoothing" {
+				if i+1 < len(o.params) {
+					param2 = o.params[i+1]
+				}
+			}
+
+			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], param2, nil)
 			if err != nil {
 				return nil, err
 			}

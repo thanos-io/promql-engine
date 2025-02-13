@@ -145,12 +145,6 @@ var instantVectorFuncs = map[string]functionCall{
 		}
 		return histogramFraction(vargs[0], vargs[1], h), true
 	},
-	"double_exponential_smoothing": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
-		if h == nil || len(vargs) != 2 {
-			return 0, false
-		}
-		return doubleExponentialSmoothing([]float64{f}, vargs[0], vargs[1])
-	},
 	// variants of date time functions with an argument
 	"days_in_month": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
 		if h != nil {
