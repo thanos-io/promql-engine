@@ -114,7 +114,7 @@ func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarA
 		SelectRange:      r.selectRange,
 		Offset:           r.offset,
 		ScalarPoint:      scalarArg,
-		ScalarPoint2:     scalarArg2, // for double_exponential_smoothing
+		ScalarPoint2:     scalarArg2, // only for double_exponential_smoothing
 		MetricAppearedTs: metricAppearedTs,
 	})
 }

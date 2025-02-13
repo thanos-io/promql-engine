@@ -28,7 +28,7 @@ type FunctionArgs struct {
 
 	// quantile_over_time and predict_linear use one, so we only use one here.
 	ScalarPoint  float64
-	ScalarPoint2 float64 // for double_exponential_smoothing trend factor
+	ScalarPoint2 float64 // only for double_exponential_smoothing (trend factor)
 }
 
 type FunctionCall func(f FunctionArgs) (*float64, *histogram.FloatHistogram, bool, error)
