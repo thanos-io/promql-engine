@@ -300,6 +300,11 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query:   `absent(nonexistent)`,
 			storage: sixHourDataset,
 		},
+		{
+			name:    "double exponential smoothing",
+			query:   `double_exponential_smoothing(http_requests_total[1m], 0.1, 0.1)`,
+			storage: sixHourDataset,
+		},
 	}
 
 	opts := engine.Opts{
@@ -540,6 +545,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 		{
 			name:  "subquery sum_over_time",
 			query: `sum_over_time(count(http_requests_total)[1h:10s])`,
+		},
+		{
+			name:  "double exponential smoothing",
+			query: `double_exponential_smoothing(http_requests_total[1m], 0.1, 0.1)`,
 		},
 	}
 

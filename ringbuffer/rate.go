@@ -18,7 +18,7 @@ type Buffer interface {
 	MaxT() int64
 	Push(t int64, v Value)
 	Reset(mint int64, evalt int64)
-	Eval(ctx context.Context, _ float64, _ *int64) (*float64, *histogram.FloatHistogram, bool, error)
+	Eval(ctx context.Context, _, _ float64, _ *int64) (*float64, *histogram.FloatHistogram, bool, error)
 	ReadIntoLast(f func(*Sample))
 }
 
@@ -171,7 +171,7 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 	r.firstSamples[last].T = math.MaxInt64
 }
 
-func (r *RateBuffer) Eval(ctx context.Context, _ float64, _ *int64) (*float64, *histogram.FloatHistogram, bool, error) {
+func (r *RateBuffer) Eval(ctx context.Context, _, _ float64, _ *int64) (*float64, *histogram.FloatHistogram, bool, error) {
 	if r.firstSamples[0].T == math.MaxInt64 || r.firstSamples[0].T == r.last.T {
 		return nil, nil, false, nil
 	}

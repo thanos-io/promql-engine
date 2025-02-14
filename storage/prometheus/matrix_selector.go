@@ -45,6 +45,7 @@ type matrixSelector struct {
 	vectorPool *model.VectorPool
 	storage    SeriesSelector
 	scalarArg  float64
+	scalarArg2 float64
 	scanners   []matrixScanner
 	series     []labels.Labels
 	once       sync.Once
@@ -82,6 +83,7 @@ func NewMatrixSelector(
 	selector SeriesSelector,
 	functionName string,
 	arg float64,
+	arg2 float64,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	batchSize int64,
@@ -97,6 +99,7 @@ func NewMatrixSelector(
 		functionName: functionName,
 		vectorPool:   pool,
 		scalarArg:    arg,
+		scalarArg2:   arg2,
 		fhReader:     &histogram.FloatHistogram{},
 
 		opts:          opts,
@@ -189,7 +192,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
 			// https://github.com/thanos-io/promql-engine/issues/39
-			f, h, ok, err := scanner.buffer.Eval(ctx, o.scalarArg, scanner.metricAppearedTs)
+			f, h, ok, err := scanner.buffer.Eval(ctx, o.scalarArg, o.scalarArg2, scanner.metricAppearedTs)
 			if err != nil {
 				return nil, err
 			}
