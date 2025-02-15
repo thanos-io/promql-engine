@@ -47,7 +47,10 @@ type subqueryOperator struct {
 	buffers       []*ringbuffer.GenericRingBuffer
 
 	// params holds the function parameter for each step.
-	params []float64
+	// quantile_over time and predict_linear use one parameter (params)
+	// double_exponential_smoothing uses two (params, params2) for (sf, tf)
+	params  []float64
+	params2 []float64
 }
 
 func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
@@ -75,6 +78,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOpera
 		stepsBatch:    opts.StepsBatch,
 		lastCollected: -1,
 		params:        make([]float64, opts.StepsBatch),
+		params2:       make([]float64, opts.StepsBatch),
 	}
 	o.OperatorTelemetry = telemetry.NewSubqueryTelemetry(o, opts)
 
@@ -87,7 +91,7 @@ func (o *subqueryOperator) String() string {
 
 func (o *subqueryOperator) Explain() (next []model.VectorOperator) {
 	switch o.funcExpr.Func.Name {
-	case "quantile_over_time", "predict_linear":
+	case "quantile_over_time", "predict_linear", "double_exponential_smoothing":
 		return []model.VectorOperator{o.paramOp, o.next}
 	default:
 		return []model.VectorOperator{o.next}
@@ -119,8 +123,11 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		}
 		for i := range args {
 			o.params[i] = math.NaN()
-			if len(args[i].Samples) == 1 {
+			if len(args[i].Samples) == 1 { // quantile_over_time, predict_linear
 				o.params[i] = args[i].Samples[0]
+			} else if len(args[i].Samples) == 2 { // double_exponential_smoothing
+				o.params[i] = args[i].Samples[0]
+				o.params2[i] = args[i].Samples[1]
 			}
 			o.paramOp.GetPool().PutStepVector(args[i])
 		}
@@ -171,14 +178,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			var param2 float64
-			if o.funcExpr.Func.Name == "double_exponential_smoothing" {
-				if i+1 < len(o.params) {
-					param2 = o.params[i+1]
-				}
-			}
-
-			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], param2, nil)
+			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], nil)
 			if err != nil {
 				return nil, err
 			}
