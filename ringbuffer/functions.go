@@ -762,21 +762,6 @@ func predictLinear(points []Sample, duration float64, stepTime int64) float64 {
 	return slope*duration + intercept
 }
 
-// calcTrendValue calculates the trend value at the given index i.
-// This is somewhat analogous to the slope of the trend at the given index.
-// The argument "tf" is the trend factor.
-// The argument "s0" is the previous smoothed value.
-// The argument "s1" is the current smoothed value.
-// The argument "b" is the previous trend value.
-func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
-	if i == 0 {
-		return b
-	}
-	x := tf * (s1 - s0)
-	y := (1 - tf) * b
-	return x + y
-}
-
 // Based on https://github.com/prometheus/prometheus/blob/8baad1a73e471bd3cf3175a1608199e27484f179/promql/functions.go#L438
 // doubleExponentialSmoothing calculates the smoothed out value for the given series.
 // It is similar to a weighted moving average, where historical data has exponentially less influence on the current data.
@@ -819,6 +804,21 @@ func doubleExponentialSmoothing(points []Sample, sf, tf float64) (float64, bool)
 	}
 
 	return s1, true
+}
+
+// calcTrendValue calculates the trend value at the given index i.
+// This is somewhat analogous to the slope of the trend at the given index.
+// The argument "tf" is the trend factor.
+// The argument "s0" is the previous smoothed value.
+// The argument "s1" is the current smoothed value.
+// The argument "b" is the previous trend value.
+func calcTrendValue(i int, tf, s0, s1, b float64) float64 {
+	if i == 0 {
+		return b
+	}
+	x := tf * (s1 - s0)
+	y := (1 - tf) * b
+	return x + y
 }
 
 func resets(points []Sample) float64 {
