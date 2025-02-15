@@ -24,8 +24,9 @@ import (
 type subqueryOperator struct {
 	telemetry.OperatorTelemetry
 
-	next    model.VectorOperator
-	paramOp model.VectorOperator
+	next     model.VectorOperator
+	paramOp  model.VectorOperator
+	paramOp2 model.VectorOperator
 
 	pool        *model.VectorPool
 	call        ringbuffer.FunctionCall
@@ -53,7 +54,7 @@ type subqueryOperator struct {
 	params2 []float64
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
+func NewSubqueryOperator(pool *model.VectorPool, next, paramOp, paramOp2 model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err
@@ -66,6 +67,7 @@ func NewSubqueryOperator(pool *model.VectorPool, next, paramOp model.VectorOpera
 	o := &subqueryOperator{
 		next:          next,
 		paramOp:       paramOp,
+		paramOp2:      paramOp2,
 		call:          call,
 		pool:          pool,
 		funcExpr:      funcExpr,
@@ -91,8 +93,10 @@ func (o *subqueryOperator) String() string {
 
 func (o *subqueryOperator) Explain() (next []model.VectorOperator) {
 	switch o.funcExpr.Func.Name {
-	case "quantile_over_time", "predict_linear", "double_exponential_smoothing":
+	case "quantile_over_time", "predict_linear":
 		return []model.VectorOperator{o.paramOp, o.next}
+	case "double_exponential_smoothing":
+		return []model.VectorOperator{o.paramOp, o.paramOp2, o.next}
 	default:
 		return []model.VectorOperator{o.next}
 	}
@@ -123,15 +127,27 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 		}
 		for i := range args {
 			o.params[i] = math.NaN()
-			if len(args[i].Samples) == 1 { // quantile_over_time, predict_linear
+			if len(args[i].Samples) == 1 {
 				o.params[i] = args[i].Samples[0]
-			} else if len(args[i].Samples) == 2 { // double_exponential_smoothing
-				o.params[i] = args[i].Samples[0]
-				o.params2[i] = args[i].Samples[1]
 			}
 			o.paramOp.GetPool().PutStepVector(args[i])
 		}
 		o.paramOp.GetPool().PutVectors(args)
+	}
+
+	if o.paramOp2 != nil { // double_exponential_smoothing
+		args, err := o.paramOp2.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for i := range args {
+			o.params2[i] = math.NaN()
+			if len(args[i].Samples) == 1 {
+				o.params2[i] = args[i].Samples[0]
+			}
+			o.paramOp2.GetPool().PutStepVector(args[i])
+		}
+		o.paramOp2.GetPool().PutVectors(args)
 	}
 
 	res := o.pool.GetVectorBatch()
