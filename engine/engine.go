@@ -11,8 +11,6 @@ import (
 	"sort"
 	"time"
 
-	"github.com/thanos-io/promql-engine/execution/telemetry"
-
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -27,6 +25,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
+	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -39,7 +38,7 @@ type QueryType int
 
 type engineMetrics struct {
 	currentQueries prometheus.Gauge
-	queries        *prometheus.CounterVec
+	totalQueries   prometheus.Counter
 }
 
 const (
@@ -50,15 +49,15 @@ const (
 	stepsBatch             = 10
 )
 
+func IsUnimplemented(err error) bool {
+	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
+}
+
 type Opts struct {
 	promql.EngineOpts
 
 	// LogicalOptimizers are optimizers that are run if the value is not nil. If it is nil then the default optimizers are run. Default optimizer list is available in the logicalplan package.
 	LogicalOptimizers []logicalplan.Optimizer
-
-	// DisableFallback enables mode where engine returns error if some expression of feature is not yet implemented
-	// in the new engine, instead of falling back to prometheus engine.
-	DisableFallback bool
 
 	// ExtLookbackDelta specifies what time range to use to determine valid previous sample for extended range functions.
 	// Defaults to 1 hour if not specified.
@@ -70,9 +69,6 @@ type Opts struct {
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
-
-	// FallbackEngine
-	Engine promql.QueryEngine
 
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
@@ -177,21 +173,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 				Help:      "The current number of queries being executed or waiting.",
 			},
 		),
-		queries: promauto.With(opts.Reg).NewCounterVec(
+		totalQueries: promauto.With(opts.Reg).NewCounter(
 			prometheus.CounterOpts{
 				Namespace: namespace,
 				Subsystem: subsystem,
 				Name:      "queries_total",
 				Help:      "Number of PromQL queries.",
-			}, []string{"fallback"},
+			},
 		),
-	}
-
-	var engine promql.QueryEngine
-	if opts.Engine == nil {
-		engine = promql.NewEngine(opts.EngineOpts)
-	} else {
-		engine = opts.Engine
 	}
 
 	decodingConcurrency := opts.DecodingConcurrency
@@ -208,13 +197,11 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 
 	return &Engine{
-		prom:               engine,
 		functions:          functions,
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
-		disableFallback:             opts.DisableFallback,
 
 		logger:                 opts.Logger,
 		lookbackDelta:          opts.LookbackDelta,
@@ -240,13 +227,11 @@ var (
 )
 
 type Engine struct {
-	prom               promql.QueryEngine
 	functions          map[string]*parser.Function
 	scanners           engstorage.Scanners
 	activeQueryTracker promql.QueryTracker
 
 	disableDuplicateLabelChecks bool
-	disableFallback             bool
 
 	logger             *slog.Logger
 	lookbackDelta      time.Duration
@@ -290,14 +275,10 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
 	exec, err := execution.New(ctx, lplan.Root(), scanners, qOpts)
-	if e.triggerFallback(err) {
-		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewInstantQuery(ctx, q, opts, qs, ts)
-	}
-	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
+	e.metrics.totalQueries.Inc()
 	return &compatibilityQuery{
 		Query:      &Query{exec: exec, opts: opts},
 		engine:     e,
@@ -338,14 +319,10 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 	}
 
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
-	if e.triggerFallback(err) {
-		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewInstantQuery(ctx, q, opts, root.String(), ts)
-	}
-	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
+	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
 		Query:  &Query{exec: exec, opts: opts},
@@ -396,14 +373,10 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
-	if e.triggerFallback(err) {
-		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewRangeQuery(ctx, q, opts, qs, start, end, step)
-	}
-	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
+	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
 		Query:    &Query{exec: exec, opts: opts},
@@ -442,14 +415,11 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
-	if e.triggerFallback(err) {
-		e.metrics.queries.WithLabelValues("true").Inc()
-		return e.prom.NewRangeQuery(ctx, q, opts, lplan.Root().String(), start, end, step)
-	}
-	e.metrics.queries.WithLabelValues("false").Inc()
 	if err != nil {
 		return nil, err
 	}
+	e.metrics.totalQueries.Inc()
+
 	return &compatibilityQuery{
 		Query:    &Query{exec: exec, opts: opts},
 		engine:   e,
@@ -514,14 +484,6 @@ func (e *Engine) storageScanners(queryable storage.Queryable, qOpts *query.Optio
 		return promstorage.NewPrometheusScanners(queryable, qOpts, lplan)
 	}
 	return e.scanners, nil
-}
-
-func (e *Engine) triggerFallback(err error) bool {
-	if e.disableFallback {
-		return false
-	}
-
-	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
 }
 
 type Query struct {
