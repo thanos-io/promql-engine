@@ -102,7 +102,6 @@ func BenchmarkSingleQuery(b *testing.B) {
 	query := "sum(rate(http_requests_total[2m]))"
 	opts := engine.Opts{
 		EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
-		DisableFallback:   true,
 		SelectorBatchSize: 256,
 	}
 	b.ReportAllocs()

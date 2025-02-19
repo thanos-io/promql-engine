@@ -89,8 +89,14 @@ func TestPromqlAcceptance(t *testing.T) {
 		}})
 
 	st := &skipTest{
-		skipTests: []string{"testdata/name_label_dropping.test"}, // skip name_label_dropping test temporary TODO(sungjin1212): change to test whole cases
-		TBRun:     t,
+		skipTests: []string{
+			"testdata/name_label_dropping.test", // feature unsupported
+			"testdata/limit.test",               // limitk, limit_ratio
+			"testdata/native_histograms.test",   // histogram_stddev, histogram_stdvar
+			"testdata/functions.test",           // mad_over_time, predict_linear
+			"testdata/histograms.test",          // histogram_stddev, histogram_stdvar
+		}, // TODO(sungjin1212): change to test whole cases
+		TBRun: t,
 	}
 
 	promqltest.RunBuiltinTests(st, engine)
@@ -181,7 +187,6 @@ func TestQuerierClosedAfterQueryClosed(t *testing.T) {
 	optimizers := logicalplan.AllOptimizers
 	newEngine := engine.New(engine.Opts{
 		EngineOpts:        opts,
-		DisableFallback:   true,
 		LogicalOptimizers: optimizers,
 		// Set to 1 to make sure batching is tested.
 		SelectorBatchSize: 1,
@@ -2092,34 +2097,29 @@ avg by (storage_info) (
 				}
 				for _, disableOptimizers := range disableOptimizerOpts {
 					t.Run(fmt.Sprintf("disableOptimizers=%v", disableOptimizers), func(t *testing.T) {
-						for _, disableFallback := range []bool{false, true} {
-							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-								optimizers := logicalplan.AllOptimizers
-								if disableOptimizers {
-									optimizers = logicalplan.NoOptimizers
-								}
-								newEngine := engine.New(engine.Opts{
-									EngineOpts:        opts,
-									DisableFallback:   disableFallback,
-									LogicalOptimizers: optimizers,
-									// Set to 1 to make sure batching is tested.
-									SelectorBatchSize: 1,
-								})
-								ctx := context.Background()
-								q1, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
-								testutil.Ok(t, err)
-								defer q1.Close()
-								newResult := q1.Exec(ctx)
-
-								oldEngine := promql.NewEngine(opts)
-								q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
-								testutil.Ok(t, err)
-								defer q2.Close()
-								oldResult := q2.Exec(ctx)
-
-								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
-							})
+						optimizers := logicalplan.AllOptimizers
+						if disableOptimizers {
+							optimizers = logicalplan.NoOptimizers
 						}
+						newEngine := engine.New(engine.Opts{
+							EngineOpts:        opts,
+							LogicalOptimizers: optimizers,
+							// Set to 1 to make sure batching is tested.
+							SelectorBatchSize: 1,
+						})
+						ctx := context.Background()
+						q1, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
+						testutil.Ok(t, err)
+						defer q1.Close()
+						newResult := q1.Exec(ctx)
+
+						oldEngine := promql.NewEngine(opts)
+						q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
+						testutil.Ok(t, err)
+						defer q2.Close()
+						oldResult := q2.Exec(ctx)
+
+						testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 					})
 				}
 			})
@@ -2382,7 +2382,6 @@ func TestDisabledXFunction(t *testing.T) {
 
 		newEngine := engine.New(engine.Opts{
 			EngineOpts:        opts,
-			DisableFallback:   true,
 			LogicalOptimizers: optimizers,
 		})
 		_, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
@@ -2416,7 +2415,6 @@ func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	ctx := context.Background()
 	newEngine := engine.New(engine.Opts{
 		EngineOpts:        opts,
-		DisableFallback:   true,
 		LogicalOptimizers: optimizers,
 		EnableXFunctions:  true,
 	})
@@ -2671,7 +2669,6 @@ func TestXFunctions(t *testing.T) {
 			ctx := context.Background()
 			newEngine := engine.New(engine.Opts{
 				EngineOpts:        opts,
-				DisableFallback:   true,
 				LogicalOptimizers: optimizers,
 				EnableXFunctions:  true,
 			})
@@ -2986,7 +2983,6 @@ func TestRateVsXRate(t *testing.T) {
 
 			newEngine := engine.New(engine.Opts{
 				EngineOpts:        opts,
-				DisableFallback:   true,
 				LogicalOptimizers: optimizers,
 				EnableXFunctions:  true,
 			})
@@ -4199,39 +4195,34 @@ min without () (
 							LookbackDelta:            lookbackDelta,
 						}
 
-						for _, disableFallback := range []bool{false, true} {
-							t.Run(fmt.Sprintf("disableFallback=%v", disableFallback), func(t *testing.T) {
-								var queryTime time.Time = defaultQueryTime
-								if tc.queryTime != (time.Time{}) {
-									queryTime = tc.queryTime
-								}
-
-								optimizers := logicalplan.AllOptimizers
-								if disableOptimizers {
-									optimizers = logicalplan.NoOptimizers
-								}
-								newEngine := engine.New(engine.Opts{
-									EngineOpts:        opts,
-									DisableFallback:   disableFallback,
-									LogicalOptimizers: optimizers,
-								})
-
-								ctx := context.Background()
-								q1, err := newEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
-								testutil.Ok(t, err)
-								defer q1.Close()
-
-								newResult := q1.Exec(ctx)
-
-								oldEngine := promql.NewEngine(opts)
-								q2, err := oldEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
-								testutil.Ok(t, err)
-								defer q2.Close()
-
-								oldResult := q2.Exec(ctx)
-								testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
-							})
+						var queryTime time.Time = defaultQueryTime
+						if tc.queryTime != (time.Time{}) {
+							queryTime = tc.queryTime
 						}
+
+						optimizers := logicalplan.AllOptimizers
+						if disableOptimizers {
+							optimizers = logicalplan.NoOptimizers
+						}
+						newEngine := engine.New(engine.Opts{
+							EngineOpts:        opts,
+							LogicalOptimizers: optimizers,
+						})
+
+						ctx := context.Background()
+						q1, err := newEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
+						testutil.Ok(t, err)
+						defer q1.Close()
+
+						newResult := q1.Exec(ctx)
+
+						oldEngine := promql.NewEngine(opts)
+						q2, err := oldEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
+						testutil.Ok(t, err)
+						defer q2.Close()
+
+						oldResult := q2.Exec(ctx)
+						testutil.WithGoCmp(comparer).Equals(t, oldResult, newResult, queryExplanation(q1))
 					}
 				})
 			}
@@ -4349,7 +4340,7 @@ func TestQueryTimeout(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
 
-	newEngine := engine.New(engine.Opts{DisableFallback: true, EngineOpts: opts})
+	newEngine := engine.New(engine.Opts{EngineOpts: opts})
 
 	q, err := newEngine.NewInstantQuery(context.Background(), storage, nil, query, end)
 	testutil.Ok(t, err)
@@ -4401,39 +4392,39 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: -4000 + 1, End: 1000},
 			},
 		}, {
-			query: `foo[2m]`, start: 200000,
+			query: `rate(foo[2m])`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 80000 + 1, End: 200000, Range: 120000},
+				{Start: 80000 + 1, End: 200000, Range: 120000, Func: "rate"},
 			},
 		}, {
-			query: `foo[2m] @ 180.000`, start: 200000,
+			query: `rate(foo[2m] @ 180.000)`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 60000 + 1, End: 180000, Range: 120000},
+				{Start: 60000 + 1, End: 180000, Range: 120000, Func: "rate"},
 			},
 		}, {
-			query: `foo[2m] @ 300.000`, start: 200000,
+			query: `rate(foo[2m] @ 300.000)`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: 180000 + 1, End: 300000, Range: 120000},
+				{Start: 180000 + 1, End: 300000, Range: 120000, Func: "rate"},
 			},
 		}, {
-			query: `foo[2m] @ 60.000`, start: 200000,
+			query: `rate(foo[2m] @ 60.000)`, start: 200000,
 			expected: []*storage.SelectHints{
-				{Start: -60000 + 1, End: 60000, Range: 120000},
+				{Start: -60000 + 1, End: 60000, Range: 120000, Func: "rate"},
 			},
 		}, {
-			query: `foo[2m] offset 2m`, start: 300000,
+			query: `rate(foo[2m] offset 2m)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 60000 + 1, End: 180000, Range: 120000},
+				{Start: 60000 + 1, End: 180000, Range: 120000, Func: "rate"},
 			},
 		}, {
-			query: `foo[2m] @ 200.000 offset 2m`, start: 300000,
+			query: `rate(foo[2m] @ 200.000 offset 2m)`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: -40000 + 1, End: 80000, Range: 120000},
+				{Start: -40000 + 1, End: 80000, Range: 120000, Func: "rate"},
 			},
 		}, {
-			query: `foo[2m:1s]`, start: 300000,
+			query: `rate(foo[2m:1s])`, start: 300000,
 			expected: []*storage.SelectHints{
-				{Start: 175000 + 1, End: 300000, Step: 1000},
+				{Start: 175000 + 1, End: 300000, Step: 1000, Func: "rate"},
 			},
 		}, {
 			query: `count_over_time(foo[2m:1s])`, start: 300000,
@@ -4599,12 +4590,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: 5000 + 1, End: 10000, Func: "max", By: true, Grouping: []string{"dim2"}},
 			},
 		}, {
-			query: `(max by (dim1) (foo))[5s:1s]`, start: 10000,
+			query: `max_over_time((max by (dim1) (foo))[5s:1s])`, start: 10000,
 			expected: []*storage.SelectHints{
 				{Start: 0 + 1, End: 10000, Func: "max", By: true, Grouping: []string{"dim1"}, Step: 1000},
 			},
 		}, {
-			query: "(sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s]", start: 120000,
+			query: "max_over_time((sum(http_requests{group=~\"p.*\"})+max(http_requests{group=~\"c.*\"}))[20s:5s])", start: 120000,
 			expected: []*storage.SelectHints{
 				{Start: 95000 + 1, End: 120000, Func: "sum", By: true, Step: 5000},
 				{Start: 95000 + 1, End: 120000, Func: "max", By: true, Step: 5000},
@@ -4645,12 +4636,18 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: 655000 + 1, End: 780000, Step: 1000, Func: "rate"},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
-			query: `sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 50.000)[3s:1s] @ 3000.000`, start: 100000,
+			query: `
+sum_over_time(
+sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 50.000)[3s:1s] @ 3000.000
+)`, start: 100000,
 			expected: []*storage.SelectHints{
 				{Start: -150000 + 1, End: 50000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
 		}, { // Hints are based on the inner most subquery timestamp.
-			query: `sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 3000.000)[3s:1s] @ 50.000`,
+			query: `
+sum_over_time(
+sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 3000.000)[3s:1s] @ 50.000
+)`,
 			expected: []*storage.SelectHints{
 				{Start: 2800000 + 1, End: 3000000, Range: 100000, Func: "sum_over_time", Step: 25000},
 			},
@@ -4697,51 +4694,6 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 					}
 				}
 				testutil.Assert(t, contains, "hints did not contain contain %#v", expected)
-			}
-		})
-	}
-}
-
-func TestFallback(t *testing.T) {
-	start := time.Unix(0, 0)
-	end := time.Unix(120, 0)
-	step := time.Second * 30
-
-	cases := []struct {
-		name  string
-		query string
-	}{
-		{
-			name:  "unsupported function with scalar",
-			query: `quantile_over_time(scalar(sum(http_requests_total)), http_requests_total[2m])`,
-		},
-	}
-
-	load := `load 30s
-				http_requests_total{pod="nginx-1"} 1+1x1
-				http_requests_total{pod="nginx-2"} 1+2x40`
-
-	storage := promqltest.LoadedStorage(t, load)
-	defer storage.Close()
-
-	for _, tcase := range cases {
-		t.Run(tcase.name, func(t *testing.T) {
-			for _, disableFallback := range []bool{true, false} {
-				t.Run(fmt.Sprintf("disableFallback=%t", disableFallback), func(t *testing.T) {
-					opts := promql.EngineOpts{
-						Timeout:    2 * time.Second,
-						MaxSamples: math.MaxInt64,
-					}
-					newEngine := engine.New(engine.Opts{DisableFallback: disableFallback, EngineOpts: opts})
-					q1, err := newEngine.NewRangeQuery(context.Background(), storage, nil, tcase.query, start, end, step)
-					if disableFallback {
-						testutil.NotOk(t, err)
-					} else {
-						testutil.Ok(t, err)
-						newResult := q1.Exec(context.Background())
-						testutil.Ok(t, newResult.Err)
-					}
-				})
 			}
 		})
 	}
@@ -4919,7 +4871,7 @@ func TestQueryStats(t *testing.T) {
 			ctx := context.Background()
 
 			oldEngine := promql.NewEngine(opts)
-			newEngine := engine.New(engine.Opts{DisableFallback: true, EnableAnalysis: true, EngineOpts: opts})
+			newEngine := engine.New(engine.Opts{EnableAnalysis: true, EngineOpts: opts})
 
 			// Instant query
 			oldQ, err := oldEngine.NewInstantQuery(ctx, storage, qOpts, tc.query, tc.end)
@@ -5196,9 +5148,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		},
 	}
 	t.Run("instant", func(t *testing.T) {
-		newEngine := engine.New(engine.Opts{
-			DisableFallback: true,
-		})
+		newEngine := engine.New(engine.Opts{})
 		ctx := context.Background()
 		q, err := newEngine.NewInstantQuery(ctx, querier, nil, "somequery", time.Time{})
 		testutil.Ok(t, err)
@@ -5208,9 +5158,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 	})
 
 	t.Run("range", func(t *testing.T) {
-		newEngine := engine.New(engine.Opts{
-			DisableFallback: true,
-		})
+		newEngine := engine.New(engine.Opts{})
 		ctx := context.Background()
 		q, err := newEngine.NewRangeQuery(ctx, querier, nil, "somequery", time.Time{}, time.Time{}, 42)
 		testutil.Ok(t, err)
@@ -5464,7 +5412,6 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					promEngine := promql.NewEngine(opts)
 					thanosEngine := engine.New(engine.Opts{
 						EngineOpts:        opts,
-						DisableFallback:   true,
 						LogicalOptimizers: logicalplan.AllOptimizers,
 					})
 
@@ -5620,7 +5567,6 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 
 	engine := engine.New(engine.Opts{
 		EngineOpts:        opts,
-		DisableFallback:   true,
 		LogicalOptimizers: logicalplan.AllOptimizers,
 	})
 

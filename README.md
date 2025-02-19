@@ -6,7 +6,7 @@ The project is currently under active development.
 
 ## Roadmap
 
-The engine intends to have full compatibility with the original engine used in Prometheus. Since implementing the full specification will take time, we aim to add support for most commonly used expressions while falling back to the original engine for operations that are not yet supported. This will allow us to have smaller and faster releases, and gather feedback on a regular basis. Instructions on using the engine will be added after we have enough confidence in its correctness.
+The engine intends to have full compatibility with the original engine used in Prometheus. Since implementing the full specification will take time, we aim to add support for most commonly used expressions. Instructions on using the engine will be added after we have enough confidence in its correctness. If the engine encounters an expression it does not support it will return an error that can be tested with `engine.IsUnimplemented(err)`, the calling code is expected to handle this fallback.
 
 The following table shows operations which are currently supported by the engine
 

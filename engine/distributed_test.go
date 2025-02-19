@@ -193,10 +193,9 @@ func TestDistributedAggregations(t *testing.T) {
 	}
 
 	queries := []struct {
-		name           string
-		query          string
-		rangeStart     time.Time
-		expectFallback bool
+		name       string
+		query      string
+		rangeStart time.Time
 	}{
 		{name: "binop with selector and constant series", query: `bar or on () vector(0)`},
 		{name: "binop with aggregation and constant series", query: `sum(bar) or on () vector(0)`},
@@ -226,7 +225,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "binary nested with constants", query: `(1 + 2) + (1 atan2 (-1 % -1))`},
 		{name: "binary nested with functions", query: `(1 + exp(vector(1))) + (1 atan2 (-1 % -1))`},
 		{name: "filtered selector interaction", query: `sum by (region) (bar{region="east"}) / sum by (region) (bar)`},
-		{name: "unsupported aggregation", query: `count_values("pod", bar)`, expectFallback: true},
+		{name: "unsupported aggregation", query: `count_values("pod", bar)`},
 		{name: "absent_over_time for non-existing metric", query: `absent_over_time(foo[2m])`},
 		{name: "absent_over_time for existing metric", query: `absent_over_time(bar{pod="nginx-1"}[2m])`},
 		{name: "absent for non-existing metric", query: `absent(foo)`},
@@ -249,7 +248,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "query with @start() absolute timestamp", query: `sum(bar @ start())`},
 		{name: "query with @end() timestamp", query: `sum(bar @ end())`},
 		{name: "query with numeric timestamp", query: `sum(bar @ 140.000)`},
-		{name: "query with range and @end() timestamp", query: `sum(count_over_time(bar[1h] @ end()))`, expectFallback: true},
+		{name: "query with range and @end() timestamp", query: `sum(count_over_time(bar[1h] @ end()))`},
 		{name: `subquery with @end() timestamp`, query: `bar @ 100.000 - bar @ 150.000`},
 	}
 
@@ -306,7 +305,6 @@ func TestDistributedAggregations(t *testing.T) {
 						for _, queryOpts := range allQueryOpts {
 							ctx := context.Background()
 							distOpts := localOpts
-							distOpts.DisableFallback = !query.expectFallback
 							for _, instantTS := range instantTSs {
 								t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
 									distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints(remoteEngines))
