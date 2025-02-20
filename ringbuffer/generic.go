@@ -106,7 +106,7 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	r.items = r.items[:keep]
 }
 
-func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64, metricAppearedTs *int64) (*float64, *histogram.FloatHistogram, bool, error) {
+func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64, metricAppearedTs *int64) (float64, *histogram.FloatHistogram, bool, error) {
 	return r.call(FunctionArgs{
 		ctx:              ctx,
 		Samples:          r.items,

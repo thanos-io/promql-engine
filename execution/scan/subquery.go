@@ -201,8 +201,8 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			if ok {
 				if h != nil {
 					sv.AppendHistogram(o.pool, uint64(sampleId), h)
-				} else if f != nil {
-					sv.AppendSample(o.pool, uint64(sampleId), *f)
+				} else {
+					sv.AppendSample(o.pool, uint64(sampleId), f)
 				}
 			}
 			o.IncrementSamplesAtTimestamp(rangeSamples.Len(), sv.T)
