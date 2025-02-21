@@ -21,6 +21,7 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 
+	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/execution"
 	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -73,9 +74,6 @@ type Opts struct {
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
 
-	// EnablePartialResponses enables partial responses in distributed mode.
-	EnablePartialResponses bool
-
 	// SelectorBatchSize specifies the maximum number of samples to be returned by selectors in a single batch.
 	SelectorBatchSize int64
 
@@ -106,15 +104,12 @@ type QueryOpts struct {
 
 	// DecodingConcurrency can be used to override the DecodingConcurrency engine setting.
 	DecodingConcurrency int
-
-	// EnablePartialResponses can be used to override the EnablePartialResponses engine setting.
-	EnablePartialResponses bool
 }
 
 func (opts QueryOpts) LookbackDelta() time.Duration { return opts.LookbackDeltaParam }
 func (opts QueryOpts) EnablePerStepStats() bool     { return opts.EnablePerStepStatsParam }
 
-func fromPromQLOpts(opts promql.QueryOpts) *QueryOpts {
+func FromPromQLOpts(opts promql.QueryOpts) *QueryOpts {
 	if opts == nil {
 		return &QueryOpts{}
 	}
@@ -203,15 +198,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 
-		logger:                 opts.Logger,
-		lookbackDelta:          opts.LookbackDelta,
-		enablePerStepStats:     opts.EnablePerStepStats,
-		logicalOptimizers:      opts.getLogicalOptimizers(),
-		timeout:                opts.Timeout,
-		metrics:                metrics,
-		extLookbackDelta:       opts.ExtLookbackDelta,
-		enableAnalysis:         opts.EnableAnalysis,
-		enablePartialResponses: opts.EnablePartialResponses,
+		logger:             opts.Logger,
+		lookbackDelta:      opts.LookbackDelta,
+		enablePerStepStats: opts.EnablePerStepStats,
+		logicalOptimizers:  opts.getLogicalOptimizers(),
+		timeout:            opts.Timeout,
+		metrics:            metrics,
+		extLookbackDelta:   opts.ExtLookbackDelta,
+		enableAnalysis:     opts.EnableAnalysis,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
@@ -243,11 +237,16 @@ type Engine struct {
 	extLookbackDelta         time.Duration
 	decodingConcurrency      int
 	enableAnalysis           bool
-	enablePartialResponses   bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	idx, err := e.activeQueryTracker.Insert(ctx, qs)
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -437,12 +436,139 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 
 // NewInstantQuery implements the promql.Engine interface.
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	return e.MakeInstantQuery(ctx, q, fromPromQLOpts(opts), qs, ts)
+	return e.MakeInstantQuery(ctx, q, FromPromQLOpts(opts), qs, ts)
 }
 
 // NewRangeQuery implements the promql.Engine interface.
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
-	return e.MakeRangeQuery(ctx, q, fromPromQLOpts(opts), qs, start, end, step)
+	return e.MakeRangeQuery(ctx, q, FromPromQLOpts(opts), qs, start, end, step)
+}
+
+// Distributed constructors
+
+// MakeDistributedInstantQuery creates an instant query that is distributed among the passed endpoints.
+func (e *Engine) MakeDistributedInstantQuery(ctx context.Context, q storage.Queryable, endpoints api.RemoteEndpoints, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	ts = ts.Truncate(time.Second)
+
+	idx, err := e.activeQueryTracker.Insert(ctx, qs)
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
+	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
+	if err != nil {
+		return nil, err
+	}
+	// determine sorting order before optimizers run, we do this by looking for "sort"
+	// and "sort_desc" and optimize them away afterwards since they are only needed at
+	// the presentation layer and not when computing the results.
+	resultSort := newResultSort(expr)
+
+	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
+	if qOpts.StepsBatch > 64 {
+		return nil, ErrStepsBatchTooLarge
+	}
+
+	// Distributed queries will use these hardcoded optimizers
+	distributedOptimizers := []logicalplan.Optimizer{
+		logicalplan.PassthroughOptimizer{Endpoints: endpoints},
+		logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
+	}
+
+	planOpts := logicalplan.PlanOptions{
+		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
+	}
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(distributedOptimizers)
+
+	scanners, err := e.storageScanners(q, qOpts, lplan)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating storage scanners")
+	}
+
+	ctx = warnings.NewContext(ctx)
+	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+	exec, err := execution.New(ctx, lplan.Root(), scanners, qOpts)
+	if err != nil {
+		return nil, err
+	}
+	e.metrics.totalQueries.Inc()
+	return &compatibilityQuery{
+		Query:      &Query{exec: exec, opts: opts},
+		engine:     e,
+		plan:       lplan,
+		ts:         ts,
+		warns:      warns,
+		t:          InstantQuery,
+		resultSort: resultSort,
+		scanners:   scanners,
+		start:      ts,
+		end:        ts,
+		step:       0,
+	}, nil
+}
+
+// MakeDistributedRangeQuery creates a range query that is distributed among the passed endpoints.
+func (e *Engine) MakeDistributedRangeQuery(ctx context.Context, q storage.Queryable, endpoints api.RemoteEndpoints, opts *QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	start = start.Truncate(time.Second)
+	end = end.Truncate(time.Second)
+	step = step.Truncate(time.Second)
+
+	idx, err := e.activeQueryTracker.Insert(ctx, qs)
+	if err != nil {
+		return nil, err
+	}
+	defer e.activeQueryTracker.Delete(idx)
+
+	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	qOpts := e.makeQueryOpts(start, end, step, opts)
+	if qOpts.StepsBatch > 64 {
+		return nil, ErrStepsBatchTooLarge
+	}
+
+	// Distributed queries will use these hardcoded optimizers
+	distributedOptimizers := []logicalplan.Optimizer{
+		logicalplan.PassthroughOptimizer{Endpoints: endpoints},
+		logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
+	}
+
+	planOpts := logicalplan.PlanOptions{
+		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
+	}
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(distributedOptimizers)
+
+	scanners, err := e.storageScanners(q, qOpts, lplan)
+	if err != nil {
+		return nil, errors.Wrap(err, "creating storage scanners")
+	}
+
+	ctx = warnings.NewContext(ctx)
+	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+	exec, err := execution.New(ctx, lplan.Root(), scanners, qOpts)
+	if err != nil {
+		return nil, err
+	}
+	e.metrics.totalQueries.Inc()
+
+	return &compatibilityQuery{
+		Query:    &Query{exec: exec, opts: opts},
+		engine:   e,
+		plan:     lplan,
+		warns:    warns,
+		t:        RangeQuery,
+		scanners: scanners,
+		start:    start,
+		end:      end,
+		step:     step,
+	}, nil
 }
 
 func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts *QueryOpts) *query.Options {
@@ -455,7 +581,6 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnablePerStepStats:       e.enablePerStepStats,
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
-		EnablePartialResponses:   e.enablePartialResponses,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
@@ -472,9 +597,6 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 
 	if opts.DecodingConcurrency != 0 {
 		res.DecodingConcurrency = opts.DecodingConcurrency
-	}
-	if opts.EnablePartialResponses {
-		res.EnablePartialResponses = opts.EnablePartialResponses
 	}
 	return res
 }

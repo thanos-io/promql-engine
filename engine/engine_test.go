@@ -5078,13 +5078,6 @@ func newWarningsSeriesSet(warns annotations.Annotations) storage.SeriesSet {
 	}
 }
 
-func newErrorSeriesSet(err error) storage.SeriesSet {
-	return &testSeriesSet{
-		i:   -1,
-		err: err,
-	}
-}
-
 func (s *testSeriesSet) Next() bool                        { s.i++; return s.i < len(s.series) }
 func (s *testSeriesSet) At() storage.Series                { return s.series[s.i] }
 func (s *testSeriesSet) Err() error                        { return s.err }
