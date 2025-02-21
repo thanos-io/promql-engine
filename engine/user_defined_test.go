@@ -36,8 +36,7 @@ load 30s
 	defer storage.Close()
 
 	newEngine := engine.New(engine.Opts{
-		EngineOpts:      opts,
-		DisableFallback: true,
+		EngineOpts: opts,
 		LogicalOptimizers: []logicalplan.Optimizer{
 			&injectVectorSelector{},
 		},
