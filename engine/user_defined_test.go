@@ -5,6 +5,7 @@ package engine_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"time"
 
@@ -36,10 +37,8 @@ load 30s
 	defer storage.Close()
 
 	newEngine := engine.New(engine.Opts{
-		EngineOpts: opts,
-		LogicalOptimizers: []logicalplan.Optimizer{
-			&injectVectorSelector{},
-		},
+		EngineOpts:        opts,
+		LogicalOptimizers: append(slices.Clone(logicalplan.DefaultOptimizers), &injectVectorSelector{}),
 	})
 	query := "sum(http_requests_total)"
 	qry, err := newEngine.NewRangeQuery(context.Background(), storage, nil, query, time.Unix(0, 0), time.Unix(90, 0), 30*time.Second)
