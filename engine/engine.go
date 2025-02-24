@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"math"
 	"runtime"
+	"slices"
 	"sort"
 	"time"
 
@@ -66,6 +67,9 @@ type Opts struct {
 	// DecodingConcurrency is the maximum number of goroutines that can be used to decode samples. Defaults to GOMAXPROCS / 2.
 	DecodingConcurrency int
 
+	// SelectorBatchSize specifies the maximum number of samples to be returned by selectors in a single batch.
+	SelectorBatchSize int64
+
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
@@ -73,28 +77,10 @@ type Opts struct {
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
 
-	// EnablePartialResponses enables partial responses in distributed mode.
-	EnablePartialResponses bool
-
-	// SelectorBatchSize specifies the maximum number of samples to be returned by selectors in a single batch.
-	SelectorBatchSize int64
-
 	// The Prometheus engine has internal check for duplicate labels produced by functions, aggregations or binary operators.
 	// This check can produce false positives when querying time-series data which does not conform to the Prometheus data model,
 	// and can be disabled if it leads to false positives.
 	DisableDuplicateLabelChecks bool
-}
-
-func (o Opts) getLogicalOptimizers() []logicalplan.Optimizer {
-	var optimizers []logicalplan.Optimizer
-	if o.LogicalOptimizers == nil {
-		optimizers = make([]logicalplan.Optimizer, len(logicalplan.DefaultOptimizers))
-		copy(optimizers, logicalplan.DefaultOptimizers)
-	} else {
-		optimizers = make([]logicalplan.Optimizer, len(o.LogicalOptimizers))
-		copy(optimizers, o.LogicalOptimizers)
-	}
-	return optimizers
 }
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
@@ -107,8 +93,11 @@ type QueryOpts struct {
 	// DecodingConcurrency can be used to override the DecodingConcurrency engine setting.
 	DecodingConcurrency int
 
-	// EnablePartialResponses can be used to override the EnablePartialResponses engine setting.
-	EnablePartialResponses bool
+	// SelectorBatchSize can be used to override the SelectorBatchSize engine setting.
+	SelectorBatchSize int64
+
+	// LogicalOptimizers can be used to override the LogicalOptimizers engine setting.
+	LogicalOptimizers []logicalplan.Optimizer
 }
 
 func (opts QueryOpts) LookbackDelta() time.Duration { return opts.LookbackDeltaParam }
@@ -147,10 +136,9 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		opts.ExtLookbackDelta = 1 * time.Hour
 		opts.Logger.Debug("external lookback delta is zero, setting to default value", "value", 1*24*time.Hour)
 	}
-	if opts.SelectorBatchSize != 0 {
+	if len(opts.LogicalOptimizers) == 0 {
 		opts.LogicalOptimizers = append(
-			[]logicalplan.Optimizer{logicalplan.SelectorBatchSize{Size: opts.SelectorBatchSize}},
-			opts.LogicalOptimizers...,
+			opts.LogicalOptimizers, logicalplan.DefaultOptimizers...,
 		)
 	}
 
@@ -190,6 +178,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 			decodingConcurrency = 1
 		}
 	}
+	selectorBatchSize := opts.SelectorBatchSize
 
 	var queryTracker promql.QueryTracker = nopQueryTracker{}
 	if opts.ActiveQueryTracker != nil {
@@ -203,19 +192,19 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 
 		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 
-		logger:                 opts.Logger,
-		lookbackDelta:          opts.LookbackDelta,
-		enablePerStepStats:     opts.EnablePerStepStats,
-		logicalOptimizers:      opts.getLogicalOptimizers(),
-		timeout:                opts.Timeout,
-		metrics:                metrics,
-		extLookbackDelta:       opts.ExtLookbackDelta,
-		enableAnalysis:         opts.EnableAnalysis,
-		enablePartialResponses: opts.EnablePartialResponses,
+		logger:             opts.Logger,
+		lookbackDelta:      opts.LookbackDelta,
+		enablePerStepStats: opts.EnablePerStepStats,
+		logicalOptimizers:  opts.LogicalOptimizers,
+		timeout:            opts.Timeout,
+		metrics:            metrics,
+		extLookbackDelta:   opts.ExtLookbackDelta,
+		enableAnalysis:     opts.EnableAnalysis,
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
 		decodingConcurrency: decodingConcurrency,
+		selectorBatchSize:   selectorBatchSize,
 	}
 }
 
@@ -242,12 +231,17 @@ type Engine struct {
 
 	extLookbackDelta         time.Duration
 	decodingConcurrency      int
+	selectorBatchSize        int64
 	enableAnalysis           bool
 	enablePartialResponses   bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	ts = ts.Truncate(time.Second)
+
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -265,7 +259,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
 	scanners, err := e.storageScanners(q, qOpts, lplan)
 	if err != nil {
@@ -295,6 +289,10 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 }
 
 func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryable, opts *QueryOpts, root logicalplan.Node, ts time.Time) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	ts = ts.Truncate(time.Second)
+
 	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
 	if err != nil {
 		return nil, err
@@ -308,7 +306,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
@@ -341,6 +339,12 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 }
 
 func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	start = start.Truncate(time.Second)
+	end = end.Truncate(time.Second)
+	step = step.Truncate(time.Second)
+
 	idx, err := e.activeQueryTracker.Insert(ctx, qs)
 	if err != nil {
 		return nil, err
@@ -363,7 +367,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
@@ -392,6 +396,12 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 }
 
 func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable, opts *QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (promql.Query, error) {
+	// Truncate milliseconds to avoid mismatch in timestamps between remote and local engines.
+	// Some clients might only support second precision when executing queries.
+	start = start.Truncate(time.Second)
+	end = end.Truncate(time.Second)
+	step = step.Truncate(time.Second)
+
 	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
 	if err != nil {
 		return nil, err
@@ -405,7 +415,7 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.logicalOptimizers)
+	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
 	scnrs, err := e.storageScanners(q, qOpts, lplan)
 	if err != nil {
@@ -455,7 +465,6 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnablePerStepStats:       e.enablePerStepStats,
 		ExtLookbackDelta:         e.extLookbackDelta,
 		EnableAnalysis:           e.enableAnalysis,
-		EnablePartialResponses:   e.enablePartialResponses,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
@@ -473,10 +482,22 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 	if opts.DecodingConcurrency != 0 {
 		res.DecodingConcurrency = opts.DecodingConcurrency
 	}
-	if opts.EnablePartialResponses {
-		res.EnablePartialResponses = opts.EnablePartialResponses
-	}
+
 	return res
+}
+
+func (e *Engine) getLogicalOptimizers(opts *QueryOpts) []logicalplan.Optimizer {
+	var optimizers []logicalplan.Optimizer
+	if len(opts.LogicalOptimizers) != 0 {
+		optimizers = slices.Clone(opts.LogicalOptimizers)
+	} else {
+		optimizers = slices.Clone(e.logicalOptimizers)
+	}
+	selectorBatchSize := e.selectorBatchSize
+	if opts.SelectorBatchSize != 0 {
+		selectorBatchSize = opts.SelectorBatchSize
+	}
+	return append(optimizers, logicalplan.SelectorBatchSize{Size: selectorBatchSize})
 }
 
 func (e *Engine) storageScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (engstorage.Scanners, error) {
