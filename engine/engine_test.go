@@ -5196,9 +5196,10 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 				EnableAtModifier:     true,
 			},
 		}
-		start = time.UnixMilli(6146000)
-		end   = time.UnixMilli(6236000)
-		step  = 60 * time.Second
+		start = time.UnixMilli(6146221)
+		end   = time.UnixMilli(6236221)
+
+		step = 60 * time.Second
 	)
 	execQuery := func(ng promql.QueryEngine) *promql.Result {
 		qry, err := ng.NewRangeQuery(context.TODO(), testStorage, nil, "histogram_count(rate(test_metric[10m]))", start, end, step)

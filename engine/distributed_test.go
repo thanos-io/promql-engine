@@ -19,7 +19,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type partition struct {
@@ -274,7 +273,7 @@ func TestDistributedAggregations(t *testing.T) {
 				completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
 				t.Run(test.name, func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
-						localOpts := engine.Opts{
+						opts := engine.Opts{
 							EngineOpts: promql.EngineOpts{
 								Timeout:              1 * time.Hour,
 								MaxSamples:           1e10,
@@ -286,7 +285,7 @@ func TestDistributedAggregations(t *testing.T) {
 
 						for _, s := range test.seriesSets {
 							remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-								localOpts,
+								opts,
 								storageWithMockSeries(s.series...),
 								s.mint(),
 								s.maxt(),
@@ -295,7 +294,7 @@ func TestDistributedAggregations(t *testing.T) {
 						}
 						if len(test.timeOverlap.series) > 0 {
 							remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-								localOpts,
+								opts,
 								storageWithMockSeries(test.timeOverlap.series...),
 								test.timeOverlap.mint(),
 								test.timeOverlap.maxt(),
@@ -303,30 +302,16 @@ func TestDistributedAggregations(t *testing.T) {
 							))
 						}
 						endpoints := api.NewStaticEndpoints(remoteEngines)
-						distOpts := engine.Opts{
-							EngineOpts: promql.EngineOpts{
-								Timeout:              1 * time.Hour,
-								MaxSamples:           1e10,
-								EnableNegativeOffset: true,
-								EnableAtModifier:     true,
-								LookbackDelta:        lookbackDelta,
-							},
-							LogicalOptimizers: []logicalplan.Optimizer{
-								logicalplan.PassthroughOptimizer{Endpoints: endpoints},
-								logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
-							},
-						}
-
 						for _, queryOpts := range allQueryOpts {
 							ctx := context.Background()
 							for _, instantTS := range instantTSs {
 								t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
-									distEngine := engine.New(distOpts)
-									distQry, err := distEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
+									distEngine := engine.NewDistributedEngine(opts)
+									distQry, err := distEngine.MakeInstantQuery(ctx, completeSeriesSet, endpoints, queryOpts, query.query, instantTS)
 									testutil.Ok(t, err)
 
 									distResult := distQry.Exec(ctx)
-									promEngine := promql.NewEngine(localOpts.EngineOpts)
+									promEngine := promql.NewEngine(opts.EngineOpts)
 									promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
 									testutil.Ok(t, err)
 									promResult := promQry.Exec(ctx)
@@ -342,12 +327,12 @@ func TestDistributedAggregations(t *testing.T) {
 								if test.rangeEnd == (time.Time{}) {
 									test.rangeEnd = rangeEnd
 								}
-								distEngine := engine.New(distOpts)
-								distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
+								distEngine := engine.NewDistributedEngine(opts)
+								distQry, err := distEngine.MakeRangeQuery(ctx, completeSeriesSet, endpoints, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 
 								distResult := distQry.Exec(ctx)
-								promEngine := promql.NewEngine(localOpts.EngineOpts)
+								promEngine := promql.NewEngine(opts.EngineOpts)
 								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(ctx)
@@ -364,7 +349,8 @@ func TestDistributedAggregations(t *testing.T) {
 
 func TestDistributedEngineWarnings(t *testing.T) {
 	t.Parallel()
-	localOpts := engine.Opts{
+
+	opts := engine.Opts{
 		EngineOpts: promql.EngineOpts{
 			MaxSamples: math.MaxInt64,
 			Timeout:    1 * time.Minute,
@@ -378,21 +364,10 @@ func TestDistributedEngineWarnings(t *testing.T) {
 			},
 		},
 	}
-	remote := engine.NewRemoteEngine(localOpts, querier, math.MinInt64, math.MaxInt64, nil)
+	remote := engine.NewRemoteEngine(opts, querier, math.MinInt64, math.MaxInt64, nil)
 	endpoints := api.NewStaticEndpoints([]api.RemoteEngine{remote})
-
-	distOpts := engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			MaxSamples: math.MaxInt64,
-			Timeout:    1 * time.Minute,
-		},
-		LogicalOptimizers: []logicalplan.Optimizer{
-			logicalplan.PassthroughOptimizer{Endpoints: endpoints},
-			logicalplan.DistributedExecutionOptimizer{Endpoints: endpoints},
-		},
-	}
-	ng := engine.New(distOpts)
-	q, err := ng.NewInstantQuery(context.Background(), querier, nil, "test", time.UnixMilli(0))
+	ng := engine.NewDistributedEngine(opts)
+	q, err := ng.MakeInstantQuery(context.Background(), querier, endpoints, nil, "test", time.UnixMilli(0))
 	testutil.Ok(t, err)
 
 	res := q.Exec(context.Background())
