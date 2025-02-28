@@ -273,7 +273,7 @@ func TestDistributedAggregations(t *testing.T) {
 				completeSeriesSet := storageWithSeries(mergeWithSampleDedup(allSeries)...)
 				t.Run(test.name, func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
-						localOpts := engine.Opts{
+						opts := engine.Opts{
 							EngineOpts: promql.EngineOpts{
 								Timeout:              1 * time.Hour,
 								MaxSamples:           1e10,
@@ -285,7 +285,7 @@ func TestDistributedAggregations(t *testing.T) {
 
 						for _, s := range test.seriesSets {
 							remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-								localOpts,
+								opts,
 								storageWithMockSeries(s.series...),
 								s.mint(),
 								s.maxt(),
@@ -294,25 +294,24 @@ func TestDistributedAggregations(t *testing.T) {
 						}
 						if len(test.timeOverlap.series) > 0 {
 							remoteEngines = append(remoteEngines, engine.NewRemoteEngine(
-								localOpts,
+								opts,
 								storageWithMockSeries(test.timeOverlap.series...),
 								test.timeOverlap.mint(),
 								test.timeOverlap.maxt(),
 								test.timeOverlap.extLset,
 							))
 						}
-
+						endpoints := api.NewStaticEndpoints(remoteEngines)
 						for _, queryOpts := range allQueryOpts {
 							ctx := context.Background()
-							distOpts := localOpts
 							for _, instantTS := range instantTSs {
 								t.Run(fmt.Sprintf("instant/ts=%d", instantTS.Unix()), func(t *testing.T) {
-									distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints(remoteEngines))
-									distQry, err := distEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
+									distEngine := engine.NewDistributedEngine(opts)
+									distQry, err := distEngine.MakeInstantQuery(ctx, completeSeriesSet, endpoints, queryOpts, query.query, instantTS)
 									testutil.Ok(t, err)
 
 									distResult := distQry.Exec(ctx)
-									promEngine := promql.NewEngine(localOpts.EngineOpts)
+									promEngine := promql.NewEngine(opts.EngineOpts)
 									promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
 									testutil.Ok(t, err)
 									promResult := promQry.Exec(ctx)
@@ -328,12 +327,12 @@ func TestDistributedAggregations(t *testing.T) {
 								if test.rangeEnd == (time.Time{}) {
 									test.rangeEnd = rangeEnd
 								}
-								distEngine := engine.NewDistributedEngine(distOpts, api.NewStaticEndpoints(remoteEngines))
-								distQry, err := distEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
+								distEngine := engine.NewDistributedEngine(opts)
+								distQry, err := distEngine.MakeRangeQuery(ctx, completeSeriesSet, endpoints, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 
 								distResult := distQry.Exec(ctx)
-								promEngine := promql.NewEngine(localOpts.EngineOpts)
+								promEngine := promql.NewEngine(opts.EngineOpts)
 								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(ctx)
@@ -350,6 +349,14 @@ func TestDistributedAggregations(t *testing.T) {
 
 func TestDistributedEngineWarnings(t *testing.T) {
 	t.Parallel()
+
+	opts := engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			MaxSamples: math.MaxInt64,
+			Timeout:    1 * time.Minute,
+		},
+	}
+
 	querier := &storage.MockQueryable{
 		MockQuerier: &storage.MockQuerier{
 			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
@@ -357,66 +364,12 @@ func TestDistributedEngineWarnings(t *testing.T) {
 			},
 		},
 	}
-
-	opts := engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			MaxSamples: math.MaxInt64,
-			Timeout:    1 * time.Minute,
-		},
-	}
 	remote := engine.NewRemoteEngine(opts, querier, math.MinInt64, math.MaxInt64, nil)
-	ng := engine.NewDistributedEngine(opts, api.NewStaticEndpoints([]api.RemoteEngine{remote}))
-	var (
-		start = time.UnixMilli(0)
-		end   = time.UnixMilli(600)
-		step  = 30 * time.Second
-	)
-	q, err := ng.NewRangeQuery(context.Background(), querier, nil, "test", start, end, step)
+	endpoints := api.NewStaticEndpoints([]api.RemoteEngine{remote})
+	ng := engine.NewDistributedEngine(opts)
+	q, err := ng.MakeInstantQuery(context.Background(), querier, endpoints, nil, "test", time.UnixMilli(0))
 	testutil.Ok(t, err)
 
 	res := q.Exec(context.Background())
 	testutil.Equals(t, 1, len(res.Warnings))
-}
-
-func TestDistributedEnginePartialResponses(t *testing.T) {
-	t.Parallel()
-
-	querierErr := &storage.MockQueryable{
-		MockQuerier: &storage.MockQuerier{
-			SelectMockFunction: func(sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-				return newErrorSeriesSet(errors.New("test error"))
-			},
-		},
-	}
-	querierOk := storageWithMockSeries(newMockSeries([]string{labels.MetricName, "foo", "zone", "west"}, []int64{0, 30, 60, 90}, []float64{0, 3, 4, 5}))
-	querierNoop := &storage.MockQueryable{MockQuerier: storage.NoopQuerier()}
-
-	opts := engine.Opts{
-		EnablePartialResponses: true,
-		EngineOpts: promql.EngineOpts{
-			MaxSamples: math.MaxInt64,
-			Timeout:    1 * time.Minute,
-		},
-	}
-
-	remoteErr := engine.NewRemoteEngine(opts, querierErr, math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("zone", "east")})
-	remoteOk := engine.NewRemoteEngine(opts, querierOk, math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("zone", "west")})
-	ng := engine.NewDistributedEngine(opts, api.NewStaticEndpoints([]api.RemoteEngine{remoteErr, remoteOk}))
-	var (
-		start = time.UnixMilli(0)
-		end   = time.UnixMilli(600 * 1000)
-		step  = 30 * time.Second
-	)
-	q, err := ng.NewRangeQuery(context.Background(), querierNoop, nil, "sum by (zone) (foo)", start, end, step)
-	testutil.Ok(t, err)
-
-	res := q.Exec(context.Background())
-	testutil.Ok(t, res.Err)
-	testutil.Equals(t, 1, len(res.Warnings))
-	testutil.Equals(t, `remote exec error [[{zone="east"}]]: test error`, res.Warnings.AsErrors()[0].Error())
-
-	m, err := res.Matrix()
-	testutil.Ok(t, err)
-	testutil.Equals(t, 1, m.Len())
-	testutil.Equals(t, labels.FromStrings("zone", "west"), m[0].Metric)
 }

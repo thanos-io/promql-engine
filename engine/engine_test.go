@@ -5078,13 +5078,6 @@ func newWarningsSeriesSet(warns annotations.Annotations) storage.SeriesSet {
 	}
 }
 
-func newErrorSeriesSet(err error) storage.SeriesSet {
-	return &testSeriesSet{
-		i:   -1,
-		err: err,
-	}
-}
-
 func (s *testSeriesSet) Next() bool                        { s.i++; return s.i < len(s.series) }
 func (s *testSeriesSet) At() storage.Series                { return s.series[s.i] }
 func (s *testSeriesSet) Err() error                        { return s.err }
@@ -5205,7 +5198,8 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 		}
 		start = time.UnixMilli(6146221)
 		end   = time.UnixMilli(6236221)
-		step  = 60 * time.Second
+
+		step = 60 * time.Second
 	)
 	execQuery := func(ng promql.QueryEngine) *promql.Result {
 		qry, err := ng.NewRangeQuery(context.TODO(), testStorage, nil, "histogram_count(rate(test_metric[10m]))", start, end, step)
