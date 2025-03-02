@@ -92,7 +92,6 @@ func TestPromqlAcceptance(t *testing.T) {
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/limit.test",               // limitk, limit_ratio
-			"testdata/functions.test",           // mad_over_time, predict_linear
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
