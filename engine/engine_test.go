@@ -93,7 +93,6 @@ func TestPromqlAcceptance(t *testing.T) {
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/limit.test",               // limitk, limit_ratio
 			"testdata/native_histograms.test",   // histogram_stddev, histogram_stdvar
-			"testdata/functions.test",           // mad_over_time, predict_linear
 			"testdata/histograms.test",          // histogram_stddev, histogram_stdvar
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
