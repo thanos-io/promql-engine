@@ -4394,6 +4394,12 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 				{Start: 80000 + 1, End: 200000, Range: 120000, Func: "rate"},
 			},
 		}, {
+			query: `sum by (bar) (rate(foo[2m]))`, start: 200000,
+			expected: []*storage.SelectHints{
+				{Start: 80000 + 1, End: 200000, Range: 120000, Func: "rate", By: true, Grouping: []string{"bar"}},
+			},
+		},
+		{
 			query: `rate(foo[2m] @ 180.000)`, start: 200000,
 			expected: []*storage.SelectHints{
 				{Start: 60000 + 1, End: 180000, Range: 120000, Func: "rate"},
@@ -4579,7 +4585,7 @@ func TestSelectHintsSetCorrectly(t *testing.T) {
 		}, {
 			query: `sum by (dim1) (avg_over_time(foo[1s]))`, start: 10000,
 			expected: []*storage.SelectHints{
-				{Start: 9000 + 1, End: 10000, Func: "avg_over_time", Range: 1000},
+				{Start: 9000 + 1, End: 10000, Func: "avg_over_time", Range: 1000, Grouping: []string{"dim1"}, By: true},
 			},
 		}, {
 			query: `sum by (dim1) (max by (dim2) (foo))`, start: 10000,

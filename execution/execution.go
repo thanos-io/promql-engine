@@ -95,8 +95,11 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 
 func newCall(ctx context.Context, e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	hints.Func = e.Func.Name
-	hints.Grouping = nil
-	hints.By = false
+
+	if e.Func.Name == "label_join" || e.Func.Name == "label_replace" {
+		hints.Grouping = nil
+		hints.By = false
+	}
 
 	if e.Func.Name == "absent_over_time" {
 		return newAbsentOverTimeOperator(ctx, e, scanners, opts, hints)
