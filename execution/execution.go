@@ -81,6 +81,8 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 		return noop.NewOperator(opts), nil
 	case logicalplan.UserDefinedExpr:
 		return e.MakeExecutionOperator(ctx, model.NewVectorPool(opts.StepsBatch), opts, hints)
+	case *logicalplan.Sharding:
+		return newSharding(ctx, e, storage, opts, hints)
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
 	}
@@ -407,6 +409,12 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 		return nil, err
 	}
 	return exchange.NewDuplicateLabelCheck(op, opts), nil
+}
+
+func newSharding(ctx context.Context, e *logicalplan.Sharding, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	hints.ShardCount = e.ShardCount
+	hints.ShardIndex = e.ShardIdx
+	return newOperator(ctx, e.Expr, storage, opts, hints)
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.

@@ -570,3 +570,20 @@ func isAvgAggregation(expr *Node) bool {
 	}
 	return false
 }
+
+// Sharding is a logical node to shard vector selector
+type Sharding struct {
+	ShardIdx, ShardCount uint64
+	Expr                 Node `json:"-"`
+}
+
+func (c *Sharding) Clone() Node {
+	clone := *c
+	clone.Expr = c.Expr.Clone()
+	return &clone
+}
+
+func (c *Sharding) Children() []*Node            { return []*Node{&c.Expr} }
+func (c *Sharding) String() string               { return c.Expr.String() }
+func (c *Sharding) ReturnType() parser.ValueType { return c.Expr.ReturnType() }
+func (c *Sharding) Type() NodeType               { return "Sharding" }
