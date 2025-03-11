@@ -29,6 +29,7 @@ const (
 	StepInvariantNode  = "step_invariant"
 	ParensNode         = "parens"
 	UnaryNode          = "unary"
+	ShardingNode       = "sharding"
 
 	RemoteExecutionNode = "remote_exec"
 	DeduplicateNode     = "dedup"
@@ -586,4 +587,4 @@ func (c *Sharding) Clone() Node {
 func (c *Sharding) Children() []*Node            { return []*Node{&c.Expr} }
 func (c *Sharding) String() string               { return c.Expr.String() }
 func (c *Sharding) ReturnType() parser.ValueType { return c.Expr.ReturnType() }
-func (c *Sharding) Type() NodeType               { return "Sharding" }
+func (c *Sharding) Type() NodeType               { return ShardingNode }

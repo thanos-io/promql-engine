@@ -219,6 +219,17 @@ func unmarshalNode(data []byte) (Node, error) {
 			return nil, err
 		}
 		return u, nil
+	case ShardingNode:
+		s := &Sharding{}
+		if err := json.Unmarshal(t.Data, s); err != nil {
+			return nil, err
+		}
+		var err error
+		s.Expr, err = unmarshalNode(t.Children[0])
+		if err != nil {
+			return nil, err
+		}
+		return s, nil
 	}
 	return nil, nil
 }
