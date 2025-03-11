@@ -58,6 +58,19 @@ func (p Scanners) NewVectorSelector(
 		selector = newHistogramStatsSelector(selector)
 	}
 
+	if hints.ShardCount > 1 {
+		return NewVectorSelector(
+			model.NewVectorPool(opts.StepsBatch),
+			selector,
+			opts,
+			logicalNode.Offset,
+			logicalNode.BatchSize,
+			logicalNode.SelectTimestamp,
+			0,
+			1,
+		), nil
+	}
+
 	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
 	for i := 0; i < opts.DecodingConcurrency; i++ {
 		operator := exchange.NewConcurrent(
@@ -124,6 +137,22 @@ func (p Scanners) NewMatrixSelector(
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
 	if logicalNode.VectorSelector.DecodeNativeHistogramStats {
 		selector = newHistogramStatsSelector(selector)
+	}
+
+	if hints.ShardCount > 1 {
+		return NewMatrixSelector(
+			model.NewVectorPool(opts.StepsBatch),
+			selector,
+			call.Func.Name,
+			arg,
+			arg2,
+			opts,
+			logicalNode.Range,
+			vs.Offset,
+			vs.BatchSize,
+			0,
+			1,
+		)
 	}
 
 	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)

@@ -16,14 +16,14 @@ import (
 var sep = []byte{'\xff'}
 
 type SelectorPool struct {
-	selectors map[uint64]*seriesSelector
+	selectors map[uint64]SeriesSelector
 
 	querier storage.Querier
 }
 
 func NewSelectorPool(querier storage.Querier) *SelectorPool {
 	return &SelectorPool{
-		selectors: make(map[uint64]*seriesSelector),
+		selectors: make(map[uint64]SeriesSelector),
 		querier:   querier,
 	}
 }
@@ -56,6 +56,8 @@ func hashMatchers(matchers []*labels.Matcher, mint, maxt int64, hints storage.Se
 	writeString(sb, hints.Func)
 	writeString(sb, strings.Join(hints.Grouping, ";"))
 	writeBool(sb, hints.By)
+	writeInt64(sb, int64(hints.ShardIndex))
+	writeInt64(sb, int64(hints.ShardCount))
 
 	key := sb.Sum64()
 	return key
