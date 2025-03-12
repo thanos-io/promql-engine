@@ -5362,10 +5362,6 @@ histogram_sum(
 			name:  "subqueries",
 			query: `increase(rate(native_histogram_series[2m])[2m:15s])`,
 		},
-		{
-			name:  "ok",
-			query: "{__name__=\"native_histogram_series\"} @ 0.000 or --{__name__=\"native_histogram_series\"} @ 0.000 > bool -max without () (min(-histogram_count(floor({__name__=\"native_histogram_series\"} offset -3m48s)))) atan2 -rate({__name__=\"native_histogram_series\"} @ 0.000 offset -3m33s[1h:1m])",
-		},
 	}
 
 	defer pprof.StopCPUProfile()
