@@ -299,9 +299,9 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 }
 
 func FuzzNativeHistogramQuery(f *testing.F) {
-	f.Add(int64(0), uint32(0), uint32(30), int16(0), int16(0), float64(1), float64(2))
+	f.Add(int64(0), uint32(0), uint32(30), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
 
-	f.Fuzz(func(t *testing.T, seed int64, ts, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64) {
+	f.Fuzz(func(t *testing.T, seed int64, ts, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
 		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
 			return
 		}
@@ -320,14 +320,18 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		intervalSeconds = max(intervalSeconds, 1)
 		rnd := rand.New(rand.NewSource(seed))
 
-		bucket1 := []int{1, 2, 1}
-		bucket2 := []int{2, 4, 2}
+		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
+		bucket2 := []uint64{2 * bucketValue1, bucketValue2, 2 * bucketValue3}
 		count1 := bucket1[0] + bucket1[1] + bucket1[2]
 		count2 := bucket2[0] + bucket2[1] + bucket2[2]
 
+		if count1 == 0 || count2 == 0 {
+			return
+		}
+
 		load := fmt.Sprintf(`load 1m
-			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d] }}x20
-			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d] }}x20`,
+			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20
+			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20`,
 			schema1, count1, sum1, bucket1[0], bucket1[1], bucket1[2],
 			schema2, count2, sum2, bucket2[0], bucket2[1], bucket2[2],
 		)
@@ -353,11 +357,7 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			promqlsmith.WithEnableOffset(true),
 			promqlsmith.WithEnableAtModifier(true),
 			promqlsmith.WithEnabledAggrs([]parser.ItemType{
-				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP,
-				parser.COUNT, parser.COUNT_VALUES, parser.QUANTILE,
-			}),
-			promqlsmith.WithEnabledBinOps([]parser.ItemType{
-				parser.SUB, parser.ADD, parser.MUL, parser.MOD, parser.DIV,
+				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP, parser.COUNT, parser.COUNT_VALUES, parser.QUANTILE,
 			}),
 		}
 
@@ -375,6 +375,7 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			for {
 				expr := ps.WalkInstantQuery()
 				query = expr.Pretty(0)
+
 				q1, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
 				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
 					continue
