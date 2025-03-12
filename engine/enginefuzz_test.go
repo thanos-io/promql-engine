@@ -384,9 +384,6 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			}
 			testutil.Ok(t, err)
 			newResult := q1.Exec(context.Background())
-			if newResult == nil || newResult.String() == "" {
-				continue
-			}
 
 			newStats := q1.Stats()
 			stats.NewQueryStats(newStats)
