@@ -392,9 +392,6 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			q2, err := oldEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
 			testutil.Ok(t, err)
 			oldResult := q2.Exec(context.Background())
-			if oldResult == nil || oldResult.String() == "" {
-				continue
-			}
 
 			oldStats := q2.Stats()
 			stats.NewQueryStats(oldStats)
