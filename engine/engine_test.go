@@ -5538,22 +5538,18 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "count by (foo)",
 			query: `count by (foo) (native_histogram_series)`,
 		},
-		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		// {
-		//	name:  "max",
-		//	query: "max (native_histogram_series)",
-		// },
+		{
+			name:  "max",
+			query: "max (native_histogram_series)",
+		},
 		{
 			name:  "max by (foo)",
 			query: `max by (foo) (native_histogram_series)`,
 		},
-		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		// {
-		//	name:  "min",
-		//	query: "min (native_histogram_series)",
-		// },
+		{
+			name:  "min",
+			query: "min (native_histogram_series)",
+		},
 		{
 			name:  "min by (foo)",
 			query: `min by (foo) (native_histogram_series)`,
@@ -5723,6 +5719,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					t.Run("instant", func(t *testing.T) {
 						ctx := context.Background()
 						q1, err := thanosEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
+						fmt.Println("q1", q1)
 						testutil.Ok(t, err)
 						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
@@ -5934,6 +5931,11 @@ var (
 			if l == nil && r == nil {
 				return true
 			}
+
+			if l == nil || r == nil {
+				return false
+			}
+
 			return l.Equals(r)
 		}
 		compareAnnotations := func(l, r annotations.Annotations) bool {
