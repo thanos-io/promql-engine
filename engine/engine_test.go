@@ -5719,7 +5719,6 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					t.Run("instant", func(t *testing.T) {
 						ctx := context.Background()
 						q1, err := thanosEngine.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
-						fmt.Println("q1", q1)
 						testutil.Ok(t, err)
 						newResult := q1.Exec(ctx)
 						testutil.Ok(t, newResult.Err)
