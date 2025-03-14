@@ -5506,7 +5506,7 @@ func TestNativeHistograms(t *testing.T) {
 		},
 		{
 			name:  "max",
-			query: "max (native_histogram_series)",
+			query: `max(native_histogram_series)`,
 		},
 		{
 			name:  "max by (foo)",
@@ -5514,7 +5514,7 @@ func TestNativeHistograms(t *testing.T) {
 		},
 		{
 			name:  "min",
-			query: "min (native_histogram_series)",
+			query: `min(native_histogram_series)`,
 		},
 		{
 			name:  "min by (foo)",
