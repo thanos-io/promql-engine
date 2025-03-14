@@ -299,9 +299,9 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 }
 
 func FuzzNativeHistogramQuery(f *testing.F) {
-	f.Add(int64(0), uint32(0), uint32(30), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
+	f.Add(int64(0), uint32(30), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
 
-	f.Fuzz(func(t *testing.T, seed int64, ts, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
+	f.Fuzz(func(t *testing.T, seed int64, ts uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
 		t.Parallel()
 		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
 			return
@@ -318,7 +318,6 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			return
 		}
 
-		intervalSeconds = max(intervalSeconds, 1)
 		rnd := rand.New(rand.NewSource(seed))
 
 		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
