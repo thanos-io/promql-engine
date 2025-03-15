@@ -5473,7 +5473,6 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 		Count:           13,
 	}
 
-	//fmt.Print(series) // series gives the buckets, count and sum for the histogram
 	for sid, histograms := range series {
 		lbls := append(commonLabels, "h", strconv.Itoa(sid))
 		for i := range histograms {
