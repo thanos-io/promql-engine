@@ -298,7 +298,7 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	}
 }
 
-func FuzzNativeHistogramQuery(f *testing.F) {
+func FuzzNativeHistogramOnInstantQuery(f *testing.F) {
 	f.Add(int64(0), uint32(30), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
 
 	f.Fuzz(func(t *testing.T, seed int64, ts uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
@@ -329,10 +329,13 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			return
 		}
 
-		load := fmt.Sprintf(`load 1m
-			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20
-			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20`,
+		load := fmt.Sprintf(`load 2m
+			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20 
+			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20`,
+			schema1, count1-bucket1[2], sum1, bucket1[0], bucket1[1],
 			schema1, count1, sum1, bucket1[0], bucket1[1], bucket1[2],
+
+			schema2, count2-bucket2[1]-bucket2[2], sum2, bucket2[0],
 			schema2, count2, sum2, bucket2[0], bucket2[1], bucket2[2],
 		)
 
@@ -405,6 +408,131 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 				loads:           []string{load},
 				start:           queryTime,
 				end:             queryTime,
+				validateSamples: false,
+			})
+		}
+
+		if len(cases) > 0 {
+			validateTestCases(t, cases)
+		}
+	})
+}
+
+func FuzzNativeHistogramOnRangeQuery(f *testing.F) {
+	f.Add(int64(0), uint32(0), uint32(100), uint32(60), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
+
+	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
+		if intervalSeconds <= 0 || endTS < startTS {
+			return
+		}
+
+		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
+			return
+		}
+
+		if sum1 <= 0 || sum2 <= 0 {
+			return
+		}
+
+		if math.IsNaN(sum1) || math.IsNaN(sum2) {
+			return
+		}
+		if math.IsInf(sum1, 0) || math.IsInf(sum2, 0) {
+			return
+		}
+
+		rnd := rand.New(rand.NewSource(seed))
+
+		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
+		bucket2 := []uint64{bucketValue1, 2 * bucketValue2, 2 * bucketValue3}
+		count1 := bucket1[0] + bucket1[1] + bucket1[2]
+		count2 := bucket2[0] + bucket2[1] + bucket2[2]
+
+		if count1 == 0 || count2 == 0 {
+			return
+		}
+
+		load := fmt.Sprintf(`load 2m
+			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x13 
+			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x17`,
+			schema1, count1-bucket1[2], sum1, bucket1[0], bucket1[1],
+			schema1, count1, sum1, bucket1[0], bucket1[1], bucket1[2],
+
+			schema2, count2-bucket2[1]-bucket2[2], sum2, bucket2[0],
+			schema2, count2, sum2, bucket2[0], bucket2[1], bucket2[2],
+		)
+
+		opts := promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+			EnablePerStepStats:   true,
+		}
+
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
+		storage := promqltest.LoadedStorage(t, load)
+		defer storage.Close()
+
+		startTime := time.Unix(int64(startTS), 0)
+		endTime := time.Unix(int64(endTS), 0)
+		interval := time.Duration(intervalSeconds) * time.Second
+
+		seriesSet, err := getSeries(context.Background(), storage, "http_request_duration_seconds")
+		require.NoError(t, err)
+
+		psOpts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(true),
+			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithEnabledAggrs([]parser.ItemType{
+				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP, parser.COUNT, parser.COUNT_VALUES, parser.QUANTILE,
+			}),
+		}
+
+		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
+		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+		oldEngine := promql.NewEngine(opts)
+
+		cases := make([]*testCase, 0, testRuns)
+		for i := 0; i < testRuns; i++ {
+			var (
+				q1    promql.Query
+				query string
+			)
+
+			for {
+				expr := ps.WalkRangeQuery()
+				query = expr.Pretty(0)
+
+				q1, err = newEngine.NewRangeQuery(context.Background(), storage, qOpts, query, startTime, endTime, interval)
+				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
+					continue
+				} else {
+					break
+				}
+			}
+			testutil.Ok(t, err)
+			newResult := q1.Exec(context.Background())
+
+			newStats := q1.Stats()
+			stats.NewQueryStats(newStats)
+
+			q2, err := oldEngine.NewRangeQuery(context.Background(), storage, qOpts, query, startTime, endTime, interval)
+			testutil.Ok(t, err)
+			oldResult := q2.Exec(context.Background())
+
+			oldStats := q2.Stats()
+			stats.NewQueryStats(oldStats)
+
+			cases = append(cases, &testCase{
+				query:           query,
+				newRes:          newResult,
+				newStats:        newStats,
+				oldRes:          oldResult,
+				oldStats:        oldStats,
+				loads:           []string{load},
+				start:           startTime,
+				end:             endTime,
 				validateSamples: false,
 			})
 		}
