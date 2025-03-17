@@ -5366,6 +5366,10 @@ histogram_sum(
 			name:  "subqueries",
 			query: `increase(rate(native_histogram_series[2m])[2m:15s])`,
 		},
+		{
+			name:  "binary OR",
+			query: `histogram_quantile(0.7, native_histogram_series) or native_histogram_series`,
+		},
 	}
 
 	defer pprof.StopCPUProfile()
