@@ -246,6 +246,15 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `predict_linear(http_requests_total{route="/"}[1h:1m] offset 1m, 60)`,
 		},
 		{
+			name: "predict_linear correctness",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1+1.1x10
+			    http_requests_total{pod="nginx-2"} 2+2.3x50`,
+			query: `predict_linear({__name__="http_requests_total", pod!~"nginx-1"}[5m] @ start(), -0.37690610678629094)`,
+			end:   time.Unix(600, 0),
+			start: time.Unix(300, 0),
+		},
+		{
 			name: "duplicate label fuzz",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", route="/"} 41.00+0.20x40
