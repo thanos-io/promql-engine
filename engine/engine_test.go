@@ -5367,15 +5367,15 @@ histogram_sum(
 		},
 		{
 			name:  "Binary OR",
-			query: `native_histogram_series OR histogram_quantile(0.7, native_histogram_series)`,
+			query: `native_histogram_series or histogram_quantile(0.7, native_histogram_series)`,
 		},
 		{
 			name:  "Binary AND",
-			query: `histogram_quantile(0.7, native_histogram_series) AND native_histogram_series`,
+			query: `histogram_quantile(0.7, native_histogram_series) and native_histogram_series`,
 		},
 		{
 			name:  "Unless",
-			query: `sum without(foo) (native_histogram_series) unless native_histogram_series`,
+			query: `sum without (foo) (native_histogram_series) unless native_histogram_series`,
 		},
 	}
 
