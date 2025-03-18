@@ -5373,6 +5373,10 @@ histogram_sum(
 			name:  "Binary AND",
 			query: `histogram_quantile(0.7, native_histogram_series) AND native_histogram_series`,
 		},
+		{
+			name:  "Unless",
+			query: `sum without(foo) (native_histogram_series) unless native_histogram_series`,
+		},
 	}
 
 	defer pprof.StopCPUProfile()
