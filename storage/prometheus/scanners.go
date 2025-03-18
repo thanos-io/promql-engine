@@ -134,7 +134,7 @@ func (p Scanners) NewMatrixSelector(
 			call.Func.Name,
 			arg,
 			arg2,
-			logicalNode.VectorSelector.Timestamp,
+			logicalNode.Timestamp,
 			opts,
 			logicalNode.Range,
 			vs.Offset,

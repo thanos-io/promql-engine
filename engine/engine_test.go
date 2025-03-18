@@ -250,7 +250,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} 1+1.1x10
 			    http_requests_total{pod="nginx-2"} 2+2.3x50`,
-			query: `predict_linear({__name__="http_requests_total", pod!~"nginx-1"}[5m] @ start(), -0.37690610678629094)`,
+			query: `predict_linear({__name__="http_requests_total",pod!~"nginx-1"}[5m] @ start(), -0.37690610678629094)`,
 			end:   time.Unix(600, 0),
 			start: time.Unix(300, 0),
 		},

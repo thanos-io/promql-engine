@@ -248,7 +248,13 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 		// parents of matrixselector nodes are always expected to be functions, not step invariant
 		// operators.
 		if m, ok := t.Expr.(*parser.MatrixSelector); ok {
-			return replacePrometheusNodes(m)
+			n := replacePrometheusNodes(m)
+			if ms, ok := n.(*MatrixSelector); ok {
+				// For cases such as predict_linear(metric[5m] @start() , 0.3), we mark the
+				// matrix selector to be invariant. The scanner will only scan points once in such cases.
+				ms.Timestamp = ms.VectorSelector.Timestamp
+			}
+			return n
 		}
 		return &StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
 	case *parser.MatrixSelector:

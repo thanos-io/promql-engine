@@ -115,6 +115,7 @@ func (f *VectorSelector) ReturnType() parser.ValueType { return parser.ValueType
 type MatrixSelector struct {
 	VectorSelector *VectorSelector `json:"-"`
 	Range          time.Duration
+	Timestamp      *int64
 
 	// Needed because this operator is used in the distributed mode
 	OriginalString string
