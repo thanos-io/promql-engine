@@ -246,7 +246,7 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 			query: `predict_linear(http_requests_total{route="/"}[1h:1m] offset 1m, 60)`,
 		},
 		{
-			name: "predict_linear correctness",
+			name: "predict_linear with step invariant",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} 1+1.1x10
 			    http_requests_total{pod="nginx-2"} 2+2.3x50`,
