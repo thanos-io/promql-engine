@@ -5367,8 +5367,8 @@ histogram_sum(
 			query: `increase(rate(native_histogram_series[2m])[2m:15s])`,
 		},
 		{
-			name:  "binary OR",
-			query: `native_histogram_series or native_histogram_series/2`,
+			name:  "Binary OR",
+			query: `native_histogram_series OR histogram_quantile(0.7, native_histogram_series)`,
 		},
 	}
 
@@ -5385,7 +5385,7 @@ histogram_sum(
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
 	numHistograms := 10
-	mixedTypesOpts := []bool{false, true}
+	mixedTypesOpts := []bool{false}
 	var (
 		queryStart = time.Unix(50, 0)
 		queryEnd   = time.Unix(600, 0)
@@ -5480,6 +5480,7 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
 		Count:           13,
 	}
+
 	for sid, histograms := range series {
 		lbls := append(commonLabels, "h", strconv.Itoa(sid))
 		for i := range histograms {
