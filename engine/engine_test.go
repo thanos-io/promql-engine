@@ -5368,7 +5368,7 @@ histogram_sum(
 		},
 		{
 			name:  "binary OR",
-			query: `histogram_quantile(0.7, native_histogram_series) or native_histogram_series`,
+			query: `native_histogram_series or native_histogram_series/2`,
 		},
 	}
 
