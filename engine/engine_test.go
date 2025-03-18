@@ -5241,7 +5241,6 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "rate()",
 			query: `rate(native_histogram_series[1m])`,
 		},
-
 		{
 			name:  "increase()",
 			query: `increase(native_histogram_series[1m])`,
@@ -5370,6 +5369,10 @@ histogram_sum(
 			name:  "Binary OR",
 			query: `native_histogram_series OR histogram_quantile(0.7, native_histogram_series)`,
 		},
+		{
+			name:  "Binary AND",
+			query: `histogram_quantile(0.7, native_histogram_series) AND native_histogram_series`,
+		},
 	}
 
 	defer pprof.StopCPUProfile()
@@ -5385,7 +5388,7 @@ histogram_sum(
 
 func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
 	numHistograms := 10
-	mixedTypesOpts := []bool{false}
+	mixedTypesOpts := []bool{false, true}
 	var (
 		queryStart = time.Unix(50, 0)
 		queryEnd   = time.Unix(600, 0)
