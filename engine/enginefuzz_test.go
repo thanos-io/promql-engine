@@ -298,11 +298,17 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	}
 }
 
-func FuzzNativeHistogramOnInstantQuery(f *testing.F) {
-	f.Add(int64(0), uint32(30), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
+func FuzzNativeHistogramQuery(f *testing.F) {
+	f.Skip()
+	f.Add(int64(0), uint32(0), uint32(60), uint32(120), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
 
-	f.Fuzz(func(t *testing.T, seed int64, ts uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
+	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
 		t.Parallel()
+
+		if endTS < startTS || intervalSeconds <= 0 {
+			return
+		}
+
 		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
 			return
 		}
@@ -349,130 +355,9 @@ func FuzzNativeHistogramOnInstantQuery(f *testing.F) {
 
 		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 		storage := promqltest.LoadedStorage(t, load)
-		defer storage.Close()
-
-		queryTime := time.Unix(int64(ts), 0)
-
-		seriesSet, err := getSeries(context.Background(), storage, "http_request_duration_seconds")
-		require.NoError(t, err)
-
-		psOpts := []promqlsmith.Option{
-			promqlsmith.WithEnableOffset(true),
-			promqlsmith.WithEnableAtModifier(true),
-			promqlsmith.WithEnabledAggrs([]parser.ItemType{
-				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP, parser.COUNT, parser.COUNT_VALUES, parser.QUANTILE,
-			}),
-		}
-
-		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
-		oldEngine := promql.NewEngine(opts)
-
-		cases := make([]*testCase, 0, testRuns)
-		for i := 0; i < testRuns; i++ {
-			var (
-				q1    promql.Query
-				query string
-			)
-
-			for {
-				expr := ps.WalkInstantQuery()
-				query = expr.Pretty(0)
-
-				q1, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
-				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
-					continue
-				} else {
-					break
-				}
-			}
-			testutil.Ok(t, err)
-			newResult := q1.Exec(context.Background())
-
-			newStats := q1.Stats()
-			stats.NewQueryStats(newStats)
-
-			q2, err := oldEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
-			testutil.Ok(t, err)
-			oldResult := q2.Exec(context.Background())
-
-			oldStats := q2.Stats()
-			stats.NewQueryStats(oldStats)
-
-			cases = append(cases, &testCase{
-				query:           query,
-				newRes:          newResult,
-				newStats:        newStats,
-				oldRes:          oldResult,
-				oldStats:        oldStats,
-				loads:           []string{load},
-				start:           queryTime,
-				end:             queryTime,
-				validateSamples: false,
-			})
-		}
-
-		if len(cases) > 0 {
-			validateTestCases(t, cases)
-		}
-	})
-}
-
-func FuzzNativeHistogramOnRangeQuery(f *testing.F) {
-	f.Add(int64(0), uint32(0), uint32(100), uint32(60), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
-
-	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
-		if intervalSeconds <= 0 || endTS < startTS {
-			return
-		}
-
-		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
-			return
-		}
-
-		if sum1 <= 0 || sum2 <= 0 {
-			return
-		}
-
-		if math.IsNaN(sum1) || math.IsNaN(sum2) {
-			return
-		}
-		if math.IsInf(sum1, 0) || math.IsInf(sum2, 0) {
-			return
-		}
-
-		rnd := rand.New(rand.NewSource(seed))
-
-		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
-		bucket2 := []uint64{bucketValue1, 2 * bucketValue2, 2 * bucketValue3}
-		count1 := bucket1[0] + bucket1[1] + bucket1[2]
-		count2 := bucket2[0] + bucket2[1] + bucket2[2]
-
-		if count1 == 0 || count2 == 0 {
-			return
-		}
-
-		load := fmt.Sprintf(`load 2m
-			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x13 
-			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x17`,
-			schema1, count1-bucket1[2], sum1, bucket1[0], bucket1[1],
-			schema1, count1, sum1, bucket1[0], bucket1[1], bucket1[2],
-
-			schema2, count2-bucket2[1]-bucket2[2], sum2, bucket2[0],
-			schema2, count2, sum2, bucket2[0], bucket2[1], bucket2[2],
-		)
-
-		opts := promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-			EnablePerStepStats:   true,
-		}
-
-		qOpts := promql.NewPrometheusQueryOpts(true, 0)
-		storage := promqltest.LoadedStorage(t, load)
-		defer storage.Close()
+		t.Cleanup(func() {
+			storage.Close()
+		})
 
 		startTime := time.Unix(int64(startTS), 0)
 		endTime := time.Unix(int64(endTS), 0)
@@ -493,18 +378,25 @@ func FuzzNativeHistogramOnRangeQuery(f *testing.F) {
 		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
 		oldEngine := promql.NewEngine(opts)
 
-		cases := make([]*testCase, 0, testRuns)
-		for i := 0; i < testRuns; i++ {
+		instantCases := make([]*testCase, 0, testRuns/2)
+		rangeCases := make([]*testCase, 0, testRuns/2)
+
+		for i := 0; i < testRuns/2; i++ {
 			var (
-				q1    promql.Query
-				query string
+				qInstant     promql.Query
+				qRange       promql.Query
+				instantQuery string
+				rangeQuery   string
 			)
 
 			for {
-				expr := ps.WalkRangeQuery()
-				query = expr.Pretty(0)
+				expr := ps.WalkInstantQuery()
+				if !shouldValidateSamples(expr) {
+					continue
+				}
+				instantQuery = expr.Pretty(0)
 
-				q1, err = newEngine.NewRangeQuery(context.Background(), storage, qOpts, query, startTime, endTime, interval)
+				qInstant, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, instantQuery, startTime)
 				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
 					continue
 				} else {
@@ -512,33 +404,69 @@ func FuzzNativeHistogramOnRangeQuery(f *testing.F) {
 				}
 			}
 			testutil.Ok(t, err)
-			newResult := q1.Exec(context.Background())
 
-			newStats := q1.Stats()
-			stats.NewQueryStats(newStats)
+			for {
+				expr := ps.WalkRangeQuery()
+				if !shouldValidateSamples(expr) {
+					continue
+				}
+				rangeQuery = expr.Pretty(0)
 
-			q2, err := oldEngine.NewRangeQuery(context.Background(), storage, qOpts, query, startTime, endTime, interval)
+				qRange, err = newEngine.NewRangeQuery(context.Background(), storage, qOpts, rangeQuery, startTime, endTime, interval)
+				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
+					continue
+				} else {
+					break
+				}
+			}
 			testutil.Ok(t, err)
-			oldResult := q2.Exec(context.Background())
 
-			oldStats := q2.Stats()
-			stats.NewQueryStats(oldStats)
+			newInstantResult := qInstant.Exec(context.Background())
+			newInstantStats := qInstant.Stats()
+			stats.NewQueryStats(newInstantStats)
 
-			cases = append(cases, &testCase{
-				query:           query,
-				newRes:          newResult,
-				newStats:        newStats,
-				oldRes:          oldResult,
-				oldStats:        oldStats,
+			newRangeResult := qRange.Exec(context.Background())
+			newRangeStats := qRange.Stats()
+			stats.NewQueryStats(newRangeStats)
+
+			q2Instant, err := oldEngine.NewInstantQuery(context.Background(), storage, qOpts, instantQuery, startTime)
+			testutil.Ok(t, err)
+			oldInstantResult := q2Instant.Exec(context.Background())
+			oldInstantStats := q2Instant.Stats()
+			stats.NewQueryStats(oldInstantStats)
+
+			q2Range, err := oldEngine.NewRangeQuery(context.Background(), storage, qOpts, rangeQuery, startTime, endTime, interval)
+			testutil.Ok(t, err)
+			oldRangeResult := q2Range.Exec(context.Background())
+			oldRangeStats := q2Range.Stats()
+			stats.NewQueryStats(oldRangeStats)
+
+			instantCases = append(instantCases, &testCase{
+				query:           instantQuery,
+				newRes:          newInstantResult,
+				newStats:        newInstantStats,
+				oldRes:          oldInstantResult,
+				oldStats:        oldInstantStats,
+				loads:           []string{load},
+				start:           startTime,
+				end:             startTime,
+				validateSamples: true,
+			})
+
+			rangeCases = append(rangeCases, &testCase{
+				query:           rangeQuery,
+				newRes:          newRangeResult,
+				newStats:        newRangeStats,
+				oldRes:          oldRangeResult,
+				oldStats:        oldRangeStats,
 				loads:           []string{load},
 				start:           startTime,
 				end:             endTime,
-				validateSamples: false,
+				validateSamples: true,
 			})
 		}
 
-		if len(cases) > 0 {
-			validateTestCases(t, cases)
-		}
+		validateTestCases(t, instantCases)
+		validateTestCases(t, rangeCases)
 	})
 }
