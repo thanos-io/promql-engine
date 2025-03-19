@@ -5241,7 +5241,6 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "rate()",
 			query: `rate(native_histogram_series[1m])`,
 		},
-
 		{
 			name:  "increase()",
 			query: `increase(native_histogram_series[1m])`,
@@ -5366,6 +5365,18 @@ histogram_sum(
 			name:  "subqueries",
 			query: `increase(rate(native_histogram_series[2m])[2m:15s])`,
 		},
+		{
+			name:  "Binary OR",
+			query: `native_histogram_series or histogram_quantile(0.7, native_histogram_series)`,
+		},
+		{
+			name:  "Binary AND",
+			query: `histogram_quantile(0.7, native_histogram_series) and native_histogram_series`,
+		},
+		{
+			name:  "Unless",
+			query: `sum without (foo) (native_histogram_series) unless native_histogram_series`,
+		},
 	}
 
 	defer pprof.StopCPUProfile()
@@ -5476,6 +5487,7 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
 		Count:           13,
 	}
+
 	for sid, histograms := range series {
 		lbls := append(commonLabels, "h", strconv.Itoa(sid))
 		for i := range histograms {
