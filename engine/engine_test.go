@@ -5931,7 +5931,7 @@ var (
 				return true
 			}
 
-			if l == nil || r == nil {
+			if l == nil && r != nil {
 				return false
 			}
 
