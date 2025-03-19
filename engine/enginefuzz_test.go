@@ -298,11 +298,21 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	}
 }
 
+// Considering first bucket is at index 1
+func getMaxNativeHistogramSumLimit(schema int8, noOfBuckets int) float64 {
+	var maxSum float64
+	for idx := 1; idx <= noOfBuckets; idx++ {
+		maxSum += math.Pow(math.Pow(2, math.Pow(2, float64(-1*schema))), float64(idx))
+	}
+
+	return maxSum
+}
+
 func FuzzNativeHistogramQuery(f *testing.F) {
 	f.Skip()
-	f.Add(int64(0), uint32(0), uint32(60), uint32(120), int16(0), int16(0), float64(1), float64(2), uint64(1), uint64(2), uint64(1))
+	f.Add(int64(0), uint32(0), uint32(60), uint32(120), int8(0), int8(0), uint64(1), uint64(2), uint64(1))
 
-	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int16, schema2 int16, sum1, sum2 float64, bucketValue1, bucketValue2, bucketValue3 uint64) {
+	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int8, schema2 int8, bucketValue1, bucketValue2, bucketValue3 uint64) {
 		t.Parallel()
 
 		if endTS < startTS || intervalSeconds <= 0 {
@@ -312,6 +322,9 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
 			return
 		}
+
+		sum1 := getMaxNativeHistogramSumLimit(schema1, 3)
+		sum2 := getMaxNativeHistogramSumLimit(schema2, 3)
 
 		if sum1 <= 0 || sum2 <= 0 {
 			return
@@ -336,13 +349,13 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		}
 
 		load := fmt.Sprintf(`load 2m
-			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20 
-			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}x20`,
+			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20 
+			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20`,
 			schema1, count1-bucket1[2], sum1, bucket1[0], bucket1[1],
-			schema1, count1, sum1, bucket1[0], bucket1[1], bucket1[2],
+			schema1, count1, bucket1[0], bucket1[1], bucket1[2],
 
 			schema2, count2-bucket2[1]-bucket2[2], sum2, bucket2[0],
-			schema2, count2, sum2, bucket2[0], bucket2[1], bucket2[2],
+			schema2, count2, bucket2[0], bucket2[1], bucket2[2],
 		)
 
 		opts := promql.EngineOpts{
