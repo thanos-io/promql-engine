@@ -5278,22 +5278,18 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "count by (foo)",
 			query: `count by (foo) (native_histogram_series)`,
 		},
-		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		// {
-		//	name:  "max",
-		//	query: "max (native_histogram_series)",
-		// },
+		{
+			name:  "max",
+			query: `max(native_histogram_series)`,
+		},
 		{
 			name:  "max by (foo)",
 			query: `max by (foo) (native_histogram_series)`,
 		},
-		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		// {
-		//	name:  "min",
-		//	query: "min (native_histogram_series)",
-		// },
+		{
+			name:  "min",
+			query: `min(native_histogram_series)`,
+		},
 		{
 			name:  "min by (foo)",
 			query: `min by (foo) (native_histogram_series)`,
@@ -5476,6 +5472,7 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 		PositiveBuckets: []int64{1, 2, -2, 1, -1, 0, 3},
 		Count:           13,
 	}
+
 	for sid, histograms := range series {
 		lbls := append(commonLabels, "h", strconv.Itoa(sid))
 		for i := range histograms {
@@ -5619,6 +5616,11 @@ var (
 			if l == nil && r == nil {
 				return true
 			}
+
+			if l == nil && r != nil {
+				return false
+			}
+
 			return l.Equals(r)
 		}
 		compareAnnotations := func(l, r annotations.Annotations) bool {
