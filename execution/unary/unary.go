@@ -10,6 +10,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"gonum.org/v1/gonum/floats"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -21,13 +22,15 @@ type unaryNegation struct {
 	next model.VectorOperator
 	once sync.Once
 
-	series []labels.Labels
+	series []promql.Series
 	telemetry.OperatorTelemetry
+	enableDelayedNameRemoval bool
 }
 
 func NewUnaryNegation(next model.VectorOperator, opts *query.Options) (model.VectorOperator, error) {
 	u := &unaryNegation{
-		next: next,
+		next:                     next,
+		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 	}
 	u.OperatorTelemetry = telemetry.NewTelemetry(u, opts)
 
@@ -42,7 +45,7 @@ func (u *unaryNegation) String() string {
 	return "[unaryNegation]"
 }
 
-func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
+func (u *unaryNegation) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { u.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -55,15 +58,21 @@ func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
 func (u *unaryNegation) loadSeries(ctx context.Context) error {
 	var err error
 	u.once.Do(func() {
-		var series []labels.Labels
+		var series []promql.Series
 		series, err = u.next.Series(ctx)
 		if err != nil {
 			return
 		}
-		u.series = make([]labels.Labels, len(series))
+		u.series = make([]promql.Series, len(series))
 		for i := range series {
-			lbls := labels.NewBuilder(series[i]).Del(labels.MetricName).Labels()
-			u.series[i] = lbls
+			if !u.enableDelayedNameRemoval {
+				u.series[i].Metric = labels.NewBuilder(series[i].Metric).Del(labels.MetricName).Labels()
+			} else {
+				u.series[i] = promql.Series{
+					Metric:   series[i].Metric,
+					DropName: true,
+				}
+			}
 		}
 	})
 	return err
