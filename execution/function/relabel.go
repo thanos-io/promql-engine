@@ -15,6 +15,7 @@ import (
 	"github.com/efficientgo/core/errors"
 	prommodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -27,7 +28,7 @@ type relabelOperator struct {
 	next     model.VectorOperator
 	funcExpr *logicalplan.FunctionCall
 	once     sync.Once
-	series   []labels.Labels
+	series   []promql.Series
 }
 
 func newRelabelOperator(
@@ -52,7 +53,7 @@ func (o *relabelOperator) Explain() (next []model.VectorOperator) {
 	return []model.VectorOperator{o.next}
 }
 
-func (o *relabelOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *relabelOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -77,7 +78,7 @@ func (o *relabelOperator) loadSeries(ctx context.Context) (err error) {
 	if err != nil {
 		return err
 	}
-	o.series = make([]labels.Labels, len(series))
+	o.series = make([]promql.Series, len(series))
 
 	switch o.funcExpr.Func.Name {
 	case "label_join":
@@ -90,7 +91,7 @@ func (o *relabelOperator) loadSeries(ctx context.Context) (err error) {
 	return err
 }
 
-func (o *relabelOperator) loadSeriesForLabelJoin(series []labels.Labels) error {
+func (o *relabelOperator) loadSeriesForLabelJoin(series []promql.Series) error {
 	labelJoinDst, err := logicalplan.UnwrapString(o.funcExpr.Args[1])
 	if err != nil {
 		return errors.Wrap(err, "unable to unwrap string argument")
@@ -111,24 +112,30 @@ func (o *relabelOperator) loadSeriesForLabelJoin(series []labels.Labels) error {
 		}
 		labelJoinSrcLabels = append(labelJoinSrcLabels, srcLabel)
 	}
+
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for i, s := range series {
-		lbls := s
+		o.series[i] = s
+		lbls := s.Metric
 		srcVals := make([]string, len(labelJoinSrcLabels))
 
 		for j, src := range labelJoinSrcLabels {
 			srcVals[j] = lbls.Get(src)
 		}
-		lb := labels.NewBuilder(lbls)
-		if strval := strings.Join(srcVals, labelJoinSep); strval == "" {
-			lb.Del(labelJoinDst)
+		strval := strings.Join(srcVals, labelJoinSep)
+		lb.Reset(s.Metric)
+		lb.Set(labelJoinDst, strval)
+		o.series[i].Metric = lb.Labels()
+
+		if labelJoinDst == prommodel.MetricNameLabel {
+			o.series[i].DropName = false
 		} else {
-			lb.Set(labelJoinDst, strval)
+			o.series[i].DropName = s.DropName
 		}
-		o.series[i] = lb.Labels()
 	}
 	return nil
 }
-func (o *relabelOperator) loadSeriesForLabelReplace(series []labels.Labels) error {
+func (o *relabelOperator) loadSeriesForLabelReplace(series []promql.Series) error {
 	labelReplaceDst, err := logicalplan.UnwrapString(o.funcExpr.Args[1])
 	if err != nil {
 		return errors.Wrap(err, "unable to unwrap string argument")
@@ -157,21 +164,27 @@ func (o *relabelOperator) loadSeriesForLabelReplace(series []labels.Labels) erro
 		return errors.Newf("invalid destination label name in label_replace(): %s", labelReplaceDst)
 	}
 
+	lb := labels.NewBuilder(labels.EmptyLabels())
+
 	for i, s := range series {
-		lbls := s
+		o.series[i] = s
+		lbls := s.Metric
 
 		srcVal := lbls.Get(labelReplaceSrc)
 		matches := labelReplaceRegex.FindStringSubmatchIndex(srcVal)
 		if len(matches) == 0 {
-			o.series[i] = lbls
+			o.series[i].Metric = lbls
 			continue
 		}
 		res := labelReplaceRegex.ExpandString([]byte{}, labelReplaceRepl, srcVal, matches)
-		lb := labels.NewBuilder(lbls).Del(labelReplaceDst)
-		if len(res) > 0 {
-			lb.Set(labelReplaceDst, string(res))
+		lb.Reset(s.Metric)
+		lb.Set(labelReplaceDst, string(res))
+		o.series[i].Metric = lb.Labels()
+		if labelReplaceDst == prommodel.MetricNameLabel {
+			o.series[i].DropName = false
+		} else {
+			o.series[i].DropName = s.DropName
 		}
-		o.series[i] = lb.Labels()
 	}
 
 	return nil

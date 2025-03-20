@@ -8,12 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/thanos-io/promql-engine/execution/telemetry"
-
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/query"
 )
 
@@ -21,13 +19,15 @@ type timestampOperator struct {
 	next model.VectorOperator
 	telemetry.OperatorTelemetry
 
-	series []labels.Labels
-	once   sync.Once
+	series                   []promql.Series
+	once                     sync.Once
+	enableDelayedNameRemoval bool
 }
 
 func newTimestampOperator(next model.VectorOperator, opts *query.Options) *timestampOperator {
 	oper := &timestampOperator{
-		next: next,
+		next:                     next,
+		enableDelayedNameRemoval: opts.EnableDelayedNameRemoval,
 	}
 	oper.OperatorTelemetry = telemetry.NewTelemetry(oper, opts)
 
@@ -38,7 +38,7 @@ func (o *timestampOperator) Explain() (next []model.VectorOperator) {
 	return []model.VectorOperator{o.next}
 }
 
-func (o *timestampOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *timestampOperator) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -60,12 +60,15 @@ func (o *timestampOperator) loadSeries(ctx context.Context) error {
 			err = loadErr
 			return
 		}
-		o.series = make([]labels.Labels, len(series))
+		o.series = make([]promql.Series, len(series))
 
-		b := labels.ScratchBuilder{}
 		for i, s := range series {
-			lbls, _ := extlabels.DropMetricName(s, b)
-			o.series[i] = lbls
+			o.series[i] = s
+			if !o.enableDelayedNameRemoval {
+				o.series[i].Metric = o.series[i].Metric.DropMetricName()
+			} else {
+				o.series[i].DropName = true
+			}
 		}
 	})
 
