@@ -298,7 +298,6 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	}
 }
 
-// Considering first bucket is at index 1
 func getMaxNativeHistogramSumLimit(schema int8, noOfBuckets int) float64 {
 	var maxSum float64
 	for idx := 1; idx <= noOfBuckets; idx++ {
