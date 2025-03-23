@@ -88,6 +88,7 @@ func (f *VectorSelector) Clone() Node {
 	clone.Filters = shallowCloneSlice(f.Filters)
 	clone.LabelMatchers = shallowCloneSlice(f.LabelMatchers)
 	clone.Projection.Labels = shallowCloneSlice(f.Projection.Labels)
+	clone.Projection.Include = f.Projection.Include
 
 	if f.VectorSelector.Timestamp != nil {
 		ts := *f.VectorSelector.Timestamp
