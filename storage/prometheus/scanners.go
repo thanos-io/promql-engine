@@ -53,6 +53,12 @@ func (p Scanners) NewVectorSelector(
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
 ) (model.VectorOperator, error) {
+	// Update hints with projection information if available
+	if logicalNode.Projection.Labels != nil && len(logicalNode.Projection.Labels) > 0 {
+		hints.Grouping = logicalNode.Projection.Labels
+		hints.By = logicalNode.Projection.Include
+	}
+
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
 	if logicalNode.DecodeNativeHistogramStats {
 		selector = newHistogramStatsSelector(selector)

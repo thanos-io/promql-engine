@@ -6,6 +6,7 @@ package logicalplan
 import (
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -40,6 +41,14 @@ func renderExprTree(expr Node) string {
 		if t.BatchSize > 0 {
 			base += fmt.Sprintf("[batch=%d]", t.BatchSize)
 		}
+		if len(t.Projection.Labels) > 0 {
+			sort.Strings(t.Projection.Labels)
+			if t.Projection.Include {
+				base += fmt.Sprintf("[projection=include(%s)]", strings.Join(t.Projection.Labels, ","))
+			} else {
+				base += fmt.Sprintf("[projection=exclude(%s)]", strings.Join(t.Projection.Labels, ","))
+			}
+		}
 		if len(t.Filters) > 0 {
 			b.WriteString("filter(")
 			b.WriteString(fmt.Sprintf("%s", t.Filters))
@@ -50,7 +59,10 @@ func renderExprTree(expr Node) string {
 		}
 		return base
 	case *MatrixSelector:
-		return t.String()
+		// Render the inner vector selector first
+		vsStr := renderExprTree(t.VectorSelector)
+		// Then add the range
+		return fmt.Sprintf("%s[%s]", vsStr, t.Range.String())
 	case *Binary:
 		var b strings.Builder
 		b.WriteString(renderExprTree(t.LHS))
@@ -109,6 +121,16 @@ func renderExprTree(expr Node) string {
 		return renderExprTree(t.Expr)
 	case *CheckDuplicateLabels:
 		return renderExprTree(t.Expr)
+	case *Subquery:
+		var b strings.Builder
+
+		// Render the inner expression
+		innerExpr := renderExprTree(t.Expr)
+		b.WriteString(innerExpr)
+
+		// Add the subquery range and step
+		b.WriteString(fmt.Sprintf("[%s:%s]", t.Range.String(), t.Step.String()))
+		return b.String()
 	default:
 		return t.String()
 	}
