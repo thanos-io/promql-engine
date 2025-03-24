@@ -322,8 +322,11 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			return
 		}
 
-		sum1 := getMaxNativeHistogramSumLimit(schema1, 3)
-		sum2 := getMaxNativeHistogramSumLimit(schema2, 3)
+		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
+		bucket2 := []uint64{2 * bucketValue1, bucketValue2, 2 * bucketValue3}
+
+		sum1 := getMaxNativeHistogramSumLimit(schema1, len(bucket1))
+		sum2 := getMaxNativeHistogramSumLimit(schema2, len(bucket2))
 
 		if sum1 <= 0 || sum2 <= 0 {
 			return
@@ -336,16 +339,14 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			return
 		}
 
-		rnd := rand.New(rand.NewSource(seed))
-
-		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
-		bucket2 := []uint64{2 * bucketValue1, bucketValue2, 2 * bucketValue3}
 		count1 := bucket1[0] + bucket1[1] + bucket1[2]
 		count2 := bucket2[0] + bucket2[1] + bucket2[2]
 
 		if count1 == 0 || count2 == 0 {
 			return
 		}
+
+		rnd := rand.New(rand.NewSource(seed))
 
 		load := fmt.Sprintf(`load 2m
 			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20 
