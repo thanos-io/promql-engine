@@ -19,6 +19,16 @@ func TestProjectionPushdown(t *testing.T) {
 		expected string
 	}{
 		{
+			name:     "simple aggregation by no labels",
+			expr:     `sum (metric{instance="a", job="b", env="c"})`,
+			expected: `sum(metric{env="c",instance="a",job="b"}[projection=include()])`,
+		},
+		{
+			name:     "simple aggregation without no labels",
+			expr:     `sum without() (metric{instance="a", job="b", env="c"})`,
+			expected: `sum without () (metric{env="c",instance="a",job="b"}[projection=exclude(__name__)])`,
+		},
+		{
 			name:     "simple aggregation",
 			expr:     `sum by (job) (metric{instance="a", job="b", env="c"})`,
 			expected: `sum by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)])`,
@@ -46,7 +56,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "aggregation with without",
 			expr:     `sum without (instance) (metric{instance="a", job="b", env="c"})`,
-			expected: `sum without (instance) (metric{env="c",instance="a",job="b"}[projection=exclude(instance)])`,
+			expected: `sum without (instance) (metric{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)])`,
 		},
 		{
 			name:     "subquery with aggregation",
@@ -186,12 +196,12 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "nested aggregation with without",
 			expr:     `sum without (instance) (avg without (env) (metric{instance="a", job="b", env="c"}))`,
-			expected: `sum without (instance) (avg without (env) (metric{env="c",instance="a",job="b"}[projection=exclude(env)]))`,
+			expected: `sum without (instance) (avg without (env) (metric{env="c",instance="a",job="b"}[projection=exclude(__name__,env)]))`,
 		},
 		{
 			name:     "nested aggregation with outer by and inner without",
 			expr:     `sum by (job) (avg without (env) (metric{instance="a", job="b", env="c"}))`,
-			expected: `sum by (job) (avg without (env) (metric{env="c",instance="a",job="b"}[projection=exclude(env)]))`,
+			expected: `sum by (job) (avg without (env) (metric{env="c",instance="a",job="b"}[projection=exclude(__name__,env)]))`,
 		},
 		{
 			name:     "nested aggregation with outer without and inner by",

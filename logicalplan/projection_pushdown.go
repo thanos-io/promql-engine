@@ -22,7 +22,7 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 	switch n := (*node).(type) {
 	case *VectorSelector:
 		// Apply projection if we have required labels
-		if requiredLabels != nil && len(requiredLabels) > 0 {
+		if requiredLabels != nil {
 			projection := Projection{
 				Labels:  make([]string, 0, len(requiredLabels)),
 				Include: !isWithout, // For "without", we exclude the labels
@@ -46,7 +46,11 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		}
 
 		// For aggregations, we directly use the grouping labels
-		groupingLabels := stringSet(n.Grouping)
+		grouping := n.Grouping
+		if n.Without {
+			grouping = append(grouping, labels.MetricName)
+		}
+		groupingLabels := stringSet(grouping)
 
 		// Propagate to children using the aggregation's own grouping requirements
 		for _, child := range n.Children() {

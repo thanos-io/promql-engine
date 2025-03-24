@@ -41,7 +41,7 @@ func renderExprTree(expr Node) string {
 		if t.BatchSize > 0 {
 			base += fmt.Sprintf("[batch=%d]", t.BatchSize)
 		}
-		if len(t.Projection.Labels) > 0 {
+		if t.Projection.Labels != nil {
 			sort.Strings(t.Projection.Labels)
 			if t.Projection.Include {
 				base += fmt.Sprintf("[projection=include(%s)]", strings.Join(t.Projection.Labels, ","))
