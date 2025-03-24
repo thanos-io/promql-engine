@@ -326,6 +326,15 @@ or
 			query: `avg without (pod) (http_requests_total)`,
 		},
 		{
+			name: "avg fuzz",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} NaN NaN NaN NaN NaN 0.000053234+0.000003x10 NaN NaN
+			    http_requests_total{pod="nginx-2", route="/"} NaN NaN NaN NaN NaN 0.00004123412+0.000004x10 NaN NaN`,
+			query: `avg(stdvar_over_time(http_requests_total[2m:1m]))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(300, 0),
+		},
+		{
 			name: "func with scalar arg that selects storage, checks whether same series handled correctly",
 			load: `load 30s
 			    thanos_cache_redis_hits_total{name="caching-bucket",service="thanos-store"} 1+1x30`,
