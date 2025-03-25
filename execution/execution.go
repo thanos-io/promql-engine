@@ -40,11 +40,16 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	promstorage "github.com/prometheus/prometheus/storage"
+	"github.com/thanos-io/promql-engine/tracing"
 )
 
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "execution.New")
+	defer span.Finish()
+	span.SetTag("expr_type", parser.DocumentedType(expr.ReturnType()))
+
 	hints := promstorage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
@@ -54,43 +59,79 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 }
 
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "execution.newOperator")
+	defer span.Finish()
+	span.SetTag("expr_type", parser.DocumentedType(expr.ReturnType()))
+	span.SetTag("expr", expr.String())
+
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
+		span.SetTag("operator_type", "number_literal")
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
+		span.SetTag("operator_type", "vector_selector")
 		return newVectorSelector(ctx, e, storage, opts, hints)
 	case *logicalplan.FunctionCall:
+		span.SetTag("operator_type", "function_call")
+		span.SetTag("function_name", e.Func.Name)
 		return newCall(ctx, e, storage, opts, hints)
 	case *logicalplan.Aggregation:
+		span.SetTag("operator_type", "aggregation")
+		span.SetTag("aggregation_op", e.Op.String())
 		return newAggregateExpression(ctx, e, storage, opts, hints)
 	case *logicalplan.Binary:
+		span.SetTag("operator_type", "binary")
+		span.SetTag("binary_op", e.Op.String())
 		return newBinaryExpression(ctx, e, storage, opts, hints)
 	case *logicalplan.Parens:
+		span.SetTag("operator_type", "parens")
 		return newOperator(ctx, e.Expr, storage, opts, hints)
 	case *logicalplan.Unary:
+		span.SetTag("operator_type", "unary")
+		span.SetTag("unary_op", e.Op.String())
 		return newUnaryExpression(ctx, e, storage, opts, hints)
 	case *logicalplan.StepInvariantExpr:
+		span.SetTag("operator_type", "step_invariant")
 		return newStepInvariantExpression(ctx, e, storage, opts, hints)
 	case logicalplan.Deduplicate:
+		span.SetTag("operator_type", "deduplicate")
 		return newDeduplication(ctx, e, storage, opts, hints)
 	case logicalplan.RemoteExecution:
+		span.SetTag("operator_type", "remote_execution")
 		return newRemoteExecution(ctx, e, opts, hints)
 	case *logicalplan.CheckDuplicateLabels:
+		span.SetTag("operator_type", "check_duplicate_labels")
 		return newDuplicateLabelCheck(ctx, e, storage, opts, hints)
 	case logicalplan.Noop:
+		span.SetTag("operator_type", "noop")
 		return noop.NewOperator(opts), nil
 	case logicalplan.UserDefinedExpr:
+		span.SetTag("operator_type", "user_defined")
 		return e.MakeExecutionOperator(ctx, model.NewVectorPool(opts.StepsBatch), opts, hints)
 	default:
-		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
+		err := errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
+		tracing.LogError(span, err)
+		return nil, err
 	}
 }
 
 func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "execution.newVectorSelector")
+	defer span.Finish()
+	span.SetTag("vector_selector", e.String())
+
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
-	return scanners.NewVectorSelector(ctx, opts, hints, *e)
+
+	span.SetTag("start_time", start)
+	span.SetTag("end_time", end)
+
+	op, err := scanners.NewVectorSelector(ctx, opts, hints, *e)
+	if err != nil {
+		tracing.LogError(span, err)
+	}
+	return op, err
 }
 
 func newCall(ctx context.Context, e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
