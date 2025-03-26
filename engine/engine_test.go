@@ -5366,16 +5366,22 @@ histogram_sum(
 			query: `increase(rate(native_histogram_series[2m])[2m:15s])`,
 		},
 		{
-			name:  "Binary OR",
-			query: `native_histogram_series or (histogram_quantile(0.7, native_histogram_series) or rate(native_histogram_series[2m]))`,
+			name: "Binary OR",
+			query: `
+  native_histogram_series
+or
+  (histogram_quantile(0.7, native_histogram_series) or rate(native_histogram_series[2m]))`,
 		},
 		{
 			name:  "Mixed Binary OR",
 			query: `sum(native_histogram_series) or native_histogram_series`, // sum will be a single float value, float series on lhs of 'or'
 		},
 		{
-			name:  "Binary AND",
-			query: `(rate(native_histogram_series[2m]) and histogram_quantile(0.7, native_histogram_series)) and native_histogram_series`,
+			name: "Binary AND",
+			query: `
+  (rate(native_histogram_series[2m]) and histogram_quantile(0.7, native_histogram_series))
+and
+  native_histogram_series`,
 		},
 		{
 			name:  "Mixed Binary AND",
@@ -5383,11 +5389,11 @@ histogram_sum(
 		},
 		{
 			name:  "many-to-many join Unless",
-			query: `sum without (foo) (native_histogram_series) unless native_histogram_series/2`,
+			query: `sum without (foo) (native_histogram_series) unless native_histogram_series / 2`,
 		},
 		{
 			name:  "Mixed many-to-many join Unless",
-			query: `native_histogram_series*3 unless avg(native_histogram_series)`,
+			query: `native_histogram_series * 3 unless avg(native_histogram_series)`,
 		},
 	}
 
