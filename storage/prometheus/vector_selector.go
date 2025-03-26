@@ -54,6 +54,7 @@ type vectorSelector struct {
 	numShards int
 
 	selectTimestamp bool
+	dropLabels      []string
 }
 
 // NewVectorSelector creates operator which selects vector of series.

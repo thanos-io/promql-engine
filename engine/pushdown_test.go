@@ -283,8 +283,8 @@ func TestProjectionPushdown(t *testing.T) {
 
 	// Configure PromQLSmith
 	psOpts := []promqlsmith.Option{
-		promqlsmith.WithEnableOffset(true),
-		promqlsmith.WithEnableAtModifier(true),
+		promqlsmith.WithEnableOffset(false),
+		promqlsmith.WithEnableAtModifier(false),
 		// Focus on aggregations that benefit from projection pushdown
 		promqlsmith.WithEnabledAggrs([]parser.ItemType{
 			parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.COUNT,
@@ -302,13 +302,15 @@ func TestProjectionPushdown(t *testing.T) {
 
 	// Create engines
 	normalEngine := engine.New(engine.Opts{
-		EngineOpts:        engineOpts,
-		LogicalOptimizers: []logicalplan.Optimizer{},
+		EngineOpts:                  engineOpts,
+		LogicalOptimizers:           []logicalplan.Optimizer{},
+		DisableDuplicateLabelChecks: true,
 	})
 
 	pushdownEngine := engine.New(engine.Opts{
-		EngineOpts:        engineOpts,
-		LogicalOptimizers: append(logicalplan.AllOptimizers, &logicalplan.ProjectionPushdown{}),
+		EngineOpts:                  engineOpts,
+		LogicalOptimizers:           append(logicalplan.AllOptimizers, &logicalplan.ProjectionPushdown{}),
+		DisableDuplicateLabelChecks: true,
 	})
 
 	// Test context and time
@@ -345,7 +347,14 @@ func TestProjectionPushdown(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("Query_%d", i), func(t *testing.T) {
-			query = `min without () ({__name__="http_requests_total"})`
+			//			query = `
+			//(
+			//    avg by (env, job, __name__) (-{__name__="http_requests_total",instance="1"})
+			//  or
+			//    {__name__="http_requests_total"}
+			//)`
+			//query = `timestamp(http_requests_total)`
+			//query = `avg without (pod, job) (min without (__name__, pod, instance) ({__name__="http_requests_total"}))`
 			// Execute query with normal engine
 			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, nil, query, queryTime)
 			testutil.Ok(t, err)

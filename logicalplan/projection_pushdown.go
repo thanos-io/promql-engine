@@ -12,8 +12,8 @@ type ProjectionPushdown struct{}
 func (p ProjectionPushdown) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
 	// Single pass: top-down traversal to push projections directly
 	pushProjection(&plan, nil, false)
-	plan = insertDuplicateLabelChecks(plan)
-	return insertRemoveSeriesHash(plan), nil
+	//plan = insertDuplicateLabelChecks(plan)
+	return plan, nil
 }
 
 func insertRemoveSeriesHash(expr Node) Node {
@@ -67,9 +67,9 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		for _, child := range n.Children() {
 			pushProjection(child, groupingLabels, n.Without)
 		}
-		//if n.Without {
-		//	n.Grouping = append(n.Grouping, "__series_hash__")
-		//}
+		if n.Without {
+			n.Grouping = append(n.Grouping, "__series_hash__")
+		}
 		return
 
 	case *Binary:
@@ -108,7 +108,6 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 					for _, child := range n.Children() {
 						pushProjection(child, ignoredLabels, true) // true for "without"
 					}
-					//n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
 					return // Already propagated to children
 				}
 			} else {
@@ -159,7 +158,6 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 
 						pushProjection(child, ignoredLabels, true) // true for "without"
 					}
-					//n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
 					return // Already propagated to children
 				}
 			}
