@@ -12,7 +12,18 @@ type ProjectionPushdown struct{}
 func (p ProjectionPushdown) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
 	// Single pass: top-down traversal to push projections directly
 	pushProjection(&plan, nil, false)
-	return plan, nil
+	plan = insertDuplicateLabelChecks(plan)
+	return insertRemoveSeriesHash(plan), nil
+}
+
+func insertRemoveSeriesHash(expr Node) Node {
+	Traverse(&expr, func(node *Node) {
+		switch t := (*node).(type) {
+		case *VectorSelector:
+			*node = &RemoveSeriesHash{Expr: t}
+		}
+	})
+	return expr
 }
 
 // pushProjection recursively traverses the tree and pushes projection information down
@@ -56,6 +67,9 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		for _, child := range n.Children() {
 			pushProjection(child, groupingLabels, n.Without)
 		}
+		//if n.Without {
+		//	n.Grouping = append(n.Grouping, "__series_hash__")
+		//}
 		return
 
 	case *Binary:
@@ -85,13 +99,16 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 						ignoredLabels[lbl] = struct{}{}
 					}
 
-					// Also ignore the metric name label for "ignoring" mode
-					ignoredLabels[labels.MetricName] = struct{}{}
+					//// Also ignore the metric name label for "ignoring" mode
+					//if len(n.VectorMatching.MatchingLabels) > 0 && !(n.Op == parser.LAND || n.Op == parser.LOR || n.Op == parser.LUNLESS) {
+					//	ignoredLabels[labels.MetricName] = struct{}{}
+					//}
 
 					// Propagate to children
 					for _, child := range n.Children() {
 						pushProjection(child, ignoredLabels, true) // true for "without"
 					}
+					//n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
 					return // Already propagated to children
 				}
 			} else {
@@ -127,8 +144,10 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 							ignoredLabels[lbl] = struct{}{}
 						}
 
-						// Also ignore the metric name label for "ignoring" mode
-						ignoredLabels[labels.MetricName] = struct{}{}
+						//// Also ignore the metric name label for "ignoring" mode
+						//if len(n.VectorMatching.MatchingLabels) > 0 && !(n.Op == parser.LAND || n.Op == parser.LOR || n.Op == parser.LUNLESS) {
+						//	ignoredLabels[labels.MetricName] = struct{}{}
+						//}
 
 						// For the many-to-one side, don't ignore include labels
 						if (n.VectorMatching.Card == parser.CardManyToOne && i == 0) ||
@@ -140,6 +159,7 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 
 						pushProjection(child, ignoredLabels, true) // true for "without"
 					}
+					//n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
 					return // Already propagated to children
 				}
 			}

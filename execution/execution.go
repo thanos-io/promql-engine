@@ -77,6 +77,8 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 		return newRemoteExecution(ctx, e, opts, hints)
 	case *logicalplan.CheckDuplicateLabels:
 		return newDuplicateLabelCheck(ctx, e, storage, opts, hints)
+	case *logicalplan.RemoveSeriesHash:
+		return newRemoveSeriesHash(ctx, e, storage, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(opts), nil
 	case logicalplan.UserDefinedExpr:
@@ -407,6 +409,14 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 		return nil, err
 	}
 	return exchange.NewDuplicateLabelCheck(op, opts), nil
+}
+
+func newRemoveSeriesHash(ctx context.Context, e *logicalplan.RemoveSeriesHash, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	op, err := newOperator(ctx, e.Expr, storage, opts, hints)
+	if err != nil {
+		return nil, err
+	}
+	return exchange.NewRemoveSeriesHashOperator(op, opts), nil
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
