@@ -232,17 +232,19 @@ func (o *vectorOperator) execBinaryAnd(lhs, rhs model.StepVector) (model.StepVec
 		jp.sid = sampleID
 		jp.ats = ts
 	}
-	for i, sampleID := range lhs.SampleIDs {
-		if jp := o.hcJoinBuckets[sampleID]; jp.ats == ts {
-			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, jp.sid+1), lhs.Samples[i])
-		}
-	}
 
 	for _, histogramID := range rhs.HistogramIDs {
 		jp := o.lcJoinBuckets[histogramID]
 		jp.sid = histogramID
 		jp.ats = ts
 	}
+
+	for i, sampleID := range lhs.SampleIDs {
+		if jp := o.hcJoinBuckets[sampleID]; jp.ats == ts {
+			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, jp.sid+1), lhs.Samples[i])
+		}
+	}
+
 	for i, histogramID := range lhs.HistogramIDs {
 		if jp := o.hcJoinBuckets[histogramID]; jp.ats == ts {
 			step.AppendHistogram(o.pool, o.outputSeriesID(histogramID+1, jp.sid+1), lhs.Histograms[i])
@@ -260,11 +262,25 @@ func (o *vectorOperator) execBinaryOr(lhs, rhs model.StepVector) (model.StepVect
 		jp.ats = ts
 		step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, 0), lhs.Samples[i])
 	}
+
+	for i, histogramID := range lhs.HistogramIDs {
+		jp := o.hcJoinBuckets[histogramID]
+		jp.ats = ts
+		step.AppendHistogram(o.pool, o.outputSeriesID(histogramID+1, 0), lhs.Histograms[i])
+	}
+
 	for i, sampleID := range rhs.SampleIDs {
 		if jp := o.lcJoinBuckets[sampleID]; jp.ats != ts {
 			step.AppendSample(o.pool, o.outputSeriesID(0, sampleID+1), rhs.Samples[i])
 		}
 	}
+
+	for i, histogramID := range rhs.HistogramIDs {
+		if jp := o.lcJoinBuckets[histogramID]; jp.ats != ts {
+			step.AppendHistogram(o.pool, o.outputSeriesID(0, histogramID+1), rhs.Histograms[i])
+		}
+	}
+
 	return step, nil
 }
 
@@ -276,9 +292,19 @@ func (o *vectorOperator) execBinaryUnless(lhs, rhs model.StepVector) (model.Step
 		jp := o.lcJoinBuckets[sampleID]
 		jp.ats = ts
 	}
+	for _, histogramID := range rhs.HistogramIDs {
+		jp := o.lcJoinBuckets[histogramID]
+		jp.ats = ts
+	}
+
 	for i, sampleID := range lhs.SampleIDs {
 		if jp := o.hcJoinBuckets[sampleID]; jp.ats != ts {
 			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, 0), lhs.Samples[i])
+		}
+	}
+	for i, histogramID := range lhs.HistogramIDs {
+		if jp := o.hcJoinBuckets[histogramID]; jp.ats != ts {
+			step.AppendHistogram(o.pool, o.outputSeriesID(histogramID+1, 0), lhs.Histograms[i])
 		}
 	}
 	return step, nil
