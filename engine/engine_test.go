@@ -5359,6 +5359,14 @@ histogram_sum(
 			query: `histogram_fraction(0, 0.2, native_histogram_series)`,
 		},
 		{
+			name:  "histogram_stdvar",
+			query: `histogram_stdvar(native_histogram_series)`,
+		},
+		{
+			name:  "histogram_stddev",
+			query: `histogram_stddev(native_histogram_series)`,
+		},
+		{
 			name:  "lhs multiplication",
 			query: `native_histogram_series * 3`,
 		},

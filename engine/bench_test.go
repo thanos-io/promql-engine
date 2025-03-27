@@ -407,12 +407,28 @@ func BenchmarkNativeHistograms(b *testing.B) {
 			query: `histogram_count(sum(rate(native_histogram_series[1m])))`,
 		},
 		{
+			name:  "histogram_avg",
+			query: `histogram_avg(native_histogram_series)`,
+		},
+		{
+			name:  "histogram_avg with sum and rate",
+			query: `histogram_avg(sum(rate(native_histogram_series[1m])))`,
+		},
+		{
 			name:  "histogram_quantile",
 			query: `histogram_quantile(0.9, sum(native_histogram_series))`,
 		},
 		{
 			name:  "histogram scalar binop",
 			query: `sum(native_histogram_series * 60)`,
+		},
+		{
+			name:  "histogram_stdvar",
+			query: `histogram_stdvar(native_histogram_series)`,
+		},
+		{
+			name:  "histogram_stddev",
+			query: `histogram_stddev(native_histogram_series)`,
 		},
 	}
 
