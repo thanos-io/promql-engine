@@ -281,24 +281,18 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 
-	optimizeSpan := tracing.ChildSpan(span, "optimize_plan")
 	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
-	optimizeSpan.Finish()
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
 
-	scannersSpan := tracing.ChildSpan(span, "create_storage_scanners")
 	scanners, err := e.storageScanners(q, qOpts, lplan)
-	scannersSpan.Finish()
 	if err != nil {
 		tracing.LogError(span, err)
 		return nil, errors.Wrap(err, "creating storage scanners")
 	}
 
-	execSpan := tracing.ChildSpan(span, "create_execution")
 	exec, err := execution.New(ctx, lplan.Root(), scanners, qOpts)
-	execSpan.Finish()
 	if err != nil {
 		tracing.LogError(span, err)
 		return nil, err
@@ -402,24 +396,18 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
 
-	optimizeSpan := tracing.ChildSpan(span, "optimize_plan")
 	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
-	optimizeSpan.Finish()
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
 
-	scannersSpan := tracing.ChildSpan(span, "create_storage_scanners")
 	scnrs, err := e.storageScanners(q, qOpts, lplan)
-	scannersSpan.Finish()
 	if err != nil {
 		tracing.LogError(span, err)
 		return nil, errors.Wrap(err, "creating storage scanners")
 	}
 
-	execSpan := tracing.ChildSpan(span, "create_execution")
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
-	execSpan.Finish()
 	if err != nil {
 		tracing.LogError(span, err)
 		return nil, err
