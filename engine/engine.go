@@ -33,6 +33,7 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 	engstorage "github.com/thanos-io/promql-engine/storage"
 	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
+	"github.com/thanos-io/promql-engine/tracing"
 )
 
 type QueryType int
@@ -49,6 +50,10 @@ const (
 	RangeQuery   QueryType = 2
 	stepsBatch             = 10
 )
+
+func (q QueryType) String() string {
+	return []string{"InstantQuery", "RangeQuery"}[q-1]
+}
 
 func IsUnimplemented(err error) bool {
 	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
@@ -237,14 +242,21 @@ type Engine struct {
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "engine.MakeInstantQuery")
+	defer span.Finish()
+	span.SetTag("query", qs)
+	span.SetTag("timestamp", ts.Unix())
+
 	idx, err := e.activeQueryTracker.Insert(ctx, qs)
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, err
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, err
 	}
 	// determine sorting order before optimizers run, we do this by looking for "sort"
@@ -254,23 +266,29 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 
 	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
 	if qOpts.StepsBatch > 64 {
-		return nil, ErrStepsBatchTooLarge
+		err := ErrStepsBatchTooLarge
+		tracing.LogError(span, err)
+		return nil, err
 	}
 
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
-	scanners, err := e.storageScanners(q, qOpts, lplan)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating storage scanners")
-	}
+	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+
+	scanners, err := e.storageScanners(q, qOpts, lplan)
+	if err != nil {
+		tracing.LogError(span, err)
+		return nil, errors.Wrap(err, "creating storage scanners")
+	}
+
 	exec, err := execution.New(ctx, lplan.Root(), scanners, qOpts)
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
@@ -336,39 +354,56 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 }
 
 func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "engine.MakeRangeQuery")
+	defer span.Finish()
+	span.SetTag("query", qs)
+	span.SetTag("start", start.Unix())
+	span.SetTag("end", end.Unix())
+	span.SetTag("step", step.String())
+
 	idx, err := e.activeQueryTracker.Insert(ctx, qs)
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, err
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, err
 	}
 
 	// Use same check as Prometheus for range queries.
 	if expr.Type() != parser.ValueTypeVector && expr.Type() != parser.ValueTypeScalar {
-		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
+		err := errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
+		tracing.LogError(span, err)
+		return nil, err
 	}
 	qOpts := e.makeQueryOpts(start, end, step, opts)
 	if qOpts.StepsBatch > 64 {
-		return nil, ErrStepsBatchTooLarge
+		err := ErrStepsBatchTooLarge
+		tracing.LogError(span, err)
+		return nil, err
 	}
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
+
 	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
+
 	scnrs, err := e.storageScanners(q, qOpts, lplan)
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, errors.Wrap(err, "creating storage scanners")
 	}
 
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
 	if err != nil {
+		tracing.LogError(span, err)
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
@@ -528,8 +563,21 @@ type compatibilityQuery struct {
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "compatibilityQuery.Exec")
+	defer span.Finish()
+	span.SetTag("query_type", q.t.String())
+	span.SetTag("query_string", q.String())
+	if q.t == RangeQuery {
+		span.SetTag("start", q.start)
+		span.SetTag("end", q.end)
+		span.SetTag("step", q.step)
+	} else {
+		span.SetTag("timestamp", q.ts)
+	}
+
 	idx, err := q.engine.activeQueryTracker.Insert(ctx, q.String())
 	if err != nil {
+		tracing.LogError(span, err)
 		return &promql.Result{Err: err}
 	}
 	defer q.engine.activeQueryTracker.Delete(idx)
@@ -557,8 +605,11 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	defer cancel()
 	q.cancel = cancel
 
+	seriesSpan := tracing.ChildSpan(span, "get_series")
 	resultSeries, err := q.Query.exec.Series(ctx)
+	seriesSpan.Finish()
 	if err != nil {
+		tracing.LogError(span, err)
 		return newErrResult(ret, err)
 	}
 
@@ -566,14 +617,20 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	for i, s := range resultSeries {
 		series[i].Metric = s
 	}
+
+	samplesSpan := tracing.ChildSpan(span, "collect_samples")
 loop:
 	for {
 		select {
 		case <-ctx.Done():
+			tracing.LogError(samplesSpan, ctx.Err())
+			samplesSpan.Finish()
 			return newErrResult(ret, ctx.Err())
 		default:
 			r, err := q.Query.exec.Next(ctx)
 			if err != nil {
+				tracing.LogError(samplesSpan, err)
+				samplesSpan.Finish()
 				return newErrResult(ret, err)
 			}
 			if r == nil {
@@ -610,6 +667,10 @@ loop:
 			q.Query.exec.GetPool().PutVectors(r)
 		}
 	}
+	samplesSpan.Finish()
+
+	resultSpan := tracing.ChildSpan(span, "prepare_result")
+	defer resultSpan.Finish()
 
 	// For range Query we expect always a Matrix value type.
 	if q.t == RangeQuery {
@@ -623,7 +684,9 @@ loop:
 		sort.Sort(matrix)
 		ret.Value = matrix
 		if matrix.ContainsSameLabelset() {
-			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+			err := extlabels.ErrDuplicateLabelSet
+			tracing.LogError(resultSpan, err)
+			return newErrResult(ret, err)
 		}
 		return ret
 	}
@@ -657,7 +720,9 @@ loop:
 		}
 		sort.Slice(vector, q.resultSort.comparer(&vector))
 		if vector.ContainsSameLabelset() {
-			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)
+			err := extlabels.ErrDuplicateLabelSet
+			tracing.LogError(resultSpan, err)
+			return newErrResult(ret, err)
 		}
 		result = vector
 	case parser.ValueTypeScalar:
@@ -667,7 +732,9 @@ loop:
 		}
 		result = promql.Scalar{V: v, T: q.ts.UnixMilli()}
 	default:
-		panic(errors.Newf("new.Engine.exec: unexpected expression type %q", q.plan.Root().ReturnType()))
+		err := errors.Newf("new.Engine.exec: unexpected expression type %q", q.plan.Root().ReturnType())
+		tracing.LogError(resultSpan, err)
+		panic(err)
 	}
 
 	ret.Value = result
