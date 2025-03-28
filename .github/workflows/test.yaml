@@ -45,6 +45,14 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Cache binary dependencies
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.bin
+          key: ${{ runner.os }}-binaries-${{ hashFiles('**/go.sum', '.bingo/**/*.sum') }}
+          restore-keys: |
+            ${{ runner.os }}-binaries-
+
       - name: Format
         run: make format
 
