@@ -12,6 +12,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/promql"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -34,7 +35,7 @@ type vectorSelector struct {
 
 	storage  SeriesSelector
 	scanners []vectorScanner
-	series   []labels.Labels
+	series   []promql.Series
 
 	once       sync.Once
 	vectorPool *model.VectorPool
@@ -103,7 +104,7 @@ func (o *vectorSelector) Explain() (next []model.VectorOperator) {
 	return nil
 }
 
-func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *vectorSelector) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -189,7 +190,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 
 		b := labels.NewBuilder(labels.EmptyLabels())
 		o.scanners = make([]vectorScanner, len(series))
-		o.series = make([]labels.Labels, len(series))
+		o.series = make([]promql.Series, len(series))
 		for i, s := range series {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
@@ -202,7 +203,9 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			if o.selectTimestamp {
 				b.Del(labels.MetricName)
 			}
-			o.series[i] = b.Labels()
+			o.series[i] = promql.Series{
+				Metric: b.Labels(),
+			}
 		}
 
 		numSeries := int64(len(o.series))
