@@ -46,7 +46,7 @@ jobs:
           cache: true
 
       - name: Cache binary dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: /tmp/.bin
           key: ${{ runner.os }}-binaries-${{ hashFiles('**/go.sum', '.bingo/**/*.sum') }}
