@@ -6,11 +6,10 @@ package logicalplan
 import (
 	"testing"
 
-	"github.com/efficientgo/core/testutil"
-
-	"github.com/prometheus/prometheus/promql/parser"
-
 	"github.com/thanos-io/promql-engine/query"
+
+	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/prometheus/promql/parser"
 )
 
 func TestMergeSelects(t *testing.T) {

@@ -14,10 +14,9 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/singlechecker"
-
-	"github.com/prometheus/prometheus/promql/parser"
 )
 
 func main() {

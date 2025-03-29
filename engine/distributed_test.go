@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/engine"
+
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
-
-	"github.com/thanos-io/promql-engine/api"
-	"github.com/thanos-io/promql-engine/engine"
 )
 
 type partition struct {

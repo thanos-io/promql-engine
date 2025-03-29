@@ -20,14 +20,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/storage/prometheus"
+
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/stretchr/testify/require"
-	"go.uber.org/goleak"
-	"golang.org/x/exp/maps"
-
 	"github.com/prometheus/common/promslog"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -41,13 +44,9 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
 	"github.com/prometheus/prometheus/util/teststorage"
-
-	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/execution/warnings"
-	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
-	"github.com/thanos-io/promql-engine/storage/prometheus"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
+	"golang.org/x/exp/maps"
 )
 
 func TestMain(m *testing.M) {
