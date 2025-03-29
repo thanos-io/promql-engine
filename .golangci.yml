@@ -28,7 +28,8 @@ linters:
     - goconst
     - godot
     - gofmt
-    - goimports
+    - gci
+    - gofmt
     - gosimple
     - govet
     - ineffassign
@@ -49,8 +50,15 @@ linters-settings:
     locale: US
   goconst:
     min-occurrences: 5
-  goimports:
-    local-prefixes: github.com/thanos-io/promql-engine
+  gci:
+    sections:
+      - standard
+      - prefix(github.com/thanos-io/promql-engine)
+      - default
+      - blank
+      - dot
+    skip-generated: false
+    custom-order: true
 
 issues:
   exclude-rules:

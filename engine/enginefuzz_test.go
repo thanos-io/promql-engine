@@ -11,21 +11,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
+
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
-	"github.com/stretchr/testify/require"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
-
-	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/stretchr/testify/require"
 )
 
 const testRuns = 100

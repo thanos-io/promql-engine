@@ -4,9 +4,9 @@
 package logicalplan
 
 import (
-	"github.com/prometheus/prometheus/util/annotations"
-
 	"github.com/thanos-io/promql-engine/query"
+
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type DetectHistogramStatsOptimizer struct{}

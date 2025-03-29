@@ -6,12 +6,12 @@ package prometheus_test
 import (
 	"testing"
 
+	storage "github.com/thanos-io/promql-engine/storage/prometheus"
+
 	"github.com/prometheus/prometheus/model/labels"
 	promstg "github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-
-	storage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 func TestFilter_MultipleMatcherWithSameName(t *testing.T) {
