@@ -1,10 +1,13 @@
-include .bingo/Variables.mk
-
 FILES_TO_FMT ?= $(shell find . -path ./vendor -prune -o -name '*.go' -print)
 MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
+MDOX = go tool -modfile go.tools.mod mdox
+GCI = go tool -modfile go.tools.mod gci
+FAILLINT = go tool -modfile go.tools.mod faillint
+GOLANGCI_LINT = go tool -modfile go.tools.mod golangci-lint
+COPYRIGHT = go run github.com/efficientgo/tools/copyright@v0.0.0-20220225185207-fe763185946b
 
 GOMODULES = $(shell go list ./...)
 
@@ -62,30 +65,26 @@ deps: ## Ensures fresh go.mod and go.sum.
 
 .PHONY: docs
 docs: ## Generates docs for all thanos commands, localise links, ensure GitHub format.
-docs: $(MDOX)
+docs:
 	@echo ">> generating docs"
-	PATH="${PATH}:$(GOBIN)" $(MDOX) fmt README.md
+	$(MDOX) fmt README.md
 	$(MAKE) white-noise-cleanup
 
 .PHONY: check-docs
 check-docs: ## Checks docs against discrepancy with flags, links, white noise.
-check-docs: $(MDOX)
+check-docs:
 	@echo ">> checking docs"
-	PATH="${PATH}:$(GOBIN)" $(MDOX) fmt -l --links.validate.config-file=$(MDOX_VALIDATE_CONFIG) README.md
+	$(MDOX) fmt -l --links.validate.config-file=$(MDOX_VALIDATE_CONFIG) README.md
 	$(MAKE) white-noise-cleanup
 	$(call require_clean_work_tree,'run make docs and commit changes')
 
 .PHONY: format
-format: $(GOIMPORTS)
-	@echo ">> formatting go code"
-	@gofmt -s -w $(FILES_TO_FMT)
+format:
 	@echo ">> formatting promql tests"
 	@go run scripts/testvet/main.go -json -fix ./...
-	@echo ">> formatting imports"
-	@$(GOIMPORTS) -w $(FILES_TO_FMT)
 
 .PHONY:lint
-lint: format deps $(GOLANGCI_LINT) $(FAILLINT) $(COPYRIGHT) docs
+lint: format deps docs
 	$(call require_clean_work_tree,'detected not clean work tree before running lint, previous job changed something?')
 	@echo ">> verifying modules being imported"
 	@# TODO(bwplotka): Add, Printf, DefaultRegisterer, NewGaugeFunc and MustRegister once exception are accepted.

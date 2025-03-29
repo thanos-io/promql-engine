@@ -7,13 +7,12 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/thanos-io/promql-engine/query"
+
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
-
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-
-	"github.com/thanos-io/promql-engine/query"
 )
 
 const testRuns = 100
