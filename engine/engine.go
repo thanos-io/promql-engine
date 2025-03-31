@@ -23,6 +23,7 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 	engstorage "github.com/thanos-io/promql-engine/storage"
 	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
+	"github.com/thanos-io/promql-engine/tracing"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/client_golang/prometheus"
@@ -33,7 +34,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
-	"github.com/thanos-io/promql-engine/tracing"
 )
 
 type QueryType int
