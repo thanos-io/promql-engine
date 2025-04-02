@@ -8,7 +8,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -61,9 +61,13 @@ func NewKHashAggregate(
 		compare = func(f float64, s float64) bool {
 			return f < s
 		}
-	} else {
+	} else if aggregation == parser.BOTTOMK {
 		compare = func(f float64, s float64) bool {
 			return s < f
+		}
+	} else if aggregation == parser.LIMITK {
+		compare = func(f1, f2 float64) bool {
+			return false // limitk doesnt require any sort logic
 		}
 	}
 	// Grouping labels need to be sorted in order for metric hashing to work.
@@ -133,11 +137,11 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 			result = append(result, a.GetPool().GetStepVector(vector.T))
 			continue
 		}
-		if len(vector.Histograms) > 0 {
+		if a.aggregation != parser.LIMITK && len(vector.Histograms) > 0 {
 			warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo(a.aggregation.String(), posrange.PositionRange{}), ctx)
 		}
 
-		a.aggregate(vector.T, &result, int(a.params[i]), vector.SampleIDs, vector.Samples)
+		a.aggregate(vector.T, &result, int(a.params[i]), vector.SampleIDs, vector.Samples, vector.HistogramIDs, vector.Histograms)
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
@@ -205,12 +209,22 @@ func (a *kAggregate) init(ctx context.Context) error {
 	return nil
 }
 
-func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampleIDs []uint64, samples []float64) {
+func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
+	groupsRemaining := len(a.heaps)
+
 	for i, sId := range sampleIDs {
 		h := a.inputToHeap[sId]
 		switch {
 		case h.Len() < k:
 			heap.Push(h, &entry{sId: sId, total: samples[i]})
+
+			if h.Len() == k && a.aggregation == parser.LIMITK {
+				groupsRemaining--
+			}
+
+			if groupsRemaining == 0 {
+				break
+			}
 
 		case h.compare(h.entries[0].total, samples[i]) || (math.IsNaN(h.entries[0].total) && !math.IsNaN(samples[i])):
 			h.entries[0].sId = sId
@@ -222,13 +236,25 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 		}
 	}
 
+	// native histograms are supported for limitk
+	for i, histId := range histogramIDs {
+		h := a.inputToHeap[histId]
+		switch {
+		case h.Len() < k:
+			heap.Push(h, &entry{histId: histId, histogramSample: histograms[i]})
+
+			if h.Len() == k && a.aggregation == parser.LIMITK {
+				groupsRemaining--
+			}
+
+			if groupsRemaining == 0 {
+				break
+			}
+		}
+	}
+
 	s := a.vectorPool.GetStepVector(t)
 	for _, h := range a.heaps {
-		// The heap keeps the lowest value on top, so reverse it.
-		if len(h.entries) > 1 {
-			sort.Sort(sort.Reverse(h))
-		}
-
 		for _, e := range h.entries {
 			s.AppendSample(a.vectorPool, e.sId, e.total)
 		}
@@ -238,8 +264,10 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 }
 
 type entry struct {
-	sId   uint64
-	total float64
+	sId             uint64
+	histId          uint64
+	total           float64
+	histogramSample *histogram.FloatHistogram
 }
 
 type samplesHeap struct {
