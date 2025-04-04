@@ -5411,6 +5411,10 @@ and
 			name:  "Mixed many-to-many join Unless",
 			query: `native_histogram_series * 3 unless avg(native_histogram_series)`,
 		},
+		{
+			name:  "Limitk aggregation",
+			query: `limitk(2, native_histogram_series)`,
+		},
 	}
 
 	defer pprof.StopCPUProfile()

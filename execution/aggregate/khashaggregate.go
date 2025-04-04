@@ -211,55 +211,82 @@ func (a *kAggregate) init(ctx context.Context) error {
 
 func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
 	groupsRemaining := len(a.heaps)
-
-	for i, sId := range sampleIDs {
-		h := a.inputToHeap[sId]
-		switch {
-		case h.Len() < k:
-			heap.Push(h, &entry{sId: sId, total: samples[i]})
-
-			if h.Len() == k && a.aggregation == parser.LIMITK {
-				groupsRemaining--
-			}
-
-			if groupsRemaining == 0 {
-				break
-			}
-
-		case h.compare(h.entries[0].total, samples[i]) || (math.IsNaN(h.entries[0].total) && !math.IsNaN(samples[i])):
-			h.entries[0].sId = sId
-			h.entries[0].total = samples[i]
-
-			if k > 1 {
-				heap.Fix(h, 0)
-			}
-		}
-	}
-
-	// native histograms are supported for limitk
-	for i, histId := range histogramIDs {
-		h := a.inputToHeap[histId]
-		switch {
-		case h.Len() < k:
-			heap.Push(h, &entry{histId: histId, histogramSample: histograms[i]})
-
-			if h.Len() == k && a.aggregation == parser.LIMITK {
-				groupsRemaining--
-			}
-
-			if groupsRemaining == 0 {
-				break
-			}
-		}
-	}
-
 	s := a.vectorPool.GetStepVector(t)
+
+	if a.aggregation != parser.LIMITK {
+		for i, sId := range sampleIDs { // BOTTOMK, TOPK
+			h := a.inputToHeap[sId]
+			switch {
+			case h.Len() < k:
+				heap.Push(h, &entry{sId: sId, total: samples[i]})
+
+			case h.compare(h.entries[0].total, samples[i]) || (math.IsNaN(h.entries[0].total) && !math.IsNaN(samples[i])):
+				h.entries[0].sId = sId
+				h.entries[0].total = samples[i]
+
+				if k > 1 {
+					heap.Fix(h, 0)
+				}
+			}
+		}
+	} else {
+		if len(histogramIDs) == 0 {
+			for i, sId := range sampleIDs {
+				h := a.inputToHeap[sId]
+				switch {
+				case h.Len() < k:
+					heap.Push(h, &entry{sId: sId, total: samples[i]})
+					s.AppendSample(a.vectorPool, sId, samples[i])
+
+					if h.Len() == k && a.aggregation == parser.LIMITK {
+						groupsRemaining--
+					}
+
+					if groupsRemaining == 0 {
+						break
+					}
+				}
+			}
+		} else {
+			// mixed type histograms or native histograms only
+			histogramIndex := 0
+			sampleIndex := 0
+			var index uint64 = 0
+
+			for histogramIndex < len(histograms) || sampleIndex < len(samples) {
+				h := a.inputToHeap[index]
+				if h.Len() < k {
+					if sampleIndex >= len(sampleIDs) || histogramIDs[histogramIndex] < sampleIDs[sampleIndex] { // no samples or already considered all possible ones (or all native histograms) or histogram sample is before float samples
+						heap.Push(h, &entry{histId: index, histogramSample: histograms[histogramIndex]})
+						s.AppendHistogram(a.vectorPool, index, histograms[histogramIndex])
+						histogramIndex++
+					} else {
+						heap.Push(h, &entry{sId: index, total: samples[sampleIndex]})
+						s.AppendSample(a.vectorPool, index, samples[sampleIndex])
+						sampleIndex++
+					}
+					if h.Len() == k && a.aggregation == parser.LIMITK {
+						groupsRemaining--
+					}
+
+					if groupsRemaining == 0 {
+						break
+					}
+				}
+				index++
+			}
+		}
+	}
+
 	for _, h := range a.heaps {
 		for _, e := range h.entries {
-			s.AppendSample(a.vectorPool, e.sId, e.total)
+			if a.aggregation != parser.LIMITK {
+				s.AppendSample(a.vectorPool, e.sId, e.total)
+			}
 		}
 		h.entries = h.entries[:0]
 	}
+
 	*result = append(*result, s)
 }
 
