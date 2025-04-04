@@ -211,7 +211,6 @@ func (a *kAggregate) init(ctx context.Context) error {
 
 func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
 	groupsRemaining := len(a.heaps)
-	s := a.vectorPool.GetStepVector(t)
 
 	if a.aggregation != parser.LIMITK {
 		for i, sId := range sampleIDs { // BOTTOMK, TOPK
@@ -236,7 +235,6 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 				switch {
 				case h.Len() < k:
 					heap.Push(h, &entry{sId: sId, total: samples[i]})
-					s.AppendSample(a.vectorPool, sId, samples[i])
 
 					if h.Len() == k && a.aggregation == parser.LIMITK {
 						groupsRemaining--
@@ -256,13 +254,11 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 			for histogramIndex < len(histograms) || sampleIndex < len(samples) {
 				h := a.inputToHeap[index]
 				if h.Len() < k {
-					if sampleIndex >= len(sampleIDs) || histogramIDs[histogramIndex] < sampleIDs[sampleIndex] { // no samples or already considered all possible ones (or all native histograms) or histogram sample is before float samples
+					if sampleIndex >= len(sampleIDs) || histogramIDs[histogramIndex] == index { // no float samples(all histograms sample) or already considered all possible ones or current sample is of histogram
 						heap.Push(h, &entry{histId: index, histogramSample: histograms[histogramIndex]})
-						s.AppendHistogram(a.vectorPool, index, histograms[histogramIndex])
 						histogramIndex++
 					} else {
 						heap.Push(h, &entry{sId: index, total: samples[sampleIndex]})
-						s.AppendSample(a.vectorPool, index, samples[sampleIndex])
 						sampleIndex++
 					}
 					if h.Len() == k && a.aggregation == parser.LIMITK {
@@ -272,16 +268,25 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 					if groupsRemaining == 0 {
 						break
 					}
+				} else {
+					if histogramIDs[histogramIndex] == index {
+						histogramIndex++
+					} else {
+						sampleIndex++
+					}
 				}
 				index++
 			}
 		}
 	}
 
+	s := a.vectorPool.GetStepVector(t)
 	for _, h := range a.heaps {
 		for _, e := range h.entries {
-			if a.aggregation != parser.LIMITK {
+			if a.aggregation != parser.LIMITK || e.histogramSample == nil {
 				s.AppendSample(a.vectorPool, e.sId, e.total)
+			} else {
+				s.AppendHistogram(a.vectorPool, e.histId, e.histogramSample)
 			}
 		}
 		h.entries = h.entries[:0]
