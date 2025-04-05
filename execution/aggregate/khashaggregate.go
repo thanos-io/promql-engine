@@ -19,6 +19,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -40,7 +41,7 @@ type kAggregate struct {
 	aggregation parser.ItemType
 
 	once        sync.Once
-	series      []labels.Labels
+	series      []promql.Series
 	inputToHeap []*samplesHeap
 	heaps       []*samplesHeap
 	compare     func(float64, float64) bool
@@ -145,7 +146,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	return result, nil
 }
 
-func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
+func (a *kAggregate) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
 

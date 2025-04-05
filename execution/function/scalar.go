@@ -12,7 +12,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/query"
 
-	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 )
 
 type scalarOperator struct {
@@ -39,7 +39,7 @@ func (o *scalarOperator) Explain() (next []model.VectorOperator) {
 	return []model.VectorOperator{o.next}
 }
 
-func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *scalarOperator) Series(_ context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
