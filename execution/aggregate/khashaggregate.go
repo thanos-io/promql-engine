@@ -251,13 +251,13 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 			sampleIndex := 0
 			var index uint64 = 0
 
-			for isValidRange(histogramIndex, len(histogramIDs)) || isValidRange(sampleIndex, len(sampleIDs)) {
+			for histogramIndex < len(histogramIDs) || sampleIndex < len(sampleIDs) {
 				h := a.inputToHeap[index]
-				if h.Len() < k && ((isValidRange(histogramIndex, len(histogramIDs)) && histogramIDs[histogramIndex] == index) || (isValidRange(sampleIndex, len(sampleIDs)) && sampleIDs[sampleIndex] == index)) {
-					if sampleIndex >= len(sampleIDs) || histogramIDs[histogramIndex] == index { // no float samples(all histograms sample) or already considered all possible ones or current sample is of histogram
+				if h.Len() < k {
+					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == index { // no float samples(all histograms sample) or already considered all possible ones or current sample is of histogram
 						heap.Push(h, &entry{histId: index, histogramSample: histograms[histogramIndex]})
 						histogramIndex++
-					} else {
+					} else if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == index {
 						heap.Push(h, &entry{sId: index, total: samples[sampleIndex]})
 						sampleIndex++
 					}
@@ -269,9 +269,9 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 						break
 					}
 				} else {
-					if isValidRange(histogramIndex, len(histogramIDs)) && histogramIDs[histogramIndex] == index {
+					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == index {
 						histogramIndex++
-					} else if isValidRange(sampleIndex, len(sampleIDs)) && sampleIDs[sampleIndex] == index {
+					} else if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == index {
 						sampleIndex++
 					}
 				}
@@ -332,8 +332,4 @@ func (s *samplesHeap) Pop() interface{} {
 	el := old[n-1]
 	(*s).entries = old[0 : n-1]
 	return el
-}
-
-func isValidRange(index int, size int) bool {
-	return (index < size)
 }
