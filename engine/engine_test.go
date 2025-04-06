@@ -3539,6 +3539,33 @@ min without () (
 			query: `bottomk by (series) (2, http_requests_total)`,
 		},
 		{
+			name: "limitK",
+			load: `load 30s
+					http_requests_total{pod="nginx-1", series="1"} 1
+			    http_requests_total{pod="nginx-2", series="3"} 2
+			    http_requests_total{pod="nginx-3", series="2"} 8
+			    http_requests_total{pod="nginx-4", series="5"} 6
+			    http_requests_total{pod="nginx-5", series="4"} 8
+			    http_requests_total{pod="nginx-6", series="7"} 15
+			    http_requests_total{pod="nginx-7", series="6"} 11
+			    http_requests_total{pod="nginx-8", series="9"} 22
+			    http_requests_total{pod="nginx-9", series="8"} 89`,
+			query: `limitk(2, http_requests_total)`,
+		},
+		{
+			name: "limitk by (pod)",
+			load: `load 30s
+			http_requests_total{pod="nginx-1", series="2"} 89
+			http_requests_total{pod="nginx-1", series="1"} 49
+			http_requests_total{pod="nginx-1", series="3"} 19
+			http_requests_total{pod="nginx-2", series="2"} 12
+			http_requests_total{pod="nginx-2", series="1"} 24
+			http_requests_total{pod="nginx-3", series="3"} 8
+			http_requests_total{pod="nginx-3", series="1"} 22
+			http_requests_total{pod="nginx-3", series="2"} 1`,
+			query: "limitk(2, http_requests_total) by (pod)",
+		},
+		{
 			name: "max",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} 1+1x15

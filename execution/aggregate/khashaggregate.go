@@ -251,9 +251,9 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 			sampleIndex := 0
 			var index uint64 = 0
 
-			for histogramIndex < len(histograms) || sampleIndex < len(samples) {
+			for isValidRange(histogramIndex, len(histogramIDs)) || isValidRange(sampleIndex, len(sampleIDs)) {
 				h := a.inputToHeap[index]
-				if h.Len() < k {
+				if h.Len() < k && ((isValidRange(histogramIndex, len(histogramIDs)) && histogramIDs[histogramIndex] == index) || (isValidRange(sampleIndex, len(sampleIDs)) && sampleIDs[sampleIndex] == index)) {
 					if sampleIndex >= len(sampleIDs) || histogramIDs[histogramIndex] == index { // no float samples(all histograms sample) or already considered all possible ones or current sample is of histogram
 						heap.Push(h, &entry{histId: index, histogramSample: histograms[histogramIndex]})
 						histogramIndex++
@@ -269,9 +269,9 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 						break
 					}
 				} else {
-					if histogramIDs[histogramIndex] == index {
+					if isValidRange(histogramIndex, len(histogramIDs)) && histogramIDs[histogramIndex] == index {
 						histogramIndex++
-					} else {
+					} else if isValidRange(sampleIndex, len(sampleIDs)) && sampleIDs[sampleIndex] == index {
 						sampleIndex++
 					}
 				}
@@ -332,4 +332,8 @@ func (s *samplesHeap) Pop() interface{} {
 	el := old[n-1]
 	(*s).entries = old[0 : n-1]
 	return el
+}
+
+func isValidRange(index int, size int) bool {
+	return (index < size)
 }
