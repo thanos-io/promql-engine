@@ -3541,7 +3541,7 @@ min without () (
 		{
 			name: "limitK",
 			load: `load 30s
-					http_requests_total{pod="nginx-1", series="1"} 1
+			    http_requests_total{pod="nginx-1", series="1"} 1
 			    http_requests_total{pod="nginx-2", series="3"} 2
 			    http_requests_total{pod="nginx-3", series="2"} 8
 			    http_requests_total{pod="nginx-4", series="5"} 6
@@ -3555,14 +3555,14 @@ min without () (
 		{
 			name: "limitk by (pod)",
 			load: `load 30s
-			http_requests_total{pod="nginx-1", series="2"} 89
-			http_requests_total{pod="nginx-1", series="1"} 49
-			http_requests_total{pod="nginx-1", series="3"} 19
-			http_requests_total{pod="nginx-2", series="2"} 12
-			http_requests_total{pod="nginx-2", series="1"} 24
-			http_requests_total{pod="nginx-3", series="3"} 8
-			http_requests_total{pod="nginx-3", series="1"} 22
-			http_requests_total{pod="nginx-3", series="2"} 1`,
+			    http_requests_total{pod="nginx-1", series="2"} 89
+			    http_requests_total{pod="nginx-1", series="1"} 49
+			    http_requests_total{pod="nginx-1", series="3"} 19
+			    http_requests_total{pod="nginx-2", series="2"} 12
+			    http_requests_total{pod="nginx-2", series="1"} 24
+			    http_requests_total{pod="nginx-3", series="3"} 8
+			    http_requests_total{pod="nginx-3", series="1"} 22
+			    http_requests_total{pod="nginx-3", series="2"} 1`,
 			query: "limitk(2, http_requests_total) by (pod)",
 		},
 		{
