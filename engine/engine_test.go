@@ -1941,6 +1941,57 @@ sum by (grpc_method, grpc_code) (
 			step:  2 * time.Second,
 		},
 		{
+			name: "limitK",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `limitk(2, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "limitK with negative value as param",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50`,
+			query: `limitk(-2, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		// TODO(Saumya40-Codes): uncomment once https://github.com/prometheus/prometheus/pull/16404 gets merged
+		// {
+		// 	name: "limitK but a sample not present at last few timestamps",
+		// 	load: `load 30s
+		// 	    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+		// 	    http_requests_total{pod="nginx-2", series="1"} 2+2.3x40
+		// 	    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+		// 	    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+		// 	    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+		// 	query: `limitk(2, http_requests_total)`,
+		// 	start: time.Unix(0, 0),
+		// 	end:   time.Unix(3000, 0),
+		// 	step:  2 * time.Second,
+		// },
+		// {
+		// 	name: "limitK by (pod)",
+		// 	load: `load 30s
+		// 	    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+		// 	    http_requests_total{pod="nginx-2", series="1"} 2+2.3x40
+		// 	    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+		// 	    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+		// 	    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+		// 	query: `limitk(2, http_requests_total) by (pod)`,
+		// 	start: time.Unix(0, 0),
+		// 	end:   time.Unix(3000, 0),
+		// 	step:  2 * time.Second,
+		// },
+		{
 			name: "sgn",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -5441,6 +5492,10 @@ and
 		{
 			name:  "Limitk aggregation",
 			query: `limitk(2, native_histogram_series)`,
+		},
+		{
+			name:  "limitk by",
+			query: `limitk(2, native_histogram_series) by (foo) and native_histogram_series`,
 		},
 	}
 
