@@ -1,10 +1,10 @@
 module github.com/thanos-io/promql-engine
 
-go 1.24
+go 1.24.0
 
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
-	github.com/cortexproject/promqlsmith v0.0.0-20240506042652-6cfdd9739a5e
+	github.com/cortexproject/promqlsmith v0.0.0-20250407233056-90db95b1a4e4
 	github.com/efficientgo/core v1.0.0-rc.2
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/google/go-cmp v0.7.0
