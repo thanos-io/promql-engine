@@ -246,22 +246,38 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 				}
 			}
 		} else {
-			// mixed type histograms or native histograms only
+			// Mixed type histograms or native histograms only
 			histogramIndex := 0
 			sampleIndex := 0
-			var index uint64 = 0
 
 			for histogramIndex < len(histogramIDs) || sampleIndex < len(sampleIDs) {
-				h := a.inputToHeap[index]
+				var currentID uint64
+
+				// Pick the relatively first id in the sample
+				if histogramIndex < len(histogramIDs) && sampleIndex < len(sampleIDs) {
+					currentID = uint64(min(sampleIDs[sampleIndex], histogramIDs[histogramIndex]))
+				} else if histogramIndex < len(histogramIDs) {
+					// Only histograms left
+					currentID = histogramIDs[histogramIndex]
+				} else {
+					// Only samples left
+					currentID = sampleIDs[sampleIndex]
+				}
+
+				h := a.inputToHeap[currentID]
+
 				if h.Len() < k {
-					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == index { // no float samples(all histograms sample) or already considered all possible ones or current sample is of histogram
-						heap.Push(h, &entry{histId: index, histogramSample: histograms[histogramIndex]})
+					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == currentID {
+						heap.Push(h, &entry{histId: currentID, histogramSample: histograms[histogramIndex]})
 						histogramIndex++
-					} else if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == index {
-						heap.Push(h, &entry{sId: index, total: samples[sampleIndex]})
+					}
+
+					if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == currentID {
+						heap.Push(h, &entry{sId: currentID, total: samples[sampleIndex]})
 						sampleIndex++
 					}
-					if h.Len() == k && a.aggregation == parser.LIMITK {
+
+					if h.Len() == k {
 						groupsRemaining--
 					}
 
@@ -269,13 +285,13 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 						break
 					}
 				} else {
-					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == index {
+					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == currentID {
 						histogramIndex++
-					} else if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == index {
+					}
+					if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == currentID {
 						sampleIndex++
 					}
 				}
-				index++
 			}
 		}
 	}
