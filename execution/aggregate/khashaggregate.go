@@ -70,7 +70,7 @@ func NewKHashAggregate(
 			return false // limitk doesnt require any sort logic
 		}
 	} else {
-		return nil, errors.New("Unsupported aggregate expression")
+		return nil, errors.Newf("Unsupported aggregate expression: %v", aggregation)
 	}
 	// Grouping labels need to be sorted in order for metric hashing to work.
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
