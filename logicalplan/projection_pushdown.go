@@ -23,7 +23,7 @@ func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string
 	case *VectorSelector:
 		// Apply projection if we have required labels
 		if requiredLabels != nil {
-			projection := Projection{
+			projection := &Projection{
 				Labels:  make([]string, 0, len(requiredLabels)),
 				Include: !isWithout,
 			}
@@ -31,6 +31,9 @@ func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string
 				projection.Labels = append(projection.Labels, lbl)
 			}
 			n.Projection = projection
+		} else {
+			// Set dummy projection.
+			n.Projection = &Projection{}
 		}
 
 	case *Aggregation:
