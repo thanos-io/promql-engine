@@ -5,7 +5,6 @@ package engine
 
 import (
 	"context"
-	"github.com/thanos-io/promql-engine/execution/exchange"
 	"log/slog"
 	"math"
 	"runtime"
@@ -277,7 +276,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 
 	e.metrics.totalQueries.Inc()
 	return &compatibilityQuery{
-		Query:      &Query{exec: exchange.NewRemoveSeriesHashOperator(exec, qOpts), opts: opts},
+		Query:      &Query{exec: exec, opts: opts},
 		engine:     e,
 		plan:       lplan,
 		warns:      warns,
@@ -322,7 +321,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exchange.NewRemoveSeriesHashOperator(exec, qOpts), opts: opts},
+		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
 		plan:   lplan,
 		warns:  warns,
@@ -376,7 +375,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
-		Query:    &Query{exec: exchange.NewRemoveSeriesHashOperator(exec, qOpts), opts: opts},
+		Query:    &Query{exec: exec, opts: opts},
 		engine:   e,
 		plan:     lplan,
 		warns:    warns,
@@ -418,7 +417,7 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
-		Query:    &Query{exec: exchange.NewRemoveSeriesHashOperator(exec, qOpts), opts: opts},
+		Query:    &Query{exec: exec, opts: opts},
 		engine:   e,
 		plan:     lplan,
 		warns:    warns,

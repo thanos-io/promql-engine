@@ -1,7 +1,6 @@
 package logicalplan
 
 import (
-	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/thanos-io/promql-engine/query"
@@ -13,17 +12,18 @@ func (p ProjectionPushdown) Optimize(plan Node, _ *query.Options) (Node, annotat
 	// Single pass: top-down traversal to push projections directly
 	pushProjection(&plan, nil, false)
 	//plan = insertDuplicateLabelChecks(plan)
-	return plan, nil
-}
 
-func insertRemoveSeriesHash(expr Node) Node {
-	Traverse(&expr, func(node *Node) {
-		switch t := (*node).(type) {
-		case *VectorSelector:
-			*node = &RemoveSeriesHash{Expr: t}
-		}
-	})
-	return expr
+	// TraverseWithStop(&plan, func(node *Node) bool {
+	// 	switch e := (*node).(type) {
+	// 	case *Aggregation:
+	// 		if e.Without {
+	// 			e.Grouping = append(e.Grouping, "__series_hash__")
+	// 		}
+	// 		return false
+	// 	}
+	// 	return false
+	// })
+	return plan, nil
 }
 
 // pushProjection recursively traverses the tree and pushes projection information down
@@ -45,34 +45,52 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		}
 
 	case *Aggregation:
+
 		// Special handling for aggregation functions that need all labels
 		// regardless of grouping (topk, bottomk, limitk, limit_ratio)
 		switch n.Op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
 			// These functions need all labels, so clear any requirements
-			for _, child := range n.Children() {
-				pushProjection(child, nil, false)
-			}
+			pushProjection(&n.Expr, nil, false)
 			return
 		}
 
 		// For aggregations, we directly use the grouping labels
 		grouping := n.Grouping
-		if n.Without {
-			grouping = append(grouping, labels.MetricName)
-		}
+
 		groupingLabels := stringSet(grouping)
 
 		// Propagate to children using the aggregation's own grouping requirements
-		for _, child := range n.Children() {
-			pushProjection(child, groupingLabels, n.Without)
-		}
+		pushProjection(&n.Expr, groupingLabels, n.Without)
+
 		if n.Without {
-			n.Grouping = append(n.Grouping, "__series_hash__")
+			n.Grouping = append(grouping, "__series_hash__")
 		}
-		return
 
 	case *Binary:
+		// // Propagate to children using the aggregation's own grouping requirements
+		// for _, child := range n.Children() {
+		// 	pushProjection(child, nil, isWithout)
+		// }
+		// return
+
+		// lhs := getProjection(&n.LHS)
+		// rhs := getProjection(&n.RHS)
+		// fmt.Println("lhs", lhs)
+		// fmt.Println("rhs", rhs)
+
+		// mergedProjection := mergeProjections(lhs, rhs)
+		// fmt.Println("mergedProjection", mergedProjection)
+		// // If either side is a scalar, just propagate the parent requirements
+		// if mergedProjection == nil || n.LHS.ReturnType() == parser.ValueTypeScalar || n.RHS.ReturnType() == parser.ValueTypeScalar {
+		// 	pushProjection(&n.LHS, requiredLabels, isWithout)
+		// 	pushProjection(&n.RHS, requiredLabels, isWithout)
+		// 	return
+		// }
+
+		// pushProjection(&n.LHS, stringSet(mergedProjection.Labels), !mergedProjection.Include)
+		// pushProjection(&n.RHS, stringSet(mergedProjection.Labels), !mergedProjection.Include)
+
 		// For binary operations with vector matching, we need the matching labels
 		if n.VectorMatching != nil {
 			if n.VectorMatching.Card == parser.CardOneToOne {
@@ -99,6 +117,10 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 						ignoredLabels[lbl] = struct{}{}
 					}
 
+					// if dropMetricNameInResult {
+					// 	ignoredLabels[labels.MetricName] = struct{}{}
+					// }
+
 					//// Also ignore the metric name label for "ignoring" mode
 					//if len(n.VectorMatching.MatchingLabels) > 0 && !(n.Op == parser.LAND || n.Op == parser.LOR || n.Op == parser.LUNLESS) {
 					//	ignoredLabels[labels.MetricName] = struct{}{}
@@ -108,75 +130,71 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 					for _, child := range n.Children() {
 						pushProjection(child, ignoredLabels, true) // true for "without"
 					}
-					return // Already propagated to children
-				}
-			} else {
-				// For group_left/group_right with "on", we need matching labels and include labels
-				if n.VectorMatching.On {
-					// Don't consider parent requirements for binary operations
-					for i, child := range n.Children() {
-						childRequired := make(map[string]struct{})
-
-						// Add the matching labels
-						for _, lbl := range n.VectorMatching.MatchingLabels {
-							childRequired[lbl] = struct{}{}
-						}
-
-						// For group_left, only the left side (i==0) needs the include labels
-						// For group_right, only the right side (i==1) needs the include labels
-						if (n.VectorMatching.Card == parser.CardManyToOne && i == 0) ||
-							(n.VectorMatching.Card == parser.CardOneToMany && i == 1) {
-							for _, lbl := range n.VectorMatching.Include {
-								childRequired[lbl] = struct{}{}
-							}
-						}
-
-						pushProjection(child, childRequired, false) // Always use include mode for "on"
-					}
-					return // Already propagated to children
-				} else {
-					// For "ignoring" with group_left/group_right
-					for i, child := range n.Children() {
-						// Don't consider parent requirements for binary operations
-						ignoredLabels := make(map[string]struct{})
-						for _, lbl := range n.VectorMatching.MatchingLabels {
-							ignoredLabels[lbl] = struct{}{}
-						}
-
-						//// Also ignore the metric name label for "ignoring" mode
-						//if len(n.VectorMatching.MatchingLabels) > 0 && !(n.Op == parser.LAND || n.Op == parser.LOR || n.Op == parser.LUNLESS) {
-						//	ignoredLabels[labels.MetricName] = struct{}{}
-						//}
-
-						// For the many-to-one side, don't ignore include labels
-						if (n.VectorMatching.Card == parser.CardManyToOne && i == 0) ||
-							(n.VectorMatching.Card == parser.CardOneToMany && i == 1) {
-							for _, lbl := range n.VectorMatching.Include {
-								delete(ignoredLabels, lbl)
-							}
-						}
-
-						pushProjection(child, ignoredLabels, true) // true for "without"
-					}
+					n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
 					return // Already propagated to children
 				}
 			}
+
+			// else {
+			// 	// For group_left/group_right with "on", we need matching labels and include labels
+			// 	if n.VectorMatching.On {
+			// 		// Don't consider parent requirements for binary operations
+			// 		for i, child := range n.Children() {
+			// 			childRequired := make(map[string]struct{})
+
+			// 			// Add the matching labels
+			// 			for _, lbl := range n.VectorMatching.MatchingLabels {
+			// 				childRequired[lbl] = struct{}{}
+			// 			}
+
+			// 			// For group_left, only the right side (i==1) needs the include labels
+			// 			// For group_right, only the left side (i==0) needs the include labels
+			// 			if (n.VectorMatching.Card == parser.CardManyToOne && i == 1) ||
+			// 				(n.VectorMatching.Card == parser.CardOneToMany && i == 0) {
+			// 				for _, lbl := range n.VectorMatching.Include {
+			// 					childRequired[lbl] = struct{}{}
+			// 				}
+			// 			}
+
+			// 			pushProjection(child, childRequired, false) // Always use include mode for "on"
+			// 		}
+			// 		return // Already propagated to children
+			// 	} else {
+			// 		// For "ignoring" with group_left/group_right
+			// 		for i, child := range n.Children() {
+			// 			// Don't consider parent requirements for binary operations
+			// 			ignoredLabels := make(map[string]struct{})
+			// 			for _, lbl := range n.VectorMatching.MatchingLabels {
+			// 				ignoredLabels[lbl] = struct{}{}
+			// 			}
+
+			// 			// For group_left, only the right side (i==1) needs the include labels
+			// 			// For group_right, only the left side (i==0) needs the include labels
+			// 			if (n.VectorMatching.Card == parser.CardManyToOne && i == 1) ||
+			// 				(n.VectorMatching.Card == parser.CardOneToMany && i == 0) {
+			// 				for _, lbl := range n.VectorMatching.Include {
+			// 					delete(ignoredLabels, lbl)
+			// 				}
+			// 			}
+
+			// 			pushProjection(child, ignoredLabels, true) // true for "without"
+			// 		}
+			// 		// if !n.ReturnBool {
+			// 		// 	n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
+			// 		// }
+			// 		return // Already propagated to children
+			// 	}
+			// }
 		}
 
 		// No vector matching, just propagate existing requirements
-		for _, child := range n.Children() {
-			pushProjection(child, requiredLabels, isWithout)
-		}
-
-	case *CheckDuplicateLabels:
-		// These need all labels, so clear any requirements
 		for _, child := range n.Children() {
 			pushProjection(child, nil, false)
 		}
 
 	case *FunctionCall:
 		// Check function requirements for labels
-		updatedLabels := getFunctionLabelRequirements(n.Func.Name, n.Args, requiredLabels)
+		updatedLabels := getFunctionLabelRequirements(n.Func.Name, n.Args, requiredLabels, isWithout)
 		for _, child := range n.Children() {
 			pushProjection(child, updatedLabels, isWithout)
 		}
@@ -216,7 +234,7 @@ func unwrapStepInvariantExpr(node Node) Node {
 
 // getFunctionLabelRequirements ensures that specific labels required by functions are included
 // in the projection
-func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels map[string]struct{}) map[string]struct{} {
+func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels map[string]struct{}, isWithout bool) map[string]struct{} {
 	if requiredLabels == nil {
 		return nil
 	}
@@ -240,13 +258,26 @@ func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels m
 				dstArg := unwrapStepInvariantExpr(args[1])
 				if dstLit, ok := dstArg.(*StringLiteral); ok {
 					dstLabel := dstLit.Val
-					if _, needed := result[dstLabel]; needed {
-						// Only if the destination label is needed, we need the source label
-						// Unwrap any step invariant expressions
-						srcArg := unwrapStepInvariantExpr(args[3])
-						if strLit, ok := srcArg.(*StringLiteral); ok {
-							// Add the source label to required labels
-							result[strLit.Val] = struct{}{}
+					if !isWithout {
+						if _, needed := result[dstLabel]; needed {
+							// Only if the destination label is needed, we need the source label
+							// Unwrap any step invariant expressions
+							srcArg := unwrapStepInvariantExpr(args[3])
+							if strLit, ok := srcArg.(*StringLiteral); ok {
+								// Add the source label to required labels
+								result[strLit.Val] = struct{}{}
+							}
+						}
+					} else {
+						if _, needed := result[dstLabel]; !needed {
+							// Only if the destination label is needed, we need the source labels
+							for i := 3; i < len(args); i++ {
+								// Unwrap any step invariant expressions
+								srcArg := unwrapStepInvariantExpr(args[i])
+								if strLit, ok := srcArg.(*StringLiteral); ok {
+									delete(result, strLit.Val)
+								}
+							}
 						}
 					}
 				}
@@ -261,14 +292,27 @@ func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels m
 				dstArg := unwrapStepInvariantExpr(args[1])
 				if dstLit, ok := dstArg.(*StringLiteral); ok {
 					dstLabel := dstLit.Val
-					if _, needed := result[dstLabel]; needed {
-						// Only if the destination label is needed, we need the source labels
-						for i := 3; i < len(args); i++ {
-							// Unwrap any step invariant expressions
-							srcArg := unwrapStepInvariantExpr(args[i])
-							if strLit, ok := srcArg.(*StringLiteral); ok {
-								// Add each source label to required labels
-								result[strLit.Val] = struct{}{}
+					if !isWithout {
+						if _, needed := result[dstLabel]; needed {
+							// Only if the destination label is needed, we need the source labels
+							for i := 3; i < len(args); i++ {
+								// Unwrap any step invariant expressions
+								srcArg := unwrapStepInvariantExpr(args[i])
+								if strLit, ok := srcArg.(*StringLiteral); ok {
+									// Add each source label to required labels
+									result[strLit.Val] = struct{}{}
+								}
+							}
+						}
+					} else {
+						if _, needed := result[dstLabel]; !needed {
+							// Only if the destination label is needed, we need the source labels
+							for i := 3; i < len(args); i++ {
+								// Unwrap any step invariant expressions
+								srcArg := unwrapStepInvariantExpr(args[i])
+								if strLit, ok := srcArg.(*StringLiteral); ok {
+									delete(result, strLit.Val)
+								}
 							}
 						}
 					}

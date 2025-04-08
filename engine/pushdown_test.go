@@ -4,6 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
+	"sort"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -15,12 +22,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"math/rand"
-	"sort"
-	"strconv"
-	"strings"
-	"testing"
-	"time"
 
 	pq "github.com/thanos-io/promql-engine/query"
 )
@@ -51,9 +52,11 @@ func (m mockSeriesSet) At() storage.Series {
 	if originalSeries == nil {
 		return nil
 	}
-
 	// If no projection hints, return the original series
-	if m.hints == nil || len(m.hints.Grouping) == 0 {
+	if m.hints == nil {
+		return originalSeries
+	}
+	if !m.hints.By && len(m.hints.Grouping) == 0 {
 		return originalSeries
 	}
 
@@ -87,7 +90,9 @@ func (m mockSeriesSet) At() storage.Series {
 				builder.Set(l.Name, l.Value)
 			}
 		}
-		builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
+		if _, ok := excludeMap["__series_hash__"]; !ok {
+			builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
+		}
 		projectedLabels = builder.Labels()
 	}
 
@@ -261,7 +266,7 @@ func TestProjectionPushdown(t *testing.T) {
 	// Define test parameters
 	seed := time.Now().UnixNano()
 	rnd := rand.New(rand.NewSource(seed))
-	testRuns := 10000
+	testRuns := 200000
 
 	// Create test data
 	load := `load 30s
@@ -269,10 +274,10 @@ func TestProjectionPushdown(t *testing.T) {
 		http_requests_total{pod="nginx-2", job="app", env="dev", instance="2"} 2+2x40
 		http_requests_total{pod="nginx-3", job="api", env="prod", instance="3"} 3+3x40
 		http_requests_total{pod="nginx-4", job="api", env="dev", instance="4"} 4+4x40
-		errors_total{pod="nginx-1", job="app", env="prod", instance="1"} 0.5+0.5x40
-		errors_total{pod="nginx-2", job="app", env="dev", instance="2"} 1+1x40
-		errors_total{pod="nginx-3", job="api", env="prod", instance="3"} 1.5+1.5x40
-		errors_total{pod="nginx-4", job="api", env="dev", instance="4"} 2+2x40`
+		errors_total{pod="nginx-1", job="app", env="prod", instance="1", cluster="us-west-2"} 0.5+0.5x40
+		errors_total{pod="nginx-2", job="app", env="dev", instance="2", cluster="us-west-2"} 1+1x40
+		errors_total{pod="nginx-3", job="api", env="prod", instance="3", cluster="us-east-2"} 1.5+1.5x40
+		errors_total{pod="nginx-4", job="api", env="dev", instance="4", cluster="us-east-1"} 2+2x40`
 
 	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
@@ -287,8 +292,9 @@ func TestProjectionPushdown(t *testing.T) {
 		promqlsmith.WithEnableAtModifier(false),
 		// Focus on aggregations that benefit from projection pushdown
 		promqlsmith.WithEnabledAggrs([]parser.ItemType{
-			parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.COUNT,
+			parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.COUNT, parser.TOPK, parser.BOTTOMK,
 		}),
+		promqlsmith.WithEnableVectorMatching(true),
 	}
 	ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
@@ -312,6 +318,8 @@ func TestProjectionPushdown(t *testing.T) {
 		LogicalOptimizers:           append(logicalplan.AllOptimizers, &logicalplan.ProjectionPushdown{}),
 		DisableDuplicateLabelChecks: true,
 	})
+
+	// e := promql.NewEngine(engineOpts)
 
 	// Test context and time
 	ctx := context.Background()
@@ -347,28 +355,113 @@ func TestProjectionPushdown(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("Query_%d", i), func(t *testing.T) {
-			//			query = `
-			//(
+			// query = `exp(
+			//   (
+			//       {__name__="http_requests_total",job=~"a.*"}
+			//     - ignoring (instance, job)
+			//       {__name__="http_requests_total"}
+			//   )
+			// )`
+
+			// query = `
+			// sort(
+			//   (
+			//       {__name__="http_requests_total",instance="3",pod=~"ngi.*"}
+			//     <= ignoring (env, instance, job, pod) group_right ()
+			//       {__name__="http_requests_total"}
+			//   )
+			// )`
+
+			// query = `sum by (pod) (
+			//   -(
+			//       {__name__="http_requests_total",pod=~".*nx-2"}
+			//     % ignoring (job, pod, env, instance) group_right ()
+			//       {__name__="http_requests_total",instance=~".*"}
+			//   )
+			// )`
+
+			// query = `({__name__="http_requests_total"} and {__name__="http_requests_total",pod="nginx-3"})`
+
+			// query = `min by (env, instance) (
+			//   (
+			//       {__name__="http_requests_total",env!~"d.*"}
+			//     ^
+			//       {__name__="http_requests_total",env!="prod",job!=""}
+			//   )
+			// )`
+
+			// (
+			//     {__name__="http_requests_total",job="api"}
+			//   or
+			//     sum without (job, instance, pod, env) ({__name__="http_requests_total"})
+			// )`
+
+			// query = `
+			// (
+			//     {__name__="http_requests_total",env="prod",instance=~"1"}
+			//   and
+			//     min without (__name__) ({__name__="http_requests_total", instance="1"})
+			// )`
+
+			// query = `
+			// (
 			//    avg by (env, job, __name__) (-{__name__="http_requests_total",instance="1"})
 			//  or
 			//    {__name__="http_requests_total"}
-			//)`
+			// )`
 			//query = `timestamp(http_requests_total)`
-			//query = `avg without (pod, job) (min without (__name__, pod, instance) ({__name__="http_requests_total"}))`
-			// Execute query with normal engine
-			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, nil, query, queryTime)
-			testutil.Ok(t, err)
-			defer normalQuery.Close()
-			normalResult := normalQuery.Exec(ctx)
-			testutil.Ok(t, normalResult.Err)
+			// query = `rad(avg without (__name__) ({__name__="http_requests_total",instance="2"}))
+			//   != bool
+			//     0.7623828771359974`
+
+			// query = `
+			// max by (__name__, env) (
+			//               (
+			//                   {__name__="http_requests_total",job="app",pod="nginx-2"}
+			//                 <=
+			//                   sum without () ({__name__="http_requests_total"})
+			//               )
+			//             )`
+
+			// query = `
+			// count by (__name__, instance, pod) (
+			//               (
+			//                 {__name__="http_requests_total",pod="nginx-4"} or avg_over_time({__name__="http_requests_total"}[1m])
+			//               )
+			//             )`
+
+			// query = `
+			// (
+			//     avg_over_time({__name__="http_requests_total",env="prod",instance="3"}[4m])
+			//   or
+			//     max without (__name__, env) ({__name__="http_requests_total",env="prod"})
+			// )`
 
 			// Create mock querier that wraps the original querier
 			mockStorage := &mockQueryable{
 				Queryable: storage,
 			}
 
+			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, nil, query, queryTime)
+			testutil.Ok(t, err)
+			defer normalQuery.Close()
+			normalResult := normalQuery.Exec(ctx)
+			if normalResult.Err != nil && strings.Contains(normalResult.Err.Error(), "many-to-many matching not allowed: matching labels must be unique on one side") {
+				return
+			}
+			if normalResult.Err != nil && strings.Contains(normalResult.Err.Error(), "multiple matches for labels: many-to-one matching must be explicit") {
+				return
+			}
+			testutil.Ok(t, normalResult.Err, "query: %s", query)
+
+			// normalQuery0, err := e.NewInstantQuery(ctx, storage, nil, query, queryTime)
+			// testutil.Ok(t, err)
+			// defer normalQuery0.Close()
+			// normalResult0 := normalQuery0.Exec(ctx)
+			// testutil.Ok(t, normalResult0.Err)
+
 			// Execute query with pushdown engine and mock querier
-			pushdownQuery, err := pushdownEngine.NewInstantQuery(ctx, mockStorage, nil, query, queryTime)
+			pushdownQuery, err := pushdownEngine.MakeInstantQuery(ctx, mockStorage, &engine.QueryOpts{LogicalOptimizers: []logicalplan.Optimizer{&logicalplan.ProjectionPushdown{}}}, query, queryTime)
 			testutil.Ok(t, err)
 			fmt.Println(query)
 
@@ -385,7 +478,9 @@ func TestProjectionPushdown(t *testing.T) {
 				testutil.Ok(t, pushdownResult.Err)
 			}
 
-			// Compare results
+			// fmt.Println(normalResult0.String())
+			fmt.Println(normalResult.Value.String())
+			fmt.Println(pushdownResult.Value.String())
 			if diff := cmp.Diff(normalResult, pushdownResult, comparer); diff != "" {
 				t.Errorf("Results differ for query %s: %s", query, diff)
 			}
