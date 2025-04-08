@@ -1,3 +1,6 @@
+// Copyright (c) The Thanos Community Authors.
+// Licensed under the Apache License 2.0.
+
 package engine_test
 
 import (
@@ -10,6 +13,8 @@ import (
 
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/logicalplan"
+
+	"slices"
 
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/errors"
@@ -55,14 +60,11 @@ func (m projectionSeriesSet) At() storage.Series {
 	if m.hints.By {
 		// Include mode: only keep the labels in the grouping
 		builder := labels.NewBuilder(labels.EmptyLabels())
-		for _, l := range originalLabels {
-			for _, groupLabel := range m.hints.Grouping {
-				if l.Name == groupLabel {
-					builder.Set(l.Name, l.Value)
-					break
-				}
+		originalLabels.Range(func(l labels.Label) {
+			if slices.Contains(m.hints.Grouping, l.Name) {
+				builder.Set(l.Name, l.Value)
 			}
-		}
+		})
 		builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
 		projectedLabels = builder.Labels()
 	} else {
@@ -73,11 +75,11 @@ func (m projectionSeriesSet) At() storage.Series {
 		}
 
 		builder := labels.NewBuilder(labels.EmptyLabels())
-		for _, l := range originalLabels {
+		originalLabels.Range(func(l labels.Label) {
 			if _, excluded := excludeMap[l.Name]; !excluded {
 				builder.Set(l.Name, l.Value)
 			}
-		}
+		})
 		builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
 		projectedLabels = builder.Labels()
 	}
