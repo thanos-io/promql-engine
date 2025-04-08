@@ -11,7 +11,6 @@ type ProjectionPushdown struct {
 }
 
 func (p ProjectionPushdown) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
-	// Single pass: top-down traversal to push projections directly
 	p.pushProjection(&plan, nil, false)
 	return plan, nil
 }
@@ -26,7 +25,7 @@ func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string
 		if requiredLabels != nil {
 			projection := Projection{
 				Labels:  make([]string, 0, len(requiredLabels)),
-				Include: !isWithout, // For "without", we exclude the labels
+				Include: !isWithout,
 			}
 			for lbl := range requiredLabels {
 				projection.Labels = append(projection.Labels, lbl)
@@ -47,10 +46,9 @@ func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string
 
 		// For aggregations, we directly use the grouping labels
 		grouping := n.Grouping
-
 		groupingLabels := stringSet(grouping)
-
-		// Propagate to children using the aggregation's own grouping requirements
+		// Note that we don't push projection to Aggregation.Param as they are not
+		// selecting data for the aggregation.
 		p.pushProjection(&n.Expr, groupingLabels, n.Without)
 
 		if p.seriesHashLabel != "" && n.Without {
@@ -58,7 +56,6 @@ func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string
 		}
 
 	case *Binary:
-		// For binary operations with vector matching, we need the matching labels
 		if n.VectorMatching != nil {
 			if n.VectorMatching.Card == parser.CardOneToOne {
 				if n.VectorMatching.On {
@@ -66,54 +63,46 @@ func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string
 					// Don't consider parent requirements for binary operations
 					onLabels := make(map[string]struct{})
 
-					// Add the matching labels
 					for _, lbl := range n.VectorMatching.MatchingLabels {
 						onLabels[lbl] = struct{}{}
 					}
 
-					// Propagate to children
 					for _, child := range n.Children() {
 						p.pushProjection(child, onLabels, false) // Always use include mode for "on"
 					}
-					return // Already propagated to children
-				} else {
-					// For "ignoring", we need to exclude only the matching labels
-					// Don't consider parent requirements for binary operations
-					ignoredLabels := make(map[string]struct{})
-					for _, lbl := range n.VectorMatching.MatchingLabels {
-						ignoredLabels[lbl] = struct{}{}
-					}
-
-					// Propagate to children
-					for _, child := range n.Children() {
-						p.pushProjection(child, ignoredLabels, true) // true for "without"
-					}
-					n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, p.seriesHashLabel)
-					return // Already propagated to children
+					return
 				}
+
+				// For "ignoring", we need to exclude only the matching labels
+				// Don't consider parent requirements for binary operations
+				ignoredLabels := make(map[string]struct{})
+				for _, lbl := range n.VectorMatching.MatchingLabels {
+					ignoredLabels[lbl] = struct{}{}
+				}
+
+				for _, child := range n.Children() {
+					p.pushProjection(child, ignoredLabels, true) // true for "without"
+				}
+				n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, p.seriesHashLabel)
+				return
 			}
 		}
 
-		// No vector matching, just propagate existing requirements
+		// For simplicity, we don't push projection to children of binary operations.
 		for _, child := range n.Children() {
 			p.pushProjection(child, nil, false)
 		}
 
 	case *FunctionCall:
-		// Check function requirements for labels
+		// Handle function-specific label requirements.
 		updatedLabels := getFunctionLabelRequirements(n.Func.Name, n.Args, requiredLabels, isWithout)
 		for _, child := range n.Children() {
 			p.pushProjection(child, updatedLabels, isWithout)
 		}
 
 	case *MatrixSelector:
-		// Push projection to the inner vector selector
 		var vs Node = n.VectorSelector
 		p.pushProjection(&vs, requiredLabels, isWithout)
-
-	case *Subquery:
-		// Push projection to the inner expression
-		p.pushProjection(&n.Expr, requiredLabels, isWithout)
 
 	default:
 		// For other node types, propagate to children
@@ -161,30 +150,21 @@ func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels m
 		if len(args) >= 4 {
 			// Check if the destination label is in the required labels
 			if len(args) >= 2 {
-				// Unwrap any step invariant expressions
 				dstArg := unwrapStepInvariantExpr(args[1])
 				if dstLit, ok := dstArg.(*StringLiteral); ok {
 					dstLabel := dstLit.Val
-					if !isWithout {
-						if _, needed := result[dstLabel]; needed {
-							// Only if the destination label is needed, we need the source label
-							// Unwrap any step invariant expressions
-							srcArg := unwrapStepInvariantExpr(args[3])
-							if strLit, ok := srcArg.(*StringLiteral); ok {
-								// Add the source label to required labels
-								result[strLit.Val] = struct{}{}
-							}
-						}
-					} else {
-						if _, needed := result[dstLabel]; !needed {
-							// Only if the destination label is needed, we need the source labels
-							for i := 3; i < len(args); i++ {
-								// Unwrap any step invariant expressions
-								srcArg := unwrapStepInvariantExpr(args[i])
-								if strLit, ok := srcArg.(*StringLiteral); ok {
-									delete(result, strLit.Val)
-								}
-							}
+					_, needed := result[dstLabel]
+					needSourceLabels := (isWithout && !needed) || (!isWithout && needed)
+					if !needSourceLabels {
+						return result
+					}
+
+					srcArg := unwrapStepInvariantExpr(args[3])
+					if strLit, ok := srcArg.(*StringLiteral); ok {
+						if !isWithout && needed {
+							result[strLit.Val] = struct{}{}
+						} else {
+							delete(result, strLit.Val)
 						}
 					}
 				}
@@ -195,31 +175,23 @@ func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels m
 		if len(args) >= 4 {
 			// Check if the destination label is in the required labels
 			if len(args) >= 2 {
-				// Unwrap any step invariant expressions
 				dstArg := unwrapStepInvariantExpr(args[1])
 				if dstLit, ok := dstArg.(*StringLiteral); ok {
 					dstLabel := dstLit.Val
-					if !isWithout {
-						if _, needed := result[dstLabel]; needed {
-							// Only if the destination label is needed, we need the source labels
-							for i := 3; i < len(args); i++ {
-								// Unwrap any step invariant expressions
-								srcArg := unwrapStepInvariantExpr(args[i])
-								if strLit, ok := srcArg.(*StringLiteral); ok {
-									// Add each source label to required labels
-									result[strLit.Val] = struct{}{}
-								}
-							}
-						}
-					} else {
-						if _, needed := result[dstLabel]; !needed {
-							// Only if the destination label is needed, we need the source labels
-							for i := 3; i < len(args); i++ {
-								// Unwrap any step invariant expressions
-								srcArg := unwrapStepInvariantExpr(args[i])
-								if strLit, ok := srcArg.(*StringLiteral); ok {
-									delete(result, strLit.Val)
-								}
+					_, needed := result[dstLabel]
+					needSourceLabels := (isWithout && !needed) || (!isWithout && needed)
+					if !needSourceLabels {
+						return result
+					}
+
+					// Only if the destination label is needed, we need the source labels
+					for i := 3; i < len(args); i++ {
+						srcArg := unwrapStepInvariantExpr(args[i])
+						if strLit, ok := srcArg.(*StringLiteral); ok {
+							if !isWithout && needed {
+								result[strLit.Val] = struct{}{}
+							} else {
+								delete(result, strLit.Val)
 							}
 						}
 					}

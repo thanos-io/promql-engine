@@ -218,16 +218,6 @@ func Traverse(expr *Node, transform func(*Node)) {
 	}
 }
 
-func TraverseWithStop(expr *Node, transform func(*Node) bool) {
-	children := (*expr).Children()
-	if transform(expr) {
-		return
-	}
-	for _, c := range children {
-		TraverseWithStop(c, transform)
-	}
-}
-
 func TraverseWithParents(parents []*Node, current *Node, transform func(parents []*Node, node *Node)) {
 	children := (*current).Children()
 	transform(parents, current)

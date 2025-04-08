@@ -249,3 +249,169 @@ func TestProjectionPushdown(t *testing.T) {
 		})
 	}
 }
+
+func TestGetFunctionLabelRequirements(t *testing.T) {
+	tests := []struct {
+		name           string
+		funcName       string
+		args           []Node
+		requiredLabels map[string]struct{}
+		isWithout      bool
+		expected       map[string]struct{}
+	}{
+		{
+			name:     "histogram_quantile adds le label",
+			funcName: "histogram_quantile",
+			args:     []Node{},
+			requiredLabels: map[string]struct{}{
+				"instance": {},
+			},
+			isWithout: false,
+			expected: map[string]struct{}{
+				"instance": {},
+				"le":       {},
+			},
+		},
+		{
+			name:     "label_replace with destination label needed",
+			funcName: "label_replace",
+			args: []Node{
+				&VectorSelector{},
+				&StringLiteral{Val: "new_label"},
+				&StringLiteral{Val: "replacement"},
+				&StringLiteral{Val: "src_label"},
+				&StringLiteral{Val: "regex"},
+			},
+			requiredLabels: map[string]struct{}{
+				"new_label": {},
+			},
+			isWithout: false,
+			expected: map[string]struct{}{
+				"new_label": {},
+				"src_label": {},
+			},
+		},
+		{
+			name:     "label_replace with destination label not needed",
+			funcName: "label_replace",
+			args: []Node{
+				&VectorSelector{},
+				&StringLiteral{Val: "new_label"},
+				&StringLiteral{Val: "replacement"},
+				&StringLiteral{Val: "src_label"},
+				&StringLiteral{Val: "regex"},
+			},
+			requiredLabels: map[string]struct{}{
+				"other_label": {},
+			},
+			isWithout: false,
+			expected: map[string]struct{}{
+				"other_label": {},
+			},
+		},
+		{
+			name:     "label_replace with without clause",
+			funcName: "label_replace",
+			args: []Node{
+				&VectorSelector{},
+				&StringLiteral{Val: "new_label"},
+				&StringLiteral{Val: "replacement"},
+				&StringLiteral{Val: "src_label"},
+				&StringLiteral{Val: "regex"},
+			},
+			requiredLabels: map[string]struct{}{
+				"other_label": {},
+			},
+			isWithout: true,
+			expected: map[string]struct{}{
+				"other_label": {},
+			},
+		},
+		{
+			name:     "label_join with destination label needed",
+			funcName: "label_join",
+			args: []Node{
+				&VectorSelector{},
+				&StringLiteral{Val: "new_label"},
+				&StringLiteral{Val: "separator"},
+				&StringLiteral{Val: "src_label1"},
+				&StringLiteral{Val: "src_label2"},
+			},
+			requiredLabels: map[string]struct{}{
+				"new_label": {},
+			},
+			isWithout: false,
+			expected: map[string]struct{}{
+				"new_label":  {},
+				"src_label1": {},
+				"src_label2": {},
+			},
+		},
+		{
+			name:     "label_join with without clause",
+			funcName: "label_join",
+			args: []Node{
+				&VectorSelector{},
+				&StringLiteral{Val: "new_label"},
+				&StringLiteral{Val: "separator"},
+				&StringLiteral{Val: "src_label1"},
+				&StringLiteral{Val: "src_label2"},
+			},
+			requiredLabels: map[string]struct{}{
+				"new_label": {},
+			},
+			isWithout: true,
+			expected: map[string]struct{}{
+				"new_label": {},
+			},
+		},
+		{
+			name:     "unknown function returns original labels",
+			funcName: "unknown_function",
+			args:     []Node{},
+			requiredLabels: map[string]struct{}{
+				"label1": {},
+			},
+			isWithout: false,
+			expected: map[string]struct{}{
+				"label1": {},
+			},
+		},
+		{
+			name:           "nil required labels returns nil",
+			funcName:       "histogram_quantile",
+			args:           []Node{},
+			requiredLabels: nil,
+			isWithout:      false,
+			expected:       nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := getFunctionLabelRequirements(tt.funcName, tt.args, tt.requiredLabels, tt.isWithout)
+
+			// Check if result is nil when expected is nil
+			if tt.expected == nil {
+				if result != nil {
+					t.Errorf("expected nil result, got %v", result)
+				}
+				return
+			}
+
+			// Check if all expected labels are in the result
+			for label := range tt.expected {
+				if _, exists := result[label]; !exists {
+					t.Errorf("expected label %s to be in result, but it wasn't", label)
+				}
+			}
+
+			// Check if result doesn't have unexpected labels
+			for label := range result {
+				if _, exists := tt.expected[label]; !exists {
+					t.Errorf("unexpected label %s in result", label)
+				}
+			}
+		})
+	}
+}
