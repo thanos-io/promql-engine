@@ -7,14 +7,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/logicalplan"
-
-	"slices"
 
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/errors"
