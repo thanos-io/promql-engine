@@ -68,29 +68,6 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		}
 
 	case *Binary:
-		// // Propagate to children using the aggregation's own grouping requirements
-		// for _, child := range n.Children() {
-		// 	pushProjection(child, nil, isWithout)
-		// }
-		// return
-
-		// lhs := getProjection(&n.LHS)
-		// rhs := getProjection(&n.RHS)
-		// fmt.Println("lhs", lhs)
-		// fmt.Println("rhs", rhs)
-
-		// mergedProjection := mergeProjections(lhs, rhs)
-		// fmt.Println("mergedProjection", mergedProjection)
-		// // If either side is a scalar, just propagate the parent requirements
-		// if mergedProjection == nil || n.LHS.ReturnType() == parser.ValueTypeScalar || n.RHS.ReturnType() == parser.ValueTypeScalar {
-		// 	pushProjection(&n.LHS, requiredLabels, isWithout)
-		// 	pushProjection(&n.RHS, requiredLabels, isWithout)
-		// 	return
-		// }
-
-		// pushProjection(&n.LHS, stringSet(mergedProjection.Labels), !mergedProjection.Include)
-		// pushProjection(&n.RHS, stringSet(mergedProjection.Labels), !mergedProjection.Include)
-
 		// For binary operations with vector matching, we need the matching labels
 		if n.VectorMatching != nil {
 			if n.VectorMatching.Card == parser.CardOneToOne {
@@ -117,15 +94,6 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 						ignoredLabels[lbl] = struct{}{}
 					}
 
-					// if dropMetricNameInResult {
-					// 	ignoredLabels[labels.MetricName] = struct{}{}
-					// }
-
-					//// Also ignore the metric name label for "ignoring" mode
-					//if len(n.VectorMatching.MatchingLabels) > 0 && !(n.Op == parser.LAND || n.Op == parser.LOR || n.Op == parser.LUNLESS) {
-					//	ignoredLabels[labels.MetricName] = struct{}{}
-					//}
-
 					// Propagate to children
 					for _, child := range n.Children() {
 						pushProjection(child, ignoredLabels, true) // true for "without"
@@ -134,57 +102,6 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 					return // Already propagated to children
 				}
 			}
-
-			// else {
-			// 	// For group_left/group_right with "on", we need matching labels and include labels
-			// 	if n.VectorMatching.On {
-			// 		// Don't consider parent requirements for binary operations
-			// 		for i, child := range n.Children() {
-			// 			childRequired := make(map[string]struct{})
-
-			// 			// Add the matching labels
-			// 			for _, lbl := range n.VectorMatching.MatchingLabels {
-			// 				childRequired[lbl] = struct{}{}
-			// 			}
-
-			// 			// For group_left, only the right side (i==1) needs the include labels
-			// 			// For group_right, only the left side (i==0) needs the include labels
-			// 			if (n.VectorMatching.Card == parser.CardManyToOne && i == 1) ||
-			// 				(n.VectorMatching.Card == parser.CardOneToMany && i == 0) {
-			// 				for _, lbl := range n.VectorMatching.Include {
-			// 					childRequired[lbl] = struct{}{}
-			// 				}
-			// 			}
-
-			// 			pushProjection(child, childRequired, false) // Always use include mode for "on"
-			// 		}
-			// 		return // Already propagated to children
-			// 	} else {
-			// 		// For "ignoring" with group_left/group_right
-			// 		for i, child := range n.Children() {
-			// 			// Don't consider parent requirements for binary operations
-			// 			ignoredLabels := make(map[string]struct{})
-			// 			for _, lbl := range n.VectorMatching.MatchingLabels {
-			// 				ignoredLabels[lbl] = struct{}{}
-			// 			}
-
-			// 			// For group_left, only the right side (i==1) needs the include labels
-			// 			// For group_right, only the left side (i==0) needs the include labels
-			// 			if (n.VectorMatching.Card == parser.CardManyToOne && i == 1) ||
-			// 				(n.VectorMatching.Card == parser.CardOneToMany && i == 0) {
-			// 				for _, lbl := range n.VectorMatching.Include {
-			// 					delete(ignoredLabels, lbl)
-			// 				}
-			// 			}
-
-			// 			pushProjection(child, ignoredLabels, true) // true for "without"
-			// 		}
-			// 		// if !n.ReturnBool {
-			// 		// 	n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
-			// 		// }
-			// 		return // Already propagated to children
-			// 	}
-			// }
 		}
 
 		// No vector matching, just propagate existing requirements

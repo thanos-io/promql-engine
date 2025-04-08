@@ -17,19 +17,18 @@ import (
 type NodeType string
 
 const (
-	VectorSelectorNode   = "vector_selector"
-	MatrixSelectorNode   = "matrix_selector"
-	AggregationNode      = "aggregation"
-	BinaryNode           = "binary"
-	FunctionNode         = "function"
-	NumberLiteralNode    = "number_literal"
-	StringLiteralNode    = "string_literal"
-	SubqueryNode         = "subquery"
-	CheckDuplicateNode   = "check_duplicate"
-	RemoveSeriesHashNode = "remove_series_hash"
-	StepInvariantNode    = "step_invariant"
-	ParensNode           = "parens"
-	UnaryNode            = "unary"
+	VectorSelectorNode = "vector_selector"
+	MatrixSelectorNode = "matrix_selector"
+	AggregationNode    = "aggregation"
+	BinaryNode         = "binary"
+	FunctionNode       = "function"
+	NumberLiteralNode  = "number_literal"
+	StringLiteralNode  = "string_literal"
+	SubqueryNode       = "subquery"
+	CheckDuplicateNode = "check_duplicate"
+	StepInvariantNode  = "step_invariant"
+	ParensNode         = "parens"
+	UnaryNode          = "unary"
 
 	RemoteExecutionNode = "remote_exec"
 	DeduplicateNode     = "dedup"
@@ -155,22 +154,6 @@ func (c *CheckDuplicateLabels) Children() []*Node            { return []*Node{&c
 func (c *CheckDuplicateLabels) String() string               { return c.Expr.String() }
 func (c *CheckDuplicateLabels) ReturnType() parser.ValueType { return c.Expr.ReturnType() }
 func (c *CheckDuplicateLabels) Type() NodeType               { return CheckDuplicateNode }
-
-// RemoveSeriesHash is a logical node that checks for duplicate labels in the same timestamp.
-type RemoveSeriesHash struct {
-	Expr Node `json:"-"`
-}
-
-func (c *RemoveSeriesHash) Clone() Node {
-	clone := *c
-	clone.Expr = c.Expr.Clone()
-	return &clone
-}
-
-func (c *RemoveSeriesHash) Children() []*Node            { return []*Node{&c.Expr} }
-func (c *RemoveSeriesHash) String() string               { return c.Expr.String() }
-func (c *RemoveSeriesHash) ReturnType() parser.ValueType { return c.Expr.ReturnType() }
-func (c *RemoveSeriesHash) Type() NodeType               { return RemoveSeriesHashNode }
 
 // StringLiteral is a logical node representing a literal string.
 type StringLiteral struct {
