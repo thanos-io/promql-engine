@@ -1,9 +1,10 @@
 package logicalplan
 
 import (
+	"github.com/thanos-io/promql-engine/query"
+
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/thanos-io/promql-engine/query"
 )
 
 type ProjectionPushdown struct {
@@ -15,9 +16,7 @@ func (p ProjectionPushdown) Optimize(plan Node, _ *query.Options) (Node, annotat
 	return plan, nil
 }
 
-// pushProjection recursively traverses the tree and pushes projection information down
-// - requiredLabels: the set of labels required by parent nodes
-// - isWithout: whether the projection should exclude (true) or include (false) the labels
+// pushProjection recursively traverses the tree and pushes projection information down.
 func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bool) {
 	switch n := (*node).(type) {
 	case *VectorSelector:
@@ -123,7 +122,7 @@ func stringSet(s []string) map[string]struct{} {
 	return set
 }
 
-// unwrapStepInvariantExpr recursively unwraps step invariant expressions to get to the underlying node
+// unwrapStepInvariantExpr recursively unwraps step invariant expressions to get to the underlying node.
 func unwrapStepInvariantExpr(node Node) Node {
 	if stepInvariant, ok := node.(*StepInvariantExpr); ok {
 		return unwrapStepInvariantExpr(stepInvariant.Expr)
@@ -131,8 +130,6 @@ func unwrapStepInvariantExpr(node Node) Node {
 	return node
 }
 
-// getFunctionLabelRequirements ensures that specific labels required by functions are included
-// in the projection
 func getFunctionLabelRequirements(funcName string, args []Node, requiredLabels map[string]struct{}, isWithout bool) map[string]struct{} {
 	if requiredLabels == nil {
 		return nil
