@@ -2,14 +2,17 @@ package engine_test
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"math/rand"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
+
 	"github.com/cortexproject/promqlsmith"
+	"github.com/efficientgo/core/errors"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/model/labels"
@@ -19,8 +22,6 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
-	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 type projectionQuerier struct {
@@ -88,7 +89,7 @@ func (m projectionSeriesSet) At() storage.Series {
 	}
 }
 
-// projectedSeries wraps a storage.Series but returns projected labels
+// projectedSeries wraps a storage.Series but returns projected labels.
 type projectedSeries struct {
 	storage.Series
 	lset labels.Labels
@@ -105,7 +106,7 @@ func (s *projectedSeries) Iterator(iter chunkenc.Iterator) chunkenc.Iterator {
 func (m projectionSeriesSet) Err() error                        { return m.SeriesSet.Err() }
 func (m projectionSeriesSet) Warnings() annotations.Annotations { return m.SeriesSet.Warnings() }
 
-// Implement the Querier interface methods
+// Implement the Querier interface methods.
 func (m *projectionQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
 	return projectionSeriesSet{
 		SeriesSet: m.Querier.Select(ctx, sortSeries, hints, matchers...),
@@ -120,7 +121,7 @@ func (m *projectionQuerier) LabelNames(ctx context.Context, _ *storage.LabelHint
 }
 func (m *projectionQuerier) Close() error { return nil }
 
-// projectionQueryable is a storage.Queryable that applies projection to the querier
+// projectionQueryable is a storage.Queryable that applies projection to the querier.
 type projectionQueryable struct {
 	storage.Queryable
 }
@@ -256,7 +257,7 @@ func TestProjectionPushdownWithFuzz(t *testing.T) {
 	}
 }
 
-// containsAggregationOrBinaryOperation checks if the expression contains any aggregation or binary operations
+// containsAggregationOrBinaryOperation checks if the expression contains any aggregation or binary operations.
 func containsAggregationOrBinaryOperation(expr parser.Expr) bool {
 	found := false
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {

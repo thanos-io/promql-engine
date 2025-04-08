@@ -7,9 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/query"
+
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/thanos-io/promql-engine/query"
 )
 
 func TestProjectionPushdown(t *testing.T) {
