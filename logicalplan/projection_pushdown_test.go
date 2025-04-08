@@ -26,7 +26,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "simple aggregation without no labels",
 			expr:     `sum without() (metric{instance="a", job="b", env="c"})`,
-			expected: `sum without () (metric{env="c",instance="a",job="b"}[projection=exclude(__name__)])`,
+			expected: `sum without (__series_hash__) (metric{env="c",instance="a",job="b"}[projection=exclude()])`,
 		},
 		{
 			name:     "simple aggregation",
@@ -36,7 +36,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "multiple aggregations",
 			expr:     `sum by (job) (metric{instance="a", job="b", env="c"}) / count by (job) (metric{instance="a", job="b", env="c"})`,
-			expected: `sum by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)]) / count by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)])`,
+			expected: `sum by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)]) / ignoring (__series_hash__) count by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)])`,
 		},
 		{
 			name:     "binary operation with vector matching",
@@ -56,7 +56,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "aggregation with without",
 			expr:     `sum without (instance) (metric{instance="a", job="b", env="c"})`,
-			expected: `sum without (instance) (metric{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)])`,
+			expected: `sum without (instance, __series_hash__) (metric{env="c",instance="a",job="b"}[projection=exclude(instance)])`,
 		},
 		{
 			name:     "subquery with aggregation",
@@ -111,32 +111,17 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "binary operation with ignoring",
 			expr:     `metric{instance="a", job="b", env="c"} * ignoring(instance) metric{instance="d", job="b", env="c"}`,
-			expected: `metric{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) metric{env="c",instance="d",job="b"}[projection=exclude(__name__,instance)]`,
+			expected: `metric{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric{env="c",instance="d",job="b"}[projection=exclude(instance)]`,
 		},
 		{
 			name:     "binary operation with ignoring and group_left",
 			expr:     `metric{instance="a", job="b", env="c"} * ignoring(instance) group_left(env) metric{instance="d", job="b"}`,
-			expected: `metric{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) group_left (env) metric{instance="d",job="b"}[projection=exclude(__name__,instance)]`,
+			expected: `metric{env="c",instance="a",job="b"} * ignoring (instance) group_left (env) metric{instance="d",job="b"}`,
 		},
 		{
 			name:     "binary operation with ignoring and group_right",
 			expr:     `metric{instance="a", job="b"} * ignoring(job) group_right(instance) metric{instance="d", job="b", env="e"}`,
-			expected: `metric{instance="a",job="b"}[projection=exclude(__name__,job)] * ignoring (job) group_right (instance) metric{env="e",instance="d",job="b"}[projection=exclude(__name__,job)]`,
-		},
-		{
-			name:     "binary operation with ignoring",
-			expr:     `metric{instance="a", job="b", env="c"} * ignoring(instance) metric{instance="d", job="b", env="c"}`,
-			expected: `metric{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) metric{env="c",instance="d",job="b"}[projection=exclude(__name__,instance)]`,
-		},
-		{
-			name:     "binary operation with ignoring and group_left",
-			expr:     `metric{instance="a", job="b", env="c"} * ignoring(instance) group_left(env) metric{instance="d", job="b"}`,
-			expected: `metric{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) group_left (env) metric{instance="d",job="b"}[projection=exclude(__name__,instance)]`,
-		},
-		{
-			name:     "binary operation with ignoring and group_right",
-			expr:     `metric{instance="a", job="b"} * ignoring(job) group_right(instance) metric{instance="d", job="b", env="e"}`,
-			expected: `metric{instance="a",job="b"}[projection=exclude(__name__,job)] * ignoring (job) group_right (instance) metric{env="e",instance="d",job="b"}[projection=exclude(__name__,job)]`,
+			expected: `metric{instance="a",job="b"} * ignoring (job) group_right (instance) metric{env="e",instance="d",job="b"}`,
 		},
 		{
 			name:     "aggregation with binary operation using 'on'",
@@ -146,37 +131,37 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "aggregation with binary operation using 'ignoring'",
 			expr:     `sum(metric1{instance="a", job="b", env="c"} * ignoring(instance) metric2{instance="d", job="b", env="c"})`,
-			expected: `sum(metric1{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) metric2{env="c",instance="d",job="b"}[projection=exclude(__name__,instance)])`,
+			expected: `sum(metric1{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric2{env="c",instance="d",job="b"}[projection=exclude(instance)])`,
 		},
 		{
 			name:     "aggregation by label with binary operation using 'on' and 'group_left'",
 			expr:     `sum by (job) (metric1{instance="a", job="b", env="c"} * on(job) group_left(env) metric2{instance="d", job="b"})`,
-			expected: `sum by (job) (metric1{env="c",instance="a",job="b"}[projection=include(env,job)] * on (job) group_left (env) metric2{instance="d",job="b"}[projection=include(job)])`,
+			expected: `sum by (job) (metric1{env="c",instance="a",job="b"} * on (job) group_left (env) metric2{instance="d",job="b"})`,
 		},
 		{
 			name:     "aggregation by label with binary operation using 'on' and 'group_right'",
 			expr:     `sum by (job) (metric1{instance="a", job="b"} * on(job) group_right(instance) metric2{instance="d", job="b", env="e"})`,
-			expected: `sum by (job) (metric1{instance="a",job="b"}[projection=include(job)] * on (job) group_right (instance) metric2{env="e",instance="d",job="b"}[projection=include(instance,job)])`,
+			expected: `sum by (job) (metric1{instance="a",job="b"} * on (job) group_right (instance) metric2{env="e",instance="d",job="b"})`,
 		},
 		{
 			name:     "aggregation by label with binary operation using 'ignoring' and 'group_left'",
 			expr:     `sum by (job) (metric1{instance="a", job="b", env="c"} * ignoring(instance) group_left(env) metric2{instance="d", job="b"})`,
-			expected: `sum by (job) (metric1{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) group_left (env) metric2{instance="d",job="b"}[projection=exclude(__name__,instance)])`,
+			expected: `sum by (job) (metric1{env="c",instance="a",job="b"} * ignoring (instance) group_left (env) metric2{instance="d",job="b"})`,
 		},
 		{
 			name:     "aggregation by label with binary operation using 'ignoring' and 'group_right'",
 			expr:     `sum by (job) (metric1{instance="a", job="b"} * ignoring(instance) group_right(env) metric2{instance="d", job="b", env="e"})`,
-			expected: `sum by (job) (metric1{instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) group_right (env) metric2{env="e",instance="d",job="b"}[projection=exclude(__name__,instance)])`,
+			expected: `sum by (job) (metric1{instance="a",job="b"} * ignoring (instance) group_right (env) metric2{env="e",instance="d",job="b"})`,
 		},
 		{
 			name:     "aggregation without label with binary operation using 'on'",
 			expr:     `sum without (instance) (metric1{instance="a", job="b", env="c"} * on(job) metric2{instance="d", job="b", env="e"})`,
-			expected: `sum without (instance) (metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])`,
+			expected: `sum without (instance, __series_hash__) (metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])`,
 		},
 		{
 			name:     "aggregation without label with binary operation using 'ignoring'",
 			expr:     `sum without (instance) (metric1{instance="a", job="b", env="c"} * ignoring(instance) metric2{instance="d", job="b", env="c"})`,
-			expected: `sum without (instance) (metric1{env="c",instance="a",job="b"}[projection=exclude(__name__,instance)] * ignoring (instance) metric2{env="c",instance="d",job="b"}[projection=exclude(__name__,instance)])`,
+			expected: `sum without (instance, __series_hash__) (metric1{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric2{env="c",instance="d",job="b"}[projection=exclude(instance)])`,
 		},
 		{
 			name:     "binary operation with on",
@@ -186,7 +171,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "binary operation with on and group_right",
 			expr:     `metric{instance="a", job="b"} * on(job) group_right(instance) metric{instance="d", job="b", env="e"}`,
-			expected: `metric{instance="a",job="b"}[projection=include(job)] * on (job) group_right (instance) metric{env="e",instance="d",job="b"}[projection=include(instance,job)]`,
+			expected: `metric{instance="a",job="b"} * on (job) group_right (instance) metric{env="e",instance="d",job="b"}`,
 		},
 		{
 			name:     "nested aggregation",
@@ -196,22 +181,22 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "nested aggregation with without",
 			expr:     `sum without (instance) (avg without (env) (metric{instance="a", job="b", env="c"}))`,
-			expected: `sum without (instance) (avg without (env) (metric{env="c",instance="a",job="b"}[projection=exclude(__name__,env)]))`,
+			expected: `sum without (instance, __series_hash__) (avg without (env, __series_hash__) (metric{env="c",instance="a",job="b"}[projection=exclude(env)]))`,
 		},
 		{
 			name:     "nested aggregation with outer by and inner without",
 			expr:     `sum by (job) (avg without (env) (metric{instance="a", job="b", env="c"}))`,
-			expected: `sum by (job) (avg without (env) (metric{env="c",instance="a",job="b"}[projection=exclude(__name__,env)]))`,
+			expected: `sum by (job) (avg without (env, __series_hash__) (metric{env="c",instance="a",job="b"}[projection=exclude(env)]))`,
 		},
 		{
 			name:     "nested aggregation with outer without and inner by",
 			expr:     `sum without (env) (avg by (job, instance) (metric{instance="a", job="b", env="c"}))`,
-			expected: `sum without (env) (avg by (job, instance) (metric{env="c",instance="a",job="b"}[projection=include(instance,job)]))`,
+			expected: `sum without (env, __series_hash__) (avg by (job, instance) (metric{env="c",instance="a",job="b"}[projection=include(instance,job)]))`,
 		},
 		{
 			name:     "triple nested aggregation with mixed by and without",
 			expr:     `sum by (job) (count without (env) (avg by (job, instance) (metric{instance="a", job="b", env="c"})))`,
-			expected: `sum by (job) (count without (env) (avg by (job, instance) (metric{env="c",instance="a",job="b"}[projection=include(instance,job)])))`,
+			expected: `sum by (job) (count without (env, __series_hash__) (avg by (job, instance) (metric{env="c",instance="a",job="b"}[projection=include(instance,job)])))`,
 		},
 		{
 			name:     "nested aggregation with different by labels",
@@ -256,7 +241,7 @@ func TestProjectionPushdown(t *testing.T) {
 			testutil.Ok(t, err)
 
 			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
-			optimizer := ProjectionPushdown{}
+			optimizer := ProjectionPushdown{seriesHashLabel: "__series_hash__"}
 			optimizedPlan, _ := optimizer.Optimize(plan.Root(), nil)
 
 			result := renderExprTree(optimizedPlan)

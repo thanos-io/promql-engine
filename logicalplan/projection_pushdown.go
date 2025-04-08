@@ -6,30 +6,20 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 )
 
-type ProjectionPushdown struct{}
+type ProjectionPushdown struct {
+	seriesHashLabel string
+}
 
 func (p ProjectionPushdown) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
 	// Single pass: top-down traversal to push projections directly
-	pushProjection(&plan, nil, false)
-	//plan = insertDuplicateLabelChecks(plan)
-
-	// TraverseWithStop(&plan, func(node *Node) bool {
-	// 	switch e := (*node).(type) {
-	// 	case *Aggregation:
-	// 		if e.Without {
-	// 			e.Grouping = append(e.Grouping, "__series_hash__")
-	// 		}
-	// 		return false
-	// 	}
-	// 	return false
-	// })
+	p.pushProjection(&plan, nil, false)
 	return plan, nil
 }
 
 // pushProjection recursively traverses the tree and pushes projection information down
 // - requiredLabels: the set of labels required by parent nodes
 // - isWithout: whether the projection should exclude (true) or include (false) the labels
-func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bool) {
+func (p ProjectionPushdown) pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bool) {
 	switch n := (*node).(type) {
 	case *VectorSelector:
 		// Apply projection if we have required labels
@@ -51,7 +41,7 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		switch n.Op {
 		case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
 			// These functions need all labels, so clear any requirements
-			pushProjection(&n.Expr, nil, false)
+			p.pushProjection(&n.Expr, nil, false)
 			return
 		}
 
@@ -61,10 +51,10 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 		groupingLabels := stringSet(grouping)
 
 		// Propagate to children using the aggregation's own grouping requirements
-		pushProjection(&n.Expr, groupingLabels, n.Without)
+		p.pushProjection(&n.Expr, groupingLabels, n.Without)
 
-		if n.Without {
-			n.Grouping = append(grouping, "__series_hash__")
+		if p.seriesHashLabel != "" && n.Without {
+			n.Grouping = append(grouping, p.seriesHashLabel)
 		}
 
 	case *Binary:
@@ -83,7 +73,7 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 
 					// Propagate to children
 					for _, child := range n.Children() {
-						pushProjection(child, onLabels, false) // Always use include mode for "on"
+						p.pushProjection(child, onLabels, false) // Always use include mode for "on"
 					}
 					return // Already propagated to children
 				} else {
@@ -96,9 +86,9 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 
 					// Propagate to children
 					for _, child := range n.Children() {
-						pushProjection(child, ignoredLabels, true) // true for "without"
+						p.pushProjection(child, ignoredLabels, true) // true for "without"
 					}
-					n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, "__series_hash__")
+					n.VectorMatching.MatchingLabels = append(n.VectorMatching.MatchingLabels, p.seriesHashLabel)
 					return // Already propagated to children
 				}
 			}
@@ -106,29 +96,29 @@ func pushProjection(node *Node, requiredLabels map[string]struct{}, isWithout bo
 
 		// No vector matching, just propagate existing requirements
 		for _, child := range n.Children() {
-			pushProjection(child, nil, false)
+			p.pushProjection(child, nil, false)
 		}
 
 	case *FunctionCall:
 		// Check function requirements for labels
 		updatedLabels := getFunctionLabelRequirements(n.Func.Name, n.Args, requiredLabels, isWithout)
 		for _, child := range n.Children() {
-			pushProjection(child, updatedLabels, isWithout)
+			p.pushProjection(child, updatedLabels, isWithout)
 		}
 
 	case *MatrixSelector:
 		// Push projection to the inner vector selector
 		var vs Node = n.VectorSelector
-		pushProjection(&vs, requiredLabels, isWithout)
+		p.pushProjection(&vs, requiredLabels, isWithout)
 
 	case *Subquery:
 		// Push projection to the inner expression
-		pushProjection(&n.Expr, requiredLabels, isWithout)
+		p.pushProjection(&n.Expr, requiredLabels, isWithout)
 
 	default:
 		// For other node types, propagate to children
 		for _, child := range (*node).Children() {
-			pushProjection(child, requiredLabels, isWithout)
+			p.pushProjection(child, requiredLabels, isWithout)
 		}
 	}
 }
