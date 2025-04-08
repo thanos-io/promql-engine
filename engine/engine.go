@@ -275,6 +275,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 
 	e.metrics.totalQueries.Inc()
+
 	return &compatibilityQuery{
 		Query:      &Query{exec: exec, opts: opts},
 		engine:     e,
@@ -319,6 +320,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
+
 	return &compatibilityQuery{
 		Query:  &Query{exec: exec, opts: opts},
 		engine: e,
