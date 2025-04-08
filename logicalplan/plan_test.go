@@ -40,12 +40,14 @@ func renderExprTree(expr Node) string {
 		if t.BatchSize > 0 {
 			base += fmt.Sprintf("[batch=%d]", t.BatchSize)
 		}
-		if t.Projection.Labels != nil {
-			sort.Strings(t.Projection.Labels)
-			if t.Projection.Include {
-				base += fmt.Sprintf("[projection=include(%s)]", strings.Join(t.Projection.Labels, ","))
-			} else {
-				base += fmt.Sprintf("[projection=exclude(%s)]", strings.Join(t.Projection.Labels, ","))
+		if t.Projection != nil {
+			if t.Projection.Labels != nil {
+				sort.Strings(t.Projection.Labels)
+				if t.Projection.Include {
+					base += fmt.Sprintf("[projection=include(%s)]", strings.Join(t.Projection.Labels, ","))
+				} else {
+					base += fmt.Sprintf("[projection=exclude(%s)]", strings.Join(t.Projection.Labels, ","))
+				}
 			}
 		}
 		if len(t.Filters) > 0 {

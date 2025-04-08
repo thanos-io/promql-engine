@@ -54,8 +54,10 @@ func (p Scanners) NewVectorSelector(
 	logicalNode logicalplan.VectorSelector,
 ) (model.VectorOperator, error) {
 	// Update hints with projection information if available
-	hints.Grouping = logicalNode.Projection.Labels
-	hints.By = logicalNode.Projection.Include
+	if logicalNode.Projection != nil {
+		hints.Grouping = logicalNode.Projection.Labels
+		hints.By = logicalNode.Projection.Include
+	}
 
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
 	if logicalNode.DecodeNativeHistogramStats {
@@ -125,8 +127,10 @@ func (p Scanners) NewMatrixSelector(
 	}
 
 	vs := logicalNode.VectorSelector
-	hints.Grouping = vs.Projection.Labels
-	hints.By = vs.Projection.Include
+	if vs.Projection != nil {
+		hints.Grouping = vs.Projection.Labels
+		hints.By = vs.Projection.Include
+	}
 
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
 	if logicalNode.VectorSelector.DecodeNativeHistogramStats {
