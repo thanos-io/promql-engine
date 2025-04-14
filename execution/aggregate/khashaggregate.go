@@ -65,11 +65,7 @@ func NewKHashAggregate(
 		compare = func(f float64, s float64) bool {
 			return s < f
 		}
-	} else if aggregation == parser.LIMITK {
-		compare = func(f1, f2 float64) bool {
-			return false // limitk doesnt require any sort logic
-		}
-	} else {
+	} else if aggregation != parser.LIMITK {
 		return nil, errors.Newf("Unsupported aggregate expression: %v", aggregation)
 	}
 	// Grouping labels need to be sorted in order for metric hashing to work.
@@ -211,34 +207,40 @@ func (a *kAggregate) init(ctx context.Context) error {
 	return nil
 }
 
+// aggregates based on the given parameter k and timeseries, supported aggregation are
+// topk: gives the 'k' largest element based on the sample values
+// bottomk: gives the 'k' smallest element based on the sample values
+// limitk: samples the first 'k' element from the given timeseries (has native histogram support)
 func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
 	groupsRemaining := len(a.heaps)
 
-	if a.aggregation == parser.TOPK || a.aggregation == parser.BOTTOMK {
+	switch a.aggregation {
+	case parser.TOPK, parser.BOTTOMK:
 		for i, sId := range sampleIDs {
-			h := a.inputToHeap[sId]
+			sampleHeap := a.inputToHeap[sId]
 			switch {
-			case h.Len() < k:
-				heap.Push(h, &entry{sId: sId, total: samples[i]})
+			case sampleHeap.Len() < k:
+				heap.Push(sampleHeap, &entry{sId: sId, total: samples[i]})
 
-			case h.compare(h.entries[0].total, samples[i]) || (math.IsNaN(h.entries[0].total) && !math.IsNaN(samples[i])):
-				h.entries[0].sId = sId
-				h.entries[0].total = samples[i]
+			case sampleHeap.compare(sampleHeap.entries[0].total, samples[i]) || (math.IsNaN(sampleHeap.entries[0].total) && !math.IsNaN(samples[i])):
+				sampleHeap.entries[0].sId = sId
+				sampleHeap.entries[0].total = samples[i]
 
 				if k > 1 {
-					heap.Fix(h, 0)
+					heap.Fix(sampleHeap, 0)
 				}
 			}
 		}
-	} else if a.aggregation == parser.LIMITK {
+
+	case parser.LIMITK:
 		if len(histogramIDs) == 0 {
 			for i, sId := range sampleIDs {
-				h := a.inputToHeap[sId]
+				sampleHeap := a.inputToHeap[sId]
 				switch {
-				case h.Len() < k:
-					heap.Push(h, &entry{sId: sId, total: samples[i]})
+				case sampleHeap.Len() < k:
+					heap.Push(sampleHeap, &entry{sId: sId, total: samples[i]})
 
-					if h.Len() == k && a.aggregation == parser.LIMITK {
+					if sampleHeap.Len() == k && a.aggregation == parser.LIMITK {
 						groupsRemaining--
 					}
 
@@ -251,34 +253,32 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 			histogramIndex := 0
 			sampleIndex := 0
 
+			// pick the first 'k' samples based on the increasing order of their ids
 			for histogramIndex < len(histogramIDs) || sampleIndex < len(sampleIDs) {
 				var currentID uint64
+				haveSample := sampleIndex < len(sampleIDs)
+				haveHistogram := histogramIndex < len(histogramIDs)
 
-				// Pick the relatively first id in the sample
-				if histogramIndex < len(histogramIDs) && sampleIndex < len(sampleIDs) {
+				if haveSample && haveHistogram {
 					currentID = uint64(min(sampleIDs[sampleIndex], histogramIDs[histogramIndex]))
-				} else if histogramIndex < len(histogramIDs) {
-					// Only histograms left
+				} else if haveHistogram {
 					currentID = histogramIDs[histogramIndex]
 				} else {
-					// Only samples left
 					currentID = sampleIDs[sampleIndex]
 				}
 
-				h := a.inputToHeap[currentID]
+				sampleHeap := a.inputToHeap[currentID]
 
-				if h.Len() < k {
-					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == currentID {
-						heap.Push(h, &entry{histId: currentID, histogramSample: histograms[histogramIndex]})
+				if sampleHeap.Len() < k {
+					if haveHistogram && histogramIDs[histogramIndex] == currentID {
+						heap.Push(sampleHeap, &entry{histId: currentID, histogramSample: histograms[histogramIndex]})
 						histogramIndex++
-					}
-
-					if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == currentID {
-						heap.Push(h, &entry{sId: currentID, total: samples[sampleIndex]})
+					} else if haveSample && sampleIDs[sampleIndex] == currentID {
+						heap.Push(sampleHeap, &entry{sId: currentID, total: samples[sampleIndex]})
 						sampleIndex++
 					}
 
-					if h.Len() == k {
+					if sampleHeap.Len() == k {
 						groupsRemaining--
 					}
 
@@ -286,11 +286,10 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 						break
 					}
 				} else {
-					if histogramIndex < len(histogramIDs) && histogramIDs[histogramIndex] == currentID {
-						histogramIndex++
-					}
-					if sampleIndex < len(sampleIDs) && sampleIDs[sampleIndex] == currentID {
+					if haveSample && sampleIDs[sampleIndex] == currentID {
 						sampleIndex++
+					} else if haveHistogram && histogramIDs[histogramIndex] == currentID {
+						histogramIndex++
 					}
 				}
 			}
@@ -299,14 +298,7 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 
 	s := a.vectorPool.GetStepVector(t)
 	for _, h := range a.heaps {
-		for _, e := range h.entries {
-			if e.histogramSample == nil {
-				s.AppendSample(a.vectorPool, e.sId, e.total)
-			} else {
-				s.AppendHistogram(a.vectorPool, e.histId, e.histogramSample)
-			}
-		}
-		h.entries = h.entries[:0]
+		h.addSamplesToPool(a.vectorPool, &s)
 	}
 
 	*result = append(*result, s)
@@ -328,10 +320,25 @@ func (s samplesHeap) Len() int {
 	return len(s.entries)
 }
 
+func (s *samplesHeap) addSamplesToPool(pool *model.VectorPool, stepVector *model.StepVector) {
+	for _, e := range s.entries {
+		if e.histogramSample == nil {
+			stepVector.AppendSample(pool, e.sId, e.total)
+		} else {
+			stepVector.AppendHistogram(pool, e.histId, e.histogramSample)
+		}
+	}
+	s.entries = s.entries[:0]
+}
+
 func (s samplesHeap) Less(i, j int) bool {
 	if math.IsNaN(s.entries[i].total) {
 		return true
 	}
+	if s.compare == nil { // this is case for limitk as it doesn't require any sorting logic
+		return false
+	}
+
 	return s.compare(s.entries[i].total, s.entries[j].total)
 }
 
