@@ -147,7 +147,7 @@ func extendProjection(projection Projection, lbls []string) Projection {
 	if projection.Include {
 		extendedLabels = union(projection.Labels, lbls)
 	} else {
-		extendedLabels = substract(projection.Labels, lbls)
+		extendedLabels = subtract(projection.Labels, lbls)
 	}
 	return Projection{
 		Include: projection.Include,
@@ -163,7 +163,7 @@ func unwrapStepInvariantExpr(node Node) Node {
 	return node
 }
 
-// getFunctionLabelRequirements returns an updated projection based on function-specific requirements
+// getFunctionLabelRequirements returns an updated projection based on function-specific requirements.
 func getFunctionLabelRequirements(funcName string, args []Node, projection *Projection) *Projection {
 	if projection == nil {
 		projection = &Projection{}
@@ -246,8 +246,8 @@ func union(l1 []string, l2 []string) []string {
 	return slices.Collect(maps.Keys(m))
 }
 
-// substract returns the intersection of two string slices.
-func substract(l1 []string, l2 []string) []string {
+// subtract returns the intersection of two string slices.
+func subtract(l1 []string, l2 []string) []string {
 	m := make(map[string]struct{})
 	for _, s := range l1 {
 		m[s] = struct{}{}
