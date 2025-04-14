@@ -137,13 +137,13 @@ func (q *projectionQueryable) Querier(mint, maxt int64) (storage.Querier, error)
 	}, nil
 }
 
-func TestProjectionPushdownWithFuzz(t *testing.T) {
+func TestProjectionWithFuzz(t *testing.T) {
 	t.Parallel()
 
 	// Define test parameters
 	seed := time.Now().UnixNano()
 	rnd := rand.New(rand.NewSource(seed))
-	testRuns := 1000
+	testRuns := 10000
 
 	// Create test data
 	load := `load 30s
@@ -151,6 +151,14 @@ func TestProjectionPushdownWithFuzz(t *testing.T) {
 		http_requests_total{pod="nginx-2", job="app", env="dev", instance="2"} 2+2x40
 		http_requests_total{pod="nginx-3", job="api", env="prod", instance="3"} 3+3x40
 		http_requests_total{pod="nginx-4", job="api", env="dev", instance="4"} 4+4x40
+		http_requests_duration_seconds_bucket{pod="nginx-1", job="app", env="prod", instance="1", le="0.1"} 1+1x40
+		http_requests_duration_seconds_bucket{pod="nginx-1", job="app", env="prod", instance="1", le="0.2"} 2+2x40
+		http_requests_duration_seconds_bucket{pod="nginx-1", job="app", env="prod", instance="1", le="0.5"} 3+2x40
+		http_requests_duration_seconds_bucket{pod="nginx-1", job="app", env="prod", instance="1", le="+Inf"} 4+2x40
+		http_requests_duration_seconds_bucket{pod="nginx-2", job="api", env="dev", instance="2", le="0.1"} 1+1x40
+		http_requests_duration_seconds_bucket{pod="nginx-2", job="api", env="dev", instance="2", le="0.2"} 2+2x40
+		http_requests_duration_seconds_bucket{pod="nginx-2", job="api", env="dev", instance="2", le="0.5"} 3+2x40
+		http_requests_duration_seconds_bucket{pod="nginx-2", job="api", env="dev", instance="2", le="+Inf"} 4+2x40
 		errors_total{pod="nginx-1", job="app", env="prod", instance="1", cluster="us-west-2"} 0.5+0.5x40
 		errors_total{pod="nginx-2", job="app", env="dev", instance="2", cluster="us-west-2"} 1+1x40
 		errors_total{pod="nginx-3", job="api", env="prod", instance="3", cluster="us-east-2"} 1.5+1.5x40
@@ -189,13 +197,13 @@ func TestProjectionPushdownWithFuzz(t *testing.T) {
 		DisableDuplicateLabelChecks: false,
 	})
 
-	pushdownEngine := engine.New(engine.Opts{
+	projectionEngine := engine.New(engine.Opts{
 		EngineOpts: engineOpts,
-		// ProjectionPushdown optimizer doesn't support merge selects optimizer
+		// projection optimizer doesn't support merge selects optimizer
 		// so disable it for now.
 		LogicalOptimizers: []logicalplan.Optimizer{
 			logicalplan.SortMatchers{},
-			logicalplan.ProjectionPushdown{SeriesHashLabel: "__series_hash__"},
+			logicalplan.ProjectionOptimizer{SeriesHashLabel: "__series_hash__"},
 			logicalplan.DetectHistogramStatsOptimizer{},
 			// logicalplan.MergeSelectsOptimizer{},
 		},
@@ -216,7 +224,7 @@ func TestProjectionPushdownWithFuzz(t *testing.T) {
 			query = expr.Pretty(0)
 
 			// Skip queries that don't benefit from projection pushdown
-			if !containsAggregationOrBinaryOperation(expr) {
+			if !containsProjectionExprs(expr) {
 				continue
 			}
 
@@ -244,25 +252,30 @@ func TestProjectionPushdownWithFuzz(t *testing.T) {
 			}
 			testutil.Ok(t, normalResult.Err, "query: %s", query)
 
-			pushdownQuery, err := pushdownEngine.MakeInstantQuery(ctx, projectionStorage, &engine.QueryOpts{}, query, queryTime)
+			projectionQuery, err := projectionEngine.MakeInstantQuery(ctx, projectionStorage, &engine.QueryOpts{}, query, queryTime)
 			testutil.Ok(t, err)
 
-			defer pushdownQuery.Close()
-			pushdownResult := pushdownQuery.Exec(ctx)
-			testutil.Ok(t, pushdownResult.Err, "query: %s", query)
+			defer projectionQuery.Close()
+			projectionResult := projectionQuery.Exec(ctx)
+			testutil.Ok(t, projectionResult.Err, "query: %s", query)
 
-			if diff := cmp.Diff(normalResult, pushdownResult, comparer); diff != "" {
+			if diff := cmp.Diff(normalResult, projectionResult, comparer); diff != "" {
 				t.Errorf("Results differ for query %s: %s", query, diff)
 			}
 		})
 	}
 }
 
-// containsAggregationOrBinaryOperation checks if the expression contains any aggregation or binary operations.
-func containsAggregationOrBinaryOperation(expr parser.Expr) bool {
+// containsProjectionExprs checks if the expression contains any expressions that might benefit from projection pushdown.
+func containsProjectionExprs(expr parser.Expr) bool {
 	found := false
 	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		switch node.(type) {
+		switch n := node.(type) {
+		case *parser.Call:
+			if n.Func.Name == "histogram_quantile" || n.Func.Name == "absent_over_time" || n.Func.Name == "absent" || n.Func.Name == "scalar" {
+				found = true
+				return errors.New("found")
+			}
 		case *parser.AggregateExpr:
 			found = true
 			return errors.New("found")

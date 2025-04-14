@@ -41,13 +41,11 @@ func renderExprTree(expr Node) string {
 			base += fmt.Sprintf("[batch=%d]", t.BatchSize)
 		}
 		if t.Projection != nil {
-			if t.Projection.Labels != nil {
-				sort.Strings(t.Projection.Labels)
-				if t.Projection.Include {
-					base += fmt.Sprintf("[projection=include(%s)]", strings.Join(t.Projection.Labels, ","))
-				} else {
-					base += fmt.Sprintf("[projection=exclude(%s)]", strings.Join(t.Projection.Labels, ","))
-				}
+			sort.Strings(t.Projection.Labels)
+			if t.Projection.Include {
+				base += fmt.Sprintf("[projection=include(%s)]", strings.Join(t.Projection.Labels, ","))
+			} else if len(t.Projection.Labels) > 0 {
+				base += fmt.Sprintf("[projection=exclude(%s)]", strings.Join(t.Projection.Labels, ","))
 			}
 		}
 		if len(t.Filters) > 0 {

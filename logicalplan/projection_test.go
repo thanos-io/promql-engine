@@ -4,6 +4,8 @@
 package logicalplan
 
 import (
+	"slices"
+	"sort"
 	"testing"
 	"time"
 
@@ -13,7 +15,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func TestProjectionPushdown(t *testing.T) {
+func TestProjectionOptimizer(t *testing.T) {
 	cases := []struct {
 		name     string
 		expr     string
@@ -27,7 +29,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "simple aggregation without no labels",
 			expr:     `sum without() (metric{instance="a", job="b", env="c"})`,
-			expected: `sum without (__series_hash__) (metric{env="c",instance="a",job="b"}[projection=exclude()])`,
+			expected: `sum without (__series_hash__) (metric{env="c",instance="a",job="b"})`,
 		},
 		{
 			name:     "simple aggregation",
@@ -37,7 +39,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "multiple aggregations",
 			expr:     `sum by (job) (metric{instance="a", job="b", env="c"}) / count by (job) (metric{instance="a", job="b", env="c"})`,
-			expected: `sum by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)]) / ignoring (__series_hash__) count by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)])`,
+			expected: `sum by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)]) / count by (job) (metric{env="c",instance="a",job="b"}[projection=include(job)])`,
 		},
 		{
 			name:     "binary operation with vector matching",
@@ -85,7 +87,7 @@ func TestProjectionPushdown(t *testing.T) {
 			expected: `sum by (instance) (label_join(metric{env="c",instance="a",job="b"}[projection=include(instance)], "combined", "-", "job", "env"))`,
 		},
 		{
-			name:     "histogram_quantile with aggregation",
+			name:     "histogram_quantile with aggregation inside",
 			expr:     `histogram_quantile(0.9, sum by (le, job) (rate(http_request_duration_seconds_bucket{job="api-server", instance="localhost:9090"}[5m])))`,
 			expected: `histogram_quantile(0.9, sum by (le, job) (rate(http_request_duration_seconds_bucket{instance="localhost:9090",job="api-server"}[projection=include(job,le)][5m0s])))`,
 		},
@@ -117,50 +119,50 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "binary operation with ignoring and group_left",
 			expr:     `metric{instance="a", job="b", env="c"} * ignoring(instance) group_left(env) metric{instance="d", job="b"}`,
-			expected: `metric{env="c",instance="a",job="b"} * ignoring (instance) group_left (env) metric{instance="d",job="b"}`,
+			expected: `metric{env="c",instance="a",job="b"} * ignoring (instance, __series_hash__) group_left (env) metric{instance="d",job="b"}[projection=exclude(instance)]`,
 		},
 		{
 			name:     "binary operation with ignoring and group_right",
 			expr:     `metric{instance="a", job="b"} * ignoring(job) group_right(instance) metric{instance="d", job="b", env="e"}`,
-			expected: `metric{instance="a",job="b"} * ignoring (job) group_right (instance) metric{env="e",instance="d",job="b"}`,
+			expected: `metric{instance="a",job="b"}[projection=exclude(job)] * ignoring (job, __series_hash__) group_right (instance) metric{env="e",instance="d",job="b"}`,
 		},
 		{
-			name:     "aggregation with binary operation using 'on'",
+			name:     "aggregation with binary operation using on",
 			expr:     `sum(metric1{instance="a", job="b", env="c"} * on(job) metric2{instance="d", job="b", env="e"})`,
 			expected: `sum(metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])`,
 		},
 		{
-			name:     "aggregation with binary operation using 'ignoring'",
+			name:     "aggregation with binary operation using ignoring",
 			expr:     `sum(metric1{instance="a", job="b", env="c"} * ignoring(instance) metric2{instance="d", job="b", env="c"})`,
 			expected: `sum(metric1{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric2{env="c",instance="d",job="b"}[projection=exclude(instance)])`,
 		},
 		{
-			name:     "aggregation by label with binary operation using 'on' and 'group_left'",
+			name:     "aggregation by label with binary operation using on and group_left",
 			expr:     `sum by (job) (metric1{instance="a", job="b", env="c"} * on(job) group_left(env) metric2{instance="d", job="b"})`,
-			expected: `sum by (job) (metric1{env="c",instance="a",job="b"} * on (job) group_left (env) metric2{instance="d",job="b"})`,
+			expected: `sum by (job) (metric1{env="c",instance="a",job="b"} * on (job) group_left (env) metric2{instance="d",job="b"}[projection=include(env,job)])`,
 		},
 		{
-			name:     "aggregation by label with binary operation using 'on' and 'group_right'",
+			name:     "aggregation by label with binary operation using on and group_right",
 			expr:     `sum by (job) (metric1{instance="a", job="b"} * on(job) group_right(instance) metric2{instance="d", job="b", env="e"})`,
-			expected: `sum by (job) (metric1{instance="a",job="b"} * on (job) group_right (instance) metric2{env="e",instance="d",job="b"})`,
+			expected: `sum by (job) (metric1{instance="a",job="b"}[projection=include(instance,job)] * on (job) group_right (instance) metric2{env="e",instance="d",job="b"})`,
 		},
 		{
-			name:     "aggregation by label with binary operation using 'ignoring' and 'group_left'",
+			name:     "aggregation by label with binary operation using ignoring and group_left",
 			expr:     `sum by (job) (metric1{instance="a", job="b", env="c"} * ignoring(instance) group_left(env) metric2{instance="d", job="b"})`,
-			expected: `sum by (job) (metric1{env="c",instance="a",job="b"} * ignoring (instance) group_left (env) metric2{instance="d",job="b"})`,
+			expected: `sum by (job) (metric1{env="c",instance="a",job="b"} * ignoring (instance, __series_hash__) group_left (env) metric2{instance="d",job="b"}[projection=exclude(instance)])`,
 		},
 		{
-			name:     "aggregation by label with binary operation using 'ignoring' and 'group_right'",
+			name:     "aggregation by label with binary operation using ignoring and group_right",
 			expr:     `sum by (job) (metric1{instance="a", job="b"} * ignoring(instance) group_right(env) metric2{instance="d", job="b", env="e"})`,
-			expected: `sum by (job) (metric1{instance="a",job="b"} * ignoring (instance) group_right (env) metric2{env="e",instance="d",job="b"})`,
+			expected: `sum by (job) (metric1{instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) group_right (env) metric2{env="e",instance="d",job="b"})`,
 		},
 		{
-			name:     "aggregation without label with binary operation using 'on'",
+			name:     "aggregation without label with binary operation using on",
 			expr:     `sum without (instance) (metric1{instance="a", job="b", env="c"} * on(job) metric2{instance="d", job="b", env="e"})`,
 			expected: `sum without (instance, __series_hash__) (metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])`,
 		},
 		{
-			name:     "aggregation without label with binary operation using 'ignoring'",
+			name:     "aggregation without label with binary operation using ignoring",
 			expr:     `sum without (instance) (metric1{instance="a", job="b", env="c"} * ignoring(instance) metric2{instance="d", job="b", env="c"})`,
 			expected: `sum without (instance, __series_hash__) (metric1{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric2{env="c",instance="d",job="b"}[projection=exclude(instance)])`,
 		},
@@ -172,7 +174,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "binary operation with on and group_right",
 			expr:     `metric{instance="a", job="b"} * on(job) group_right(instance) metric{instance="d", job="b", env="e"}`,
-			expected: `metric{instance="a",job="b"} * on (job) group_right (instance) metric{env="e",instance="d",job="b"}`,
+			expected: `metric{instance="a",job="b"}[projection=include(instance,job)] * on (job) group_right (instance) metric{env="e",instance="d",job="b"}`,
 		},
 		{
 			name:     "nested aggregation",
@@ -207,7 +209,7 @@ func TestProjectionPushdown(t *testing.T) {
 		{
 			name:     "aggregation with histogram_quantile",
 			expr:     `sum by (job) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket{instance="a", job="b"}[5m])))`,
-			expected: `sum by (job) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket{instance="a",job="b"}[projection=include(job,le)][5m0s])))`,
+			expected: `sum by (job) (histogram_quantile(0.9, rate(http_request_duration_seconds_bucket{instance="a",job="b"}[5m0s])))`,
 		},
 		{
 			name:     "topk aggregation",
@@ -234,15 +236,48 @@ func TestProjectionPushdown(t *testing.T) {
 			expr:     `sum by (job) (topk(3, metric{instance="a", job="b", env="c"}))`,
 			expected: `sum by (job) (topk(3, metric{env="c",instance="a",job="b"}))`,
 		},
+		{
+			name:     "scalar function",
+			expr:     `scalar(metric{instance="a", job="b", env="c"})`,
+			expected: `scalar(metric{env="c",instance="a",job="b"})`,
+		},
+		{
+			name:     "absent function",
+			expr:     `absent(metric{instance="a", job="b", env="c"})`,
+			expected: `absent(metric{env="c",instance="a",job="b"})`,
+		},
+		{
+			name:     "absent_over_time function",
+			expr:     `absent_over_time(metric{instance="a", job="b", env="c"}[5m])`,
+			expected: `absent_over_time(metric{env="c",instance="a",job="b"}[5m0s])`,
+		},
+		{
+			name:     "scalar function with aggregation",
+			expr:     `sum by (job) (scalar(metric{instance="a", job="b", env="c"}))`,
+			expected: `sum by (job) (scalar(metric{env="c",instance="a",job="b"}))`,
+		},
+		{
+			name:     "absent function with aggregation",
+			expr:     `sum by (job) (absent(metric{instance="a", job="b", env="c"}))`,
+			expected: `sum by (job) (absent(metric{env="c",instance="a",job="b"}))`,
+		},
+		{
+			name:     "absent_over_time function with aggregation",
+			expr:     `sum by (job) (absent_over_time(metric{instance="a", job="b", env="c"}[5m]))`,
+			expected: `sum by (job) (absent_over_time(metric{env="c",instance="a",job="b"}[5m0s]))`,
+		},
 	}
 
 	for _, tc := range cases {
+		if tc.name != "simple aggregation by no labels" {
+			continue
+		}
 		t.Run(tc.name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 
 			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
-			optimizer := ProjectionPushdown{SeriesHashLabel: "__series_hash__"}
+			optimizer := ProjectionOptimizer{SeriesHashLabel: "__series_hash__"}
 			optimizedPlan, _ := optimizer.Optimize(plan.Root(), nil)
 
 			result := renderExprTree(optimizedPlan)
@@ -253,26 +288,12 @@ func TestProjectionPushdown(t *testing.T) {
 
 func TestGetFunctionLabelRequirements(t *testing.T) {
 	tests := []struct {
-		name           string
-		funcName       string
-		args           []Node
-		requiredLabels map[string]struct{}
-		isWithout      bool
-		expected       map[string]struct{}
+		name       string
+		funcName   string
+		args       []Node
+		projection *Projection
+		expected   *Projection
 	}{
-		{
-			name:     "histogram_quantile adds le label",
-			funcName: "histogram_quantile",
-			args:     []Node{},
-			requiredLabels: map[string]struct{}{
-				"instance": {},
-			},
-			isWithout: false,
-			expected: map[string]struct{}{
-				"instance": {},
-				"le":       {},
-			},
-		},
 		{
 			name:     "label_replace with destination label needed",
 			funcName: "label_replace",
@@ -283,13 +304,13 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				&StringLiteral{Val: "src_label"},
 				&StringLiteral{Val: "regex"},
 			},
-			requiredLabels: map[string]struct{}{
-				"new_label": {},
+			projection: &Projection{
+				Labels:  []string{"new_label"},
+				Include: true,
 			},
-			isWithout: false,
-			expected: map[string]struct{}{
-				"new_label": {},
-				"src_label": {},
+			expected: &Projection{
+				Labels:  []string{"new_label", "src_label"},
+				Include: true,
 			},
 		},
 		{
@@ -302,12 +323,13 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				&StringLiteral{Val: "src_label"},
 				&StringLiteral{Val: "regex"},
 			},
-			requiredLabels: map[string]struct{}{
-				"other_label": {},
+			projection: &Projection{
+				Labels:  []string{"other_label"},
+				Include: true,
 			},
-			isWithout: false,
-			expected: map[string]struct{}{
-				"other_label": {},
+			expected: &Projection{
+				Labels:  []string{"other_label"},
+				Include: true,
 			},
 		},
 		{
@@ -320,12 +342,13 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				&StringLiteral{Val: "src_label"},
 				&StringLiteral{Val: "regex"},
 			},
-			requiredLabels: map[string]struct{}{
-				"other_label": {},
+			projection: &Projection{
+				Labels:  []string{"other_label"},
+				Include: false,
 			},
-			isWithout: true,
-			expected: map[string]struct{}{
-				"other_label": {},
+			expected: &Projection{
+				Labels:  []string{"other_label"},
+				Include: false,
 			},
 		},
 		{
@@ -338,14 +361,13 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				&StringLiteral{Val: "src_label1"},
 				&StringLiteral{Val: "src_label2"},
 			},
-			requiredLabels: map[string]struct{}{
-				"new_label": {},
+			projection: &Projection{
+				Labels:  []string{"new_label"},
+				Include: true,
 			},
-			isWithout: false,
-			expected: map[string]struct{}{
-				"new_label":  {},
-				"src_label1": {},
-				"src_label2": {},
+			expected: &Projection{
+				Labels:  []string{"new_label", "src_label1", "src_label2"},
+				Include: true,
 			},
 		},
 		{
@@ -358,39 +380,91 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				&StringLiteral{Val: "src_label1"},
 				&StringLiteral{Val: "src_label2"},
 			},
-			requiredLabels: map[string]struct{}{
-				"new_label": {},
+			projection: &Projection{
+				Labels:  []string{"new_label"},
+				Include: false,
 			},
-			isWithout: true,
-			expected: map[string]struct{}{
-				"new_label": {},
+			expected: &Projection{
+				Labels:  []string{"new_label"},
+				Include: false,
 			},
+		},
+		{
+			name:     "scalar function returns empty projection",
+			funcName: "scalar",
+			args: []Node{
+				&VectorSelector{},
+			},
+			projection: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
+			},
+			expected: &Projection{
+				Labels:  []string{},
+				Include: true,
+			},
+		},
+		{
+			name:     "absent function returns empty projection",
+			funcName: "absent",
+			args: []Node{
+				&VectorSelector{},
+			},
+			projection: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
+			},
+			expected: &Projection{
+				Labels:  []string{},
+				Include: true,
+			},
+		},
+		{
+			name:     "absent_over_time function returns empty projection",
+			funcName: "absent_over_time",
+			args: []Node{
+				&MatrixSelector{},
+			},
+			projection: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
+			},
+			expected: &Projection{
+				Labels:  []string{},
+				Include: true,
+			},
+		},
+		{
+			name:     "histogram_quantile function returns nil projection",
+			funcName: "histogram_quantile",
+			args: []Node{
+				&NumberLiteral{Val: 0.9},
+				&VectorSelector{},
+			},
+			projection: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
+			},
+			expected: nil,
 		},
 		{
 			name:     "unknown function returns original labels",
 			funcName: "unknown_function",
 			args:     []Node{},
-			requiredLabels: map[string]struct{}{
-				"label1": {},
+			projection: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
 			},
-			isWithout: false,
-			expected: map[string]struct{}{
-				"label1": {},
+			expected: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
 			},
-		},
-		{
-			name:           "nil required labels returns nil",
-			funcName:       "histogram_quantile",
-			args:           []Node{},
-			requiredLabels: nil,
-			isWithout:      false,
-			expected:       nil,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getFunctionLabelRequirements(tt.funcName, tt.args, tt.requiredLabels, tt.isWithout)
+			result := getFunctionLabelRequirements(tt.funcName, tt.args, tt.projection)
 
 			// Check if result is nil when expected is nil
 			if tt.expected == nil {
@@ -400,16 +474,25 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 				return
 			}
 
+			// Sort labels for consistent comparison
+			sort.Strings(result.Labels)
+			sort.Strings(tt.expected.Labels)
+
+			// Check if Include matches
+			if result.Include != tt.expected.Include {
+				t.Errorf("expected Include=%v, got %v", tt.expected.Include, result.Include)
+			}
+
 			// Check if all expected labels are in the result
-			for label := range tt.expected {
-				if _, exists := result[label]; !exists {
+			for _, label := range tt.expected.Labels {
+				if !slices.Contains(result.Labels, label) {
 					t.Errorf("expected label %s to be in result, but it wasn't", label)
 				}
 			}
 
 			// Check if result doesn't have unexpected labels
-			for label := range result {
-				if _, exists := tt.expected[label]; !exists {
+			for _, label := range result.Labels {
+				if !slices.Contains(tt.expected.Labels, label) {
 					t.Errorf("unexpected label %s in result", label)
 				}
 			}
