@@ -1977,6 +1977,19 @@ sum by (grpc_method, grpc_code) (
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
+		{
+			name: "limitK with returning all samples",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `count(limitk(100, http_requests_total) by (pod))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 		// TODO(Saumya40-Codes): uncomment once https://github.com/prometheus/prometheus/pull/16404 gets merged
 		// {
 		// 	name: "limitK but a sample might not present at last few timestamps",

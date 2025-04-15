@@ -286,10 +286,10 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 						break
 					}
 				} else {
-					if haveSample && sampleIDs[sampleIndex] == currentID {
-						sampleIndex++
-					} else if haveHistogram && histogramIDs[histogramIndex] == currentID {
+					if haveHistogram && histogramIDs[histogramIndex] == currentID {
 						histogramIndex++
+					} else if haveSample && sampleIDs[sampleIndex] == currentID {
+						sampleIndex++
 					}
 				}
 			}
@@ -297,8 +297,8 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 	}
 
 	s := a.vectorPool.GetStepVector(t)
-	for _, h := range a.heaps {
-		h.addSamplesToPool(a.vectorPool, &s)
+	for _, sampleHeap := range a.heaps {
+		sampleHeap.addSamplesToPool(a.vectorPool, &s)
 	}
 
 	*result = append(*result, s)

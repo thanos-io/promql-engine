@@ -148,6 +148,7 @@ var distributiveAggregations = map[parser.ItemType]struct{}{
 	parser.COUNT:   {},
 	parser.BOTTOMK: {},
 	parser.TOPK:    {},
+	parser.LIMITK:  {},
 }
 
 // DistributedExecutionOptimizer produces a logical plan suitable for
