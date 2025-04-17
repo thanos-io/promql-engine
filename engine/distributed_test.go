@@ -214,6 +214,7 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "group", query: `group by (pod) (bar)`},
 		{name: "topk", query: `topk by (pod) (1, bar)`},
 		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
+		/* 		{name: "limitk", query: `limitk by (pod) (1, bar)`}, */
 		{name: "label based pruning with no match", query: `sum by (pod) (bar{zone="north-2"})`},
 		{name: "label based pruning with one match", query: `sum by (pod) (bar{zone="east-1"})`},
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
