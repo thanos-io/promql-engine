@@ -236,11 +236,10 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 		if len(histogramIDs) == 0 {
 			for i, sId := range sampleIDs {
 				sampleHeap := a.inputToHeap[sId]
-				switch {
-				case sampleHeap.Len() < k:
+				if sampleHeap.Len() < k {
 					heap.Push(sampleHeap, &entry{sId: sId, total: samples[i]})
 
-					if sampleHeap.Len() == k && a.aggregation == parser.LIMITK {
+					if sampleHeap.Len() == k {
 						groupsRemaining--
 					}
 
