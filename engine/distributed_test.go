@@ -214,7 +214,6 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "group", query: `group by (pod) (bar)`},
 		{name: "topk", query: `topk by (pod) (1, bar)`},
 		{name: "bottomk", query: `bottomk by (pod) (1, bar)`},
-		/* 		{name: "limitk", query: `limitk by (pod) (1, bar)`}, */
 		{name: "label based pruning with no match", query: `sum by (pod) (bar{zone="north-2"})`},
 		{name: "label based pruning with one match", query: `sum by (pod) (bar{zone="east-1"})`},
 		{name: "double aggregation", query: `max by (pod) (sum by (pod) (bar))`},
@@ -251,6 +250,8 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "query with numeric timestamp", query: `sum(bar @ 140.000)`},
 		{name: "query with range and @end() timestamp", query: `sum(count_over_time(bar[1h] @ end()))`},
 		{name: `subquery with @end() timestamp`, query: `bar @ 100.000 - bar @ 150.000`},
+		{name: "limitk", query: `limitk by (pod,zone) (1, bar)`}, // this is more of a condition when o/p will be consistent with prometheus, in certain cases
+		// the root querier wouldn't have idea so as to which samples would've been first from the those coming from the leaf queriers
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
