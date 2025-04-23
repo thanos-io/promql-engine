@@ -205,7 +205,7 @@ func TestProjectionWithFuzz(t *testing.T) {
 			logicalplan.SortMatchers{},
 			logicalplan.ProjectionOptimizer{SeriesHashLabel: "__series_hash__"},
 			logicalplan.DetectHistogramStatsOptimizer{},
-			// logicalplan.MergeSelectsOptimizer{},
+			logicalplan.MergeSelectsOptimizer{},
 		},
 		DisableDuplicateLabelChecks: false,
 	})
