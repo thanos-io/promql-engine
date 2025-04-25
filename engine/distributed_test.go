@@ -250,8 +250,10 @@ func TestDistributedAggregations(t *testing.T) {
 		{name: "query with numeric timestamp", query: `sum(bar @ 140.000)`},
 		{name: "query with range and @end() timestamp", query: `sum(count_over_time(bar[1h] @ end()))`},
 		{name: `subquery with @end() timestamp`, query: `bar @ 100.000 - bar @ 150.000`},
-		{name: "limitk", query: `limitk by (pod,zone) (1, bar)`}, // this is more of a condition when o/p will be consistent with prometheus, in certain cases
-		// the root querier wouldn't have idea so as to which samples would've been first from the those coming from the leaf queriers
+		{name: "limitk", query: `limitk by (pod,zone) (1, bar)`}, // this is more of a condition where o/p will be consistent with prometheus. In engine, first 'k' samples are chosen based on
+		// increasing order of sample/histogram ids which are internal to each leaf querier, thus in some rare cases when order of output series is inconsistant,
+		// the samples will differ from prometheus as root querier can't determine which sample would have occured first in sequential execution of prometheus,
+		// this behaviour won't be an obstacle as limitk was proposed for an easier way to inspect labels in high cardinality metrics.
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
