@@ -215,6 +215,76 @@ func TestMatcherPropagation(t *testing.T) {
 			expr:     `node_filesystem_files{host="$host", mountpoint="/"} - node_filesystem_files_free`,
 			expected: `node_filesystem_files{host="$host",mountpoint="/"} - node_filesystem_files_free{host="$host",mountpoint="/"}`,
 		},
+		{
+			name:     "vector matching on specific labels",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} - on(host) node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - on (host) node_filesystem_files_free{host="$host"}`,
+		},
+		{
+			name:     "vector matching ignoring specific labels",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} - ignoring(mountpoint) node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - ignoring (mountpoint) node_filesystem_files_free{host="$host"}`,
+		},
+		{
+			name:     "vector matching on metric name",
+			expr:     `node_filesystem_files{host="$host"} - on(__name__, host) node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host"} - on (__name__, host) node_filesystem_files_free`,
+		},
+		{
+			name:     "OR operation with common labels",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} or node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} or node_filesystem_files_free`,
+		},
+		{
+			name:     "OR operation with conflicting labels",
+			expr:     `node_filesystem_files{host="host1"} or node_filesystem_files{host="host2"}`,
+			expected: `node_filesystem_files{host="host1"} or node_filesystem_files{host="host2"}`,
+		},
+		{
+			name:     "UNLESS operation with common labels",
+			expr:     `node_filesystem_files{host="$host", mountpoint="/"} unless node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} unless node_filesystem_files_free`,
+		},
+		{
+			name:     "one-to-many with group_right",
+			expr:     `node_filesystem_files - on(host) group_right(mountpoint) node_filesystem_files_free{host="$host"}`,
+			expected: `node_filesystem_files{host="$host"} - on (host) group_right (mountpoint) node_filesystem_files_free{host="$host"}`,
+		},
+		{
+			name:     "many-to-one with group_left",
+			expr:     `node_filesystem_files{host="$host",mountpoint="/"} - on(host) group_left(device) node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host",mountpoint="/"} - on (host) group_left (device) node_filesystem_files_free{host="$host"}`,
+		},
+		{
+			name:     "non-mergeable matchers with regex",
+			expr:     `node_filesystem_files{host=~"host1.*"} - node_filesystem_files_free{host=~"host2.*"}`,
+			expected: `node_filesystem_files{host=~"host1.*"} - node_filesystem_files_free{host=~"host2.*"}`,
+		},
+		{
+			name:     "overlapping matchers with different types",
+			expr:     `node_filesystem_files{host=~"host.*",env="prod"} - node_filesystem_files_free{host="host1",env!="dev"}`,
+			expected: `node_filesystem_files{env="prod",host="host1"} - node_filesystem_files_free{env="prod",host="host1"}`,
+		},
+		{
+			name:     "complex vector matching with multiple labels",
+			expr:     `node_filesystem_files{host="$host",env="prod",dc="us-east"} - on(host,dc) group_left(device) node_filesystem_files_free`,
+			expected: `node_filesystem_files{dc="us-east",env="prod",host="$host"} - on (host, dc) group_left (device) node_filesystem_files_free{dc="us-east",host="$host"}`,
+		},
+		{
+			name:     "OR with vector matching",
+			expr:     `node_filesystem_files{host="$host"} - on(host) group_left() node_filesystem_files_free or node_filesystem_files_reserved`,
+			expected: `node_filesystem_files{host="$host"} - on (host) group_left () node_filesystem_files_free{host="$host"} or node_filesystem_files_reserved`,
+		},
+		{
+			name:     "UNLESS with vector matching",
+			expr:     `node_filesystem_files{host="$host"} unless on(host,mountpoint) node_filesystem_files_free`,
+			expected: `node_filesystem_files{host="$host"} unless on (host, mountpoint) node_filesystem_files_free`,
+		},
+		{
+			name:     "mixed operations with common labels",
+			expr:     `node_filesystem_files{host="$host"} - node_filesystem_files_free or node_filesystem_files_reserved`,
+			expected: `node_filesystem_files{host="$host"} - node_filesystem_files_free{host="$host"} or node_filesystem_files_reserved`,
+		},
 	}
 
 	optimizers := []Optimizer{PropagateMatchersOptimizer{}}
