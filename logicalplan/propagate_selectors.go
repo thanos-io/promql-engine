@@ -37,6 +37,10 @@ func (m PropagateMatchersOptimizer) Optimize(plan Node, _ *query.Options) (Node,
 		}
 
 		vm := binOp.VectorMatching
+		if vm == nil {
+			propagateMatchers(binOp)
+			return
+		}
 
 		// Skip matching on metric name for now.
 		if vm.On && slices.Contains(vm.MatchingLabels, labels.MetricName) {
