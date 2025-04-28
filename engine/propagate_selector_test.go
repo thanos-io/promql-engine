@@ -7,6 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
+
 	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
@@ -14,9 +17,6 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
-
-	"github.com/thanos-io/promql-engine/engine"
-	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 func TestPropagateMatchers(t *testing.T) {

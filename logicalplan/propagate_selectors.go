@@ -8,11 +8,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/thanos-io/promql-engine/query"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
-
-	"github.com/thanos-io/promql-engine/query"
 )
 
 // PropagateMatchersOptimizer implements matcher propagation between
