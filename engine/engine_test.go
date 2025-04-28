@@ -1941,6 +1941,70 @@ sum by (grpc_method, grpc_code) (
 			step:  2 * time.Second,
 		},
 		{
+			name: "limitK",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `limitk(2, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "limitK with negative value as param",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50`,
+			query: `limitk(-2, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "limitK by (series)",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `limitk(2, http_requests_total) by (pod)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "limitK with returning all samples",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `count(limitk(100, http_requests_total) by (pod))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		// TODO(Saumya40-Codes): uncomment once https://github.com/prometheus/prometheus/pull/16404 gets merged
+		// {
+		// 	name: "limitK but a sample might not present at last few timestamps",
+		// 	load: `load 30s
+		// 	    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+		// 	    http_requests_total{pod="nginx-2", series="1"} 2+2.3x40
+		// 	    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+		// 	    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+		// 	    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+		// 	query: `limitk(2, http_requests_total)`,
+		// 	start: time.Unix(0, 0),
+		// 	end:   time.Unix(3000, 0),
+		// 	step:  2 * time.Second,
+		// },
+		{
 			name: "sgn",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -3537,6 +3601,46 @@ min without () (
 			    http_requests_total{pod="nginx-8", series="4"} 22
 			    http_requests_total{pod="nginx-9", series="4"} 89`,
 			query: `bottomk by (series) (2, http_requests_total)`,
+		},
+		{
+			name: "limitK",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1
+			    http_requests_total{pod="nginx-2", series="3"} 2
+			    http_requests_total{pod="nginx-3", series="2"} 8
+			    http_requests_total{pod="nginx-4", series="5"} 6
+			    http_requests_total{pod="nginx-5", series="4"} 8
+			    http_requests_total{pod="nginx-6", series="7"} 15
+			    http_requests_total{pod="nginx-7", series="6"} 11
+			    http_requests_total{pod="nginx-8", series="9"} 22
+			    http_requests_total{pod="nginx-9", series="8"} 89`,
+			query: `limitk(2, http_requests_total)`,
+		},
+		{
+			name: "limitk by (pod)",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="2"} 89
+			    http_requests_total{pod="nginx-1", series="1"} 49
+			    http_requests_total{pod="nginx-1", series="3"} 19
+			    http_requests_total{pod="nginx-2", series="2"} 12
+			    http_requests_total{pod="nginx-2", series="1"} 24
+			    http_requests_total{pod="nginx-3", series="3"} 8
+			    http_requests_total{pod="nginx-3", series="1"} 22
+			    http_requests_total{pod="nginx-3", series="2"} 1`,
+			query: "limitk(2, http_requests_total) by (pod)",
+		},
+		{
+			name: "limitk(x, many-to-many join)",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="2"} 89
+			    http_requests_total{pod="nginx-1", series="1"} 49
+			    http_requests_total{pod="nginx-1", series="3"} 19
+			    http_requests_total{pod="nginx-2", series="2"} 12
+			    http_requests_total{pod="nginx-2", series="1"} 24
+			    http_requests_total{pod="nginx-3", series="3"} 8
+			    http_requests_total{pod="nginx-3", series="1"} 22
+			    http_requests_total{pod="nginx-3", series="2"} 1`,
+			query: "limitk(2, http_requests_total or limitk(2, sum without (series) (http_requests_total))) by (pod)",
 		},
 		{
 			name: "max",
@@ -5410,6 +5514,14 @@ and
 		{
 			name:  "Mixed many-to-many join Unless",
 			query: `native_histogram_series * 3 unless avg(native_histogram_series)`,
+		},
+		{
+			name:  "Limitk aggregation",
+			query: `limitk(2, native_histogram_series)`,
+		},
+		{
+			name:  "limitk by",
+			query: `limitk(2, native_histogram_series) by (foo) and native_histogram_series`,
 		},
 	}
 
