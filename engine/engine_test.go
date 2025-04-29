@@ -87,11 +87,15 @@ func TestPromqlAcceptance(t *testing.T) {
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 		}})
 
+	// TODO(mhoffmann): we cannot skip at individual test level yet, only full test files
+	// it would be great if we could just skip individual tests here for features we dont
+	// want to support.
 	st := &skipTest{
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/limit.test",               // limitk, limit_ratio
-		}, // TODO(sungjin1212): change to test whole cases
+			"testdata/at_modifier.test",         // missing counter annotations
+		},
 		TBRun: t,
 	}
 
