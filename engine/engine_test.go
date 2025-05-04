@@ -2056,6 +2056,19 @@ sum by (grpc_method, grpc_code) (
 			step:  2 * time.Second,
 		},
 		{
+			name: "combined kaggregates",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+2.1x50
+			    http_requests_total{pod="nginx-5", series="1"} 2+1.3x50
+			    http_requests_total{pod="nginx-3", series="2"} 5+3.4x50
+			    http_requests_total{pod="nginx-7", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-4", series="4"} 2.5+2.3x50`,
+			query: `limitk(4, topk(3, limit_ratio(0.8, http_requests_total)) or bottomk(3, limit_ratio(-0.2, http_requests_total)))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
 			name: "sgn",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -3722,7 +3735,7 @@ min without () (
 			query: `limit_ratio by (series) (0.1, http_requests_total) `,
 		},
 		{
-			name: "combined kaggregates",
+			name: "limitk(limit_ratios returning all samples)",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", series="3"} 1
 			    http_requests_total{pod="nginx-3", series="1"} 1
@@ -3733,7 +3746,7 @@ min without () (
 			    http_requests_total{pod="nginx-10", series="2"} 13
 			    http_requests_total{pod="nginx-12", series="3"} 21
 			    http_requests_total{pod="nginx-7", series="2"} 34`,
-			query: `limitk(4, topk(3, limit_ratio(0.5, http_requests_total)) or bottomk(3, limit_ratio(-0.5, http_requests_total)))`,
+			query: `limitk(9, limit_ratio(0.5, http_requests_total) or limit_ratio(-0.5, http_requests_total))`,
 		},
 		{
 			name: "max",
