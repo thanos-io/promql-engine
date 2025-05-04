@@ -173,7 +173,7 @@ func hashMetric(
 	return key, builder.Labels()
 }
 
-// doing it the prometheus way:
+// doing it the prometheus way
 // https://github.com/prometheus/prometheus/blob/f379e2eac7134dea12ae1d93ebdcb8109db3a5ef/promql/engine.go#L3809C1-L3833C2
 // if ratioLimit > 0 and sampleOffset turns out to be < ratioLimit add sample to the result
 // else if ratioLimit < 0 then do ratioLimit+1(switch to positive axis), therefore now we will be taking those samples whose sampleOffset >= 1+ratioLimit (inverting the logic from previous case)

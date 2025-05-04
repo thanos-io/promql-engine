@@ -232,7 +232,7 @@ func (a *kAggregate) init(ctx context.Context) error {
 	return nil
 }
 
-// aggregates based on the given parameter k and timeseries, supported aggregation are:
+// aggregates based on the given parameter k and timeseries, supported aggregation are
 // topk: gives the 'k' largest element based on the sample values
 // bottomk: gives the 'k' smallest element based on the sample values
 // limitk: samples the first 'k' element from the given timeseries (has native histogram support)
