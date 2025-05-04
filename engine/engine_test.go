@@ -2017,6 +2017,45 @@ sum by (grpc_method, grpc_code) (
 			step:  2 * time.Second,
 		},
 		{
+			name: "limit_ratio by (series)",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+2.1x50
+			    http_requests_total{pod="nginx-5", series="1"} 2+1.3x40
+			    http_requests_total{pod="nginx-3", series="2"} 5+3.4x50
+			    http_requests_total{pod="nginx-7", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 2.5+2.3x50`,
+			query: `limit_ratio(0.3, http_requests_total) by (series)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "limit_ratio with ratio exceeding ratio limit", // in limit_ratio exceeded ratio limit should be capped to -1 or 1 (whichever is relatively closer)
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+2.1x50
+			    http_requests_total{pod="nginx-6", series="1"} 2+1.3x40
+			    http_requests_total{pod="nginx-4", series="2"} 5+3.4x30
+			    http_requests_total{pod="nginx-9", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-2", series="2"} 2.5+2.3x50`,
+			query: `limit_ratio(23456, http_requests_total) and limit_ratio(-4567, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
+			name: "limit_ratio with NaN value as ratio param",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+2.1x50
+			    http_requests_total{pod="nginx-5", series="1"} 2+1.3x40
+			    http_requests_total{pod="nginx-3", series="2"} 5+3.4x50
+			    http_requests_total{pod="nginx-7", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 2.5+2.3x50`,
+			query: `limit_ratio(NaN, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
+		{
 			name: "sgn",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -3653,6 +3692,48 @@ min without () (
 			    http_requests_total{pod="nginx-3", series="1"} 22
 			    http_requests_total{pod="nginx-3", series="2"} 1`,
 			query: "limitk(2, http_requests_total or limitk(2, sum without (series) (http_requests_total))) by (pod)",
+		},
+		{
+			name: "limit_ratio",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="3"} 2
+			    http_requests_total{pod="nginx-3", series="2"} 4
+			    http_requests_total{pod="nginx-5", series="1"} 8
+			    http_requests_total{pod="nginx-7", series="1"} 6
+			    http_requests_total{pod="nginx-9", series="2"} 12
+			    http_requests_total{pod="nginx-11", series="3"} 10
+			    http_requests_total{pod="nginx-13", series="2"} 16
+			    http_requests_total{pod="nginx-15", series="2"} 12
+			    http_requests_total{pod="nginx-17", series="5"} 14`,
+			query: `limit_ratio(0.5, http_requests_total)`,
+		},
+		{
+			name: "limit_ratio by (series)",
+			load: `load 30s
+			    http_requests_total{pod="nginx-2", series="1"} 1
+			    http_requests_total{pod="nginx-4", series="3"} 3
+			    http_requests_total{pod="nginx-6", series="2"} 7
+			    http_requests_total{pod="nginx-8", series="1"} 5
+			    http_requests_total{pod="nginx-10", series="4"} 11
+			    http_requests_total{pod="nginx-12", series="1"} 9
+			    http_requests_total{pod="nginx-14", series="2"} 17
+			    http_requests_total{pod="nginx-16", series="3"} 13
+			    http_requests_total{pod="nginx-18", series="2"} 15`,
+			query: `limit_ratio by (series) (0.1, http_requests_total) `,
+		},
+		{
+			name: "combined kaggregates",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="3"} 1
+			    http_requests_total{pod="nginx-3", series="1"} 1
+			    http_requests_total{pod="nginx-2", series="3"} 2
+			    http_requests_total{pod="nginx-4", series="1"} 3
+			    http_requests_total{pod="nginx-6", series="5"} 5
+			    http_requests_total{pod="nginx-5", series="1"} 8
+			    http_requests_total{pod="nginx-10", series="2"} 13
+			    http_requests_total{pod="nginx-12", series="3"} 21
+			    http_requests_total{pod="nginx-7", series="2"} 34`,
+			query: `limitk(4, topk(3, limit_ratio(0.5, http_requests_total)) or bottomk(3, limit_ratio(-0.5, http_requests_total)))`,
 		},
 		{
 			name: "max",
@@ -5541,7 +5622,7 @@ and
 		},
 		{
 			name:  "limit_ratio by",
-			query: `limit_ratio(0.33, native_histogram_series) by (foo) and native_histogram_series`,
+			query: `limit_ratio(0.33, native_histogram_series) by (foo) or native_histogram_series`,
 		},
 	}
 
