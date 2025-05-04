@@ -90,7 +90,6 @@ func TestPromqlAcceptance(t *testing.T) {
 	st := &skipTest{
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
-			"testdata/limit.test",               // limitk, limit_ratio
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
@@ -2004,6 +2003,19 @@ sum by (grpc_method, grpc_code) (
 		// 	end:   time.Unix(3000, 0),
 		// 	step:  2 * time.Second,
 		// },
+		{
+			name: "limit_ratio",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `limit_ratio(0.65, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 		{
 			name: "sgn",
 			load: `load 30s
@@ -5522,6 +5534,14 @@ and
 		{
 			name:  "limitk by",
 			query: `limitk(2, native_histogram_series) by (foo) and native_histogram_series`,
+		},
+		{
+			name:  "Limit_ratio aggregation",
+			query: `limit_ratio(0.4, native_histogram_series)`,
+		},
+		{
+			name:  "limit_ratio by",
+			query: `limit_ratio(0.33, native_histogram_series) by (foo) and native_histogram_series`,
 		},
 	}
 
