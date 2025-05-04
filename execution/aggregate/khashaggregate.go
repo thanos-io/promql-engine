@@ -232,11 +232,11 @@ func (a *kAggregate) init(ctx context.Context) error {
 	return nil
 }
 
-// aggregates based on the given parameter k and timeseries, supported aggregation are
+// aggregates based on the given parameter k (or ratio for limit_ratio) and timeseries, supported aggregation are
 // topk: gives the 'k' largest element based on the sample values
 // bottomk: gives the 'k' smallest element based on the sample values
 // limitk: samples the first 'k' element from the given timeseries (has native histogram support)
-// limit_ratio: deterministically samples out the 'ratio' amount of the samples from the given timeseries (also has native histogram support)
+// limit_ratio: deterministically samples out the 'ratio' amount of the samples from the given timeseries (also has native histogram support).
 func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, ratio float64, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
 	groupsRemaining := len(a.heaps)
 
