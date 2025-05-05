@@ -2063,7 +2063,7 @@ sum by (grpc_method, grpc_code) (
 			    http_requests_total{pod="nginx-3", series="2"} 5+3.4x50
 			    http_requests_total{pod="nginx-7", series="2"} 8.4+2.3x50
 			    http_requests_total{pod="nginx-4", series="4"} 2.5+2.3x50`,
-			query: `limitk(4, topk(3, limit_ratio(0.8, http_requests_total)) or bottomk(3, limit_ratio(-0.2, http_requests_total)))`,
+			query: `limitk(5, topk(3, limit_ratio(0.8, http_requests_total)) or bottomk(3, limit_ratio(-0.2, http_requests_total)))`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
