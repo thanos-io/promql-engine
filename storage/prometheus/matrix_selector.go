@@ -23,6 +23,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -46,7 +47,7 @@ type matrixSelector struct {
 	scalarArg  float64
 	scalarArg2 float64
 	scanners   []matrixScanner
-	series     []labels.Labels
+	series     []promql.Series
 	once       sync.Once
 
 	functionName string
@@ -135,7 +136,7 @@ func (o *matrixSelector) Explain() []model.VectorOperator {
 	return nil
 }
 
-func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
+func (o *matrixSelector) Series(ctx context.Context) ([]promql.Series, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
@@ -231,12 +232,13 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		}
 
 		o.scanners = make([]matrixScanner, len(series))
-		o.series = make([]labels.Labels, len(series))
+		o.series = make([]promql.Series, len(series))
 		b := labels.ScratchBuilder{}
 
+		dropName := o.functionName != "last_over_time"
 		for i, s := range series {
 			lbls := s.Labels()
-			if o.functionName != "last_over_time" {
+			if !o.opts.EnableDelayedNameRemoval && dropName {
 				// This modifies the array in place. Because labels.Labels
 				// can be re-used between different Select() calls, it means that
 				// we have to copy it here.
@@ -251,7 +253,10 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
 				buffer:     o.newBuffer(ctx),
 			}
-			o.series[i] = lbls
+			o.series[i] = promql.Series{
+				Metric:   lbls,
+				DropName: dropName,
+			}
 		}
 		numSeries := int64(len(o.series))
 		if o.seriesBatchSize == 0 || numSeries < o.seriesBatchSize {
