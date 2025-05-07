@@ -341,7 +341,7 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, ratio
 	s := a.vectorPool.GetStepVector(t)
 	for _, sampleHeap := range a.heaps {
 		// for topk and bottomk the heap keeps the lowest value on top, so reverse it.
-		if (a.aggregation == parser.TOPK || a.aggregation == parser.BOTTOMK) && len(sampleHeap.entries) > 1 {
+		if a.aggregation == parser.TOPK || a.aggregation == parser.BOTTOMK {
 			sort.Sort(sort.Reverse(sampleHeap))
 		}
 		sampleHeap.addSamplesToPool(a.vectorPool, &s)
