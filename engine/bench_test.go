@@ -162,6 +162,16 @@ func BenchmarkRangeQuery(b *testing.B) {
 			storage: sixHourDataset,
 		},
 		{
+			name:    "limitk",
+			query:   `limitk(2, http_requests_total)`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "limit_ratio",
+			query:   `limit_ratio(0.2, http_requests_total)`,
+			storage: sixHourDataset,
+		},
+		{
 			name:    "rate",
 			query:   `rate(http_requests_total[1m])`,
 			storage: sixHourDataset,

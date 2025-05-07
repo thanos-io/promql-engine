@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"time"
 
@@ -65,7 +66,7 @@ func NewKHashAggregate(
 		compare = func(f float64, s float64) bool {
 			return s < f
 		}
-	} else if aggregation != parser.LIMITK {
+	} else if aggregation != parser.LIMITK && aggregation != parser.LIMIT_RATIO {
 		return nil, errors.Newf("Unsupported aggregate expression: %v", aggregation)
 	}
 	// Grouping labels need to be sorted in order for metric hashing to work.
@@ -111,10 +112,26 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	for i := range args {
 		a.params[i] = args[i].Samples[0]
 		a.paramOp.GetPool().PutStepVector(args[i])
-
 		val := a.params[i]
-		if val > math.MaxInt64 || val < math.MinInt64 || math.IsNaN(val) {
-			return nil, errors.Newf("Scalar value %v overflows int64", val)
+
+		switch a.aggregation {
+		case parser.TOPK, parser.BOTTOMK, parser.LIMITK:
+			if val > math.MaxInt64 || val < math.MinInt64 || math.IsNaN(val) {
+				return nil, errors.Newf("Scalar value %v overflows int64", val)
+			}
+		case parser.LIMIT_RATIO:
+			if math.IsNaN(val) {
+				return nil, errors.Newf("Ratio value %v is NaN", val)
+			}
+			switch {
+			case val < -1.0:
+				val = -1.0
+				warnings.AddToContext(annotations.NewInvalidRatioWarning(a.params[i], val, posrange.PositionRange{}), ctx)
+			case val > 1.0:
+				val = 1.0
+				warnings.AddToContext(annotations.NewInvalidRatioWarning(a.params[i], val, posrange.PositionRange{}), ctx)
+			}
+			a.params[i] = val
 		}
 	}
 	a.paramOp.GetPool().PutVectors(args)
@@ -130,16 +147,25 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 	result := a.vectorPool.GetVectorBatch()
 	for i, vector := range in {
-		// Skip steps where the argument is less than or equal to 0.
-		if int(a.params[i]) <= 0 {
+		// Skip steps where the argument is less than or equal to 0, limit_ratio is an exception.
+		if (a.aggregation != parser.LIMIT_RATIO && int(a.params[i]) <= 0) || (a.aggregation == parser.LIMIT_RATIO && a.params[i] == 0) {
 			result = append(result, a.GetPool().GetStepVector(vector.T))
 			continue
 		}
-		if a.aggregation != parser.LIMITK && len(vector.Histograms) > 0 {
+		if a.aggregation != parser.LIMITK && a.aggregation != parser.LIMIT_RATIO && len(vector.Histograms) > 0 {
 			warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo(a.aggregation.String(), posrange.PositionRange{}), ctx)
 		}
 
-		a.aggregate(vector.T, &result, int(a.params[i]), vector.SampleIDs, vector.Samples, vector.HistogramIDs, vector.Histograms)
+		var k int
+		var ratio float64
+
+		if a.aggregation == parser.LIMIT_RATIO {
+			ratio = a.params[i]
+		} else {
+			k = int(a.params[i])
+		}
+
+		a.aggregate(vector.T, &result, k, ratio, vector.SampleIDs, vector.Samples, vector.HistogramIDs, vector.Histograms)
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
@@ -207,11 +233,12 @@ func (a *kAggregate) init(ctx context.Context) error {
 	return nil
 }
 
-// aggregates based on the given parameter k and timeseries, supported aggregation are
+// aggregates based on the given parameter k (or ratio for limit_ratio) and timeseries, supported aggregation are
 // topk: gives the 'k' largest element based on the sample values
 // bottomk: gives the 'k' smallest element based on the sample values
 // limitk: samples the first 'k' element from the given timeseries (has native histogram support)
-func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
+// limit_ratio: deterministically samples out the 'ratio' amount of the samples from the given timeseries (also has native histogram support).
+func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, ratio float64, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
 	groupsRemaining := len(a.heaps)
 
 	switch a.aggregation {
@@ -293,10 +320,30 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, sampl
 				}
 			}
 		}
+	case parser.LIMIT_RATIO:
+		for i, sId := range sampleIDs {
+			sampleHeap := a.inputToHeap[sId]
+
+			if addRatioSample(ratio, a.series[sId]) {
+				heap.Push(sampleHeap, &entry{sId: sId, total: samples[i]})
+			}
+		}
+
+		for i, histId := range histogramIDs {
+			sampleHeap := a.inputToHeap[histId]
+
+			if addRatioSample(ratio, a.series[histId]) {
+				heap.Push(sampleHeap, &entry{histId: histId, histogramSample: histograms[i]})
+			}
+		}
 	}
 
 	s := a.vectorPool.GetStepVector(t)
 	for _, sampleHeap := range a.heaps {
+		// for topk and bottomk the heap keeps the lowest value on top, so reverse it.
+		if a.aggregation == parser.TOPK || a.aggregation == parser.BOTTOMK {
+			sort.Sort(sort.Reverse(sampleHeap))
+		}
 		sampleHeap.addSamplesToPool(a.vectorPool, &s)
 	}
 
