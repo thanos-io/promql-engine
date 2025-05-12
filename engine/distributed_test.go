@@ -254,6 +254,7 @@ func TestDistributedAggregations(t *testing.T) {
 		// increasing order of sample/histogram ids which are internal to each leaf querier, thus in some rare cases when order of output series is inconsistent,
 		// the samples will differ from prometheus as root querier can't determine which sample would have occurred first in sequential execution of prometheus,
 		// this behavior won't be an obstacle as limitk was proposed for an easier way to inspect labels in high cardinality metrics.
+		{name: "limit_ratio", query: `limit_ratio by (pod) (1, bar)`},
 	}
 
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
