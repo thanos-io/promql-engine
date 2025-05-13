@@ -280,7 +280,7 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 			logQuery(c)
 
 			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
-			//failures++
+			failures++
 			continue
 		}
 		if !c.validateSamples || c.oldRes.Err != nil {
