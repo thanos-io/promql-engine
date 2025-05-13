@@ -1821,7 +1821,11 @@ sum by (grpc_method, grpc_code) (
 			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
 			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
 			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
-			query: `topk(1e+120, http_requests_total)`,
+			query: `
+topk(
+  1000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000,
+  http_requests_total
+)`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
