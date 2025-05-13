@@ -15,6 +15,8 @@ import (
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/query"
 
+	prommodel "github.com/prometheus/common/model"
+
 	"github.com/prometheus/prometheus/model/labels"
 )
 
@@ -116,6 +118,10 @@ func (c *countValuesOperator) Next(ctx context.Context) ([]model.StepVector, err
 }
 
 func (c *countValuesOperator) initSeriesOnce(ctx context.Context) error {
+	if !prommodel.LabelName(c.param).IsValid() {
+		return fmt.Errorf(`invalid label name %q`, c.param)
+	}
+
 	nextSeries, err := c.next.Series(ctx)
 	if err != nil {
 		return err

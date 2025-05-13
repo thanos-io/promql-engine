@@ -58,7 +58,8 @@ func TestMain(m *testing.M) {
 }
 
 type skipTest struct {
-	skipTests []string
+	skipTests  []string
+	onlyEnable []string
 	promqltest.TBRun
 }
 
@@ -67,6 +68,15 @@ func (s *skipTest) Run(name string, t func(*testing.T)) bool {
 		if name == st {
 			return true
 		}
+	}
+
+	for _, st := range s.onlyEnable {
+		if name == st {
+			return s.TBRun.Run(name, t)
+		}
+	}
+	if len(s.onlyEnable) > 0 {
+		return false
 	}
 
 	return s.TBRun.Run(name, t)
@@ -87,15 +97,20 @@ func TestPromqlAcceptance(t *testing.T) {
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 		}})
 
-	st := &skipTest{
-		skipTests: []string{
-			"testdata/name_label_dropping.test", // feature unsupported
-			"testdata/limit.test",               // limitk, limit_ratio
-		}, // TODO(sungjin1212): change to test whole cases
-		TBRun: t,
-	}
+	//st := &skipTest{
+	//	skipTests: []string{
+	//"testdata/name_label_dropping.test", // feature unsupported
+	//	"testdata/limit.test", // limitk, limit_ratio
+	//	}, // TODO(sungjin1212): change to test whole cases
+	//	onlyEnable: []string{"testdata/functions.test"},
+	//	TBRun:      t,
+	//}
 
-	promqltest.RunBuiltinTests(st, engine)
+	//promqltest.RunBuiltinTests(st, engine)
+
+	ct, err := os.ReadFile("/home/giedriusstatkevicius/dev/prometheus/promql/promqltest/testdata/functions.test")
+	require.NoError(t, err)
+	promqltest.RunTest(t, string(ct), engine)
 }
 
 func TestVectorSelectorWithGaps(t *testing.T) {

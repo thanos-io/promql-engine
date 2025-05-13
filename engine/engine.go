@@ -655,6 +655,11 @@ loop:
 				})
 			}
 		}
+
+		_, isNoopComparer := q.resultSort.(noSortResultSort)
+		if !isNoopComparer {
+			vector = filterFloats(vector)
+		}
 		sort.Slice(vector, q.resultSort.comparer(&vector))
 		if vector.ContainsSameLabelset() {
 			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)

@@ -104,6 +104,17 @@ func valueCompare(order sortOrder, l, r float64) bool {
 	return l > r
 }
 
+// filterFloats filters out histogram samples from the vector in-place.
+func filterFloats(v promql.Vector) promql.Vector {
+	floats := v[:0]
+	for _, s := range v {
+		if s.H == nil {
+			floats = append(floats, s)
+		}
+	}
+	return floats
+}
+
 func (s sortFuncResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
 	return func(i, j int) bool {
 		return valueCompare(s.sortOrder, (*samples)[i].F, (*samples)[j].F)
