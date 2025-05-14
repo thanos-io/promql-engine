@@ -2207,6 +2207,15 @@ avg by (storage_info) (
 			    http_requests_total{pod="nginx-1", series="1"} 1+2x40`,
 			query: `rate(http_requests_total[20s:10s] offset 20s)`,
 		},
+		{
+			name: "fuzz absent_over_time empty matcher",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41.00+0.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+2.41x40`,
+			query: `absent_over_time({__name__="http_requests_total",route=""}[4m])`,
+			start: time.UnixMilli(170000),
+			end:   time.UnixMilli(170000),
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
