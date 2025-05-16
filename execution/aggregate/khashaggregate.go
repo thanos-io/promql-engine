@@ -241,7 +241,6 @@ func (a *kAggregate) init(ctx context.Context) error {
 func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, ratio float64, sampleIDs []uint64, samples []float64, histogramIDs []uint64, histograms []*histogram.FloatHistogram) {
 	groupsRemaining := len(a.heaps)
 
-	fmt.Println("kAggregate ", sampleIDs)
 	switch a.aggregation {
 	case parser.TOPK, parser.BOTTOMK:
 		for i, sId := range sampleIDs {

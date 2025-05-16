@@ -18,6 +18,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"strconv"
 	"time"
@@ -55,6 +56,15 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 }
 
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	if hints.Limit != 0 {
+		switch expr.(type) {
+		case *logicalplan.VectorSelector:
+		// we can limit the number of samples returned in this case
+		default:
+			// better not to limit the number of samples, will cause false results in most cases
+			hints.Limit = 0
+		}
+	}
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
@@ -91,6 +101,8 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
+
+	fmt.Println("in VectorSelector ", hints.Limit)
 	return scanners.NewVectorSelector(ctx, opts, hints, *e)
 }
 
@@ -277,7 +289,8 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	}
 
 	if e.Op == parser.LIMITK && len(hints.Grouping) == 0 {
-		hints.Limit, _ = strconv.Atoi(paramOp.String())
+		fmt.Println(e.Param)
+		hints.Limit, _ = strconv.Atoi(e.Param.String())
 	}
 
 	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
