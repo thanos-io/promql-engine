@@ -19,6 +19,7 @@ package execution
 import (
 	"context"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
@@ -264,6 +265,21 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
 
+	// parameter is only required for count_values, quantile, topk, bottomk, limitk, and limit_ratio.
+	var paramOp model.VectorOperator
+	var err error
+	switch e.Op {
+	case parser.QUANTILE, parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
+		paramOp, err = newOperator(ctx, e.Param, scanners, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if e.Op == parser.LIMITK && len(hints.Grouping) == 0 {
+		hints.Limit, _ = strconv.Atoi(paramOp.String())
+	}
+
 	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
 	if err != nil {
 		return nil, err
@@ -273,15 +289,6 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 		return aggregate.NewCountValues(model.NewVectorPool(opts.StepsBatch), next, param, !e.Without, e.Grouping, opts), nil
 	}
 
-	// parameter is only required for count_values, quantile, topk, bottomk, limitk, and limit_ratio.
-	var paramOp model.VectorOperator
-	switch e.Op {
-	case parser.QUANTILE, parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-		paramOp, err = newOperator(ctx, e.Param, scanners, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-	}
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK || e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
 		next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 	} else {

@@ -80,11 +80,6 @@ func newResultSort(expr parser.Expr) resultSorter {
 				sortOrder:     sortOrderAsc,
 				groupBy:       !texpr.Without,
 			}
-		case parser.LIMITK, parser.LIMIT_RATIO:
-			return aggregateResultSort{
-				sortingLabels: texpr.Grouping,
-				groupBy:       !texpr.Without,
-			}
 		}
 	}
 	return noSortResultSort{}
