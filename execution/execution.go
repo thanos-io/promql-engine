@@ -58,10 +58,10 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	if hints.Limit != 0 {
 		switch expr.(type) {
-		case *logicalplan.VectorSelector:
-		// we can only limit the number of samples returned in the case if this is inner most operator and just after limitk
-		default:
+		case *logicalplan.Aggregation:
 			hints.Limit = 0
+			// aggregations returns only the set of items based on particular processing on the whole series,
+			// thus limiting the samples to fetch won't be of any benifit.
 		}
 	}
 
