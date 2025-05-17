@@ -59,12 +59,12 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 	if hints.Limit != 0 {
 		switch expr.(type) {
 		case *logicalplan.VectorSelector:
-		// we can limit the number of samples returned in this case
+		// we can only limit the number of samples returned in the case if this is inner most operator and just after limitk
 		default:
-			// better not to limit the number of samples, will cause false results in most cases
 			hints.Limit = 0
 		}
 	}
+
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
@@ -277,17 +277,6 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
 
-	// parameter is only required for count_values, quantile, topk, bottomk, limitk, and limit_ratio.
-	var paramOp model.VectorOperator
-	var err error
-	switch e.Op {
-	case parser.QUANTILE, parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-		paramOp, err = newOperator(ctx, e.Param, scanners, opts, hints)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	if e.Op == parser.LIMITK && len(hints.Grouping) == 0 {
 		fmt.Println(e.Param)
 		hints.Limit, _ = strconv.Atoi(e.Param.String())
@@ -300,6 +289,16 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	if e.Op == parser.COUNT_VALUES {
 		param := logicalplan.UnsafeUnwrapString(e.Param)
 		return aggregate.NewCountValues(model.NewVectorPool(opts.StepsBatch), next, param, !e.Without, e.Grouping, opts), nil
+	}
+
+	// parameter is only required for count_values, quantile, topk, bottomk, limitk, and limit_ratio.
+	var paramOp model.VectorOperator
+	switch e.Op {
+	case parser.QUANTILE, parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
+		paramOp, err = newOperator(ctx, e.Param, scanners, opts, hints)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK || e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
