@@ -102,7 +102,6 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 	hints.Start = start
 	hints.End = end
 
-	fmt.Println("in VectorSelector ", hints.Limit)
 	return scanners.NewVectorSelector(ctx, opts, hints, *e)
 }
 
@@ -278,7 +277,6 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.By = !e.Without
 
 	if e.Op == parser.LIMITK && len(hints.Grouping) == 0 {
-		fmt.Println(e.Param)
 		hints.Limit, _ = strconv.Atoi(e.Param.String())
 	}
 
