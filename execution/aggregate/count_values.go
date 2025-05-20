@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/efficientgo/core/errors"
-	prommodel "github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/model/labels"
-
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/query"
+
+	"github.com/efficientgo/core/errors"
+	prommodel "github.com/prometheus/common/model"
+	"github.com/prometheus/prometheus/model/labels"
 )
 
 type countValuesOperator struct {

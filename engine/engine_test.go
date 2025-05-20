@@ -2238,6 +2238,13 @@ avg by (storage_info) (
 			start: time.UnixMilli(170000),
 			end:   time.UnixMilli(170000),
 		},
+		{
+			name: "predict_linear",
+			load: `load 1m
+			    native_histogram {{sum:100 count:100}} {{sum:103 count:103}} {{sum:106 count:106}} {{sum:109 count:109}} {{sum:112 count:112}} {{sum:3 count:3 counter_reset_hint:reset}} {{sum:6 count:6}}+{{sum:3 count:3}}x5`,
+			query: `increase(native_histogram[10m:3m])`,
+			start: time.UnixMilli(10 * 60 * 1000),
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
