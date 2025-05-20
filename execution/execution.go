@@ -57,10 +57,10 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	if hints.Limit != 0 {
 		switch expr.(type) {
-		case *logicalplan.Aggregation:
+		case *logicalplan.Aggregation, *logicalplan.Binary:
 			hints.Limit = 0
 			// aggregations returns only the set of items based on particular processing on the whole series,
-			// thus limiting the samples to fetch won't be of any benifit.
+			// logical binary operators might also produce wrong result in certain queries if samples to fetch are limited.
 		}
 	}
 
