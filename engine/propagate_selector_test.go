@@ -48,7 +48,7 @@ func TestPropagateMatchers(t *testing.T) {
 	defer storage.Close()
 
 	// Get series for PromQLSmith
-	seriesSet, err := getSeries(context.Background(), storage)
+	seriesSet, err := getSeries(context.Background(), storage, "http_requests_total")
 	testutil.Ok(t, err)
 
 	// Configure PromQLSmith
