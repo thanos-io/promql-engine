@@ -257,7 +257,7 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		o.series = make([]labels.Labels, len(series))
 		o.buffers = make([]*ringbuffer.GenericRingBuffer, len(series))
 		for i := range o.buffers {
-			o.buffers[i] = ringbuffer.New(ctx, 8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call)
+			o.buffers[i] = ringbuffer.New(ctx, 8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call, true)
 		}
 		var b labels.ScratchBuilder
 		for i, s := range series {

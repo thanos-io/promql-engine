@@ -655,6 +655,11 @@ loop:
 				})
 			}
 		}
+
+		_, keepHistograms := q.resultSort.(keepHistogramsSorter)
+		if !keepHistograms {
+			vector = filterFloats(vector)
+		}
 		sort.Slice(vector, q.resultSort.comparer(&vector))
 		if vector.ContainsSameLabelset() {
 			return newErrResult(ret, extlabels.ErrDuplicateLabelSet)

@@ -287,9 +287,9 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 	}
 
 	if o.isExtFunction {
-		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
+		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call, false)
 	}
-	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call)
+	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call, false)
 
 }
 
