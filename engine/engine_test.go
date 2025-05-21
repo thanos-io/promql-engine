@@ -758,6 +758,24 @@ or
 			step:  90 * time.Second,
 		},
 		{
+			name: "rate with counter reset and step equal to window",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 5 1 6 4`,
+			query: `rate(http_requests_total[1m])`,
+			start: time.Unix(-60, 0),
+			end:   time.Unix(120, 0),
+			step:  60 * time.Second,
+		},
+		{
+			name: "native histogram rate with counter reset and step equal to window",
+			load: `load 30s
+			    some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:0 count:0 buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			query: `rate(some_metric[1m])`,
+			start: time.Unix(-60, 0),
+			end:   time.Unix(120, 0),
+			step:  60 * time.Second,
+		},
+		{
 			name: "sum rate",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} 1+1x4
