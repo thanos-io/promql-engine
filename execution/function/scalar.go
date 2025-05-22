@@ -41,7 +41,7 @@ func (o *scalarOperator) Explain() (next []model.VectorOperator) {
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 	return nil, nil
 }
 
@@ -51,7 +51,7 @@ func (o *scalarOperator) GetPool() *model.VectorPool {
 
 func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

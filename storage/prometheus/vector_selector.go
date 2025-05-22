@@ -103,7 +103,7 @@ func (o *vectorSelector) Explain() (next []model.VectorOperator) {
 
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func (o *vectorSelector) GetPool() *model.VectorPool {
 
 func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

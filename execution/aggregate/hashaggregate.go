@@ -97,7 +97,7 @@ func (a *aggregate) Explain() (next []model.VectorOperator) {
 
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { a.AddSeriesExecutionTime(time.Since(start)) }()
 
 	var err error
 	a.once.Do(func() { err = a.initializeTables(ctx) })
@@ -114,7 +114,7 @@ func (a *aggregate) GetPool() *model.VectorPool {
 
 func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { a.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

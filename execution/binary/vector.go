@@ -99,7 +99,7 @@ func (o *vectorOperator) Explain() (next []model.VectorOperator) {
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 
 	if err := o.initOnce(ctx); err != nil {
 		return nil, err
@@ -110,7 +110,7 @@ func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 
 func (o *vectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

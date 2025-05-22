@@ -141,7 +141,7 @@ func (o *functionOperator) String() string {
 
 func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
@@ -156,7 +156,7 @@ func (o *functionOperator) GetPool() *model.VectorPool {
 
 func (o *functionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

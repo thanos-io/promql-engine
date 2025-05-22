@@ -73,7 +73,7 @@ func (c *countValuesOperator) String() string {
 
 func (c *countValuesOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { c.AddSeriesExecutionTime(time.Since(start)) }()
 
 	var err error
 	c.once.Do(func() { err = c.initSeriesOnce(ctx) })
@@ -83,7 +83,7 @@ func (c *countValuesOperator) Series(ctx context.Context) ([]labels.Labels, erro
 
 func (c *countValuesOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { c.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():
