@@ -2234,6 +2234,12 @@ avg by (storage_info) (
 			start: time.UnixMilli(170000),
 			end:   time.UnixMilli(170000),
 		},
+		{
+			name: "utf-8 label",
+			load: `load 10s
+			    http_requests_total{"label:name"="labelvalue"} 1+2x40`,
+			query: `rate(http_requests_total{"label:name"="labelvalue"}[20s:10s] offset 20s)`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
