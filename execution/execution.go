@@ -19,6 +19,7 @@ package execution
 import (
 	"context"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
@@ -54,6 +55,15 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 }
 
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	if hints.Limit != 0 {
+		switch expr.(type) {
+		case *logicalplan.Aggregation, *logicalplan.Binary:
+			hints.Limit = 0
+			// aggregations returns only the set of items based on particular processing on the whole series,
+			// logical binary operators might also produce wrong result in certain queries if samples to fetch are limited.
+		}
+	}
+
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
@@ -90,6 +100,7 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
+
 	return scanners.NewVectorSelector(ctx, opts, hints, *e)
 }
 
@@ -264,6 +275,10 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
 
+	if e.Op == parser.LIMITK && len(hints.Grouping) == 0 {
+		hints.Limit, _ = strconv.Atoi(e.Param.String())
+	}
+
 	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
 	if err != nil {
 		return nil, err
@@ -282,6 +297,7 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 			return nil, err
 		}
 	}
+
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK || e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
 		next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 	} else {
