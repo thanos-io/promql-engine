@@ -8,6 +8,7 @@ require (
 	github.com/efficientgo/core v1.0.0-rc.2
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/google/go-cmp v0.7.0
+	github.com/opentracing/opentracing-go v1.2.0
 	github.com/prometheus/client_golang v1.20.5
 	github.com/prometheus/common v0.61.0
 	github.com/prometheus/prometheus v0.301.0

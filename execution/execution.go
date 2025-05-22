@@ -35,6 +35,7 @@ import (
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage"
+	"github.com/thanos-io/promql-engine/tracing"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql"
@@ -45,6 +46,10 @@ import (
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
+	span, ctx := tracing.StartSpanFromContext(ctx, "execution.New")
+	defer span.Finish()
+	span.SetTag("expr_type", parser.DocumentedType(expr.ReturnType()))
+
 	hints := promstorage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
@@ -90,6 +95,7 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
+
 	return scanners.NewVectorSelector(ctx, opts, hints, *e)
 }
 
