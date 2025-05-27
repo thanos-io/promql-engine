@@ -25,6 +25,7 @@ var DefaultOptimizers = []Optimizer{
 	SortMatchers{},
 	MergeSelectsOptimizer{},
 	DetectHistogramStatsOptimizer{},
+	LimitSeriesOptmizer{},
 }
 
 type Plan interface {

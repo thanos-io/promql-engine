@@ -274,6 +274,7 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.Func = e.Op.String()
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
+	hints.Limit = e.Limit
 
 	if e.Op == parser.LIMITK && len(hints.Grouping) == 0 {
 		hints.Limit, _ = strconv.Atoi(e.Param.String())
