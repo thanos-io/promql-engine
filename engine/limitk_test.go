@@ -46,17 +46,17 @@ func TestLimitk(t *testing.T) {
 	defer storage.Close()
 
 	queryTime := time.Unix(int64(0), 0)
-	queryEnd := time.Unix(int64(1700), 0)
+	/* queryEnd := time.Unix(int64(1700), 0) */
 	newEngine := engine.New(engine.Opts{
 		EngineOpts:        opts,
-		LogicalOptimizers: logicalplan.NoOptimizers,
+		LogicalOptimizers: logicalplan.AllOptimizers,
 		EnableAnalysis:    true,
 	})
 	oldEngine := promql.NewEngine(opts)
 
-	query := "limitk(2, http_requests_total)"
+	query := "limitk(2, http_requests_total) or http_requests_total"
 
-	q1, err := newEngine.NewRangeQuery(context.Background(), storage, nil, query, queryTime, queryEnd, 100*time.Second)
+	q1, err := newEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
 
 	testutil.Ok(t, err)
 	newResult := q1.Exec(context.Background())
@@ -68,7 +68,7 @@ func TestLimitk(t *testing.T) {
 
 	fmt.Println("---")
 
-	q2, err := oldEngine.NewRangeQuery(context.Background(), storage, nil, query, queryTime, queryEnd, 100*time.Second)
+	q2, err := oldEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
 	testutil.Ok(t, err)
 
 	oldResult := q2.Exec(context.Background())
@@ -94,4 +94,3 @@ func TestLimitk(t *testing.T) {
 
 	validateTestCases(t, cases[:1])
 }
-
