@@ -21,7 +21,7 @@ func (l LimitSeriesOptmizer) Optimize(plan Node, qOpts *query.Options) (Node, an
 		switch e := (*node).(type) {
 		case *Binary:
 			canLimit = false
-			// we are traversing bottom-up so if we get Binary Expr, series to fetch can't be limited, stop the traversal
+			// if we get Binary Expr, series to fetch can't be limited, stop the traversal
 			return true
 		case *Aggregation:
 			switch e.Op {
@@ -30,11 +30,15 @@ func (l LimitSeriesOptmizer) Optimize(plan Node, qOpts *query.Options) (Node, an
 					canLimit = false
 					return true
 				}
-				limitNode = e
+				if limitNode == nil {
+					limitNode = e // we should respect the inner-most limitk operator param to limit the number of series
+				}
 			default:
-				// if limitk has any other aggregation at its downstream operator, then limit can't be imposed, else if limitk is itself downstream, then limiting is possible
-				canLimit = false
-				return true
+				// we are traversing bottom-up, if limitk has any other aggregation at its downstream operator, then limit can't be imposed, else if limitk is itself downstream, then limiting is possible
+				if limitNode == nil {
+					canLimit = false
+					return true
+				}
 			}
 		}
 		return false

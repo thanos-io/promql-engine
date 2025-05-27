@@ -54,7 +54,7 @@ func TestLimitk(t *testing.T) {
 	})
 	oldEngine := promql.NewEngine(opts)
 
-	query := "limitk(2, http_requests_total) or http_requests_total"
+	query := "limitk(2, topk(5, http_requests_total))"
 
 	q1, err := newEngine.NewInstantQuery(context.Background(), storage, nil, query, queryTime)
 
