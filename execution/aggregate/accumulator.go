@@ -105,6 +105,9 @@ func (s *sumAcc) Add(ctx context.Context, v float64, h *histogram.FloatHistogram
 }
 
 func (s *sumAcc) Value() (float64, *histogram.FloatHistogram) {
+	if s.histSum != nil {
+		s.histSum.Compact(0)
+	}
 	return s.value, s.histSum
 }
 
