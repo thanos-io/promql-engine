@@ -2251,11 +2251,39 @@ avg by (storage_info) (
 			step:  0,
 		},
 		{
-			name: "native histogram unsupported functions",
+			name: "native histogram stddev_over_time unsupported",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `stddev_over_time({__name__="http_request_duration_seconds"} @ end()[1h:1m] offset 28s)`,
+		},
+		{
+			name: "native histogram stdvar_over_time unsupported",
 			load: `load 2m
 			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
 			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
 			query: `stdvar_over_time({__name__="http_request_duration_seconds"} @ end()[1h:1m] offset 28s)`,
+		},
+		{
+			name: "native histogram quantile_over_time unsupported",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `quantile_over_time(0.9, {__name__="http_request_duration_seconds"} @ end()[1h:1m] offset 28s)`,
+		},
+		{
+			name: "native histogram min_over_time unsupported",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `min_over_time({__name__="http_request_duration_seconds"} @ end()[1h:1m] offset 28s)`,
+		},
+		{
+			name: "native histogram max_over_time unsupported",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `max_over_time({__name__="http_request_duration_seconds"} @ end()[1h:1m] offset 28s)`,
 		},
 	}
 
