@@ -88,12 +88,16 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return madOverTime(f.Samples), nil, true, nil
 	},
 	"max_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		// max_over_time ignores histograms for now
+		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
 		return maxOverTime(f.Samples), nil, true, nil
 	},
 	"min_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		// min_over_time ignores histograms for now
+		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
@@ -126,12 +130,16 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return avgOverTime(f.Samples), nil, true, nil
 	},
 	"stddev_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		// stddev_over_time ignores histograms for now
+		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
 		return stddevOverTime(f.Samples), nil, true, nil
 	},
 	"stdvar_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		// stdvar_over_time ignores histograms for now
+		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
@@ -159,6 +167,8 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return 1., nil, true, nil
 	},
 	"quantile_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		// quantile_over_time ignores histograms for now
+		f.Samples = filterFloatOnlySamples(f.Samples)
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}

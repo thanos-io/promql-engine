@@ -2250,6 +2250,13 @@ avg by (storage_info) (
 			end:   time.UnixMilli(0),
 			step:  0,
 		},
+		{
+			name: "native histogram unsupported functions",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `stdvar_over_time({__name__="http_request_duration_seconds"} @ end()[1h:1m] offset 28s)`,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
