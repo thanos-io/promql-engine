@@ -5,6 +5,7 @@ package telemetry
 
 import (
 	"fmt"
+	"github.com/prometheus/prometheus/model/histogram"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -116,4 +117,13 @@ func (ti *TrackedTelemetry) Samples() *stats.QuerySamples { return ti.LoadedSamp
 type ObservableVectorOperator interface {
 	model.VectorOperator
 	OperatorTelemetry
+}
+
+// CalculateHistogramSampleCount returns the size of the FloatHistogram compared to the size of a Float.
+// The total size is calculated considering the histogram timestamp (p.T - 8 bytes),
+// and then a number of bytes in the histogram.
+// This sum is divided by 16, as samples are 16 bytes.
+// See: https://github.com/prometheus/prometheus/blob/2bf6f4c9dcbb1ad2e8fef70c6a48d8fc44a7f57c/promql/value.go#L178
+func CalculateHistogramSampleCount(h *histogram.FloatHistogram) int {
+	return (h.Size() + 8) / 16
 }
