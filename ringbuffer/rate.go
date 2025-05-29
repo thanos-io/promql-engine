@@ -5,10 +5,10 @@ package ringbuffer
 
 import (
 	"context"
-	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"math"
 	"slices"
 
+	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"

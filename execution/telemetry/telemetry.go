@@ -5,13 +5,13 @@ package telemetry
 
 import (
 	"fmt"
-	"github.com/prometheus/prometheus/model/histogram"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
