@@ -454,6 +454,9 @@ func (a *avgAcc) AddVector(ctx context.Context, vs []float64, hs []*histogram.Fl
 }
 
 func (a *avgAcc) Value() (float64, *histogram.FloatHistogram) {
+	if a.histSum != nil {
+		a.histSum.Compact(0)
+	}
 	if a.incremental {
 		return a.avg + a.kahanC, a.histSum
 	}

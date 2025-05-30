@@ -55,7 +55,8 @@ fuzz: ## Runs selected fuzzing tests
 	@export GOCACHE=/tmp/cache
 	@echo ">> running fuzz tests (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzEnginePromQLSmithInstantQuery -fuzztime=90s -fuzzminimizetime 0x;
+	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzEnginePromQLSmithInstantQuery -fuzztime=90s -fuzzminimizetime 0x;	
+	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzNativeHistogramQuery -fuzztime=90s -fuzzminimizetime 0x;
 	@go test github.com/thanos-io/promql-engine/logicalplan -run None -fuzz FuzzNodesMarshalJSON -fuzztime=30s -fuzzminimizetime 0x;
 
 .PHONY: deps

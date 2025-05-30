@@ -92,7 +92,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		end := time.Unix(int64(endTS), 0)
 		interval := time.Duration(intervalSeconds) * time.Second
 
-		seriesSet, err := getSeries(context.Background(), storage)
+		seriesSet, err := getSeries(context.Background(), storage, "http_requests_total")
 		require.NoError(t, err)
 		psOpts := []promqlsmith.Option{
 			promqlsmith.WithEnableOffset(true),
@@ -188,7 +188,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		})
 		oldEngine := promql.NewEngine(opts)
 
-		seriesSet, err := getSeries(context.Background(), storage)
+		seriesSet, err := getSeries(context.Background(), storage, "http_requests_total")
 		require.NoError(t, err)
 		psOpts := []promqlsmith.Option{
 			promqlsmith.WithEnableOffset(true),
@@ -250,13 +250,13 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 	})
 }
 
-func getSeries(ctx context.Context, q storage.Queryable) ([]labels.Labels, error) {
+func getSeries(ctx context.Context, q storage.Queryable, query string) ([]labels.Labels, error) {
 	querier, err := q.Querier(0, time.Now().Unix())
 	if err != nil {
 		return nil, err
 	}
 	res := make([]labels.Labels, 0)
-	ss := querier.Select(ctx, false, &storage.SelectHints{Func: "series"}, labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"))
+	ss := querier.Select(ctx, false, &storage.SelectHints{Func: "series"}, labels.MustNewMatcher(labels.MatchEqual, "__name__", query))
 	for ss.Next() {
 		lbls := ss.At().Labels()
 		res = append(res, lbls)
@@ -296,4 +296,190 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	if failures > 0 {
 		t.Fatalf("failed %d test cases", failures)
 	}
+}
+
+func getMaxNativeHistogramSumLimit(schema int8, noOfBuckets int) float64 {
+	var maxSum float64
+	for idx := 1; idx <= noOfBuckets; idx++ {
+		maxSum += math.Pow(math.Pow(2, math.Pow(2, float64(-1*schema))), float64(idx))
+	}
+
+	return maxSum
+}
+
+func FuzzNativeHistogramQuery(f *testing.F) {
+	f.Skip()
+	f.Add(int64(0), uint32(0), uint32(60), uint32(120), int8(0), int8(0), uint64(1), uint64(2), uint64(1))
+
+	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int8, schema2 int8, bucketValue1, bucketValue2, bucketValue3 uint64) {
+		t.Parallel()
+
+		if endTS < startTS || intervalSeconds <= 0 {
+			return
+		}
+
+		if schema1 < -4 || schema1 > 8 || schema2 < -4 || schema2 > 8 {
+			return
+		}
+
+		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
+		bucket2 := []uint64{2 * bucketValue1, bucketValue2, 2 * bucketValue3}
+
+		sum1 := getMaxNativeHistogramSumLimit(schema1, len(bucket1))
+		sum2 := getMaxNativeHistogramSumLimit(schema2, len(bucket2))
+
+		if sum1 <= 0 || sum2 <= 0 {
+			return
+		}
+
+		if math.IsNaN(sum1) || math.IsNaN(sum2) {
+			return
+		}
+		if math.IsInf(sum1, 0) || math.IsInf(sum2, 0) {
+			return
+		}
+
+		count1 := bucket1[0] + bucket1[1] + bucket1[2]
+		count2 := bucket2[0] + bucket2[1] + bucket2[2]
+
+		if count1 == 0 || count2 == 0 {
+			return
+		}
+
+		rnd := rand.New(rand.NewSource(seed))
+
+		load := fmt.Sprintf(`load 2m
+			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20 
+			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20`,
+			schema1, count1-bucket1[2], sum1, bucket1[0], bucket1[1],
+			schema1, count1, bucket1[0], bucket1[1], bucket1[2],
+
+			schema2, count2-bucket2[1]-bucket2[2], sum2, bucket2[0],
+			schema2, count2, bucket2[0], bucket2[1], bucket2[2],
+		)
+
+		opts := promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+			EnablePerStepStats:   true,
+		}
+
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
+		storage := promqltest.LoadedStorage(t, load)
+		t.Cleanup(func() {
+			storage.Close()
+		})
+
+		startTime := time.Unix(int64(startTS), 0)
+		endTime := time.Unix(int64(endTS), 0)
+		interval := time.Duration(intervalSeconds) * time.Second
+
+		seriesSet, err := getSeries(context.Background(), storage, "http_request_duration_seconds")
+		require.NoError(t, err)
+
+		psOpts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(true),
+			promqlsmith.WithEnableAtModifier(true),
+			promqlsmith.WithEnabledAggrs([]parser.ItemType{
+				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP, parser.COUNT, parser.COUNT_VALUES, parser.QUANTILE,
+			}),
+		}
+
+		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
+		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+		oldEngine := promql.NewEngine(opts)
+
+		instantCases := make([]*testCase, 0, testRuns/2)
+		rangeCases := make([]*testCase, 0, testRuns/2)
+
+		for i := 0; i < testRuns/2; i++ {
+			var (
+				qInstant     promql.Query
+				qRange       promql.Query
+				instantQuery string
+				rangeQuery   string
+			)
+
+			for {
+				expr := ps.WalkInstantQuery()
+				if !shouldValidateSamples(expr) {
+					continue
+				}
+				instantQuery = expr.Pretty(0)
+
+				qInstant, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, instantQuery, startTime)
+				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
+					continue
+				} else {
+					break
+				}
+			}
+			testutil.Ok(t, err)
+
+			for {
+				expr := ps.WalkRangeQuery()
+				if !shouldValidateSamples(expr) {
+					continue
+				}
+				rangeQuery = expr.Pretty(0)
+
+				qRange, err = newEngine.NewRangeQuery(context.Background(), storage, qOpts, rangeQuery, startTime, endTime, interval)
+				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
+					continue
+				} else {
+					break
+				}
+			}
+			testutil.Ok(t, err)
+
+			newInstantResult := qInstant.Exec(context.Background())
+			newInstantStats := qInstant.Stats()
+			stats.NewQueryStats(newInstantStats)
+
+			newRangeResult := qRange.Exec(context.Background())
+			newRangeStats := qRange.Stats()
+			stats.NewQueryStats(newRangeStats)
+
+			q2Instant, err := oldEngine.NewInstantQuery(context.Background(), storage, qOpts, instantQuery, startTime)
+			testutil.Ok(t, err)
+			oldInstantResult := q2Instant.Exec(context.Background())
+			oldInstantStats := q2Instant.Stats()
+			stats.NewQueryStats(oldInstantStats)
+
+			q2Range, err := oldEngine.NewRangeQuery(context.Background(), storage, qOpts, rangeQuery, startTime, endTime, interval)
+			testutil.Ok(t, err)
+			oldRangeResult := q2Range.Exec(context.Background())
+			oldRangeStats := q2Range.Stats()
+			stats.NewQueryStats(oldRangeStats)
+
+			instantCases = append(instantCases, &testCase{
+				query:           instantQuery,
+				newRes:          newInstantResult,
+				newStats:        newInstantStats,
+				oldRes:          oldInstantResult,
+				oldStats:        oldInstantStats,
+				loads:           []string{load},
+				start:           startTime,
+				end:             startTime,
+				validateSamples: true,
+			})
+
+			rangeCases = append(rangeCases, &testCase{
+				query:           rangeQuery,
+				newRes:          newRangeResult,
+				newStats:        newRangeStats,
+				oldRes:          oldRangeResult,
+				oldStats:        oldRangeStats,
+				loads:           []string{load},
+				start:           startTime,
+				end:             endTime,
+				validateSamples: true,
+			})
+		}
+
+		validateTestCases(t, instantCases)
+		validateTestCases(t, rangeCases)
+	})
 }
