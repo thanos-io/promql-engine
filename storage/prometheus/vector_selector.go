@@ -139,7 +139,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		ts += o.step
 	}
 
-	var currStepSamples uint64
+	var currStepSamples int
 	// Reset the current timestamp.
 	ts = o.currentStep
 	fromSeries := o.currentSeries
@@ -160,12 +160,13 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			if ok {
 				if h != nil && !o.selectTimestamp {
 					vectors[currStep].AppendHistogram(o.vectorPool, series.signature, h)
+					currStepSamples += telemetry.CalculateHistogramSampleCount(h)
 				} else {
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, v)
+					currStepSamples++
 				}
-				currStepSamples++
 			}
-			o.IncrementSamplesAtTimestamp(int(currStepSamples), seriesTs)
+			o.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
 		}
 	}

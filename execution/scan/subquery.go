@@ -204,7 +204,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 					sv.AppendSample(o.pool, uint64(sampleId), f)
 				}
 			}
-			o.IncrementSamplesAtTimestamp(rangeSamples.Len(), sv.T)
+			o.IncrementSamplesAtTimestamp(rangeSamples.SampleCount(), sv.T)
 		}
 		res = append(res, sv)
 
