@@ -253,7 +253,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	resultSort := newResultSort(expr)
 
 	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 
@@ -297,7 +297,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 	defer e.activeQueryTracker.Delete(idx)
 
 	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 	planOpts := logicalplan.PlanOptions{
@@ -352,7 +352,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 	qOpts := e.makeQueryOpts(start, end, step, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 	planOpts := logicalplan.PlanOptions{
@@ -394,7 +394,7 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	defer e.activeQueryTracker.Delete(idx)
 
 	qOpts := e.makeQueryOpts(start, end, step, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 	planOpts := logicalplan.PlanOptions{
