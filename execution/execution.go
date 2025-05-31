@@ -18,7 +18,6 @@ package execution
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"time"
 
