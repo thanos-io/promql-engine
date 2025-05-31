@@ -55,11 +55,6 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 }
 
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
-	fmt.Println("Current expr : ", expr.Type())
-	for _, childs := range expr.Children() {
-		fmt.Println(*childs)
-	}
-	fmt.Println("Printed childrens")
 	switch e := expr.(type) {
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
@@ -271,8 +266,6 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
 	hints.Limit = e.Limit
-
-	fmt.Println("Hints.LIMIT ", e.Limit)
 
 	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
 	if err != nil {
