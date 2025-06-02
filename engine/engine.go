@@ -656,8 +656,7 @@ loop:
 			}
 		}
 
-		_, keepHistograms := q.resultSort.(keepHistogramsSorter)
-		if !keepHistograms {
+		if !q.resultSort.keepHistograms() {
 			vector = filterFloats(vector)
 		}
 		sort.Slice(vector, q.resultSort.comparer(&vector))

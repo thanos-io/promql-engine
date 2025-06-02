@@ -19,22 +19,27 @@ const (
 	sortOrderDesc sortOrder = true
 )
 
-type keepHistogramsSorter interface {
-	keepHistograms()
-}
-
 type resultSorter interface {
 	comparer(samples *promql.Vector) func(i, j int) bool
+	keepHistograms() bool
 }
 
 type sortFuncResultSort struct {
 	sortOrder sortOrder
 }
 
+func (s sortFuncResultSort) keepHistograms() bool {
+	return false
+}
+
 type sortByLabelFuncResult struct {
 	sortingLabels []string
 
 	sortOrder sortOrder
+}
+
+func (s sortByLabelFuncResult) keepHistograms() bool {
+	return false
 }
 
 type aggregateResultSort struct {
@@ -47,9 +52,13 @@ type aggregateResultSort struct {
 type noSortResultSort struct {
 }
 
-func (a aggregateResultSort) keepHistograms() {}
+func (a aggregateResultSort) keepHistograms() bool {
+	return true
+}
 
-func (s noSortResultSort) keepHistograms() {}
+func (s noSortResultSort) keepHistograms() bool {
+	return true
+}
 
 func extractSortingLabels(f *parser.Call) []string {
 	args := f.Args[1:]
