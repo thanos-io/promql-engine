@@ -210,7 +210,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 					o.hasFloats = true
 				}
 			}
-			o.IncrementSamplesAtTimestamp(scanner.buffer.Len(), seriesTs)
+			o.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs)
 			seriesTs += o.step
 		}
 	}

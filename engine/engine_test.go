@@ -2245,6 +2245,22 @@ avg by (storage_info) (
 			query: `increase(native_histogram[10m:3m])`,
 			start: time.UnixMilli(10 * 60 * 1000),
 		},
+		{
+			name: "utf-8 label",
+			load: `load 10s
+			    http_requests_total{"label:name"="labelvalue"} 1+2x40`,
+			query: `rate(http_requests_total{"label:name"="labelvalue"}[20s:10s] offset 20s)`,
+		},
+		{
+			name: "native histogram sum compact",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `--sum by (pod) ({__name__="http_request_duration_seconds"})`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(0),
+			step:  0,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
@@ -5091,6 +5107,35 @@ func TestQueryStats(t *testing.T) {
 			end:   time.UnixMilli(120000),
 			step:  time.Second * 30,
 		},
+		{
+			name: "native histogram sum compact",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `--sum by (pod) ({__name__="http_request_duration_seconds"})`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(2400000),
+			step:  time.Second * 30,
+		},
+		{
+			name: "native histogram rate with counter reset and step equal to window",
+			load: `load 30s
+			    some_metric {{schema:0 sum:1 count:1 buckets:[1]}} {{schema:0 sum:0 count:0 buckets:[1]}} {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:1 count:1 buckets:[1]}}`,
+			query: `rate(some_metric[1m])`,
+			start: time.Unix(-60, 0),
+			end:   time.Unix(120, 0),
+			step:  time.Second * 30,
+		},
+		{
+			name: "native histogram histogram_quantile",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `histogram_quantile(0.9, {__name__="http_request_duration_seconds"})`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(2400000),
+			step:  time.Second * 30,
+		},
 		// TODO (harry671003): This is a known case which needs to be fixed upstream.
 		//{
 		//	name: "fuzz aggregation with scalar param",
@@ -5098,7 +5143,9 @@ func TestQueryStats(t *testing.T) {
 		//		http_requests_total{pod="nginx-1"} -77.00+1.00x15
 		//		http_requests_total{pod="nginx-2"}  1+0.67x21`,
 		//	query: `quantile without (pod) (scalar({__name__="http_requests_total"} offset 2m58s), {__name__="http_requests_total"})`,
-		//	start: time.UnixMilli(0),
+		//	start: time.UnixMilli(0),start: time.UnixMilli(0),
+		//			end:   time.UnixMilli(120000),
+		//			step:  time.Second * 30,
 		//	end:   time.UnixMilli(221000),
 		//	step:  time.Second * 30,
 		//},
@@ -5533,22 +5580,18 @@ func TestNativeHistograms(t *testing.T) {
 			name:  "count by (foo)",
 			query: `count by (foo) (native_histogram_series)`,
 		},
-		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		// {
-		//	name:  "max",
-		//	query: "max (native_histogram_series)",
-		// },
+		{
+			name:  "max",
+			query: `max(native_histogram_series)`,
+		},
 		{
 			name:  "max by (foo)",
 			query: `max by (foo) (native_histogram_series)`,
 		},
-		// TODO(fpetkovski): The Prometheus engine returns an incorrect result for this case.
-		// Uncomment once it gets fixed: https://github.com/prometheus/prometheus/issues/11973.
-		// {
-		//	name:  "min",
-		//	query: "min (native_histogram_series)",
-		// },
+		{
+			name:  "min",
+			query: `min(native_histogram_series)`,
+		},
 		{
 			name:  "min by (foo)",
 			query: `min by (foo) (native_histogram_series)`,
@@ -5929,6 +5972,11 @@ var (
 			if l == nil && r == nil {
 				return true
 			}
+
+			if l == nil && r != nil {
+				return false
+			}
+
 			return l.Equals(r)
 		}
 		compareAnnotations := func(l, r annotations.Annotations) bool {
