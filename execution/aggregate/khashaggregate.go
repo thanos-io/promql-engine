@@ -182,7 +182,7 @@ func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err != nil {
 		return nil, err
 	}
-
+	a.SetSeriesCount(int64(len(a.series)))
 	return a.series, nil
 }
 

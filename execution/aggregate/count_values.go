@@ -77,6 +77,7 @@ func (c *countValuesOperator) Series(ctx context.Context) ([]labels.Labels, erro
 
 	var err error
 	c.once.Do(func() { err = c.initSeriesOnce(ctx) })
+	c.SetSeriesCount(int64(len(c.series)))
 	return c.series, err
 }
 

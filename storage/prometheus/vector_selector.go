@@ -108,6 +108,7 @@ func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
+	o.SetSeriesCount(int64(len(o.series)))
 	return o.series, nil
 }
 

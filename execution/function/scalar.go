@@ -42,7 +42,7 @@ func (o *scalarOperator) Explain() (next []model.VectorOperator) {
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
-
+	o.SetSeriesCount(int64(0))
 	return nil, nil
 }
 

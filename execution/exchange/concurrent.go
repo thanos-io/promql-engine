@@ -52,7 +52,12 @@ func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, erro
 	start := time.Now()
 	defer func() { c.AddExecutionTimeTaken(time.Since(start)) }()
 
-	return c.next.Series(ctx)
+	series, err := c.next.Series(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.SetSeriesCount(int64(len(series)))
+	return series, nil
 }
 
 func (c *concurrencyOperator) GetPool() *model.VectorPool {

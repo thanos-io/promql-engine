@@ -115,6 +115,7 @@ func (d *dedupOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err != nil {
 		return nil, err
 	}
+	d.SetSeriesCount(int64(len(d.series)))
 	return d.series, nil
 }
 
