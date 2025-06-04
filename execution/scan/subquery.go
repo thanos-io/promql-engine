@@ -242,6 +242,7 @@ func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 	if err := o.initSeries(ctx); err != nil {
 		return nil, err
 	}
+	o.SetMaxSeriesCount(int64(len(o.series)))
 	return o.series, nil
 }
 

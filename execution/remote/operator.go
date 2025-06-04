@@ -55,7 +55,12 @@ func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
 		e.AddExecutionTimeTaken(time.Since(start))
 	}()
 
-	return e.vectorSelector.Series(ctx)
+	series, err := e.vectorSelector.Series(ctx)
+	if err != nil {
+		return nil, err
+	}
+	e.SetMaxSeriesCount(int64(len(series)))
+	return series, nil
 }
 
 func (e *Execution) String() string {

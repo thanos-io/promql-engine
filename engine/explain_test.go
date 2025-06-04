@@ -122,31 +122,66 @@ func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) boo
 	return true
 }
 
+// getMaxSeriesCount gets the max series count from the explain output node tree.
+func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int64 {
+	maxSeriesCount := int64(0)
+	if got != nil {
+		maxSeriesCount = got.OperatorTelemetry.MaxSeriesCount()
+		for i := range got.Children {
+			child := got.Children[i]
+			maxSeriesCount = max(maxSeriesCount, getMaxSeriesCount(child))
+		}
+	}
+	return maxSeriesCount
+}
+
 func TestQueryAnalyze(t *testing.T) {
 	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
-	series := storage.MockSeries(
-		[]int64{240, 270, 300, 600, 630, 660},
-		[]float64{1, 2, 3, 4, 5, 6},
-		[]string{labels.MetricName, "foo"},
-	)
+	seriesList := []storage.Series{
+		storage.MockSeries(
+			[]int64{240, 270, 300, 600, 630, 660},
+			[]float64{1, 2, 3, 4, 5, 6},
+			[]string{labels.MetricName, "foo"},
+		),
+		storage.MockSeries(
+			[]int64{240, 270, 300, 600, 630, 660},
+			[]float64{1, 2, 3, 4, 5, 6},
+			[]string{labels.MetricName, "http_requests_total", "pod", "nginx-1"},
+		),
+		storage.MockSeries(
+			[]int64{240, 270, 300, 600, 630, 660},
+			[]float64{1, 2, 3, 4, 5, 6},
+			[]string{labels.MetricName, "http_requests_total", "pod", "nginx-2"},
+		),
+		storage.MockSeries(
+			[]int64{240, 270, 300, 600, 630, 660},
+			[]float64{1, 2, 3, 4, 5, 6},
+			[]string{labels.MetricName, "http_requests_total", "pod", "nginx-3"},
+		),
+	}
 
 	start := time.Unix(0, 0)
 	end := time.Unix(1000, 0)
 
 	for _, tc := range []struct {
-		query string
+		query          string
+		maxSeriesCount int64
 	}{
 		{
-			query: `foo`,
+			query:          `foo`,
+			maxSeriesCount: 1,
 		},
 		{
-			query: `time()`,
+			query:          `time()`,
+			maxSeriesCount: 0,
 		},
 		{
-			query: `sum by (job) (foo)`,
+			query:          `sum by (job) (foo)`,
+			maxSeriesCount: 1,
 		},
 		{
-			query: `rate(http_requests_total[30s]) > bool 0`,
+			query:          `rate(http_requests_total[30s]) > bool 0`,
+			maxSeriesCount: 3,
 		},
 	} {
 		{
@@ -160,7 +195,7 @@ func TestQueryAnalyze(t *testing.T) {
 					err   error
 				)
 
-				query, err = ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
+				query, err = ng.NewInstantQuery(ctx, storageWithSeries(seriesList...), nil, tc.query, start)
 				testutil.Ok(t, err)
 
 				queryResults := query.Exec(context.Background())
@@ -170,7 +205,9 @@ func TestQueryAnalyze(t *testing.T) {
 
 				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
 
-				query, err = ng.NewRangeQuery(ctx, storageWithSeries(series), nil, tc.query, start, end, 30*time.Second)
+				testutil.Equals(t, tc.maxSeriesCount, getMaxSeriesCount(explainableQuery.Analyze()))
+
+				query, err = ng.NewRangeQuery(ctx, storageWithSeries(seriesList...), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
 
 				queryResults = query.Exec(context.Background())
@@ -224,15 +261,15 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 	result := renderAnalysisTree(analyzeOutput, 0)
-	expected := `[duplicateLabelCheck]: 0 peak: 0
-|---[concurrent(buff=2)]: 0 peak: 0
-|   |---[aggregate] sum by ([pod]): 0 peak: 0
-|   |   |---[duplicateLabelCheck]: 0 peak: 0
-|   |   |   |---[coalesce]: 0 peak: 0
-|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): 1010 peak: 20
-|   |   |   |   |---[concurrent(buff=2)]: 0 peak: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): 1010 peak: 20
+	expected := `[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
+|---[concurrent(buff=2)]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |---[aggregate] sum by ([pod]): max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |---[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 20
+|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 20
 `
 	require.EqualValues(t, expected, result)
 }
@@ -241,6 +278,7 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 	var result strings.Builder
 
 	totalSamples := int64(0)
+	seriesCount := node.OperatorTelemetry.MaxSeriesCount()
 	samples := node.OperatorTelemetry.Samples()
 	if samples != nil {
 		totalSamples = samples.TotalSamples
@@ -255,7 +293,7 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 		result.WriteString(strings.Repeat("|   ", level-1) + "|---")
 	}
 
-	result.WriteString(fmt.Sprintf("%s: %d peak: %d\n", node.OperatorTelemetry.String(), totalSamples, peakSamples))
+	result.WriteString(fmt.Sprintf("%s: max_series: %d total_samples: %d peak_samples: %d\n", node.OperatorTelemetry.String(), seriesCount, totalSamples, peakSamples))
 	for _, child := range node.Children {
 		result.WriteString(renderAnalysisTree(child, level+1))
 	}

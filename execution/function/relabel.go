@@ -57,6 +57,7 @@ func (o *relabelOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })
+	o.SetMaxSeriesCount(int64(len(o.series)))
 	return o.series, err
 }
 

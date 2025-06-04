@@ -90,7 +90,12 @@ func (d *duplicateLabelCheckOperator) Series(ctx context.Context) ([]labels.Labe
 	if err := d.init(ctx); err != nil {
 		return nil, err
 	}
-	return d.next.Series(ctx)
+	series, err := d.next.Series(ctx)
+	if err != nil {
+		return nil, err
+	}
+	d.SetMaxSeriesCount(int64(len(series)))
+	return series, nil
 }
 
 func (d *duplicateLabelCheckOperator) GetPool() *model.VectorPool {
