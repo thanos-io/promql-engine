@@ -89,7 +89,7 @@ func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err != nil {
 		return nil, err
 	}
-	c.SetSeriesCount(int64(len(c.series)))
+	c.SetMaxSeriesCount(int64(len(c.series)))
 	return c.series, nil
 }
 

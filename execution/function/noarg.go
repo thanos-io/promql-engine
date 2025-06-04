@@ -40,7 +40,7 @@ func (o *noArgFunctionOperator) String() string {
 func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {
 	start := time.Now()
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
-	o.SetSeriesCount(int64(len(o.series)))
+	o.SetMaxSeriesCount(int64(len(o.series)))
 	return o.series, nil
 }
 

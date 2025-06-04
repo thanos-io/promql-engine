@@ -18,8 +18,8 @@ import (
 type OperatorTelemetry interface {
 	fmt.Stringer
 
-	SeriesCount() int64
-	SetSeriesCount(count int64)
+	MaxSeriesCount() int64
+	SetMaxSeriesCount(count int64)
 	AddExecutionTimeTaken(time.Duration)
 	ExecutionTimeTaken() time.Duration
 	IncrementSamplesAtTimestamp(samples int, t int64)
@@ -66,9 +66,9 @@ func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(_ int, _ int64) {}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
 
-func (tm *NoopTelemetry) SeriesCount() int64 { return 0 }
+func (tm *NoopTelemetry) MaxSeriesCount() int64 { return 0 }
 
-func (tm *NoopTelemetry) SetSeriesCount(_ int64) {}
+func (tm *NoopTelemetry) SetMaxSeriesCount(_ int64) {}
 
 func (tm *NoopTelemetry) LogicalNode() logicalplan.Node {
 	return nil
@@ -121,9 +121,9 @@ func (ti *TrackedTelemetry) updatePeak(samples int) {
 
 func (ti *TrackedTelemetry) Samples() *stats.QuerySamples { return ti.LoadedSamples }
 
-func (ti *TrackedTelemetry) SeriesCount() int64 { return ti.Series }
+func (ti *TrackedTelemetry) MaxSeriesCount() int64 { return ti.Series }
 
-func (ti *TrackedTelemetry) SetSeriesCount(count int64) { ti.Series = count }
+func (ti *TrackedTelemetry) SetMaxSeriesCount(count int64) { ti.Series = count }
 
 type ObservableVectorOperator interface {
 	model.VectorOperator

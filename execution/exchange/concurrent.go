@@ -56,7 +56,7 @@ func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, erro
 	if err != nil {
 		return nil, err
 	}
-	c.SetSeriesCount(int64(len(series)))
+	c.SetMaxSeriesCount(int64(len(series)))
 	return series, nil
 }
 

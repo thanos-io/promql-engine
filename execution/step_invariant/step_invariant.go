@@ -86,7 +86,7 @@ func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, er
 	if err != nil {
 		return nil, err
 	}
-	u.SetSeriesCount(int64(len(u.series)))
+	u.SetMaxSeriesCount(int64(len(u.series)))
 	return u.series, nil
 }
 

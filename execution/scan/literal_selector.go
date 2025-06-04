@@ -60,7 +60,7 @@ func (o *numberLiteralSelector) Series(context.Context) ([]labels.Labels, error)
 	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
 
 	o.loadSeries()
-	o.SetSeriesCount(int64(len(o.series)))
+	o.SetMaxSeriesCount(int64(len(o.series)))
 	return o.series, nil
 }
 

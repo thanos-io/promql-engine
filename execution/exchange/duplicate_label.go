@@ -94,7 +94,7 @@ func (d *duplicateLabelCheckOperator) Series(ctx context.Context) ([]labels.Labe
 	if err != nil {
 		return nil, err
 	}
-	d.SetSeriesCount(int64(len(series)))
+	d.SetMaxSeriesCount(int64(len(series)))
 	return series, nil
 }
 

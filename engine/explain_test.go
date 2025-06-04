@@ -126,7 +126,7 @@ func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) boo
 func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int64 {
 	maxSeriesCount := int64(0)
 	if got != nil {
-		maxSeriesCount = got.OperatorTelemetry.SeriesCount()
+		maxSeriesCount = got.OperatorTelemetry.MaxSeriesCount()
 		for i := range got.Children {
 			child := got.Children[i]
 			maxSeriesCount = max(maxSeriesCount, getMaxSeriesCount(child))
@@ -137,7 +137,7 @@ func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int64 {
 
 func TestQueryAnalyze(t *testing.T) {
 	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
-	serieses := []storage.Series{
+	seriesList := []storage.Series{
 		storage.MockSeries(
 			[]int64{240, 270, 300, 600, 630, 660},
 			[]float64{1, 2, 3, 4, 5, 6},
@@ -195,7 +195,7 @@ func TestQueryAnalyze(t *testing.T) {
 					err   error
 				)
 
-				query, err = ng.NewInstantQuery(ctx, storageWithSeries(serieses...), nil, tc.query, start)
+				query, err = ng.NewInstantQuery(ctx, storageWithSeries(seriesList...), nil, tc.query, start)
 				testutil.Ok(t, err)
 
 				queryResults := query.Exec(context.Background())
@@ -207,7 +207,7 @@ func TestQueryAnalyze(t *testing.T) {
 
 				testutil.Equals(t, tc.maxSeriesCount, getMaxSeriesCount(explainableQuery.Analyze()))
 
-				query, err = ng.NewRangeQuery(ctx, storageWithSeries(serieses...), nil, tc.query, start, end, 30*time.Second)
+				query, err = ng.NewRangeQuery(ctx, storageWithSeries(seriesList...), nil, tc.query, start, end, 30*time.Second)
 				testutil.Ok(t, err)
 
 				queryResults = query.Exec(context.Background())
@@ -261,15 +261,15 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 	result := renderAnalysisTree(analyzeOutput, 0)
-	expected := `[duplicateLabelCheck]: series: 2 total_samples: 0 peak_samples: 0
-|---[concurrent(buff=2)]: series: 2 total_samples: 0 peak_samples: 0
-|   |---[aggregate] sum by ([pod]): series: 2 total_samples: 0 peak_samples: 0
-|   |   |---[duplicateLabelCheck]: series: 2 total_samples: 0 peak_samples: 0
-|   |   |   |---[coalesce]: series: 2 total_samples: 0 peak_samples: 0
-|   |   |   |   |---[concurrent(buff=2)]: series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): series: 1 total_samples: 1010 peak_samples: 20
-|   |   |   |   |---[concurrent(buff=2)]: series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): series: 1 total_samples: 1010 peak_samples: 20
+	expected := `[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
+|---[concurrent(buff=2)]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |---[aggregate] sum by ([pod]): max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |---[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 20
+|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 20
 `
 	require.EqualValues(t, expected, result)
 }
@@ -278,7 +278,7 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 	var result strings.Builder
 
 	totalSamples := int64(0)
-	seriesCount := node.OperatorTelemetry.SeriesCount()
+	seriesCount := node.OperatorTelemetry.MaxSeriesCount()
 	samples := node.OperatorTelemetry.Samples()
 	if samples != nil {
 		totalSamples = samples.TotalSamples
@@ -293,7 +293,7 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 		result.WriteString(strings.Repeat("|   ", level-1) + "|---")
 	}
 
-	result.WriteString(fmt.Sprintf("%s: series: %d total_samples: %d peak_samples: %d\n", node.OperatorTelemetry.String(), seriesCount, totalSamples, peakSamples))
+	result.WriteString(fmt.Sprintf("%s: max_series: %d total_samples: %d peak_samples: %d\n", node.OperatorTelemetry.String(), seriesCount, totalSamples, peakSamples))
 	for _, child := range node.Children {
 		result.WriteString(renderAnalysisTree(child, level+1))
 	}

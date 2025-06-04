@@ -49,7 +49,7 @@ func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := u.loadSeries(ctx); err != nil {
 		return nil, err
 	}
-	u.SetSeriesCount(int64(len(u.series)))
+	u.SetMaxSeriesCount(int64(len(u.series)))
 	return u.series, nil
 }
 
