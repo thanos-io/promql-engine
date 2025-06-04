@@ -122,7 +122,7 @@ func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) boo
 	return true
 }
 
-// getMaxSeriesCount gets the max series count from the explain output node tree
+// getMaxSeriesCount gets the max series count from the explain output node tree.
 func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int64 {
 	maxSeriesCount := int64(0)
 	if got != nil {
