@@ -278,6 +278,7 @@ type Aggregation struct {
 	Param    Node `json:"-"`
 	Grouping []string
 	Without  bool
+	Limit    int
 }
 
 func (f *Aggregation) Clone() Node {
