@@ -322,18 +322,14 @@ func (a *kAggregate) aggregate(t int64, result *[]model.StepVector, k int, ratio
 		}
 	case parser.LIMIT_RATIO:
 		for i, sId := range sampleIDs {
-			sampleHeap := a.inputToHeap[sId]
-
 			if addRatioSample(ratio, a.series[sId]) {
-				heap.Push(sampleHeap, &entry{sId: sId, total: samples[i]})
+				heap.Push(a.inputToHeap[sId], &entry{sId: sId, total: samples[i]})
 			}
 		}
 
 		for i, histId := range histogramIDs {
-			sampleHeap := a.inputToHeap[histId]
-
 			if addRatioSample(ratio, a.series[histId]) {
-				heap.Push(sampleHeap, &entry{histId: histId, histogramSample: histograms[i]})
+				heap.Push(a.inputToHeap[histId], &entry{histId: histId, histogramSample: histograms[i]})
 			}
 		}
 	}
@@ -381,7 +377,7 @@ func (s samplesHeap) Less(i, j int) bool {
 	if math.IsNaN(s.entries[i].total) {
 		return true
 	}
-	if s.compare == nil { // this is case for limitk as it doesn't require any sorting logic
+	if s.compare == nil { // this is case for limitk and limit_ratio as it doesn't require any sorting logic
 		return false
 	}
 
