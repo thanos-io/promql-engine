@@ -12,11 +12,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type sortOrder bool
+type sortOrder int
 
 const (
-	sortOrderAsc  sortOrder = false
-	sortOrderDesc sortOrder = true
+	noValueSort sortOrder = iota
+	sortOrderAsc
+	sortOrderDesc
 )
 
 type resultSorter interface {
@@ -154,6 +155,10 @@ func (s aggregateResultSort) comparer(samples *promql.Vector) func(i, j int) boo
 		lblsCmp := labels.Compare(iLbls, jLbls)
 		if lblsCmp != 0 {
 			return lblsCmp < 0
+		}
+
+		if s.sortOrder == noValueSort {
+			return false
 		}
 		return valueCompare(s.sortOrder, (*samples)[i].F, (*samples)[j].F)
 	}
