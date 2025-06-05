@@ -423,33 +423,19 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return v, nil, ok, nil
 	},
 	"double_exponential_smoothing": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
-		var floats int
-		for _, sample := range f.Samples {
-			if sample.V.H != nil {
-				if floats > 0 {
-					warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), f.ctx)
-				}
-				continue
-			}
-			floats++
+		floats, numHistograms := filterFloatOnlySamples(f.Samples)
+		if numHistograms > 0 && len(floats) > 0 {
+			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), f.ctx)
 		}
 
-		if floats < 2 {
+		if len(floats) < 2 {
 			return 0, nil, false, nil
 		}
 
 		sf := f.ScalarPoint  // smoothing factor or alpha
 		tf := f.ScalarPoint2 // trend factor argument or beta
 
-		fp := make([]Sample, 0, floats)
-		for _, sample := range f.Samples {
-			if sample.V.H != nil {
-				continue
-			}
-			fp = append(fp, sample)
-		}
-
-		v, ok := doubleExponentialSmoothing(fp, sf, tf)
+		v, ok := doubleExponentialSmoothing(floats, sf, tf)
 		return v, nil, ok, nil
 	},
 }
@@ -1196,6 +1182,21 @@ func linearRegression(Samples []Sample, interceptTime int64) (slope, intercept f
 	slope = covXY / varX
 	intercept = sumY/n - slope*sumX/n
 	return slope, intercept
+}
+
+func filterFloatOnlySamples(samples []Sample) ([]Sample, int) {
+	i := 0
+	histograms := 0
+	for _, sample := range samples {
+		if sample.V.H == nil {
+			samples[i] = sample
+			i++
+		} else {
+			histograms++
+		}
+	}
+	samples = samples[:i]
+	return samples, histograms
 }
 
 func kahanSumInc(inc, sum, c float64) (newSum, newC float64) {
