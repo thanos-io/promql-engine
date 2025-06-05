@@ -28,7 +28,7 @@ type vectorScanner struct {
 }
 
 type vectorSelector struct {
-	telemetry.OperatorTelemetry
+	telemetry telemetry.OperatorTelemetry
 
 	storage  SeriesSelector
 	scanners []vectorScanner
@@ -82,7 +82,6 @@ func NewVectorSelector(
 
 		selectTimestamp: selectTimestamp,
 	}
-	o.OperatorTelemetry = telemetry.NewTelemetry(o, queryOpts)
 
 	// For instant queries, set the step to a positive value
 	// so that the operator can terminate.
@@ -90,7 +89,8 @@ func NewVectorSelector(
 		o.step = 1
 	}
 
-	return o
+	o.telemetry = telemetry.NewTelemetry(o, queryOpts)
+	return telemetry.NewOperator(o.telemetry, o)
 }
 
 func (o *vectorSelector) String() string {
@@ -102,13 +102,9 @@ func (o *vectorSelector) Explain() (next []model.VectorOperator) {
 }
 
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
-	start := time.Now()
-	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
-
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
 	}
-	o.SetMaxSeriesCount(int64(len(o.series)))
 	return o.series, nil
 }
 
@@ -117,9 +113,6 @@ func (o *vectorSelector) GetPool() *model.VectorPool {
 }
 
 func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
-	start := time.Now()
-	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
-
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -167,7 +160,7 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 					currStepSamples++
 				}
 			}
-			o.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
+			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
 		}
 	}
