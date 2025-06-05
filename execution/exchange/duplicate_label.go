@@ -39,7 +39,7 @@ func NewDuplicateLabelCheck(next model.VectorOperator, opts *query.Options) mode
 
 func (d *duplicateLabelCheckOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { d.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { d.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():
@@ -85,7 +85,7 @@ func (d *duplicateLabelCheckOperator) Next(ctx context.Context) ([]model.StepVec
 
 func (d *duplicateLabelCheckOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { d.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { d.AddSeriesExecutionTime(time.Since(start)) }()
 
 	if err := d.init(ctx); err != nil {
 		return nil, err

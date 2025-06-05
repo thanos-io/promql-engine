@@ -51,9 +51,7 @@ func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart, q
 
 func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() {
-		e.AddExecutionTimeTaken(time.Since(start))
-	}()
+	defer func() { e.AddSeriesExecutionTime(time.Since(start)) }()
 
 	series, err := e.vectorSelector.Series(ctx)
 	if err != nil {
@@ -69,7 +67,7 @@ func (e *Execution) String() string {
 
 func (e *Execution) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { e.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { e.AddNextExecutionTime(time.Since(start)) }()
 
 	next, err := e.vectorSelector.Next(ctx)
 	if next == nil {

@@ -97,7 +97,7 @@ func (o *scalarOperator) Explain() (next []model.VectorOperator) {
 
 func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 
 	var err error
 	o.seriesOnce.Do(func() { err = o.loadSeries(ctx) })
@@ -114,7 +114,7 @@ func (o *scalarOperator) String() string {
 
 func (o *scalarOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

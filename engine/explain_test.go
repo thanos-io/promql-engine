@@ -122,6 +122,34 @@ func assertExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) boo
 	return true
 }
 
+func assertSeriesExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
+	if got != nil {
+		if got.OperatorTelemetry.SeriesExecutionTime() <= 0 {
+			t.Errorf("expected non-zero SeriesExecutionTime for Operator, got %s ", got.OperatorTelemetry.SeriesExecutionTime())
+			return false
+		}
+		for i := range got.Children {
+			child := got.Children[i]
+			return got.OperatorTelemetry.SeriesExecutionTime() > 0 && assertSeriesExecutionTimeNonZero(t, child)
+		}
+	}
+	return true
+}
+
+func assertNextExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode) bool {
+	if got != nil {
+		if got.OperatorTelemetry.NextExecutionTime() <= 0 {
+			t.Errorf("expected non-zero NextExecutionTime for Operator, got %s ", got.OperatorTelemetry.NextExecutionTime())
+			return false
+		}
+		for i := range got.Children {
+			child := got.Children[i]
+			return got.OperatorTelemetry.NextExecutionTime() > 0 && assertNextExecutionTimeNonZero(t, child)
+		}
+	}
+	return true
+}
+
 // getMaxSeriesCount gets the max series count from the explain output node tree.
 func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int64 {
 	maxSeriesCount := int64(0)
@@ -204,6 +232,8 @@ func TestQueryAnalyze(t *testing.T) {
 				explainableQuery := query.(engine.ExplainableQuery)
 
 				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				testutil.Assert(t, assertSeriesExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				testutil.Assert(t, assertNextExecutionTimeNonZero(t, explainableQuery.Analyze()))
 
 				testutil.Equals(t, tc.maxSeriesCount, getMaxSeriesCount(explainableQuery.Analyze()))
 
@@ -215,6 +245,8 @@ func TestQueryAnalyze(t *testing.T) {
 
 				explainableQuery = query.(engine.ExplainableQuery)
 				testutil.Assert(t, assertExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				testutil.Assert(t, assertSeriesExecutionTimeNonZero(t, explainableQuery.Analyze()))
+				testutil.Assert(t, assertNextExecutionTimeNonZero(t, explainableQuery.Analyze()))
 			})
 		}
 	}

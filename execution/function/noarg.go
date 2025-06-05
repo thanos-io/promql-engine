@@ -39,8 +39,9 @@ func (o *noArgFunctionOperator) String() string {
 
 func (o *noArgFunctionOperator) Series(_ context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 	o.SetMaxSeriesCount(int64(len(o.series)))
+
 	return o.series, nil
 }
 
@@ -50,7 +51,7 @@ func (o *noArgFunctionOperator) GetPool() *model.VectorPool {
 
 func (o *noArgFunctionOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

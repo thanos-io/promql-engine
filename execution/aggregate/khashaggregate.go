@@ -91,7 +91,7 @@ func NewKHashAggregate(
 
 func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { a.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():
@@ -175,7 +175,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 
 func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { a.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { a.AddSeriesExecutionTime(time.Since(start)) }()
 
 	var err error
 	a.once.Do(func() { err = a.init(ctx) })

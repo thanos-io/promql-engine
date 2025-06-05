@@ -57,7 +57,7 @@ func (o *numberLiteralSelector) String() string {
 
 func (o *numberLiteralSelector) Series(context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 
 	o.loadSeries()
 	o.SetMaxSeriesCount(int64(len(o.series)))
@@ -70,7 +70,7 @@ func (o *numberLiteralSelector) GetPool() *model.VectorPool {
 
 func (o *numberLiteralSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():

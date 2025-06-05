@@ -105,7 +105,7 @@ func (o *subqueryOperator) GetPool() *model.VectorPool { return o.pool }
 
 func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
-	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
 
 	select {
 	case <-ctx.Done():
@@ -207,9 +207,9 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 			o.IncrementSamplesAtTimestamp(rangeSamples.SampleCount(), sv.T)
 		}
 		res = append(res, sv)
-
 		o.currentStep += o.step
 	}
+
 	return res, nil
 }
 
@@ -237,7 +237,7 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 
 func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
-	defer func() { o.OperatorTelemetry.AddExecutionTimeTaken(time.Since(start)) }()
+	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
 
 	if err := o.initSeries(ctx); err != nil {
 		return nil, err
