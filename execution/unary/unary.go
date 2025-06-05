@@ -6,7 +6,6 @@ package unary
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
@@ -22,16 +21,13 @@ type unaryNegation struct {
 	once sync.Once
 
 	series []labels.Labels
-	telemetry.OperatorTelemetry
 }
 
 func NewUnaryNegation(next model.VectorOperator, opts *query.Options) (model.VectorOperator, error) {
 	u := &unaryNegation{
 		next: next,
 	}
-	u.OperatorTelemetry = telemetry.NewTelemetry(u, opts)
-
-	return u, nil
+	return telemetry.NewOperator(telemetry.NewTelemetry(u, opts), u), nil
 }
 
 func (u *unaryNegation) Explain() (next []model.VectorOperator) {
@@ -43,13 +39,9 @@ func (u *unaryNegation) String() string {
 }
 
 func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
-	start := time.Now()
-	defer func() { u.AddSeriesExecutionTime(time.Since(start)) }()
-
 	if err := u.loadSeries(ctx); err != nil {
 		return nil, err
 	}
-	u.SetMaxSeriesCount(int64(len(u.series)))
 	return u.series, nil
 }
 
@@ -75,9 +67,6 @@ func (u *unaryNegation) GetPool() *model.VectorPool {
 }
 
 func (u *unaryNegation) Next(ctx context.Context) ([]model.StepVector, error) {
-	start := time.Now()
-	defer func() { u.AddNextExecutionTime(time.Since(start)) }()
-
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

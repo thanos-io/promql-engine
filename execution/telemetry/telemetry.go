@@ -4,6 +4,7 @@
 package telemetry
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -12,14 +13,15 @@ import (
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/stats"
 )
 
 type OperatorTelemetry interface {
 	fmt.Stringer
 
-	MaxSeriesCount() int64
-	SetMaxSeriesCount(count int64)
+	MaxSeriesCount() int
+	SetMaxSeriesCount(count int)
 	ExecutionTimeTaken() time.Duration
 	AddSeriesExecutionTime(time.Duration)
 	SeriesExecutionTime() time.Duration
@@ -81,9 +83,9 @@ func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(_ int, _ int64) {}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
 
-func (tm *NoopTelemetry) MaxSeriesCount() int64 { return 0 }
+func (tm *NoopTelemetry) MaxSeriesCount() int { return 0 }
 
-func (tm *NoopTelemetry) SetMaxSeriesCount(_ int64) {}
+func (tm *NoopTelemetry) SetMaxSeriesCount(_ int) {}
 
 func (tm *NoopTelemetry) LogicalNode() logicalplan.Node {
 	return nil
@@ -92,7 +94,7 @@ func (tm *NoopTelemetry) LogicalNode() logicalplan.Node {
 type TrackedTelemetry struct {
 	fmt.Stringer
 
-	Series        int64
+	Series        int
 	ExecutionTime time.Duration
 	SeriesTime    time.Duration
 	NextTime      time.Duration
@@ -156,9 +158,9 @@ func (ti *TrackedTelemetry) updatePeak(samples int) {
 
 func (ti *TrackedTelemetry) Samples() *stats.QuerySamples { return ti.LoadedSamples }
 
-func (ti *TrackedTelemetry) MaxSeriesCount() int64 { return ti.Series }
+func (ti *TrackedTelemetry) MaxSeriesCount() int { return ti.Series }
 
-func (ti *TrackedTelemetry) SetMaxSeriesCount(count int64) { ti.Series = count }
+func (ti *TrackedTelemetry) SetMaxSeriesCount(count int) { ti.Series = count }
 
 type ObservableVectorOperator interface {
 	model.VectorOperator
@@ -172,4 +174,47 @@ type ObservableVectorOperator interface {
 // See: https://github.com/prometheus/prometheus/blob/2bf6f4c9dcbb1ad2e8fef70c6a48d8fc44a7f57c/promql/value.go#L178
 func CalculateHistogramSampleCount(h *histogram.FloatHistogram) int {
 	return (h.Size() + 8) / 16
+}
+
+func NewOperator(telemetry OperatorTelemetry, inner model.VectorOperator) model.VectorOperator {
+	op := &Operator{
+		inner: inner,
+	}
+	op.OperatorTelemetry = telemetry
+	return op
+}
+
+// Operator wraps other inner operator to track its telemetry.
+type Operator struct {
+	OperatorTelemetry
+	inner model.VectorOperator
+}
+
+func (t *Operator) Series(ctx context.Context) ([]labels.Labels, error) {
+	start := time.Now()
+	defer func() { t.OperatorTelemetry.AddSeriesExecutionTime(time.Since(start)) }()
+	s, err := t.inner.Series(ctx)
+	if err != nil {
+		return nil, err
+	}
+	t.OperatorTelemetry.SetMaxSeriesCount(len(s))
+	return s, err
+}
+
+func (t *Operator) Next(ctx context.Context) ([]model.StepVector, error) {
+	start := time.Now()
+	defer func() { t.OperatorTelemetry.AddNextExecutionTime(time.Since(start)) }()
+	return t.inner.Next(ctx)
+}
+
+func (t *Operator) GetPool() *model.VectorPool {
+	return t.inner.GetPool()
+}
+
+func (t *Operator) Explain() []model.VectorOperator {
+	return t.inner.Explain()
+}
+
+func (t *Operator) String() string {
+	return t.inner.String()
 }

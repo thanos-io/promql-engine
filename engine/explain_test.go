@@ -151,8 +151,8 @@ func assertNextExecutionTimeNonZero(t *testing.T, got *engine.AnalyzeOutputNode)
 }
 
 // getMaxSeriesCount gets the max series count from the explain output node tree.
-func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int64 {
-	maxSeriesCount := int64(0)
+func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int {
+	maxSeriesCount := 0
 	if got != nil {
 		maxSeriesCount = got.OperatorTelemetry.MaxSeriesCount()
 		for i := range got.Children {
@@ -193,7 +193,7 @@ func TestQueryAnalyze(t *testing.T) {
 
 	for _, tc := range []struct {
 		query          string
-		maxSeriesCount int64
+		maxSeriesCount int
 	}{
 		{
 			query:          `foo`,

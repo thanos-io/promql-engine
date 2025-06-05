@@ -6,7 +6,6 @@ package function
 import (
 	"context"
 	"sync"
-	"time"
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
@@ -17,8 +16,6 @@ import (
 )
 
 type absentOperator struct {
-	telemetry.OperatorTelemetry
-
 	once     sync.Once
 	funcExpr *logicalplan.FunctionCall
 	series   []labels.Labels
@@ -31,15 +28,13 @@ func newAbsentOperator(
 	pool *model.VectorPool,
 	next model.VectorOperator,
 	opts *query.Options,
-) *absentOperator {
+) model.VectorOperator {
 	oper := &absentOperator{
 		funcExpr: funcExpr,
 		pool:     pool,
 		next:     next,
 	}
-	oper.OperatorTelemetry = telemetry.NewTelemetry(oper, opts)
-
-	return oper
+	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
 }
 
 func (o *absentOperator) String() string {
@@ -51,11 +46,7 @@ func (o *absentOperator) Explain() (next []model.VectorOperator) {
 }
 
 func (o *absentOperator) Series(_ context.Context) ([]labels.Labels, error) {
-	start := time.Now()
-	defer func() { o.AddSeriesExecutionTime(time.Since(start)) }()
-
 	o.loadSeries()
-	o.SetMaxSeriesCount(int64(len(o.series)))
 	return o.series, nil
 }
 
@@ -99,9 +90,6 @@ func (o *absentOperator) GetPool() *model.VectorPool {
 }
 
 func (o *absentOperator) Next(ctx context.Context) ([]model.StepVector, error) {
-	start := time.Now()
-	defer func() { o.AddNextExecutionTime(time.Since(start)) }()
-
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
