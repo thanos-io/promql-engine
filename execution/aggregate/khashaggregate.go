@@ -152,7 +152,7 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 			result = append(result, a.GetPool().GetStepVector(vector.T))
 			continue
 		}
-		if len(vector.Histograms) > 0 && a.aggregation != parser.LIMITK && a.aggregation != parser.LIMIT_RATIO {
+		if a.aggregation != parser.LIMITK && a.aggregation != parser.LIMIT_RATIO && len(vector.Histograms) > 0 {
 			warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo(a.aggregation.String(), posrange.PositionRange{}), ctx)
 		}
 
