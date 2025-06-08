@@ -55,6 +55,8 @@ func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, o
 
 func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	switch e := expr.(type) {
+	case *logicalplan.Coalesce:
+		return newCoalesce(ctx, e, storage, opts, hints)
 	case *logicalplan.NumberLiteral:
 		return scan.NewNumberLiteralSelector(model.NewVectorPool(opts.StepsBatch), opts, e.Val), nil
 	case *logicalplan.VectorSelector:
@@ -84,6 +86,18 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 	default:
 		return nil, errors.Wrapf(parse.ErrNotSupportedExpr, "got: %s (%T)", e, e)
 	}
+}
+
+func newCoalesce(ctx context.Context, e *logicalplan.Coalesce, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	operators := make([]model.VectorOperator, len(e.Exprs))
+	for i, expr := range e.Exprs {
+		operator, err := newOperator(ctx, expr, scanners, opts, hints)
+		if err != nil {
+			return nil, err
+		}
+		operators[i] = operator
+	}
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...), nil
 }
 
 func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {

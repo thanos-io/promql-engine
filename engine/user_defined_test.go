@@ -86,6 +86,9 @@ func (c logicalVectorSelector) MakeExecutionOperator(_ context.Context, vectors 
 		maxt:        opts.End.UnixMilli(),
 		step:        opts.Step.Milliseconds(),
 		currentStep: opts.Start.UnixMilli(),
+
+		shard:     c.VectorSelector.Shard,
+		numShards: c.VectorSelector.NumShards,
 	}
 
 	return oper, nil
@@ -103,6 +106,9 @@ type vectorSelectorOperator struct {
 	maxt        int64
 	step        int64
 	currentStep int64
+
+	shard     int
+	numShards int
 }
 
 func (c *vectorSelectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
@@ -112,8 +118,12 @@ func (c *vectorSelectorOperator) Next(ctx context.Context) ([]model.StepVector, 
 	vectors := c.vectors.GetVectorBatch()
 	for i := 0; i < c.stepsBatch && c.currentStep <= c.maxt; i++ {
 		vector := c.vectors.GetStepVector(c.currentStep)
-		vector.AppendSample(c.vectors, 1, 7)
-		vector.AppendSample(c.vectors, 2, 7)
+		if c.shard == 0 {
+			vector.AppendSample(c.vectors, 1, 7)
+		}
+		if c.shard == 1 {
+			vector.AppendSample(c.vectors, 2, 7)
+		}
 		vectors = append(vectors, vector)
 		c.currentStep += c.step
 	}
