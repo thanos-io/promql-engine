@@ -1,12 +1,14 @@
 module github.com/thanos-io/promql-engine
 
-go 1.24.0
+go 1.24.4
 
 tool (
 	github.com/bwplotka/mdox
 	github.com/daixiang0/gci
 	github.com/fatih/faillint
 	github.com/golangci/golangci-lint/cmd/golangci-lint
+	golang.org/x/tools/cmd/goimports
+	golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize
 )
 
 require (
@@ -22,7 +24,7 @@ require (
 	github.com/zhangyunhao116/umap v0.0.0-20250307031311-0b61e69e958b
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
-	golang.org/x/tools v0.31.0
+	golang.org/x/tools v0.34.0
 	gonum.org/v1/gonum v0.16.0
 )
 
@@ -271,15 +273,17 @@ require (
 	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
-	golang.org/x/crypto v0.36.0 // indirect
-	golang.org/x/exp/typeparams v0.0.0-20250210185358-939b2ce775ac // indirect
-	golang.org/x/mod v0.24.0 // indirect
-	golang.org/x/net v0.37.0 // indirect
+	golang.org/x/crypto v0.39.0 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20250218142911-aa4b98e5adaa // indirect
+	golang.org/x/mod v0.25.0 // indirect
+	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/oauth2 v0.26.0 // indirect
-	golang.org/x/sync v0.12.0 // indirect
-	golang.org/x/sys v0.31.0 // indirect
-	golang.org/x/text v0.23.0 // indirect
+	golang.org/x/sync v0.15.0 // indirect
+	golang.org/x/sys v0.33.0 // indirect
+	golang.org/x/telemetry v0.0.0-20250417124945-06ef541f3fa3 // indirect
+	golang.org/x/text v0.26.0 // indirect
 	golang.org/x/time v0.10.0 // indirect
+	golang.org/x/tools/gopls v0.19.0-pre.2 // indirect
 	google.golang.org/api v0.223.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250219182151-9fdb1cabc7b2 // indirect
@@ -289,7 +293,7 @@ require (
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	honnef.co/go/tools v0.6.1 // indirect
+	honnef.co/go/tools v0.7.0-0.dev.0.20250523013057-bbc2f4dd71ea // indirect
 	k8s.io/apimachinery v0.31.3 // indirect
 	k8s.io/client-go v0.31.3 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect

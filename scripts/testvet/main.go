@@ -29,7 +29,7 @@ var loadAnalyzer = &analysis.Analyzer{
 	Run:  run,
 }
 
-func run(pass *analysis.Pass) (interface{}, error) {
+func run(pass *analysis.Pass) (any, error) {
 	for _, file := range pass.Files {
 		if !strings.HasSuffix(file.Name.String(), "_test") {
 			continue
@@ -90,7 +90,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 									{
 										Pos:     s.Pos(),
 										End:     s.End(),
-										NewText: []byte(fmt.Sprintf("%c%s%c", '`', formatted, '`')),
+										NewText: fmt.Appendf(nil, "%c%s%c", '`', formatted, '`'),
 									},
 								},
 							},
@@ -110,7 +110,7 @@ func run(pass *analysis.Pass) (interface{}, error) {
 									{
 										Pos:     s.Pos(),
 										End:     s.End(),
-										NewText: []byte(fmt.Sprintf("%c%s%c", '`', formatted, '`')),
+										NewText: fmt.Appendf(nil, "%c%s%c", '`', formatted, '`'),
 									},
 								},
 							},

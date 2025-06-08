@@ -7,6 +7,8 @@ MDOX = go tool -modfile go.tools.mod mdox
 GCI = go tool -modfile go.tools.mod gci
 FAILLINT = go tool -modfile go.tools.mod faillint
 GOLANGCI_LINT = go tool -modfile go.tools.mod golangci-lint
+MODERNIZE = go tool -modfile go.tools.mod modernize
+GOIMPORTS = go tool -modfile go.tools.mod goimports
 COPYRIGHT = go run github.com/efficientgo/tools/copyright@v0.0.0-20220225185207-fe763185946b
 
 GOMODULES = $(shell go list ./...)
@@ -83,6 +85,8 @@ check-docs:
 format:
 	@echo ">> formatting promql tests"
 	@go run scripts/testvet/main.go -json -fix ./...
+	@echo ">> formatting imports"
+	@$(GOIMPORTS) -w $(shell find . -name "*.go")
 
 .PHONY:lint
 lint: format deps docs
@@ -98,6 +102,8 @@ github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(GOMODULES)
 	@$(GOLANGCI_LINT) run
 	@echo ">> ensuring Copyright headers"
 	@$(COPYRIGHT) $(shell find . -name "*.go")
+	@echo ">> ensuring modern go style"
+	@$(MODERNIZE) -test ./...t 
 	$(call require_clean_work_tree,'detected files without copyright, run make lint and commit changes')
 
 .PHONY: white-noise-cleanup

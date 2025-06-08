@@ -2,6 +2,8 @@ module github.com/thanos-io/promql-engine
 
 go 1.24.0
 
+toolchain go1.24.4
+
 require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cortexproject/promqlsmith v0.0.0-20250407233056-90db95b1a4e4

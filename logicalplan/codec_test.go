@@ -91,7 +91,7 @@ func FuzzNodesMarshalJSON(f *testing.F) {
 		}
 		rnd := rand.New(rand.NewSource(seed))
 		pqSmith := promqlsmith.New(rnd, lbls, opts...)
-		for i := 0; i < testRuns; i++ {
+		for range testRuns {
 			qry := pqSmith.WalkRangeQuery()
 			parser.Inspect(qry, func(node parser.Node, nodes []parser.Node) error {
 				switch vs := (node).(type) {

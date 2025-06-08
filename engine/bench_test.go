@@ -41,7 +41,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 
 	b.Run("iterate by series", func(b *testing.B) {
 		b.ResetTimer()
-		for c := 0; c < b.N; c++ {
+		for b.Loop() {
 			numIterations := 0
 
 			ss := querier.Select(ctx, false, nil, matcher)
@@ -49,7 +49,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			for ss.Next() {
 				series = append(series, ss.At().Iterator(nil))
 			}
-			for i := 0; i < len(series); i++ {
+			for i := range series {
 				for ts := start.UnixMilli(); ts <= end.UnixMilli(); ts += step.Milliseconds() {
 					numIterations++
 					if val := series[i].Seek(ts); val == chunkenc.ValNone {
@@ -61,7 +61,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 	})
 	b.Run("iterate by time", func(b *testing.B) {
 		b.ResetTimer()
-		for c := 0; c < b.N; c++ {
+		for b.Loop() {
 			numIterations := 0
 			ss := querier.Select(ctx, false, nil, matcher)
 			series := make([]chunkenc.Iterator, 0)
@@ -71,7 +71,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 			stepCount := 10
 			ts := start.UnixMilli()
 			for ts <= end.UnixMilli() {
-				for i := 0; i < len(series); i++ {
+				for i := range series {
 					seriesTs := ts
 					for currStep := 0; currStep < stepCount && seriesTs <= end.UnixMilli(); currStep++ {
 						numIterations++
@@ -88,7 +88,7 @@ func BenchmarkChunkDecoding(b *testing.B) {
 }
 
 func BenchmarkSingleQuery(b *testing.B) {
-	b.StopTimer()
+
 	memProfileRate := runtime.MemProfileRate
 	runtime.MemProfileRate = 0
 
@@ -105,9 +105,9 @@ func BenchmarkSingleQuery(b *testing.B) {
 		SelectorBatchSize: 256,
 	}
 	b.ReportAllocs()
-	b.StartTimer()
+
 	runtime.MemProfileRate = memProfileRate
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result := executeRangeQuery(b, query, test, start, end, step, opts)
 		testutil.Ok(b, result.Err)
 	}
@@ -341,7 +341,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 
 				b.ResetTimer()
 				b.ReportAllocs()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					qry, err := promEngine.NewRangeQuery(context.Background(), tc.storage, nil, tc.query, start, end, testStep)
 					testutil.Ok(b, err)
 
@@ -353,7 +353,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					newResult := executeRangeQuery(b, tc.query, tc.storage, start, end, testStep, opts)
 					testutil.Ok(b, newResult.Err)
 				}
@@ -461,7 +461,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 
 				b.ResetTimer()
 				b.ReportAllocs()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					qry, err := engine.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, testStep)
 					testutil.Ok(b, err)
 
@@ -473,7 +473,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					ng := engine.New(engine.Opts{
 						EngineOpts: opts,
 					})
@@ -592,7 +592,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 
 				b.ResetTimer()
 				b.ReportAllocs()
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					qry, err := engine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 					testutil.Ok(b, err)
 
@@ -607,7 +607,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 				b.ResetTimer()
 				b.ReportAllocs()
 
-				for i := 0; i < b.N; i++ {
+				for b.Loop() {
 					qry, err := ng.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 					testutil.Ok(b, err)
 
@@ -631,7 +631,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 	b.Run("withoutOptimizers", func(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			opts := engine.Opts{
 				LogicalOptimizers: logicalplan.NoOptimizers,
 				EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
@@ -648,7 +648,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 	b.Run("withOptimizers", func(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
 			ctx := context.Background()
 			qry, err := ng.NewRangeQuery(ctx, db, nil, query, start, end, step)
@@ -689,7 +689,7 @@ func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *t
 
 	sixHours := int64(6 * 60 * 2)
 
-	for i := 0; i < numRequests; i++ {
+	for i := range numRequests {
 		for t := int64(0); t < sixHours; t += 30 {
 			code := "200"
 			if numSuccess < i {
@@ -709,15 +709,15 @@ func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *t
 func synthesizeLoad(numPods, numContainers, numSteps int) string {
 	var sb strings.Builder
 	sb.WriteString("load 30s\n")
-	for i := 0; i < numPods; i++ {
-		for j := 0; j < numContainers; j++ {
+	for i := range numPods {
+		for j := range numContainers {
 			sb.WriteString(fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n"))
 		}
 		sb.WriteString(fmt.Sprintf(`http_responses_total{pod="p%d"} %dx%d%s`, i, i, numSteps, "\n"))
 	}
 
-	for i := 0; i < numPods; i++ {
-		for j := 0; j < 10; j++ {
+	for i := range numPods {
+		for j := range 10 {
 			sb.WriteString(fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="%d"} %d+%dx%d%s`, i, j, i, j, numSteps, "\n"))
 		}
 		sb.WriteString(fmt.Sprintf(`http_response_seconds_bucket{pod="p%d", le="+Inf"} %d+%dx%d%s`, i, i, i, numSteps, "\n"))

@@ -13,6 +13,7 @@ import (
 	"reflect"
 	"runtime"
 	"runtime/pprof"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -63,10 +64,8 @@ type skipTest struct {
 }
 
 func (s *skipTest) Run(name string, t func(*testing.T)) bool {
-	for _, st := range s.skipTests {
-		if name == st {
-			return true
-		}
+	if slices.Contains(s.skipTests, name) {
+		return true
 	}
 
 	return s.TBRun.Run(name, t)
@@ -2341,8 +2340,8 @@ func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
 		i := 1
 		for i < len(s.timestamps) {
 			if s.timestamps[i] == s.timestamps[i-1] {
-				s.timestamps = append(s.timestamps[:i], s.timestamps[i+1:]...)
-				s.values = append(s.values[:i], s.values[i+1:]...)
+				s.timestamps = slices.Delete(s.timestamps, i, i+1)
+				s.values = slices.Delete(s.values, i, i+1)
 			} else {
 				i++
 			}
@@ -4554,7 +4553,7 @@ func TestQueryConcurrency(t *testing.T) {
 			ActiveQueryTracker: promql.NewActiveQueryTracker(t.TempDir(), concurrency, logger),
 		}},
 	)
-	for i := 0; i < maxQueries; i++ {
+	for range maxQueries {
 		go func() {
 			qry, err := newEngine.NewRangeQuery(ctx, queryable, nil, `count(metric)`, time.Unix(0, 0), time.Unix(300, 0), time.Second*30)
 			testutil.Ok(t, err)
@@ -6030,7 +6029,7 @@ var (
 			sort.Sort(samplesByLabels(vx))
 			sort.Sort(samplesByLabels(vy))
 
-			for i := 0; i < len(vx); i++ {
+			for i := range vx {
 				if !compareMetrics(vx[i].Metric, vy[i].Metric) {
 					return false
 				}
@@ -6057,7 +6056,7 @@ var (
 			// Sort matrix before comparing.
 			sort.Sort(seriesByLabels(mx))
 			sort.Sort(seriesByLabels(my))
-			for i := 0; i < len(mx); i++ {
+			for i := range mx {
 				mxs := mx[i]
 				mys := my[i]
 
@@ -6071,7 +6070,7 @@ var (
 				if len(xps) != len(yps) {
 					return false
 				}
-				for j := 0; j < len(xps); j++ {
+				for j := range xps {
 					if xps[j].T != yps[j].T {
 						return false
 					}
@@ -6085,7 +6084,7 @@ var (
 				if len(xph) != len(yph) {
 					return false
 				}
-				for j := 0; j < len(xph); j++ {
+				for j := range xph {
 					if xph[j].T != yph[j].T {
 						return false
 					}

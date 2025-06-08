@@ -94,7 +94,7 @@ func TestPropagateMatchers(t *testing.T) {
 	}
 
 	t.Logf("Running %d fuzzy tests with seed %d", testRuns, seed)
-	for i := 0; i < testRuns; i++ {
+	for i := range testRuns {
 		var expr parser.Expr
 		var query string
 
