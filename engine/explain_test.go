@@ -36,7 +36,7 @@ func TestQueryExplain(t *testing.T) {
 	// Calculate concurrencyOperators according to max available CPUs.
 	totalOperators := runtime.GOMAXPROCS(0) / 2
 	var concurrencyOperators []engine.ExplainOutputNode
-	for i := 0; i < totalOperators; i++ {
+	for i := range totalOperators {
 		concurrencyOperators = append(concurrencyOperators, engine.ExplainOutputNode{
 			OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
 				{OperatorName: fmt.Sprintf("[vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},

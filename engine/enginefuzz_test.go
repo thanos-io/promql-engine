@@ -111,7 +111,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			validateSamples bool
 		)
 		cases := make([]*testCase, testRuns)
-		for i := 0; i < testRuns; i++ {
+		for i := range testRuns {
 			for {
 				expr := ps.WalkRangeQuery()
 				validateSamples = shouldValidateSamples(expr)
@@ -204,7 +204,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			query string
 		)
 		cases := make([]*testCase, testRuns)
-		for i := 0; i < testRuns; i++ {
+		for i := range testRuns {
 			// Since we disabled fallback, keep trying until we find a query
 			// that can be natively execute by the engine.
 			// Parsing experimental function, like mad_over_time, will lead to a parser.ParseErrors, so we also ignore those.
@@ -394,7 +394,7 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		instantCases := make([]*testCase, 0, testRuns/2)
 		rangeCases := make([]*testCase, 0, testRuns/2)
 
-		for i := 0; i < testRuns/2; i++ {
+		for range testRuns / 2 {
 			var (
 				qInstant     promql.Query
 				qRange       promql.Query
