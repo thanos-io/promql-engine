@@ -14,7 +14,6 @@ require (
 	github.com/prometheus/common v0.63.0
 	github.com/prometheus/prometheus v0.303.1
 	github.com/stretchr/testify v1.10.0
-	github.com/zhangyunhao116/umap v0.0.0-20221211160557-cb7705fafa39
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
 	golang.org/x/tools v0.33.0

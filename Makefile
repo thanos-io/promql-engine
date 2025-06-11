@@ -3,6 +3,7 @@ MDOX_VALIDATE_CONFIG ?= .mdox.validate.yaml
 
 # if macos, use gsed
 SED ?= $(shell which gsed 2>/dev/null || which sed)
+BENCHSTAT = go tool -modfile go.tools.mod benchstat
 MDOX = go tool -modfile go.tools.mod mdox
 GCI = go tool -modfile go.tools.mod gci
 FAILLINT = go tool -modfile go.tools.mod faillint
@@ -57,7 +58,7 @@ fuzz: ## Runs selected fuzzing tests
 	@export GOCACHE=/tmp/cache
 	@echo ">> running fuzz tests (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzEnginePromQLSmithInstantQuery -fuzztime=90s -fuzzminimizetime 0x;	
+	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzEnginePromQLSmithInstantQuery -fuzztime=90s -fuzzminimizetime 0x;
 	@go test github.com/thanos-io/promql-engine/engine -run None -fuzz FuzzNativeHistogramQuery -fuzztime=90s -fuzzminimizetime 0x;
 	@go test github.com/thanos-io/promql-engine/logicalplan -run None -fuzz FuzzNodesMarshalJSON -fuzztime=30s -fuzzminimizetime 0x;
 
@@ -103,7 +104,7 @@ github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(GOMODULES)
 	@echo ">> ensuring Copyright headers"
 	@$(COPYRIGHT) $(shell find . -name "*.go")
 	@echo ">> ensuring modern go style"
-	@$(MODERNIZE) -test ./...t 
+	@$(MODERNIZE) -test ./...t
 	$(call require_clean_work_tree,'detected files without copyright, run make lint and commit changes')
 
 .PHONY: white-noise-cleanup
@@ -129,4 +130,4 @@ bench-new: benchmarks
 
 .PHONY: benchmark
 benchmark: bench-old bench-new
-	@benchstat benchmarks/old.out benchmarks/new.out
+	@$(BENCHSTAT) benchmarks/old.out benchmarks/new.out

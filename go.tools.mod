@@ -7,6 +7,7 @@ tool (
 	github.com/daixiang0/gci
 	github.com/fatih/faillint
 	github.com/golangci/golangci-lint/cmd/golangci-lint
+	golang.org/x/perf/cmd/benchstat
 	golang.org/x/tools/cmd/goimports
 	golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize
 )
@@ -52,6 +53,7 @@ require (
 	github.com/Masterminds/semver/v3 v3.3.0 // indirect
 	github.com/OpenPeeDeeP/depguard/v2 v2.2.1 // indirect
 	github.com/PuerkitoBio/goquery v1.5.1 // indirect
+	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794 // indirect
 	github.com/alecthomas/chroma v0.8.2 // indirect
 	github.com/alecthomas/go-check-sumtype v0.3.1 // indirect
 	github.com/alecthomas/template v0.0.0-20190718012654-fb15b899a751 // indirect
@@ -277,7 +279,8 @@ require (
 	golang.org/x/exp/typeparams v0.0.0-20250218142911-aa4b98e5adaa // indirect
 	golang.org/x/mod v0.25.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
-	golang.org/x/oauth2 v0.26.0 // indirect
+	golang.org/x/oauth2 v0.30.0 // indirect
+	golang.org/x/perf v0.0.0-20250605212013-b481878a17be // indirect
 	golang.org/x/sync v0.15.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/telemetry v0.0.0-20250417124945-06ef541f3fa3 // indirect
