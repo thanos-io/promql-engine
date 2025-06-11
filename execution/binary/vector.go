@@ -216,25 +216,23 @@ func (o *vectorOperator) execBinaryAnd(lhs, rhs model.StepVector) (model.StepVec
 
 	for _, sampleID := range rhs.SampleIDs {
 		jp := o.lcJoinBuckets[sampleID]
-		jp.sid = sampleID
 		jp.ats = ts
 	}
 
 	for _, histogramID := range rhs.HistogramIDs {
 		jp := o.lcJoinBuckets[histogramID]
-		jp.sid = histogramID
 		jp.ats = ts
 	}
 
 	for i, sampleID := range lhs.SampleIDs {
 		if jp := o.hcJoinBuckets[sampleID]; jp.ats == ts {
-			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, jp.sid+1), lhs.Samples[i])
+			step.AppendSample(o.pool, o.outputSeriesID(sampleID+1, 0), lhs.Samples[i])
 		}
 	}
 
 	for i, histogramID := range lhs.HistogramIDs {
 		if jp := o.hcJoinBuckets[histogramID]; jp.ats == ts {
-			step.AppendHistogram(o.pool, o.outputSeriesID(histogramID+1, jp.sid+1), lhs.Histograms[i])
+			step.AppendHistogram(o.pool, o.outputSeriesID(histogramID+1, 0), lhs.Histograms[i])
 		}
 	}
 	return step, nil
@@ -508,14 +506,7 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 	switch o.opType {
 	case parser.LAND:
 		for i := range highCardSide {
-			sig := hcSampleIdToSignature[i]
-			lcs, ok := lcHashToSeriesIDs[sig]
-			if !ok {
-				continue
-			}
-			for _, lc := range lcs {
-				outputMap.Store(cantorPairing(uint64(i+1), uint64(lc+1)), uint64(h.append(highCardSide[i])))
-			}
+			outputMap.Store(cantorPairing(uint64(i+1), 0), uint64(h.append(highCardSide[i])))
 		}
 	case parser.LOR:
 		for i := range highCardSide {
