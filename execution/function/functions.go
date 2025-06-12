@@ -7,10 +7,14 @@ import (
 	"math"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/parse"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 )
+
+// deprecated, remove once thanos isnt using them anymore.
+var XFunctions = parse.XFunctions
 
 type functionCall func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool)
 
@@ -315,28 +319,4 @@ func month(t time.Time) float64 {
 
 func year(t time.Time) float64 {
 	return float64(t.Year())
-}
-
-var XFunctions = map[string]*parser.Function{
-	"xdelta": {
-		Name:       "xdelta",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-	},
-	"xincrease": {
-		Name:       "xincrease",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-	},
-	"xrate": {
-		Name:       "xrate",
-		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
-		ReturnType: parser.ValueTypeVector,
-	},
-}
-
-// IsExtFunction is a convenience function to determine whether extended range calculations are required.
-func IsExtFunction(functionName string) bool {
-	_, ok := XFunctions[functionName]
-	return ok
 }

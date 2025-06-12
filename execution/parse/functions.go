@@ -28,6 +28,19 @@ var XFunctions = map[string]*parser.Function{
 	},
 }
 
+var ExtraRangeFunctions = map[string]*parser.Function{
+	"ts_of_min_over_time": {
+		Name:       "ts_of_min_over_time",
+		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
+		ReturnType: parser.ValueTypeVector,
+	},
+	"ts_of_max_over_time": {
+		Name:       "ts_of_max_over_time",
+		ArgTypes:   []parser.ValueType{parser.ValueTypeMatrix},
+		ReturnType: parser.ValueTypeVector,
+	},
+}
+
 // IsExtFunction is a convenience function to determine whether extended range calculations are required.
 func IsExtFunction(functionName string) bool {
 	_, ok := XFunctions[functionName]

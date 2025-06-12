@@ -6,6 +6,7 @@ package engine
 import (
 	"context"
 	"log/slog"
+	"maps"
 	"math"
 	"runtime"
 	"slices"
@@ -13,7 +14,6 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution"
-	"github.com/thanos-io/promql-engine/execution/function"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
@@ -69,10 +69,6 @@ type Opts struct {
 
 	// SelectorBatchSize specifies the maximum number of samples to be returned by selectors in a single batch.
 	SelectorBatchSize int64
-
-	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
-	// This will default to false.
-	EnableXFunctions bool
 
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
@@ -143,14 +139,9 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 
 	functions := make(map[string]*parser.Function, len(parser.Functions))
-	for k, v := range parser.Functions {
-		functions[k] = v
-	}
-	if opts.EnableXFunctions {
-		functions["xdelta"] = function.XFunctions["xdelta"]
-		functions["xincrease"] = function.XFunctions["xincrease"]
-		functions["xrate"] = function.XFunctions["xrate"]
-	}
+	maps.Copy(functions, parser.Functions)
+	maps.Copy(functions, parse.XFunctions)
+	maps.Copy(functions, parse.ExtraRangeFunctions)
 
 	metrics := &engineMetrics{
 		currentQueries: promauto.With(opts.Reg).NewGauge(
