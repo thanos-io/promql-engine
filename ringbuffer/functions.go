@@ -204,15 +204,29 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
-		v, ok := maxOverTime(f.ctx, f.Samples)
+		v, _, ok := maxOverTime(f.ctx, f.Samples)
 		return v, nil, ok, nil
 	},
 	"min_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
-		v, ok := minOverTime(f.ctx, f.Samples)
+		v, _, ok := minOverTime(f.ctx, f.Samples)
 		return v, nil, ok, nil
+	},
+	"ts_of_max_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		if len(f.Samples) == 0 {
+			return 0., nil, false, nil
+		}
+		_, t, ok := maxOverTime(f.ctx, f.Samples)
+		return float64(t / 1000), nil, ok, nil
+	},
+	"ts_of_min_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		if len(f.Samples) == 0 {
+			return 0., nil, false, nil
+		}
+		_, t, ok := minOverTime(f.ctx, f.Samples)
+		return float64(t / 1000), nil, ok, nil
 	},
 	"avg_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
@@ -782,8 +796,9 @@ func madOverTime(ctx context.Context, points []Sample) (float64, bool) {
 	return stat.Quantile(0.5, stat.LinInterp, values, nil), true
 }
 
-func maxOverTime(ctx context.Context, points []Sample) (float64, bool) {
-	max := points[0].V.F
+func maxOverTime(ctx context.Context, points []Sample) (float64, int64, bool) {
+	resv := points[0].V.F
+	rest := points[0].T
 
 	var foundFloat bool
 	for _, v := range points {
@@ -794,19 +809,22 @@ func maxOverTime(ctx context.Context, points []Sample) (float64, bool) {
 		} else {
 			foundFloat = true
 		}
-		if v.V.F > max || math.IsNaN(max) {
-			max = v.V.F
+		if v.V.F >= resv || math.IsNaN(resv) {
+			resv = v.V.F
+			rest = v.T
 		}
 	}
 
 	if !foundFloat {
-		return 0, false
+		return 0, 0, false
 	}
-	return max, true
+	return resv, rest, true
 }
 
-func minOverTime(ctx context.Context, points []Sample) (float64, bool) {
-	min := points[0].V.F
+func minOverTime(ctx context.Context, points []Sample) (float64, int64, bool) {
+	resv := points[0].V.F
+	rest := points[0].T
+
 	var foundFloat bool
 	for _, v := range points {
 		if v.V.H != nil {
@@ -816,15 +834,16 @@ func minOverTime(ctx context.Context, points []Sample) (float64, bool) {
 		} else {
 			foundFloat = true
 		}
-		if v.V.F < min || math.IsNaN(min) {
-			min = v.V.F
+		if v.V.F <= resv || math.IsNaN(resv) {
+			resv = v.V.F
+			rest = v.T
 		}
 	}
 
 	if !foundFloat {
-		return 0, false
+		return 0, 0, false
 	}
-	return min, true
+	return resv, rest, true
 }
 
 func countOverTime(points []Sample) float64 {

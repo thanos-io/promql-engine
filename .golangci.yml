@@ -29,7 +29,6 @@ linters:
     - godot
     - gofmt
     - gci
-    - gofmt
     - gosimple
     - govet
     - ineffassign

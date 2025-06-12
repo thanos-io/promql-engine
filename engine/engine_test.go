@@ -2531,50 +2531,6 @@ func TestEdgeCases(t *testing.T) {
 	}
 }
 
-func TestDisabledXFunction(t *testing.T) {
-	queryTime := time.Unix(50, 0)
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
-	}
-
-	defaultLoad := `load 5s
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x4`
-
-	cases := []struct {
-		name     string
-		load     string
-		query    string
-		expected []promql.Sample
-	}{
-		{
-			name:  "xfunctions disable",
-			load:  defaultLoad,
-			query: "xincrease(http_requests[50s])",
-			expected: []promql.Sample{
-				createSample(queryTime.UnixMilli(), 100, labels.FromStrings("path", "/foo")),
-				createSample(queryTime.UnixMilli(), 90, labels.FromStrings("path", "/bar")),
-			},
-		},
-	}
-	for _, tc := range cases {
-		storage := promqltest.LoadedStorage(t, tc.load)
-		defer storage.Close()
-
-		optimizers := logicalplan.AllOptimizers
-
-		newEngine := engine.New(engine.Opts{
-			EngineOpts:        opts,
-			LogicalOptimizers: optimizers,
-		})
-		_, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
-		testutil.NotOk(t, err)
-	}
-}
-
 func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 
@@ -2602,7 +2558,6 @@ func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	newEngine := engine.New(engine.Opts{
 		EngineOpts:        opts,
 		LogicalOptimizers: optimizers,
-		EnableXFunctions:  true,
 	})
 	query, err := newEngine.NewInstantQuery(ctx, lStorage, nil, expr, defaultQueryTime)
 	testutil.Ok(t, err)
@@ -2610,23 +2565,6 @@ func TestXFunctionsWithNativeHistograms(t *testing.T) {
 
 	engineResult := query.Exec(ctx)
 	require.Error(t, engineResult.Err)
-}
-
-func TestXFunctionsWhenDisabled(t *testing.T) {
-	var (
-		query = "xincrease(http_requests[50s])"
-		start = time.Unix(0, 0)
-		end   = time.Unix(100, 0)
-		step  = time.Second * 10
-	)
-	ng := engine.New(engine.Opts{})
-	_, err := ng.NewRangeQuery(context.Background(), nil, nil, query, start, end, step)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
-
-	_, err = ng.NewInstantQuery(context.Background(), nil, nil, query, start)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
 }
 
 func TestXFunctions(t *testing.T) {
@@ -2856,7 +2794,88 @@ func TestXFunctions(t *testing.T) {
 			newEngine := engine.New(engine.Opts{
 				EngineOpts:        opts,
 				LogicalOptimizers: optimizers,
-				EnableXFunctions:  true,
+			})
+			query, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, queryTime)
+			testutil.Ok(t, err)
+			defer query.Close()
+
+			engineResult := query.Exec(ctx)
+			testutil.Ok(t, engineResult.Err)
+			expectedResult := createVectorResult(tc.expected)
+
+			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult, queryExplanation(query))
+		})
+	}
+}
+
+func TestExtraRangeFunctions(t *testing.T) {
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	defaultLoad := `load 5s
+	http_requests{path="/foo"}	0+10x10
+	http_requests{path="/bar"}	0+10x5 0+10x4`
+
+	cases := []struct {
+		name       string
+		load       string
+		query      string
+		queryTime  time.Time
+		expected   []promql.Sample
+		rangeQuery bool
+		startTime  time.Time
+		endTime    time.Time
+	}{
+		{
+			name:      "eval instant at 2m ts_of_min_over_time, with 2m lookback",
+			load:      defaultLoad,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_min_over_time(http_requests[2m])",
+			expected: []promql.Sample{
+				createSample(120_000, 5, labels.FromStrings("path", "/foo")),
+				createSample(120_000, 30, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 2m ts_of_max_over_time, with 2m lookback",
+			load:      defaultLoad,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_max_over_time(http_requests[2m])",
+			expected: []promql.Sample{
+				createSample(120_000, 50, labels.FromStrings("path", "/foo")),
+				createSample(120_000, 25, labels.FromStrings("path", "/bar")),
+			},
+		},
+		{
+			name:      "eval instant at 2m ts_of_max_over_time, with subquery",
+			load:      defaultLoad,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_max_over_time(rate(http_requests[30s])[2m:5s])",
+			expected: []promql.Sample{
+				createSample(120_000, 55, labels.FromStrings("path", "/foo")),
+				createSample(120_000, 25, labels.FromStrings("path", "/bar")),
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := promqltest.LoadedStorage(t, tc.load)
+			defer storage.Close()
+
+			queryTime := tc.queryTime
+			optimizers := logicalplan.AllOptimizers
+
+			ctx := context.Background()
+			newEngine := engine.New(engine.Opts{
+				EngineOpts:        opts,
+				LogicalOptimizers: optimizers,
 			})
 			query, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, queryTime)
 			testutil.Ok(t, err)
@@ -3170,7 +3189,6 @@ func TestRateVsXRate(t *testing.T) {
 			newEngine := engine.New(engine.Opts{
 				EngineOpts:        opts,
 				LogicalOptimizers: optimizers,
-				EnableXFunctions:  true,
 			})
 			query, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 			testutil.Ok(t, err)
