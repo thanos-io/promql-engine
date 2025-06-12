@@ -49,7 +49,7 @@ sum(
 		t.Run(tcase.name, func(t *testing.T) {
 			ast, err := parser.ParseExpr(tcase.query)
 			testutil.Ok(t, err)
-			original := NewFromAST(ast, &query.Options{}, PlanOptions{})
+			original, _ := NewFromAST(ast, &query.Options{}, PlanOptions{})
 			original, _ = original.Optimize(DefaultOptimizers)
 
 			bytes, err := Marshal(original.Root())
@@ -67,7 +67,7 @@ func TestUnmarshalMatchers(t *testing.T) {
 	ast, err := parser.ParseExpr(expr)
 	testutil.Ok(t, err)
 
-	original := NewFromAST(ast, &query.Options{}, PlanOptions{})
+	original, _ := NewFromAST(ast, &query.Options{}, PlanOptions{})
 	bytes, err := Marshal(original.Root())
 	testutil.Ok(t, err)
 	clone, err := Unmarshal(bytes)
@@ -102,7 +102,7 @@ func FuzzNodesMarshalJSON(f *testing.F) {
 				return nil
 			})
 
-			original := NewFromAST(qry, &query.Options{}, PlanOptions{})
+			original, _ := NewFromAST(qry, &query.Options{}, PlanOptions{})
 			original, _ = original.Optimize(DefaultOptimizers)
 
 			bytes, err := Marshal(original.Root())
