@@ -89,6 +89,7 @@ func TestPromqlAcceptance(t *testing.T) {
 	st := &skipTest{
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
+			"testdata/type_and_unit.test",       // feature unsupported
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
@@ -221,6 +222,18 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 		end   time.Time
 		step  time.Duration
 	}{
+		{
+			name: "fuzz parser crash",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 46.00+13.00x40
+			    http_requests_total{pod="nginx-2", route="/"}  2+5.25x40`,
+			query: `
+avg(
+    {__name__="http_requests_total",route!="/"} offset -4m43s
+  ^
+    {__name__="http_requests_total",route!="/"}
+)`,
+		},
 		{
 			name: "fuzz",
 			load: `load 30s
@@ -1842,13 +1855,16 @@ topk(
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
-		{
-			name:  "topk with NaN and no matching series",
-			query: `topk(NaN, not_there)`,
-			start: time.Unix(0, 0),
-			end:   time.Unix(3000, 0),
-			step:  2 * time.Second,
-		},
+		/*
+			Broken in prometheus right now: https://github.com/prometheus/prometheus/pull/16725
+						{
+							name:  "topk with NaN and no matching series",
+							query: `topk(NaN, not_there)`,
+							start: time.Unix(0, 0),
+							end:   time.Unix(3000, 0),
+							step:  2 * time.Second,
+						},
+		*/
 		{
 			name: "topk with NaN comparison",
 			load: `load 30s
@@ -2010,20 +2026,19 @@ topk(
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
-		// TODO(Saumya40-Codes): uncomment once https://github.com/prometheus/prometheus/pull/16404 gets merged
-		// {
-		// 	name: "limitK but a sample might not present at last few timestamps",
-		// 	load: `load 30s
-		// 	    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
-		// 	    http_requests_total{pod="nginx-2", series="1"} 2+2.3x40
-		// 	    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
-		// 	    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
-		// 	    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
-		// 	query: `limitk(2, http_requests_total)`,
-		// 	start: time.Unix(0, 0),
-		// 	end:   time.Unix(3000, 0),
-		// 	step:  2 * time.Second,
-		// },
+		{
+			name: "limitK but a sample might not present at last few timestamps",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x50
+			    http_requests_total{pod="nginx-2", series="1"} 2+2.3x40
+			    http_requests_total{pod="nginx-4", series="2"} 5+2.4x50
+			    http_requests_total{pod="nginx-5", series="2"} 8.4+2.3x50
+			    http_requests_total{pod="nginx-6", series="2"} 2.3+2.3x50`,
+			query: `limitk(2, http_requests_total)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 		{
 			name: "limit_ratio",
 			load: `load 30s
@@ -2531,50 +2546,6 @@ func TestEdgeCases(t *testing.T) {
 	}
 }
 
-func TestDisabledXFunction(t *testing.T) {
-	queryTime := time.Unix(50, 0)
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
-	}
-
-	defaultLoad := `load 5s
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x4`
-
-	cases := []struct {
-		name     string
-		load     string
-		query    string
-		expected []promql.Sample
-	}{
-		{
-			name:  "xfunctions disable",
-			load:  defaultLoad,
-			query: "xincrease(http_requests[50s])",
-			expected: []promql.Sample{
-				createSample(queryTime.UnixMilli(), 100, labels.FromStrings("path", "/foo")),
-				createSample(queryTime.UnixMilli(), 90, labels.FromStrings("path", "/bar")),
-			},
-		},
-	}
-	for _, tc := range cases {
-		storage := promqltest.LoadedStorage(t, tc.load)
-		defer storage.Close()
-
-		optimizers := logicalplan.AllOptimizers
-
-		newEngine := engine.New(engine.Opts{
-			EngineOpts:        opts,
-			LogicalOptimizers: optimizers,
-		})
-		_, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
-		testutil.NotOk(t, err)
-	}
-}
-
 func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 
@@ -2610,23 +2581,6 @@ func TestXFunctionsWithNativeHistograms(t *testing.T) {
 
 	engineResult := query.Exec(ctx)
 	require.Error(t, engineResult.Err)
-}
-
-func TestXFunctionsWhenDisabled(t *testing.T) {
-	var (
-		query = "xincrease(http_requests[50s])"
-		start = time.Unix(0, 0)
-		end   = time.Unix(100, 0)
-		step  = time.Second * 10
-	)
-	ng := engine.New(engine.Opts{})
-	_, err := ng.NewRangeQuery(context.Background(), nil, nil, query, start, end, step)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
-
-	_, err = ng.NewInstantQuery(context.Background(), nil, nil, query, start)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
 }
 
 func TestXFunctions(t *testing.T) {
@@ -2869,6 +2823,23 @@ func TestXFunctions(t *testing.T) {
 			testutil.WithGoCmp(comparer).Equals(t, expectedResult, engineResult, queryExplanation(query))
 		})
 	}
+}
+
+func TestXFunctionsWhenDisabled(t *testing.T) {
+	var (
+		query = "xincrease(http_requests[50s])"
+		start = time.Unix(0, 0)
+		end   = time.Unix(100, 0)
+		step  = time.Second * 10
+	)
+	ng := engine.New(engine.Opts{})
+	_, err := ng.NewRangeQuery(context.Background(), nil, nil, query, start, end, step)
+	testutil.NotOk(t, err)
+	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
+
+	_, err = ng.NewInstantQuery(context.Background(), nil, nil, query, start)
+	testutil.NotOk(t, err)
+	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
 }
 
 func TestRateVsXRate(t *testing.T) {
@@ -3211,6 +3182,30 @@ func TestInstantQuery(t *testing.T) {
 		query     string
 		queryTime time.Time
 	}{
+		{
+			name: "eval instant at 2m ts_of_min_over_time, with 2m lookback",
+			load: `load 5s
+			    http_requests{path="/foo"}	0+10x10
+			    http_requests{path="/bar"}	0+10x5 0+10x4`,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_min_over_time(http_requests[2m])",
+		},
+		{
+			name: "eval instant at 2m ts_of_max_over_time, with 2m lookback",
+			load: `load 5s
+			    http_requests{path="/foo"}	0+10x10
+			    http_requests{path="/bar"}	0+10x5 0+10x4`,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_max_over_time(http_requests[2m])",
+		},
+		{
+			name: "eval instant at 2m ts_of_max_over_time, with subquery",
+			load: `load 5s
+			    http_requests{path="/foo"}	0+10x10
+			    http_requests{path="/bar"}	0+10x5 0+10x4`,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_max_over_time(rate(http_requests[30s])[2m:5s])",
+		},
 		{
 			name: "count_values fuzz",
 			load: `load 30s
@@ -5135,19 +5130,20 @@ func TestQueryStats(t *testing.T) {
 			end:   time.UnixMilli(2400000),
 			step:  time.Second * 30,
 		},
-		// TODO (harry671003): This is a known case which needs to be fixed upstream.
-		//{
-		//	name: "fuzz aggregation with scalar param",
-		//	load: `load 30s
-		//		http_requests_total{pod="nginx-1"} -77.00+1.00x15
-		//		http_requests_total{pod="nginx-2"}  1+0.67x21`,
-		//	query: `quantile without (pod) (scalar({__name__="http_requests_total"} offset 2m58s), {__name__="http_requests_total"})`,
-		//	start: time.UnixMilli(0),start: time.UnixMilli(0),
-		//			end:   time.UnixMilli(120000),
-		//			step:  time.Second * 30,
-		//	end:   time.UnixMilli(221000),
-		//	step:  time.Second * 30,
-		//},
+		{
+			name: "fuzz aggregation with scalar param",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} -77.00+1.00x15
+			    http_requests_total{pod="nginx-2"}  1+0.67x21`,
+			query: `
+quantile without (pod) (
+  scalar({__name__="http_requests_total"} offset 2m58s),
+  {__name__="http_requests_total"}
+)`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(221000),
+			step:  time.Second * 30,
+		},
 	}
 
 	for _, tc := range cases {
@@ -5469,7 +5465,7 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 	testStorage := teststorage.New(t)
 	defer testStorage.Close()
 
-	app := testStorage.Appender(context.TODO())
+	app := testStorage.Appender(t.Context())
 	points := []HPoint{
 		{T: 5574708, H: tsdbutil.GenerateTestFloatHistogram(1)},
 		{T: 5604708, H: tsdbutil.GenerateTestFloatHistogram(2)},
@@ -5845,10 +5841,10 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 				return err
 			}
 			if withMixedTypes {
-				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
+				if _, err := app.Append(0, labels.FromStrings(append(lbls, "classic", "1", "le", "1")...), ts, float64(i)); err != nil {
 					return err
 				}
-				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
+				if _, err := app.Append(0, labels.FromStrings(append(lbls, "classic", "1", "le", "+Inf")...), ts, float64(i*2)); err != nil {
 					return err
 				}
 			}
