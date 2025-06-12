@@ -53,7 +53,7 @@ linters-settings:
   gci:
     sections:
       - standard
-      - prefix(github.com/thanos-io/promql-engine)
+      - prefix(github.com/thanos-io)
       - default
       - blank
       - dot
