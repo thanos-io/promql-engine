@@ -9,7 +9,6 @@ GCI = go tool -modfile go.tools.mod gci
 FAILLINT = go tool -modfile go.tools.mod faillint
 GOLANGCI_LINT = go tool -modfile go.tools.mod golangci-lint
 MODERNIZE = go tool -modfile go.tools.mod modernize
-GOIMPORTS = go tool -modfile go.tools.mod goimports
 COPYRIGHT = go run github.com/efficientgo/tools/copyright@v0.0.0-20220225185207-fe763185946b
 
 GOMODULES = $(shell go list ./...)
@@ -87,7 +86,7 @@ format:
 	@echo ">> formatting promql tests"
 	@go run scripts/testvet/main.go -json -fix ./...
 	@echo ">> formatting imports"
-	@$(GOIMPORTS) -w $(shell find . -name "*.go")
+	@$(GCI) write $(shell find . -name "*.go") -s "standard" -s "prefix(github.com/thanos-io)" -s "default" -s "blank" -s "dot" --custom-order
 
 .PHONY:lint
 lint: format deps docs

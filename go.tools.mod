@@ -8,7 +8,6 @@ tool (
 	github.com/fatih/faillint
 	github.com/golangci/golangci-lint/cmd/golangci-lint
 	golang.org/x/perf/cmd/benchstat
-	golang.org/x/tools/cmd/goimports
 	golang.org/x/tools/gopls/internal/analysis/modernize/cmd/modernize
 )
 
@@ -22,7 +21,6 @@ require (
 	github.com/prometheus/common v0.63.0
 	github.com/prometheus/prometheus v0.302.1
 	github.com/stretchr/testify v1.10.0
-	github.com/zhangyunhao116/umap v0.0.0-20250307031311-0b61e69e958b
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 	golang.org/x/tools v0.34.0
