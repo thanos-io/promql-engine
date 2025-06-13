@@ -89,6 +89,7 @@ func TestPromqlAcceptance(t *testing.T) {
 	st := &skipTest{
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
+			"testdata/type_and_unit.test",       // feature unsupported
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
@@ -1842,13 +1843,16 @@ topk(
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
-		{
-			name:  "topk with NaN and no matching series",
-			query: `topk(NaN, not_there)`,
-			start: time.Unix(0, 0),
-			end:   time.Unix(3000, 0),
-			step:  2 * time.Second,
-		},
+		/*
+				Broken in prometheus right now
+			{
+				name:  "topk with NaN and no matching series",
+				query: `topk(NaN, not_there)`,
+				start: time.Unix(0, 0),
+				end:   time.Unix(3000, 0),
+				step:  2 * time.Second,
+			},
+		*/
 		{
 			name: "topk with NaN comparison",
 			load: `load 30s
@@ -2531,50 +2535,6 @@ func TestEdgeCases(t *testing.T) {
 	}
 }
 
-func TestDisabledXFunction(t *testing.T) {
-	queryTime := time.Unix(50, 0)
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
-	}
-
-	defaultLoad := `load 5s
-	http_requests{path="/foo"}	0+10x10
-	http_requests{path="/bar"}	0+10x5 0+10x4`
-
-	cases := []struct {
-		name     string
-		load     string
-		query    string
-		expected []promql.Sample
-	}{
-		{
-			name:  "xfunctions disable",
-			load:  defaultLoad,
-			query: "xincrease(http_requests[50s])",
-			expected: []promql.Sample{
-				createSample(queryTime.UnixMilli(), 100, labels.FromStrings("path", "/foo")),
-				createSample(queryTime.UnixMilli(), 90, labels.FromStrings("path", "/bar")),
-			},
-		},
-	}
-	for _, tc := range cases {
-		storage := promqltest.LoadedStorage(t, tc.load)
-		defer storage.Close()
-
-		optimizers := logicalplan.AllOptimizers
-
-		newEngine := engine.New(engine.Opts{
-			EngineOpts:        opts,
-			LogicalOptimizers: optimizers,
-		})
-		_, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
-		testutil.NotOk(t, err)
-	}
-}
-
 func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 
@@ -2602,7 +2562,6 @@ func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	newEngine := engine.New(engine.Opts{
 		EngineOpts:        opts,
 		LogicalOptimizers: optimizers,
-		EnableXFunctions:  true,
 	})
 	query, err := newEngine.NewInstantQuery(ctx, lStorage, nil, expr, defaultQueryTime)
 	testutil.Ok(t, err)
@@ -2610,23 +2569,6 @@ func TestXFunctionsWithNativeHistograms(t *testing.T) {
 
 	engineResult := query.Exec(ctx)
 	require.Error(t, engineResult.Err)
-}
-
-func TestXFunctionsWhenDisabled(t *testing.T) {
-	var (
-		query = "xincrease(http_requests[50s])"
-		start = time.Unix(0, 0)
-		end   = time.Unix(100, 0)
-		step  = time.Second * 10
-	)
-	ng := engine.New(engine.Opts{})
-	_, err := ng.NewRangeQuery(context.Background(), nil, nil, query, start, end, step)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
-
-	_, err = ng.NewInstantQuery(context.Background(), nil, nil, query, start)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
 }
 
 func TestXFunctions(t *testing.T) {
@@ -2856,7 +2798,6 @@ func TestXFunctions(t *testing.T) {
 			newEngine := engine.New(engine.Opts{
 				EngineOpts:        opts,
 				LogicalOptimizers: optimizers,
-				EnableXFunctions:  true,
 			})
 			query, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, queryTime)
 			testutil.Ok(t, err)
@@ -3170,7 +3111,6 @@ func TestRateVsXRate(t *testing.T) {
 			newEngine := engine.New(engine.Opts{
 				EngineOpts:        opts,
 				LogicalOptimizers: optimizers,
-				EnableXFunctions:  true,
 			})
 			query, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 			testutil.Ok(t, err)
@@ -3211,6 +3151,30 @@ func TestInstantQuery(t *testing.T) {
 		query     string
 		queryTime time.Time
 	}{
+		{
+			name: "eval instant at 2m ts_of_min_over_time, with 2m lookback",
+			load: `load 5s
+			    http_requests{path="/foo"}	0+10x10
+			    http_requests{path="/bar"}	0+10x5 0+10x4`,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_min_over_time(http_requests[2m])",
+		},
+		{
+			name: "eval instant at 2m ts_of_max_over_time, with 2m lookback",
+			load: `load 5s
+			    http_requests{path="/foo"}	0+10x10
+			    http_requests{path="/bar"}	0+10x5 0+10x4`,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_max_over_time(http_requests[2m])",
+		},
+		{
+			name: "eval instant at 2m ts_of_max_over_time, with subquery",
+			load: `load 5s
+			    http_requests{path="/foo"}	0+10x10
+			    http_requests{path="/bar"}	0+10x5 0+10x4`,
+			queryTime: time.Unix(120, 0),
+			query:     "ts_of_max_over_time(rate(http_requests[30s])[2m:5s])",
+		},
 		{
 			name: "count_values fuzz",
 			load: `load 30s
@@ -3322,20 +3286,23 @@ count_values without () (
 			    http_requests_total{pod="nginx-2", route="/"}  0+0.29x40`,
 			query: `min by (route, pod) (sqrt(-http_requests_total))`,
 		},
-		{
-			name: "fuzz - min with Inf",
-			load: `load 30s
-			    http_requests_total{pod="nginx-1", route="/"} 483.00+6035.00x40
-			    http_requests_total{pod="nginx-2", route="/"}  2+47.14x40`,
-			query: `
-min without () (
-  (
-      {__name__="http_requests_total"} @ start() offset -2m40s
-    ^
-      {__name__="http_requests_total"} @ start() offset -2m49s
-  )
-)`,
-		},
+		/*
+				Broken due to a bug in the prometheus parser: https://github.com/prometheus/prometheus/issues/16711
+					{
+						name: "fuzz - min with Inf",
+						load: `load 30s
+						    http_requests_total{pod="nginx-1", route="/"} 483.00+6035.00x40
+						    http_requests_total{pod="nginx-2", route="/"}  2+47.14x40`,
+						query: `
+			min without () (
+			  (
+			      {__name__="http_requests_total"} @ start() offset -2m40s
+			    ^
+			      {__name__="http_requests_total"} @ start() offset -2m49s
+			  )
+			)`,
+					},
+		*/
 		/*
 		   This is a known issue, we lose the signed 0 in the sum because we add to a
 		   default element. Prometheus assigns the first element to the sum and preserves
@@ -5469,7 +5436,7 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 	testStorage := teststorage.New(t)
 	defer testStorage.Close()
 
-	app := testStorage.Appender(context.TODO())
+	app := testStorage.Appender(t.Context())
 	points := []HPoint{
 		{T: 5574708, H: tsdbutil.GenerateTestFloatHistogram(1)},
 		{T: 5604708, H: tsdbutil.GenerateTestFloatHistogram(2)},
@@ -5845,10 +5812,10 @@ func generateNativeHistogramSeries(app storage.Appender, numSeries int, withMixe
 				return err
 			}
 			if withMixedTypes {
-				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "1")...), ts, float64(i)); err != nil {
+				if _, err := app.Append(0, labels.FromStrings(append(lbls, "classic", "1", "le", "1")...), ts, float64(i)); err != nil {
 					return err
 				}
-				if _, err := app.Append(0, labels.FromStrings(append(lbls, "le", "+Inf")...), ts, float64(i*2)); err != nil {
+				if _, err := app.Append(0, labels.FromStrings(append(lbls, "classic", "1", "le", "+Inf")...), ts, float64(i*2)); err != nil {
 					return err
 				}
 			}

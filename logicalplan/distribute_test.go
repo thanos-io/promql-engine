@@ -57,7 +57,7 @@ func TestDistributedExecution(t *testing.T) {
 			expr: `sum by (pod) (rate(http_requests_total[5m]))`,
 			expected: `
 sum by (pod) (dedup(
-  remote(sum by (pod, region) (rate(http_requests_total[5m]))), 
+  remote(sum by (pod, region) (rate(http_requests_total[5m]))),
   remote(sum by (pod, region) (rate(http_requests_total[5m])))))`,
 		},
 		{
@@ -459,7 +459,7 @@ count by (cluster) (
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, warns := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Root().String())
@@ -638,7 +638,7 @@ sum(dedup(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := NewFromAST(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Root().String())
@@ -705,7 +705,7 @@ sum(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := NewFromAST(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
@@ -732,7 +732,7 @@ sum(dedup(
 		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
 	}
 
-	lplan := NewFromAST(expr, &query.Options{Start: start, End: end, Step: step}, PlanOptions{})
+	lplan, _ := NewFromAST(expr, &query.Options{Start: start, End: end, Step: step}, PlanOptions{})
 	optimizedPlan, _ := lplan.Optimize([]Optimizer{
 		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 	})
