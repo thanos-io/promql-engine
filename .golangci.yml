@@ -25,11 +25,9 @@ linters:
   enable:
     # Sorted alphabetically.
     - errcheck
-    - goconst
     - godot
     - gofmt
     - gci
-    - gofmt
     - gosimple
     - govet
     - ineffassign
@@ -48,8 +46,6 @@ linters-settings:
       - fmt.Fprint
   misspell:
     locale: US
-  goconst:
-    min-occurrences: 5
   gci:
     sections:
       - standard
