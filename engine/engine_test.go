@@ -2260,6 +2260,26 @@ avg by (storage_info) (
 			end:   time.UnixMilli(0),
 			step:  0,
 		},
+		{
+			name: "native histogram sort",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `sort(avg({__name__="http_request_duration_seconds"} offset -2m5s))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(60, 0),
+			step:  time.Second * 15,
+		},
+		{
+			name: "native histogram nested sort",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:28 sum:14.00 buckets:[26 2]}}+{{schema:0 count:29 buckets:[26 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:52 sum:14.00 buckets:[52]}}+{{schema:0 count:56 buckets:[52 2 2]}}x20`,
+			query: `histogram_sum(sort({__name__="http_request_duration_seconds"}))`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(60, 0),
+			step:  time.Second * 15,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}

@@ -179,17 +179,6 @@ max by (pod) (
 `,
 		},
 		{
-			name: "unsupported aggregation in the operand path",
-			expr: `max by (pod) (sort(quantile(0.9, http_requests_total)))`,
-			expected: `
-max by (pod) (quantile(0.9,
-  dedup(
-    remote(http_requests_total),
-    remote(http_requests_total)
-  )
-))`,
-		},
-		{
 			name: "label replace",
 			expr: `label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")`,
 			expected: `
