@@ -5,7 +5,6 @@ package logicalplan
 
 import (
 	"math"
-	"strings"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/parse"
@@ -64,9 +63,6 @@ func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions)
 	// replace scanners by our logical nodes
 	expr := replacePrometheusNodes(ast)
 
-	// the engine handles sorting at the presentation layer
-	expr = trimSorts(expr)
-
 	// best effort evaluate constant expressions
 	expr = reduceConstantExpressions(expr)
 
@@ -88,8 +84,6 @@ func NewFromBytes(bytes []byte, queryOpts *query.Options, planOpts PlanOptions) 
 	if err != nil {
 		return nil, err
 	}
-	// the engine handles sorting at the presentation layer
-	root = trimSorts(root)
 
 	return &plan{
 		expr:     root,
@@ -340,45 +334,6 @@ func preprocessAggregationParameters(expr Node) Node {
 				t.Param = &StepInvariantExpr{Expr: t.Param}
 			}
 		}
-	})
-	return expr
-}
-
-func trimSorts(expr Node) Node {
-	canTrimSorts := true
-	// We cannot trim inner sort if its an argument to a timestamp function.
-	// If we would do it we could transform "timestamp(sort(X))" into "timestamp(X)"
-	// Which might return actual timestamps of samples instead of query execution timestamp.
-	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
-		if current == nil || parent == nil {
-			return true
-		}
-		e, pok := (*parent).(*FunctionCall)
-		f, cok := (*current).(*FunctionCall)
-
-		if pok && cok {
-			if e.Func.Name == "timestamp" && strings.HasPrefix(f.Func.Name, "sort") {
-				canTrimSorts = false
-				return true
-			}
-		}
-		return false
-	})
-	if !canTrimSorts {
-		return expr
-	}
-	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
-		if current == nil || parent == nil {
-			return true
-		}
-		switch e := (*parent).(type) {
-		case *FunctionCall:
-			switch e.Func.Name {
-			case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
-				*parent = *current
-			}
-		}
-		return false
 	})
 	return expr
 }

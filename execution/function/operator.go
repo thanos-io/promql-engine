@@ -34,6 +34,8 @@ func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.Vec
 		return newAbsentOperator(funcExpr, model.NewVectorPool(stepsBatch), nextOps[0], opts), nil
 	case "histogram_quantile":
 		return newHistogramOperator(model.NewVectorPool(stepsBatch), funcExpr.Args, nextOps[0], nextOps[1], opts), nil
+	case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
+		return newSortOperator(model.NewVectorPool(stepsBatch), funcExpr.Func.Name, nextOps[0], opts), nil
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
