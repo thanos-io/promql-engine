@@ -101,8 +101,10 @@ func valueCompare(order sortOrder, l, r float64) bool {
 	}
 	if order == sortOrderAsc {
 		return l < r
+	} else if order == sortOrderDesc {
+		return l > r
 	}
-	return l > r
+	return false
 }
 
 func (s sortFuncResultSort) comparer(samples *promql.Vector) func(i, j int) bool {
@@ -157,9 +159,6 @@ func (s aggregateResultSort) comparer(samples *promql.Vector) func(i, j int) boo
 			return lblsCmp < 0
 		}
 
-		if s.sortOrder == noValueSort {
-			return false
-		}
 		return valueCompare(s.sortOrder, (*samples)[i].F, (*samples)[j].F)
 	}
 }
