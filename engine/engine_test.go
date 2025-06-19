@@ -2260,6 +2260,16 @@ avg by (storage_info) (
 			end:   time.UnixMilli(0),
 			step:  0,
 		},
+		{
+			name: "native histogram scalar compact",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:20 buckets:[1 2 17]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:38 buckets:[2 2 34]}}x20`,
+			query: `({__name__="http_request_duration_seconds"} offset -2s * pi())`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(300000),
+			step:  15 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
