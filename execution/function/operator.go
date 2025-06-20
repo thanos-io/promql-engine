@@ -27,7 +27,7 @@ func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.Vec
 	case "scalar":
 		return newScalarOperator(model.NewVectorPoolWithSize(stepsBatch, 1), nextOps[0], opts), nil
 	case "timestamp":
-		return newTimestampOperator(nextOps[0], opts), nil
+		return newTimestampOperator(model.NewVectorPool(stepsBatch), nextOps[0], opts), nil
 	case "label_join", "label_replace":
 		return newRelabelOperator(nextOps[0], funcExpr, opts), nil
 	case "absent":
