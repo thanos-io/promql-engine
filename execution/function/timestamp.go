@@ -16,14 +16,16 @@ import (
 )
 
 type timestampOperator struct {
+	pool *model.VectorPool
 	next model.VectorOperator
 
 	series []labels.Labels
 	once   sync.Once
 }
 
-func newTimestampOperator(next model.VectorOperator, opts *query.Options) model.VectorOperator {
+func newTimestampOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options) model.VectorOperator {
 	oper := &timestampOperator{
+		pool: pool,
 		next: next,
 	}
 	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
@@ -65,7 +67,7 @@ func (o *timestampOperator) loadSeries(ctx context.Context) error {
 }
 
 func (o *timestampOperator) GetPool() *model.VectorPool {
-	return o.next.GetPool()
+	return o.pool
 }
 
 func (o *timestampOperator) Next(ctx context.Context) ([]model.StepVector, error) {
@@ -76,13 +78,34 @@ func (o *timestampOperator) Next(ctx context.Context) ([]model.StepVector, error
 	}
 
 	in, err := o.next.Next(ctx)
+
 	if err != nil {
 		return nil, err
 	}
-	for _, vector := range in {
-		for i := range vector.Samples {
-			vector.Samples[i] = float64(vector.T / 1000)
-		}
+	if len(in) == 0 {
+		return nil, nil
 	}
-	return in, nil
+	result := o.pool.GetVectorBatch()
+	for _, vector := range in {
+		out := o.pool.GetStepVector(vector.T)
+		value := float64(vector.T / 1000)
+
+		sampleTimestamps := make([]float64, len(vector.Samples))
+		for i := range sampleTimestamps {
+			sampleTimestamps[i] = value
+		}
+		out.AppendSamples(o.pool, vector.SampleIDs, sampleTimestamps)
+
+		histogramTimestamps := make([]float64, len(vector.Histograms))
+		for i := range histogramTimestamps {
+			histogramTimestamps[i] = value
+		}
+		out.AppendSamples(o.pool, vector.HistogramIDs, histogramTimestamps)
+
+		result = append(result, out)
+		o.next.GetPool().PutStepVector(vector)
+	}
+
+	o.next.GetPool().PutVectors(in)
+	return result, nil
 }
