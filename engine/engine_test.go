@@ -2330,6 +2330,16 @@ or
 			end:   time.UnixMilli(160000),
 			step:  time.Minute + 16*time.Second,
 		},
+		{
+			name: "native histogram timestamp",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} 1x10 {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x10`,
+			query: `--timestamp(-{__name__="http_request_duration_seconds"} offset 8s)`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(300000),
+			step:  15 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
