@@ -2270,6 +2270,38 @@ avg by (storage_info) (
 			end:   time.UnixMilli(300000),
 			step:  15 * time.Second,
 		},
+		{
+			name: "native histogram nested binary#1",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20
+			    http_request_duration_seconds{pod="nginx-3"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `
+  avg(http_request_duration_seconds)
+or
+  (http_request_duration_seconds + http_request_duration_seconds{pod!="nginx-1"})`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(60),
+			step:  15 * time.Second,
+		},
+		{
+			name: "native histogram nested binary#2",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:3 sum:14.00 buckets:[1 2]}}+{{schema:0 count:4 buckets:[1 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20
+			    http_request_duration_seconds{pod="nginx-3"} {{schema:0 count:2 sum:14.00 buckets:[2]}}+{{schema:0 count:6 buckets:[2 2 2]}}x20`,
+			query: `
+  count(http_request_duration_seconds offset -3m3s)
+*
+  -(
+      group by (pod) (http_request_duration_seconds)
+    or
+      avg by (__name__) (http_request_duration_seconds{pod=~"ngi.*"} @ end())
+  )`,
+			start: time.UnixMilli(0),
+			end:   time.UnixMilli(124000),
+			step:  15 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
