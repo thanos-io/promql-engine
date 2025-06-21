@@ -90,6 +90,7 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
 	hints.Start = start
 	hints.End = end
+
 	return scanners.NewVectorSelector(ctx, opts, hints, *e)
 }
 
@@ -263,6 +264,7 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 	hints.Func = e.Op.String()
 	hints.Grouping = e.Grouping
 	hints.By = !e.Without
+	hints.Limit = e.Limit
 
 	next, err := newOperator(ctx, e.Expr, scanners, opts, hints)
 	if err != nil {
@@ -282,6 +284,7 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 			return nil, err
 		}
 	}
+
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK || e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
 		next, err = aggregate.NewKHashAggregate(model.NewVectorPool(opts.StepsBatch), next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 	} else {
