@@ -111,6 +111,14 @@ The interfaces used for remote execution can be found in [api](https://pkg.go.de
 
 For more details on the overall design, please refer to the [proposal](https://github.com/thanos-io/thanos/blob/main/docs/proposals-done/202301-distributed-query-execution.md) in the Thanos project.
 
+## Differences from Prometheus PromQL Engine
+
+The Thanos PromQL engine follows the same PromQL specification but may differ in some implementation details and edge case behaviors. These differences are often intentional and stem from design choices optimized for performance and flexibility.
+
+| Feature/Function | Prometheus Engine Behavior            | Thanos Engine Behavior                                                                                                          |
+|------------------|---------------------------------------|---------------------------------------------------------------------------------------------------------------------------------|
+| `sort()`         | Filters out native histogram samples. | Retains native histogram samples. `sort()` is treated as a presentation-layer operation and does not alter the underlying data. |
+
 ## Continuous benchmark
 
 If you are interested in the benchmark results captured by continuous benchmark, please check [here](https://thanos-io.github.io/promql-engine/dev/bench/).
