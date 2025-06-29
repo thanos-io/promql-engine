@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage/prometheus"
@@ -6049,10 +6050,23 @@ var (
 			return l.Hash() == r.Hash()
 		}
 
-		if x.Err != nil && y.Err != nil {
-			return cmp.Equal(x.Err.Error(), y.Err.Error())
-		} else if x.Err != nil || y.Err != nil {
-			return false
+		compareErrors := func(l, r error) (stop bool, result bool) {
+			if l == nil && r == nil {
+				return false, true
+			}
+			if l != nil && r != nil {
+				return true, l.Error() == r.Error()
+			}
+			err := l
+			if err == nil {
+				err = r
+			}
+			// Thanos engine handles duplicate label check differently than Prometheus engine.
+			return true, err.Error() == extlabels.ErrDuplicateLabelSet.Error()
+		}
+
+		if stop, result := compareErrors(x.Err, y.Err); stop {
+			return result
 		}
 
 		if !compareAnnotations(x.Warnings, y.Warnings) {
