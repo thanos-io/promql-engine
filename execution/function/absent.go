@@ -57,13 +57,19 @@ func (o *absentOperator) loadSeries() {
 
 		// https://github.com/prometheus/prometheus/blob/df1b4da348a7c2f8c0b294ffa1f05db5f6641278/promql/functions.go#L1857
 		var lm []*labels.Matcher
-		switch n := o.funcExpr.Args[0].(type) {
-		case *logicalplan.VectorSelector:
-			lm = append(n.LabelMatchers, n.Filters...)
-		case *logicalplan.MatrixSelector:
-			v := n.VectorSelector
-			lm = append(v.LabelMatchers, v.Filters...)
-		default:
+		logicalplan.TraverseBottomUp(nil, &o.funcExpr.Args[0], func(parent, node *logicalplan.Node) bool {
+			switch n := (*node).(type) {
+			case *logicalplan.VectorSelector:
+				lm = append(n.LabelMatchers, n.Filters...)
+			case *logicalplan.CheckDuplicateLabels, *logicalplan.Coalesce, *logicalplan.MatrixSelector:
+			// ignore logical nodes between the absent function and the first vectorselector
+			default:
+				lm = lm[:0]
+			}
+			return false
+		})
+
+		if len(lm) == 0 {
 			o.series = []labels.Labels{labels.EmptyLabels()}
 			return
 		}
