@@ -56,8 +56,12 @@ func New(root Node, queryOpts *query.Options, planOpts PlanOptions) Plan {
 	}
 }
 
-func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) Plan {
-	ast = promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End)
+func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) (Plan, error) {
+	var err error
+	ast, err = promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End, queryOpts.Step)
+	if err != nil {
+		return nil, err
+	}
 	setOffsetForAtModifier(queryOpts.Start.UnixMilli(), ast)
 	setOffsetForInnerSubqueries(ast, queryOpts)
 
@@ -78,7 +82,7 @@ func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions)
 		expr:     expr,
 		opts:     queryOpts,
 		planOpts: planOpts,
-	}
+	}, nil
 }
 
 // NewFromBytes creates a new logical plan from a byte slice created with Marshal.

@@ -55,8 +55,8 @@ func (p Scanners) NewVectorSelector(
 ) (model.VectorOperator, error) {
 	// Update hints with projection information if available
 	if logicalNode.Projection != nil {
-		hints.Grouping = logicalNode.Projection.Labels
-		hints.By = logicalNode.Projection.Include
+		hints.ProjectionLabels = logicalNode.Projection.Labels
+		hints.ProjectionInclude = logicalNode.Projection.Include
 	}
 
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
@@ -128,7 +128,7 @@ func (p Scanners) NewMatrixSelector(
 
 	vs := logicalNode.VectorSelector
 	if vs.Projection != nil {
-		hints.Grouping = vs.Projection.Labels
+		hints.ProjectionLabels = vs.Projection.Labels
 		hints.By = vs.Projection.Include
 	}
 

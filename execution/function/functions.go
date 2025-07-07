@@ -4,6 +4,7 @@
 package function
 
 import (
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"math"
 	"time"
 
@@ -144,7 +145,8 @@ var instantVectorFuncs = map[string]functionCall{
 		if h == nil || len(vargs) != 2 {
 			return 0., false
 		}
-		return promql.HistogramFraction(vargs[0], vargs[1], h), true
+		res, _ := promql.HistogramFraction(vargs[0], vargs[1], h, "", posrange.PositionRange{})
+		return res, true
 	},
 	"histogram_stddev": func(f float64, h *histogram.FloatHistogram, vargs ...float64) (float64, bool) {
 		if h == nil {
