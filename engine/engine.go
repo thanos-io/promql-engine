@@ -256,7 +256,11 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
+	lplan, err := logicalplan.NewFromAST(expr, qOpts, planOpts)
+	if err != nil {
+		return nil, err
+	}
+	lplan, warns := lplan.Optimize(e.getLogicalOptimizers(opts))
 
 	scanners, err := e.storageScanners(q, qOpts, lplan)
 	if err != nil {
@@ -354,7 +358,11 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	planOpts := logicalplan.PlanOptions{
 		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
 	}
-	lplan, warns := logicalplan.NewFromAST(expr, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
+	lplan, err := logicalplan.NewFromAST(expr, qOpts, planOpts)
+	if err != nil {
+		return nil, err
+	}
+	lplan, warns := lplan.Optimize(e.getLogicalOptimizers(opts))
 
 	ctx = warnings.NewContext(ctx)
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()

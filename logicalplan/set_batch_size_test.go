@@ -26,7 +26,7 @@ func TestSetBatchSize(t *testing.T) {
 		{
 			name:     "rate",
 			expr:     `rate(http_requests_total[5m])`,
-			expected: `rate(http_requests_total[5m])`,
+			expected: `rate(http_requests_total[5m0s])`,
 		},
 		{
 			name:     "sum",
@@ -97,7 +97,8 @@ func TestSetBatchSize(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := NewFromAST(expr, &query.Options{}, PlanOptions{})
+			plan, err := NewFromAST(expr, &query.Options{}, PlanOptions{})
+			testutil.Ok(t, err)
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			testutil.Equals(t, tcase.expected, renderExprTree(optimizedPlan.Root()))
 		})

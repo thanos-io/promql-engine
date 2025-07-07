@@ -78,7 +78,8 @@ func TestScannersMinMaxTime(t *testing.T) {
 				LookbackDelta: 5 * time.Duration(time.Minute),
 			}
 
-			lplan := logicalplan.NewFromAST(p, qOpts, logicalplan.PlanOptions{})
+			lplan, err := logicalplan.NewFromAST(p, qOpts, logicalplan.PlanOptions{})
+			require.NoError(t, err)
 
 			min, max := lplan.MinMaxTime(qOpts)
 
