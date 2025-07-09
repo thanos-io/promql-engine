@@ -765,7 +765,8 @@ sum by (pod) (dedup(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			testutil.Ok(t, err)
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))

@@ -254,12 +254,11 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		}
 		if f.Samples[0].V.H != nil {
 			// histogram
-			count := 1
 			mean := f.Samples[0].V.H.Copy()
-			for _, sample := range f.Samples[1:] {
-				count++
-				left := sample.V.H.Copy().Div(float64(count))
-				right := mean.Copy().Div(float64(count))
+			for i, sample := range f.Samples[1:] {
+				count := float64(i + 2)
+				left := sample.V.H.Copy().Div(count)
+				right := mean.Copy().Div(count)
 				toAdd, err := left.Sub(right)
 				if err != nil {
 					if err := handleHistogramErr(f.ctx, err); err != nil {
@@ -862,14 +861,35 @@ func countOverTime(points []Sample) float64 {
 }
 
 func avgOverTime(points []Sample) float64 {
-	var mean, kahanC float64
-	for i, p := range points {
-		count := float64(i + 1)
-		q := float64(i) / count
+	var (
+		// Pre-set the 1st sample to start the loop with the 2nd.
+		sum, count      = points[0].V.F, 1.
+		mean, kahanC    float64
+		incrementalMean bool
+	)
+	for i, p := range points[1:] {
+		count = float64(i + 2)
+		if !incrementalMean {
+			newSum, newC := aggregate.KahanSumInc(p.V.F, sum, kahanC)
+			// Perform regular mean calculation as long as
+			// the sum doesn't overflow.
+			if !math.IsInf(newSum, 0) {
+				sum, kahanC = newSum, newC
+				continue
+			}
+			// Handle overflow by reverting to incremental
+			// calculation of the mean value.
+			incrementalMean = true
+			mean = sum / (count - 1)
+			kahanC /= count - 1
+		}
+		q := (count - 1) / count
 		mean, kahanC = aggregate.KahanSumInc(p.V.F/count, q*mean, q*kahanC)
 	}
-	return mean + kahanC
-
+	if incrementalMean {
+		return mean + kahanC
+	}
+	return sum/count + kahanC/count
 }
 
 func sumOverTime(ctx context.Context, points []Sample) float64 {

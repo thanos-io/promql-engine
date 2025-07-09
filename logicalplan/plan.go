@@ -57,7 +57,7 @@ func New(root Node, queryOpts *query.Options, planOpts PlanOptions) Plan {
 }
 
 func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) (Plan, error) {
-	ast, err := promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End)
+	ast, err := promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End, queryOpts.Step)
 	if err != nil {
 		return nil, err
 	}

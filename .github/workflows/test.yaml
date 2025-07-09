@@ -76,9 +76,9 @@ jobs:
       - name: Run unit tests
         run: make test
 
-  test-tag-stringlabels:
+  test-tag-slicelabels:
     runs-on: ubuntu-latest
-    name: Run tests --tags=stringlabels
+    name: Run tests --tags=slicelabels
     env:
       GOBIN: /tmp/.bin
     steps:
@@ -92,7 +92,7 @@ jobs:
           cache: true
 
       - name: Run unit tests
-        run: make test-stringlabels
+        run: make test-slicelabels
 
   fuzz:
     runs-on: ubuntu-latest

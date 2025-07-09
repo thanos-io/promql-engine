@@ -223,14 +223,17 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 			// If that is the case, it means we have mixed data types for a single step and this behavior is undefined.
 			// In that case, we reset the conventional buckets to avoid emitting a sample.
 			if len(o.seriesBuckets[outputSeriesID]) == 0 {
+				var annos annotations.Annotations
+				var v float64
 				switch o.funcName {
 				case "histogram_quantile":
-					v := promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i])
+					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
 					step.AppendSample(o.pool, uint64(outputSeriesID), v)
 				case "histogram_fraction":
-					v := promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i])
+					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
 					step.AppendSample(o.pool, uint64(outputSeriesID), v)
 				}
+				warnings.MergeToContext(annos, ctx)
 			} else {
 				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning(o.inputSeriesNames[seriesID], posrange.PositionRange{}), ctx)
 				o.seriesBuckets[outputSeriesID] = o.seriesBuckets[outputSeriesID][:0]
