@@ -117,7 +117,6 @@ func (a *kAggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 			if val < math.MinInt64 {
 				return nil, errors.Newf("Scalar value %v underflows int64", val)
 			}
-			// || val < math.MinInt64 || math.IsNaN(val)
 		case parser.LIMIT_RATIO:
 			if math.IsNaN(val) {
 				return nil, errors.Newf("Ratio value is NaN")

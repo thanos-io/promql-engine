@@ -81,6 +81,8 @@ func newHistogramOperator(
 		o.vectorOp = nextOps[2]
 		o.scalar1Points = make([]float64, opts.StepsBatch)
 		o.scalar2Points = make([]float64, opts.StepsBatch)
+	default:
+		panic("unsupported function passed")
 	}
 	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts), o)
 }

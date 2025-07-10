@@ -1855,16 +1855,13 @@ topk(
 			end:   time.Unix(3000, 0),
 			step:  2 * time.Second,
 		},
-		/*
-			Broken in prometheus right now: https://github.com/prometheus/prometheus/pull/16725
-						{
-							name:  "topk with NaN and no matching series",
-							query: `topk(NaN, not_there)`,
-							start: time.Unix(0, 0),
-							end:   time.Unix(3000, 0),
-							step:  2 * time.Second,
-						},
-		*/
+		{
+			name:  "topk with NaN and no matching series",
+			query: `topk(NaN, not_there)`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(3000, 0),
+			step:  2 * time.Second,
+		},
 		{
 			name: "topk with NaN comparison",
 			load: `load 30s
