@@ -39,17 +39,72 @@ type testCase struct {
 	validateSamples    bool
 }
 
+type testType int
+
+const (
+	testTypeFloat           testType = iota // 0
+	testTypeNativeHistogram                 // 1
+)
+
 // shouldValidateSamples checks if the samples can be compared for the expr.
-// For certain known cases, prometheus engine and thanos engine returns different samples.
+// For certain known cases, Thanos engine returns less samples than Prometheus engine due to optimizations.
 func shouldValidateSamples(expr parser.Expr) bool {
 	valid := true
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
 		case *parser.Call:
-			if n.Func.Name == "scalar" {
+			switch n.Func.Name {
+			case "scalar":
+				// Optimized to step_invariant in Thanos engine.
 				valid = false
 				return errors.New("error")
+			case "histogram_count", "histogram_sum", "histogram_avg":
+				// Optimized using DetectHistogramStatsOptimizer and will return smaller samples than Prometheus engine.
+				valid = false
+				return errors.New("error")
+			}
+		}
+		return nil
+	})
+	return valid
+}
+
+// validateExpr checks if the given expression is valid for fuzz tests.
+// For certain known cases Thanos engine results do not match with Prometheus engine.
+func validateExpr(expr parser.Expr, testType testType) bool {
+	expr, _ = promql.PreprocessExpr(expr, time.Unix(0, 0), time.Unix(0, 0), 0)
+	valid := true
+
+	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
+		switch n := node.(type) {
+		case *parser.Call:
+			switch n.Func.Name {
+			case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
+				if testType == testTypeNativeHistogram {
+					// Prometheus engine filters out native histograms in nested sort().
+					// Thanos engine implements sorting only at the presentation time and ignores nested sort().
+					// See: https://github.com/thanos-io/promql-engine/pull/595
+					valid = false
+					return errors.New("error")
+				}
+			case "predict_linear":
+				switch t := n.Args[0].(type) {
+				case *parser.StepInvariantExpr:
+					// Thanos engine cannot correctly handle a MatrixSelector wrapped by StepInvariant.
+					// eg: predict_linear({__name__="http_request_duration_seconds"}[5m] @ end(), 0.5)
+					// See: https://github.com/thanos-io/promql-engine/pull/527
+					if _, ok := t.Expr.(*parser.MatrixSelector); ok {
+						valid = false
+						return errors.New("error")
+					}
+				}
+			case "timestamp":
+				if testType == testTypeNativeHistogram {
+					// TODO(johrry): Remove after merging https://github.com/thanos-io/promql-engine/pull/598
+					valid = false
+					return errors.New("error")
+				}
 			}
 		}
 		return nil
@@ -114,6 +169,9 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		for i := range testRuns {
 			for {
 				expr := ps.WalkRangeQuery()
+				if !validateExpr(expr, testTypeFloat) {
+					continue
+				}
 				validateSamples = shouldValidateSamples(expr)
 
 				query = expr.Pretty(0)
@@ -200,8 +258,9 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
 		var (
-			q1    promql.Query
-			query string
+			q1              promql.Query
+			query           string
+			validateSamples bool
 		)
 		cases := make([]*testCase, testRuns)
 		for i := range testRuns {
@@ -210,9 +269,10 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			// Parsing experimental function, like mad_over_time, will lead to a parser.ParseErrors, so we also ignore those.
 			for {
 				expr := ps.WalkInstantQuery()
-				if !shouldValidateSamples(expr) {
+				if !validateExpr(expr, testTypeFloat) {
 					continue
 				}
+				validateSamples = shouldValidateSamples(expr)
 				query = expr.Pretty(0)
 				q1, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, query, queryTime)
 				if engine.IsUnimplemented(err) || errors.As(err, &parser.ParseErrors{}) {
@@ -243,7 +303,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 				loads:           []string{load},
 				start:           queryTime,
 				end:             queryTime,
-				validateSamples: true,
+				validateSamples: validateSamples,
 			}
 		}
 		validateTestCases(t, cases)
@@ -278,7 +338,6 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 	for i, c := range cases {
 		if !cmp.Equal(c.oldRes, c.newRes, comparer) {
 			logQuery(c)
-
 			t.Logf("case %d error mismatch.\nnew result: %s\nold result: %s\n", i, c.newRes.String(), c.oldRes.String())
 			failures++
 			continue
@@ -308,7 +367,6 @@ func getMaxNativeHistogramSumLimit(schema int8, noOfBuckets int) float64 {
 }
 
 func FuzzNativeHistogramQuery(f *testing.F) {
-	f.Skip()
 	f.Add(int64(0), uint32(0), uint32(60), uint32(120), int8(0), int8(0), uint64(1), uint64(2), uint64(1))
 
 	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, schema1 int8, schema2 int8, bucketValue1, bucketValue2, bucketValue3 uint64) {
@@ -323,6 +381,9 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		}
 
 		bucket1 := []uint64{bucketValue1, bucketValue2, bucketValue3}
+		if bucketValue1 == 0 || bucketValue2 == 0 || bucketValue3 == 0 {
+			return
+		}
 		bucket2 := []uint64{2 * bucketValue1, bucketValue2, 2 * bucketValue3}
 
 		sum1 := getMaxNativeHistogramSumLimit(schema1, len(bucket1))
@@ -349,12 +410,12 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		rnd := rand.New(rand.NewSource(seed))
 
 		load := fmt.Sprintf(`load 2m
-			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20 
-			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20`,
-			schema1, count1-bucket1[2], sum1, bucket1[0], bucket1[1],
+			http_request_duration_seconds{pod="nginx-1"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x20 
+			http_request_duration_seconds{pod="nginx-2"} {{schema:%d count:%d sum:%.2f buckets:[%d %d %d]}}+{{schema:%d count:%d buckets:[%d %d %d]}}x30`,
+			schema1, count1, sum1, bucket1[0], bucket1[1], bucket1[2],
 			schema1, count1, bucket1[0], bucket1[1], bucket1[2],
 
-			schema2, count2-bucket2[1]-bucket2[2], sum2, bucket2[0],
+			schema2, count2, sum2, bucket2[0], bucket2[1], bucket2[2],
 			schema2, count2, bucket2[0], bucket2[1], bucket2[2],
 		)
 
@@ -396,17 +457,21 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 
 		for range testRuns / 2 {
 			var (
-				qInstant     promql.Query
-				qRange       promql.Query
-				instantQuery string
-				rangeQuery   string
+				qInstant                       promql.Query
+				qRange                         promql.Query
+				instantQuery                   string
+				rangeQuery                     string
+				validateSamplesForInstantQuery bool
+				validateSamplesForRangeQuery   bool
 			)
 
 			for {
 				expr := ps.WalkInstantQuery()
-				if !shouldValidateSamples(expr) {
+				if !validateExpr(expr, testTypeNativeHistogram) {
 					continue
 				}
+
+				validateSamplesForInstantQuery = shouldValidateSamples(expr)
 				instantQuery = expr.Pretty(0)
 
 				qInstant, err = newEngine.NewInstantQuery(context.Background(), storage, qOpts, instantQuery, startTime)
@@ -420,9 +485,11 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 
 			for {
 				expr := ps.WalkRangeQuery()
-				if !shouldValidateSamples(expr) {
+				if !validateExpr(expr, testTypeNativeHistogram) {
 					continue
 				}
+
+				validateSamplesForRangeQuery = shouldValidateSamples(expr)
 				rangeQuery = expr.Pretty(0)
 
 				qRange, err = newEngine.NewRangeQuery(context.Background(), storage, qOpts, rangeQuery, startTime, endTime, interval)
@@ -463,7 +530,8 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 				loads:           []string{load},
 				start:           startTime,
 				end:             startTime,
-				validateSamples: true,
+				interval:        0,
+				validateSamples: validateSamplesForInstantQuery,
 			})
 
 			rangeCases = append(rangeCases, &testCase{
@@ -475,7 +543,8 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 				loads:           []string{load},
 				start:           startTime,
 				end:             endTime,
-				validateSamples: true,
+				interval:        interval,
+				validateSamples: validateSamplesForRangeQuery,
 			})
 		}
 
