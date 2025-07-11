@@ -45,12 +45,12 @@ test-fast: ## Runs all Go unit tests without race detector.
 	@echo ">> running unit tests without race detection (with cache)"
 	@go test -count=1 -timeout=10m $(GOMODULES);
 
-.PHONY: test-stringlabels
-test-stringlabels: ## Runs all Go unit tests with stringlabels flag.
+.PHONY: test-slicelabels
+test-slicelabels: ## Runs all Go unit tests with slicelabels flag.
 	@export GOCACHE=/tmp/cache
-	@echo ">> running unit tests with stringlabels flag (without cache)"
+	@echo ">> running unit tests with slicelabels flag (without cache)"
 	@rm -rf $(GOCACHE)
-	@go test -race --tags=stringlabels -timeout=10m $(GOMODULES);
+	@go test -race --tags=slicelabels -timeout=10m $(GOMODULES);
 
 .PHONY: fuzz
 fuzz: ## Runs selected fuzzing tests

@@ -78,9 +78,9 @@ func TestScannersMinMaxTime(t *testing.T) {
 				LookbackDelta: 5 * time.Duration(time.Minute),
 			}
 
-			lplan := logicalplan.NewFromAST(p, qOpts, logicalplan.PlanOptions{})
+			plan, _ := logicalplan.NewFromAST(p, qOpts, logicalplan.PlanOptions{})
 
-			min, max := lplan.MinMaxTime(qOpts)
+			min, max := plan.MinMaxTime(qOpts)
 
 			require.Equal(t, tcase.min, min)
 			require.Equal(t, tcase.max, max)
