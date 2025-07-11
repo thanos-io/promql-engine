@@ -137,6 +137,9 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	// Reset the current timestamp.
 	ts = o.currentStep
 	fromSeries := o.currentSeries
+
+	// storing sample value for each series
+	var stepSamples = make([]int, o.numSteps)
 	for ; o.currentSeries-fromSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
 			series   = o.scanners[o.currentSeries]
@@ -159,11 +162,18 @@ func (o *vectorSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 					vectors[currStep].AppendSample(o.vectorPool, series.signature, v)
 					currStepSamples++
 				}
+				stepSamples[currStep] += currStepSamples
 			}
-			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
+			// o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
 		}
 	}
+
+	// Updating telemetry with total samples per step across all series once we find the for all series.
+	for currStep, count := range stepSamples {
+		o.telemetry.IncrementSamplesAtTimestamp(count, o.currentStep+o.step*int64(currStep))
+	}
+
 	if o.currentSeries == int64(len(o.scanners)) {
 		o.currentStep += o.step * int64(o.numSteps)
 		o.currentSeries = 0
