@@ -48,7 +48,7 @@ func (m projectionSeriesSet) At() storage.Series {
 	if m.hints == nil {
 		return originalSeries
 	}
-	if !m.hints.By && len(m.hints.Grouping) == 0 {
+	if !m.hints.ProjectionInclude && len(m.hints.ProjectionLabels) == 0 {
 		return originalSeries
 	}
 
@@ -56,20 +56,20 @@ func (m projectionSeriesSet) At() storage.Series {
 	originalLabels := originalSeries.Labels()
 	var projectedLabels labels.Labels
 
-	if m.hints.By {
-		// Include mode: only keep the labels in the grouping
+	if m.hints.ProjectionInclude && len(m.hints.ProjectionLabels) == 0 {
+		// Include mode: only keep the labels in the projection labels
 		builder := labels.NewBuilder(labels.EmptyLabels())
 		originalLabels.Range(func(l labels.Label) {
-			if slices.Contains(m.hints.Grouping, l.Name) {
+			if slices.Contains(m.hints.ProjectionLabels, l.Name) {
 				builder.Set(l.Name, l.Value)
 			}
 		})
 		builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
 		projectedLabels = builder.Labels()
 	} else {
-		// Exclude mode: keep all labels except those in the grouping
+		// Exclude mode: keep all labels except those in the projection labels
 		excludeMap := make(map[string]struct{})
-		for _, groupLabel := range m.hints.Grouping {
+		for _, groupLabel := range m.hints.ProjectionLabels {
 			excludeMap[groupLabel] = struct{}{}
 		}
 
@@ -168,7 +168,7 @@ func TestProjectionWithFuzz(t *testing.T) {
 	defer storage.Close()
 
 	// Get series for PromQLSmith
-	seriesSet, err := getSeries(context.Background(), storage)
+	seriesSet, err := getSeries(context.Background(), storage, "http_requests_total")
 	testutil.Ok(t, err)
 
 	// Configure PromQLSmith
