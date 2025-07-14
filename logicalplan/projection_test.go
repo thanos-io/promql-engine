@@ -276,7 +276,8 @@ func TestProjectionOptimizer(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 
-			plan := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			testutil.Ok(t, err)
 			optimizer := ProjectionOptimizer{SeriesHashLabel: "__series_hash__"}
 			optimizedPlan, _ := optimizer.Optimize(plan.Root(), nil)
 
