@@ -26,7 +26,7 @@ func TestSetBatchSize(t *testing.T) {
 		{
 			name:     "rate",
 			expr:     `rate(http_requests_total[5m])`,
-			expected: `rate(http_requests_total[5m])`,
+			expected: `rate(http_requests_total[5m0s])`,
 		},
 		{
 			name:     "sum",
