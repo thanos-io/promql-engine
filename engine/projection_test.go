@@ -56,7 +56,7 @@ func (m projectionSeriesSet) At() storage.Series {
 	originalLabels := originalSeries.Labels()
 	var projectedLabels labels.Labels
 
-	if m.hints.ProjectionInclude && len(m.hints.ProjectionLabels) == 0 {
+	if m.hints.ProjectionInclude {
 		// Include mode: only keep the labels in the projection labels
 		builder := labels.NewBuilder(labels.EmptyLabels())
 		originalLabels.Range(func(l labels.Label) {
