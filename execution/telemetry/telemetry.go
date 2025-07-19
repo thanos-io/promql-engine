@@ -203,8 +203,18 @@ func (t *Operator) Series(ctx context.Context) ([]labels.Labels, error) {
 
 func (t *Operator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
+	totalSamplesBefore := t.OperatorTelemetry.Samples().TotalSamples
+
 	defer func() { t.OperatorTelemetry.AddNextExecutionTime(time.Since(start)) }()
-	return t.inner.Next(ctx)
+	out, err := t.inner.Next(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	totalSamplesAfter := t.OperatorTelemetry.Samples().TotalSamples
+	t.OperatorTelemetry.Samples().UpdatePeak(int(totalSamplesAfter) - int(totalSamplesBefore))
+
+	return out, err
 }
 
 func (t *Operator) GetPool() *model.VectorPool {
