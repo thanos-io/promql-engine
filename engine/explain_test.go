@@ -371,7 +371,7 @@ func TestAnalyzPeak(t *testing.T) {
 	analyzeOutput = explainableQuery.Analyze()
 
 	t.Logf("value of peak = %v", analyzeOutput.PeakSamples())
-	require.Equal(t, int(200), analyzeOutput.PeakSamples())
+	require.Equal(t, int64(200), analyzeOutput.PeakSamples())
 
 	result := renderAnalysisTree(analyzeOutput, 0)
 	expected := `[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0

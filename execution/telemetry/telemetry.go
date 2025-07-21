@@ -144,7 +144,6 @@ func (ti *TrackedTelemetry) NextExecutionTime() time.Duration {
 }
 
 func (ti *TrackedTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) {
-	ti.updatePeak(samples)
 	ti.LoadedSamples.IncrementSamplesAtTimestamp(t, int64(samples))
 }
 
