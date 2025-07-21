@@ -30,6 +30,7 @@ type OperatorTelemetry interface {
 	IncrementSamplesAtTimestamp(samples int, t int64)
 	Samples() *stats.QuerySamples
 	LogicalNode() logicalplan.Node
+	UpdatePeak(count int)
 }
 
 func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
@@ -90,6 +91,8 @@ func (tm *NoopTelemetry) SetMaxSeriesCount(_ int) {}
 func (tm *NoopTelemetry) LogicalNode() logicalplan.Node {
 	return nil
 }
+
+func (tm *NoopTelemetry) UpdatePeak(_ int) {}
 
 type TrackedTelemetry struct {
 	fmt.Stringer
@@ -161,6 +164,10 @@ func (ti *TrackedTelemetry) MaxSeriesCount() int { return ti.Series }
 
 func (ti *TrackedTelemetry) SetMaxSeriesCount(count int) { ti.Series = count }
 
+func (ti *TrackedTelemetry) UpdatePeak(count int) {
+	ti.Samples().UpdatePeak(count)
+}
+
 type ObservableVectorOperator interface {
 	model.VectorOperator
 	OperatorTelemetry
@@ -211,7 +218,7 @@ func (t *Operator) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	totalSamplesAfter := t.OperatorTelemetry.Samples().TotalSamples
-	t.OperatorTelemetry.Samples().UpdatePeak(int(totalSamplesAfter) - int(totalSamplesBefore))
+	t.OperatorTelemetry.UpdatePeak(int(totalSamplesAfter) - int(totalSamplesBefore))
 
 	return out, err
 }
