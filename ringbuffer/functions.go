@@ -532,12 +532,11 @@ func extrapolatedRate(ctx context.Context, samples []Sample, numSamples int, isC
 	// (which is our guess for where the series actually starts or ends).
 
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
-	extrapolateToInterval := sampledInterval
 
 	if durationToStart >= extrapolationThreshold {
 		durationToStart = averageDurationBetweenSamples / 2
 	}
-	if isCounter && resultValue > 0 && samples[0].V.F >= 0 {
+	if isCounter {
 		// Counters cannot be negative. If we have any slope at
 		// all (i.e. resultValue went up), we can extrapolate
 		// the zero point of the counter. If the duration to the
@@ -545,20 +544,28 @@ func extrapolatedRate(ctx context.Context, samples []Sample, numSamples int, isC
 		// take the zero point as the start of the series,
 		// thereby avoiding extrapolation to negative counter
 		// values.
-		// TODO(beorn7): Do this for histograms, too.
-		durationToZero := sampledInterval * (samples[0].V.F / resultValue)
+		durationToZero := durationToStart
+
+		if resultValue > 0 &&
+			len(samples) > 0 &&
+			samples[0].V.F >= 0 {
+			durationToZero = sampledInterval * (samples[0].V.F / resultValue)
+		} else if resultHistogram != nil &&
+			resultHistogram.Count > 0 &&
+			len(samples) > 0 &&
+			samples[0].V.H.Count >= 0 {
+			durationToZero = sampledInterval * (samples[0].V.H.Count / resultHistogram.Count)
+		}
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
 		}
 	}
-	extrapolateToInterval += durationToStart
 
 	if durationToEnd >= extrapolationThreshold {
 		durationToEnd = averageDurationBetweenSamples / 2
 	}
-	extrapolateToInterval += durationToEnd
 
-	factor := extrapolateToInterval / sampledInterval
+	factor := (sampledInterval + durationToStart + durationToEnd) / sampledInterval
 	if isRate {
 		factor /= float64(selectRange) / 1000
 	}
