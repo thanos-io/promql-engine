@@ -154,10 +154,6 @@ func (ti *TrackedTelemetry) LogicalNode() logicalplan.Node {
 	return ti.logicalNode
 }
 
-func (ti *TrackedTelemetry) updatePeak(samples int) {
-	ti.LoadedSamples.UpdatePeak(samples)
-}
-
 func (ti *TrackedTelemetry) Samples() *stats.QuerySamples { return ti.LoadedSamples }
 
 func (ti *TrackedTelemetry) MaxSeriesCount() int { return ti.Series }
