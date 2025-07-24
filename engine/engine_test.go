@@ -24,6 +24,7 @@ import (
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage/prometheus"
@@ -2313,6 +2314,21 @@ or
 			start: time.UnixMilli(0),
 			end:   time.UnixMilli(124000),
 			step:  15 * time.Second,
+		},
+		{
+			name: "fuzz native histogram approx float comparison",
+			load: `load 2m
+			    http_request_duration_seconds{pod="nginx-1"} {{schema:0 count:30 sum:14.00 buckets:[27 2 1]}}+{{schema:0 count:30 buckets:[27 2 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2"} {{schema:-2 count:58 sum:4368.00 buckets:[54 2 2]}}+{{schema:-2 count:58 buckets:[54 2 2]}}x30`,
+			query: `
+-(
+    -{__name__="http_request_duration_seconds"}
+  /
+    histogram_stdvar({__name__="http_request_duration_seconds"})
+)`,
+			start: time.UnixMilli(83000),
+			end:   time.UnixMilli(160000),
+			step:  time.Minute + 16*time.Second,
 		},
 	}
 
@@ -5995,12 +6011,91 @@ func (b samplesByLabels) Len() int           { return len(b) }
 func (b samplesByLabels) Swap(i, j int)      { b[i], b[j] = b[j], b[i] }
 func (b samplesByLabels) Less(i, j int) bool { return labels.Compare(b[i].Metric, b[j].Metric) < 0 }
 
+const epsilon = 1e-6
+const fraction = 1e-10
+
+func floatsMatch(f1, f2 []float64) bool {
+	if len(f1) != len(f2) {
+		return false
+	}
+	for i, f := range f1 {
+		if !cmp.Equal(f, f2[i], cmpopts.EquateNaNs(), cmpopts.EquateApprox(fraction, epsilon)) {
+			return false
+		}
+	}
+	return true
+}
+
+// spansMatch returns true if both spans represent the same bucket layout
+// after combining zero length spans with the next non-zero length span.
+// Copied from: https://github.com/prometheus/prometheus/blob/3d245e31d31774f62ff18c36039315fa55fe252c/model/histogram/histogram.go#L287
+func spansMatch(s1, s2 []histogram.Span) bool {
+	if len(s1) == 0 && len(s2) == 0 {
+		return true
+	}
+
+	s1idx, s2idx := 0, 0
+	for {
+		if s1idx >= len(s1) {
+			return allEmptySpans(s2[s2idx:])
+		}
+		if s2idx >= len(s2) {
+			return allEmptySpans(s1[s1idx:])
+		}
+
+		currS1, currS2 := s1[s1idx], s2[s2idx]
+		s1idx++
+		s2idx++
+		if currS1.Length == 0 {
+			// This span is zero length, so we add consecutive such spans
+			// until we find a non-zero span.
+			for ; s1idx < len(s1) && s1[s1idx].Length == 0; s1idx++ {
+				currS1.Offset += s1[s1idx].Offset
+			}
+			if s1idx < len(s1) {
+				currS1.Offset += s1[s1idx].Offset
+				currS1.Length = s1[s1idx].Length
+				s1idx++
+			}
+		}
+		if currS2.Length == 0 {
+			// This span is zero length, so we add consecutive such spans
+			// until we find a non-zero span.
+			for ; s2idx < len(s2) && s2[s2idx].Length == 0; s2idx++ {
+				currS2.Offset += s2[s2idx].Offset
+			}
+			if s2idx < len(s2) {
+				currS2.Offset += s2[s2idx].Offset
+				currS2.Length = s2[s2idx].Length
+				s2idx++
+			}
+		}
+
+		if currS1.Length == 0 && currS2.Length == 0 {
+			// The last spans of both set are zero length. Previous spans match.
+			return true
+		}
+
+		if currS1.Offset != currS2.Offset || currS1.Length != currS2.Length {
+			return false
+		}
+	}
+}
+
+func allEmptySpans(s []histogram.Span) bool {
+	for _, ss := range s {
+		if ss.Length > 0 {
+			return false
+		}
+	}
+	return true
+}
+
 var (
 	// comparer should be used to compare promql results between engines.
 	comparer = cmp.Comparer(func(x, y *promql.Result) bool {
 		compareFloats := func(l, r float64) bool {
-			const epsilon = 1e-6
-			return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(0, epsilon))
+			return cmp.Equal(l, r, cmpopts.EquateNaNs(), cmpopts.EquateApprox(fraction, epsilon))
 		}
 		compareHistograms := func(l, r *histogram.FloatHistogram) bool {
 			if l == nil && r == nil {
@@ -6011,7 +6106,39 @@ var (
 				return false
 			}
 
-			return l.Equals(r)
+			// Copied from https://github.com/prometheus/prometheus/blob/3d245e31d31774f62ff18c36039315fa55fe252c/model/histogram/float_histogram.go#L471
+			// and extended to use approx comparison instead of exact match.
+			if l.Schema != r.Schema || !compareFloats(l.Count, r.Count) || !compareFloats(l.Sum, r.Sum) {
+				return false
+			}
+
+			if l.UsesCustomBuckets() {
+				if !floatsMatch(l.CustomValues, r.CustomValues) {
+					return false
+				}
+			}
+
+			if l.ZeroThreshold != r.ZeroThreshold || !compareFloats(l.ZeroCount, r.ZeroCount) {
+				return false
+			}
+
+			if !spansMatch(l.NegativeSpans, r.NegativeSpans) {
+				return false
+			}
+
+			if !floatsMatch(l.NegativeBuckets, r.NegativeBuckets) {
+				return false
+			}
+
+			if !spansMatch(l.PositiveSpans, r.PositiveSpans) {
+				return false
+			}
+
+			if !floatsMatch(l.PositiveBuckets, r.PositiveBuckets) {
+				return false
+			}
+
+			return true
 		}
 		compareAnnotations := func(l, r annotations.Annotations) bool {
 			// TODO: discard promql annotations for now, once we support them we should add them back
@@ -6038,14 +6165,65 @@ var (
 			}
 			return true
 		}
+		compareValueMetrics := func(l, r labels.Labels) (valueMetric bool, equals bool) {
+			// For count_value() float values embedded in the labels should be extracted out and compared separately from other labels.
+			lLabels := l.Copy()
+			rLabels := r.Copy()
+			var (
+				lVal, rVal     string
+				lFloat, rFloat float64
+				err            error
+			)
+
+			if lVal = lLabels.Get("value"); lVal == "" {
+				return false, false
+			}
+
+			if rVal = rLabels.Get("value"); rVal == "" {
+				return false, false
+			}
+
+			if lFloat, err = strconv.ParseFloat(lVal, 64); err != nil {
+				return false, false
+			}
+			if rFloat, err = strconv.ParseFloat(rVal, 64); err != nil {
+				return false, false
+			}
+
+			// Exclude the value label in comparison.
+			lLabels = lLabels.MatchLabels(false, "value")
+			rLabels = rLabels.MatchLabels(false, "value")
+
+			if !labels.Equal(lLabels, rLabels) {
+				return false, false
+			}
+
+			return true, compareFloats(lFloat, rFloat)
+		}
 		compareMetrics := func(l, r labels.Labels) bool {
+			if valueMetric, equals := compareValueMetrics(l, r); valueMetric {
+				return equals
+			}
 			return l.Hash() == r.Hash()
 		}
 
-		if x.Err != nil && y.Err != nil {
-			return cmp.Equal(x.Err.Error(), y.Err.Error())
-		} else if x.Err != nil || y.Err != nil {
-			return false
+		compareErrors := func(l, r error) (stop bool, result bool) {
+			if l == nil && r == nil {
+				return false, true
+			}
+			if l != nil && r != nil {
+				return true, l.Error() == r.Error()
+			}
+			err := l
+			if err == nil {
+				err = r
+			}
+			// Thanos engine handles duplicate label check differently than Prometheus engine.
+			return true, err.Error() == extlabels.ErrDuplicateLabelSet.Error()
+		}
+
+		if stop, result := compareErrors(x.Err, y.Err); stop {
+			return result
 		}
 
 		if !compareAnnotations(x.Warnings, y.Warnings) {
