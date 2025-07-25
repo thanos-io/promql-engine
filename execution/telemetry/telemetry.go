@@ -205,19 +205,28 @@ func (t *Operator) Series(ctx context.Context) ([]labels.Labels, error) {
 
 func (t *Operator) Next(ctx context.Context) ([]model.StepVector, error) {
 	start := time.Now()
+	var totalSamplesBeforeCount int64
 	totalSamplesBefore := t.OperatorTelemetry.Samples()
-	if totalSamplesBefore == nil {
-		return t.inner.Next(ctx)
+	if totalSamplesBefore != nil {
+		totalSamplesBeforeCount = totalSamplesBefore.TotalSamples
+	} else {
+		totalSamplesBeforeCount = 0
 	}
 
-	totalSamplesBeforeCount := totalSamplesBefore.TotalSamples
 	defer func() { t.OperatorTelemetry.AddNextExecutionTime(time.Since(start)) }()
 	out, err := t.inner.Next(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	totalSamplesAfter := t.OperatorTelemetry.Samples().TotalSamples
+	var totalSamplesAfter int64
+	totalSamplesAfterSamples := t.OperatorTelemetry.Samples()
+	if totalSamplesAfterSamples != nil {
+		totalSamplesAfter = totalSamplesAfterSamples.TotalSamples
+	} else {
+		totalSamplesAfter = 0
+	}
+
 	t.OperatorTelemetry.UpdatePeak(int(totalSamplesAfter) - int(totalSamplesBeforeCount))
 
 	return out, err
