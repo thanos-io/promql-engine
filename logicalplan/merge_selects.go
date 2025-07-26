@@ -37,6 +37,9 @@ func extractSelectors(selectors matcherHeap, expr Node) {
 		if !ok {
 			return
 		}
+		if !emptyProjection(e) {
+			return
+		}
 		for _, l := range e.LabelMatchers {
 			if l.Name == labels.MetricName {
 				selectors.add(l.Value, e.LabelMatchers)
@@ -50,6 +53,9 @@ func replaceMatchers(selectors matcherHeap, expr *Node) {
 		var matchers []*labels.Matcher
 		switch e := (*node).(type) {
 		case *VectorSelector:
+			if !emptyProjection(e) {
+				return
+			}
 			matchers = e.LabelMatchers
 		default:
 			return
@@ -162,4 +168,11 @@ func (m matcherHeap) findReplacement(metricName string, matcher []*labels.Matche
 	}
 
 	return top, true
+}
+
+func emptyProjection(vs *VectorSelector) bool {
+	if vs.Projection == nil {
+		return true
+	}
+	return !vs.Projection.Include && len(vs.Projection.Labels) == 0
 }
