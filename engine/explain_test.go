@@ -251,7 +251,6 @@ func TestQueryAnalyze(t *testing.T) {
 		}
 	}
 }
-
 func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	t.Parallel()
 	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true, DecodingConcurrency: 2})
@@ -299,9 +298,9 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 |   |   |---[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
 |   |   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
 |   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 20
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
 |   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 20
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
 `
 	require.EqualValues(t, expected, result)
 }
@@ -331,4 +330,59 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 	}
 
 	return result.String()
+}
+
+func TestAnalyzPeak(t *testing.T) {
+	t.Parallel()
+	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true, DecodingConcurrency: 2})
+	ctx := context.Background()
+	load := `load 30s
+				http_requests_total{pod="nginx-1"} 1+1x100
+				http_requests_total{pod="nginx-2"} 1+1x100`
+
+	tstorage := promqltest.LoadedStorage(t, load)
+	defer tstorage.Close()
+	minT := tstorage.Head().Meta().MinTime
+	maxT := tstorage.Head().Meta().MaxTime
+
+	query, err := ng.NewInstantQuery(ctx, tstorage, nil, "http_requests_total", time.Unix(0, 0))
+	testutil.Ok(t, err)
+	queryResults := query.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
+	explainableQuery := query.(engine.ExplainableQuery)
+	analyzeOutput := explainableQuery.Analyze()
+	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
+	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
+
+	rangeQry, err := ng.NewRangeQuery(
+		ctx,
+		tstorage,
+		promql.NewPrometheusQueryOpts(false, 0),
+		"sum(rate(http_requests_total[10m])) by (pod)",
+		time.Unix(minT, 0),
+		time.Unix(maxT, 0),
+		60*time.Second,
+	)
+	testutil.Ok(t, err)
+	queryResults = rangeQry.Exec(context.Background())
+	testutil.Ok(t, queryResults.Err)
+
+	explainableQuery = rangeQry.(engine.ExplainableQuery)
+	analyzeOutput = explainableQuery.Analyze()
+
+	t.Logf("value of peak = %v", analyzeOutput.PeakSamples())
+	require.Equal(t, int64(200), analyzeOutput.PeakSamples())
+
+	result := renderAnalysisTree(analyzeOutput, 0)
+	expected := `[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
+|---[concurrent(buff=2)]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |---[aggregate] sum by ([pod]): max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |---[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
+|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
+`
+	require.EqualValues(t, expected, result)
 }
