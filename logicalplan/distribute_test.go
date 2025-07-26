@@ -33,6 +33,16 @@ func TestDistributedExecution(t *testing.T) {
 		expected          string
 	}{
 		{
+			name: "this is a bug",
+			expr: `group by (region) (foo) * on (region) bar`,
+			expected: `
+group by (region) (
+  dedup(
+    remote(group by (region) (foo)),
+    remote(group by (region) (foo)))
+) * on (region) dedup(remote(bar), remote(bar))`,
+		},
+		{
 			name:     "selector",
 			expr:     `http_requests_total`,
 			expected: `dedup(remote(http_requests_total), remote(http_requests_total))`,
