@@ -5,14 +5,17 @@ package logicalplan
 
 import (
 	"math"
+	"math/rand"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/cortexproject/promqlsmith"
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -826,6 +829,39 @@ sum(dedup(
 
 	vs1 := getSelector(1)
 	testutil.Assert(t, len(vs1.LabelMatchers) == len(vs0.LabelMatchers)-1, "expected %d label matchers, got %d", len(vs0.LabelMatchers)-1, len(vs1.LabelMatchers))
+}
+
+func FuzzDistributedEnginePlanNoUnnecessarySelectCalls(f *testing.F) {
+	f.Skip("Distributed Optimizer does not establish this invariant yet")
+
+	engines := []api.RemoteEngine{
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
+	}
+	f.Add(int64(0))
+	f.Fuzz(func(t *testing.T, seed int64) {
+		rnd := rand.New(rand.NewSource(seed))
+		ps := promqlsmith.New(rnd, []labels.Labels{
+			labels.FromStrings(model.MetricNameLabel, "foo", "bar", "baz", "region", "east"),
+			labels.FromStrings(model.MetricNameLabel, "foo", "bar", "quz", "region", "west"),
+		})
+		expr := ps.WalkInstantQuery()
+		lplan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
+
+		oplan, _ := lplan.Optimize([]Optimizer{
+			DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+		})
+		root := oplan.Root()
+
+		Traverse(&root, func(n *Node) {
+			switch (*n).(type) {
+			case *MatrixSelector:
+				t.Fatal("unexpected matrixselector in: ", renderExprTree(root), "from: ", expr.String())
+			case *VectorSelector:
+				t.Fatal("unexpected vectorselector in: ", renderExprTree(root), "from: ", expr.String())
+			}
+		})
+	})
 }
 
 type engineMock struct {
