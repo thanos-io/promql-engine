@@ -10,7 +10,7 @@ require (
 	github.com/efficientgo/core v1.0.0-rc.2
 	github.com/facette/natsort v0.0.0-20181210072756-2cd4dd1e2dcb
 	github.com/google/go-cmp v0.7.0
-	github.com/prometheus/client_golang v1.23.0-rc.1
+	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/common v0.65.1-0.20250703115700-7f8b2a0d32d3
 	github.com/prometheus/prometheus v0.305.1-0.20250721065454-b09cf6be8d56
 	github.com/stretchr/testify v1.10.0
