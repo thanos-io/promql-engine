@@ -35,6 +35,10 @@ func TestMergeSelects(t *testing.T) {
 			expected: `filter([a="b"], X) / floor(X)`,
 		},
 		{
+			expr:     `X{a!~"b",a=~"b",c="d"}/X{a=~"b"}`,
+			expected: `filter([a!~"b" c="d"], X{a=~"b"}) / X{a=~"b"}`,
+		},
+		{
 			expr:     `quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)`,
 			expected: `quantile by (pod) (scalar(min(http_requests_total)), http_requests_total)`,
 		},

@@ -75,18 +75,8 @@ func replaceMatchers(selectors matcherHeap, expr *Node) {
 			filters := make([]*labels.Matcher, len(matchers))
 			copy(filters, matchers)
 
-			// All replacements are done on metrics name only,
-			// so we can drop the explicit metric name selector.
-			filters = dropMatcher(labels.MetricName, filters)
-
-			// Drop filters which are already present as matchers in the replacement selector.
-			for _, s := range replacement {
-				for _, f := range filters {
-					if s.Name == f.Name && s.Value == f.Value && s.Type == f.Type {
-						filters = dropMatcher(f.Name, filters)
-					}
-				}
-			}
+			// Drop filters which are already present as matchers in the replacement selector including metric name selector.
+			filters = dropMatcher(replacement, filters)
 
 			switch e := (*node).(type) {
 			case *VectorSelector:
@@ -99,12 +89,19 @@ func replaceMatchers(selectors matcherHeap, expr *Node) {
 	})
 }
 
-func dropMatcher(matcherName string, originalMatchers []*labels.Matcher) []*labels.Matcher {
-	res := slices.Clone(originalMatchers)
+func dropMatcher(toDrop []*labels.Matcher, original []*labels.Matcher) []*labels.Matcher {
+	res := slices.Clone(original)
 	i := 0
 	for i < len(res) {
 		l := res[i]
-		if l.Name == matcherName {
+		remove := false
+		for _, m := range toDrop {
+			if l.Name == m.Name && l.Type == m.Type && l.Value == m.Value {
+				remove = true
+				break
+			}
+		}
+		if remove {
 			res = slices.Delete(res, i, i+1)
 		} else {
 			i++
