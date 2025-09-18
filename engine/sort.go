@@ -12,11 +12,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-type sortOrder bool
+type sortOrder int
 
 const (
-	sortOrderAsc  sortOrder = false
-	sortOrderDesc sortOrder = true
+	noValueSort sortOrder = iota
+	sortOrderAsc
+	sortOrderDesc
 )
 
 type resultSorter interface {
@@ -117,8 +118,10 @@ func valueCompare(order sortOrder, l, r float64) bool {
 	}
 	if order == sortOrderAsc {
 		return l < r
+	} else if order == sortOrderDesc {
+		return l > r
 	}
-	return l > r
+	return false
 }
 
 // filterFloats filters out histogram samples from the vector in-place.
@@ -183,6 +186,7 @@ func (s aggregateResultSort) comparer(samples *promql.Vector) func(i, j int) boo
 		if lblsCmp != 0 {
 			return lblsCmp < 0
 		}
+
 		return valueCompare(s.sortOrder, (*samples)[i].F, (*samples)[j].F)
 	}
 }
