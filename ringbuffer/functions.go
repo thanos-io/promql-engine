@@ -164,34 +164,13 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
-
-		var fd, hd bool
-		for _, s := range f.Samples {
-			hd = hd || s.V.H != nil
-			fd = fd || s.V.H == nil
+		return sumOverTime(f.ctx, f.Samples)
+	},
+	"avg_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		if len(f.Samples) == 0 {
+			return 0., nil, false, nil
 		}
-		if fd && hd {
-			warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), f.ctx)
-			return 0, nil, false, nil
-		}
-
-		if f.Samples[0].V.H != nil {
-			// histogram
-			sum := f.Samples[0].V.H.Copy()
-			for _, sample := range f.Samples[1:] {
-				h := sample.V.H
-				_, err := sum.Add(h)
-				if err != nil {
-					if err := handleHistogramErr(f.ctx, err); err != nil {
-						return 0, nil, false, err
-					}
-					return 0, nil, false, nil
-				}
-			}
-
-			return 0, sum, true, nil
-		}
-		return sumOverTime(f.ctx, f.Samples), nil, true, nil
+		return avgOverTime(f.ctx, f.Samples)
 	},
 	"mad_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
@@ -238,46 +217,6 @@ var rangeVectorFuncs = map[string]FunctionCall{
 			t = max(t, s.T)
 		}
 		return float64(t) / 1000, nil, true, nil
-	},
-	"avg_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
-		if len(f.Samples) == 0 {
-			return 0., nil, false, nil
-		}
-		var fd, hd bool
-		for _, s := range f.Samples {
-			hd = hd || s.V.H != nil
-			fd = fd || s.V.H == nil
-		}
-		if fd && hd {
-			warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), f.ctx)
-			return 0, nil, false, nil
-		}
-		if f.Samples[0].V.H != nil {
-			// histogram
-			mean := f.Samples[0].V.H.Copy()
-			for i, sample := range f.Samples[1:] {
-				count := float64(i + 2)
-				left := sample.V.H.Copy().Div(count)
-				right := mean.Copy().Div(count)
-				toAdd, err := left.Sub(right)
-				if err != nil {
-					if err := handleHistogramErr(f.ctx, err); err != nil {
-						return 0, nil, false, err
-					}
-					return 0, mean, false, nil
-				}
-				_, err = mean.Add(toAdd)
-				if err != nil {
-					if err := handleHistogramErr(f.ctx, err); err != nil {
-						return 0, nil, false, err
-					}
-					return 0, mean, false, nil
-				}
-			}
-			return 0, mean, true, nil
-		}
-
-		return avgOverTime(f.Samples), nil, true, nil
 	},
 	"stddev_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
@@ -867,7 +806,30 @@ func countOverTime(points []Sample) float64 {
 	return float64(len(points))
 }
 
-func avgOverTime(points []Sample) float64 {
+func avgOverTime(ctx context.Context, points []Sample) (float64, *histogram.FloatHistogram, bool, error) {
+	// we sniffed a histogram average
+	if points[0].V.H != nil {
+		mean := points[0].V.H.Copy()
+		for i, sample := range points[1:] {
+			if sample.V.H == nil {
+				warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
+				return 0, nil, false, nil
+			}
+			count := float64(i + 2)
+			left := sample.V.H.Copy().Div(count)
+			right := mean.Copy().Div(count)
+			toAdd, err := left.Sub(right)
+			if err != nil {
+				return 0, nil, false, handleHistogramErr(ctx, err)
+			}
+			if _, err = mean.Add(toAdd); err != nil {
+				return 0, nil, false, handleHistogramErr(ctx, err)
+			}
+		}
+		return 0, mean, true, nil
+	}
+
+	// we sniffed a float average
 	var (
 		// Pre-set the 1st sample to start the loop with the 2nd.
 		sum, count      = points[0].V.F, 1.
@@ -875,6 +837,10 @@ func avgOverTime(points []Sample) float64 {
 		incrementalMean bool
 	)
 	for i, p := range points[1:] {
+		if p.V.H != nil {
+			warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
+			return 0, nil, false, nil
+		}
 		count = float64(i + 2)
 		if !incrementalMean {
 			newSum, newC := aggregate.KahanSumInc(p.V.F, sum, kahanC)
@@ -894,23 +860,41 @@ func avgOverTime(points []Sample) float64 {
 		mean, kahanC = aggregate.KahanSumInc(p.V.F/count, q*mean, q*kahanC)
 	}
 	if incrementalMean {
-		return mean + kahanC
+		return mean + kahanC, nil, true, nil
 	}
-	return sum/count + kahanC/count
+	return sum/count + kahanC/count, nil, true, nil
 }
 
-func sumOverTime(ctx context.Context, points []Sample) float64 {
-	var sum, c float64
-	for _, v := range points {
-		if v.V.H != nil {
-			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+func sumOverTime(ctx context.Context, points []Sample) (float64, *histogram.FloatHistogram, bool, error) {
+	// we sniffed a histogram sum
+	if points[0].V.H != nil {
+		res := points[0].V.H.Copy()
+		for _, v := range points[1:] {
+			if v.V.H == nil {
+				warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
+				return 0, nil, false, nil
+			}
+			if _, err := res.Add(v.V.H); err != nil {
+				return 0, nil, false, handleHistogramErr(ctx, err)
+			}
 		}
-		sum, c = aggregate.KahanSumInc(v.V.F, sum, c)
+		return 0, res, true, nil
 	}
-	if math.IsInf(sum, 0) {
-		return sum
+
+	// we sniffed a float sum
+	res, c := points[0].V.F, 0.
+	for _, v := range points[1:] {
+		if v.V.H != nil {
+			warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
+			return 0, nil, false, nil
+		}
+		res, c = aggregate.KahanSumInc(v.V.F, res, c)
 	}
-	return sum + c
+	if math.IsInf(res, 0) {
+		return res, nil, true, nil
+	}
+	return res + c, nil, true, nil
+
 }
 
 func stddevOverTime(ctx context.Context, points []Sample) (float64, bool) {
