@@ -23,10 +23,9 @@ type Sample struct {
 }
 
 type GenericRingBuffer struct {
-	ctx      context.Context
-	items    []Sample
-	tail     []Sample
-	subquery bool
+	ctx   context.Context
+	items []Sample
+	tail  []Sample
 
 	currentStep int64
 	offset      int64
@@ -35,11 +34,11 @@ type GenericRingBuffer struct {
 	call        FunctionCall
 }
 
-func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall, subquery bool) *GenericRingBuffer {
-	return NewWithExtLookback(ctx, size, selectRange, offset, 0, call, subquery)
+func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
+	return NewWithExtLookback(ctx, size, selectRange, offset, 0, call)
 }
 
-func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall, subquery bool) *GenericRingBuffer {
+func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
 	return &GenericRingBuffer{
 		ctx:         ctx,
 		items:       make([]Sample, 0, size),
@@ -47,7 +46,6 @@ func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extL
 		offset:      offset,
 		extLookback: extLookback,
 		call:        call,
-		subquery:    subquery,
 	}
 }
 
@@ -93,28 +91,7 @@ func (r *GenericRingBuffer) Push(t int64, v Value) {
 	if v.H != nil {
 		if r.items[n].V.H == nil {
 			h := v.H.Copy()
-			if r.subquery {
-				// Set any "NotCounterReset" and "CounterReset" hints in native
-				// histograms to "UnknownCounterReset" because we might
-				// otherwise miss a counter reset happening in samples not
-				// returned by the subquery, or we might over-detect counter
-				// resets if the sample with a counter reset is returned
-				// multiple times by a high-res subquery. This intentionally
-				// does not attempt to be clever (like detecting if we are
-				// really missing underlying samples or returning underlying
-				// samples multiple times) because subqueries on counters are
-				// inherently problematic WRT counter reset handling, so we
-				// cannot really solve the problem for good. We only want to
-				// avoid problems that happen due to the explicitly set counter
-				// reset hints and go back to the behavior we already know from
-				// float samples.
-				switch h.CounterResetHint {
-				case histogram.NotCounterReset, histogram.CounterReset:
-					h.CounterResetHint = histogram.UnknownCounterReset
-				}
-			}
 			r.items[n].V.H = h
-
 		} else {
 			v.H.CopyTo(r.items[n].V.H)
 		}
