@@ -12,6 +12,16 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
+type Buffer interface {
+	MaxT() int64
+	Push(t int64, v Value)
+	Reset(mint int64, evalt int64)
+	Eval(ctx context.Context, _, _ float64, _ *int64) (float64, *histogram.FloatHistogram, bool, error)
+	SampleCount() int
+}
+
+func Empty(b Buffer) bool { return b.MaxT() != math.MinInt64 }
+
 type Value struct {
 	F float64
 	H *histogram.FloatHistogram
@@ -49,8 +59,6 @@ func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extL
 	}
 }
 
-func (r *GenericRingBuffer) Len() int { return len(r.items) }
-
 func (r *GenericRingBuffer) SampleCount() int {
 	c := 0
 	for _, s := range r.items {
@@ -70,11 +78,6 @@ func (r *GenericRingBuffer) MaxT() int64 {
 		return math.MinInt64
 	}
 	return r.items[len(r.items)-1].T
-}
-
-// ReadIntoLast reads a sample into the last slot in the buffer, replacing the existing sample.
-func (r *GenericRingBuffer) ReadIntoLast(f func(*Sample)) {
-	f(&r.items[len(r.items)-1])
 }
 
 // Push adds a new sample to the buffer.
