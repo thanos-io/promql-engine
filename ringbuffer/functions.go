@@ -27,7 +27,7 @@ type FunctionArgs struct {
 	StepTime         int64
 	SelectRange      int64
 	Offset           int64
-	MetricAppearedTs *int64
+	MetricAppearedTs int64
 
 	// quantile_over_time and predict_linear use one, so we only use one here.
 	ScalarPoint  float64
@@ -346,10 +346,10 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
-		if f.MetricAppearedTs == nil {
+		if f.MetricAppearedTs == math.MinInt64 {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
-		v, h, err := extendedRate(f.ctx, f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
+		v, h, err := extendedRate(f.ctx, f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset, f.MetricAppearedTs)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -359,10 +359,10 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
-		if f.MetricAppearedTs == nil {
+		if f.MetricAppearedTs == math.MinInt64 {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
-		v, h, err := extendedRate(f.ctx, f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
+		v, h, err := extendedRate(f.ctx, f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, f.MetricAppearedTs)
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -372,10 +372,10 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
 		}
-		if f.MetricAppearedTs == nil {
+		if f.MetricAppearedTs == math.MinInt64 {
 			panic("BUG: we got some Samples but metric still hasn't appeared")
 		}
-		v, h, err := extendedRate(f.ctx, f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, *f.MetricAppearedTs)
+		v, h, err := extendedRate(f.ctx, f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, f.MetricAppearedTs)
 		if err != nil {
 			return 0, nil, false, err
 		}
