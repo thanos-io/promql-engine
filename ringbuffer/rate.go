@@ -19,6 +19,7 @@ type Buffer interface {
 	MaxT() int64
 	Push(t int64, v Value)
 	Reset(mint int64, evalt int64)
+	SetStep(int64)
 	Eval(ctx context.Context, _, _ float64, _ *int64) (float64, *histogram.FloatHistogram, bool, error)
 	ReadIntoLast(f func(*Sample))
 	SampleCount() int
@@ -102,6 +103,8 @@ func (r *RateBuffer) SampleCount() int {
 }
 
 func (r *RateBuffer) MaxT() int64 { return r.last.T }
+
+func (r *RateBuffer) SetStep(step int64) { r.step = step }
 
 func (r *RateBuffer) Push(t int64, v Value) {
 	// Detect resets and store the current and previous sample so that

@@ -77,6 +77,10 @@ func (r *GenericRingBuffer) ReadIntoLast(f func(*Sample)) {
 	f(&r.items[len(r.items)-1])
 }
 
+func (r *GenericRingBuffer) SetStep(step int64) {
+	r.currentStep = step
+}
+
 // Push adds a new sample to the buffer.
 func (r *GenericRingBuffer) Push(t int64, v Value) {
 	n := len(r.items)

@@ -36,6 +36,8 @@ type matrixScanner struct {
 	iterator         chunkenc.Iterator
 	lastSample       ringbuffer.Sample
 	metricAppearedTs *int64
+	timestamp        *int64
+	once             sync.Once
 }
 
 type matrixSelector struct {
@@ -57,6 +59,7 @@ type matrixSelector struct {
 	numSteps      int
 	mint          int64
 	maxt          int64
+	timestamp     *int64
 	step          int64
 	selectRange   int64
 	offset        int64
@@ -85,6 +88,7 @@ func NewMatrixSelector(
 	functionName string,
 	arg float64,
 	arg2 float64,
+	timestamp *int64,
 	opts *query.Options,
 	selectRange, offset time.Duration,
 	batchSize int64,
@@ -108,6 +112,7 @@ func NewMatrixSelector(
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		step:          opts.Step.Milliseconds(),
+		timestamp:     timestamp,
 		isExtFunction: parse.IsExtFunction(functionName),
 
 		selectRange:     selectRange.Milliseconds(),
@@ -244,6 +249,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				iterator:   s.Iterator(nil),
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
 				buffer:     o.newBuffer(ctx),
+				timestamp:  o.timestamp,
 			}
 			o.series[i] = lbls
 		}
@@ -295,6 +301,23 @@ func (o *matrixSelector) String() string {
 	return fmt.Sprintf("[matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards)
 }
 
+func (m *matrixScanner) selectPoints(
+	mint, maxt, evalt int64,
+	fh *histogram.FloatHistogram,
+	isExtFunction bool,
+) error {
+	if m.timestamp != nil {
+		// If timestamp is set, then the points should be selected only once.
+		var err error
+		m.once.Do(func() {
+			err = m.selectPointsInternal(mint, maxt, *m.timestamp, fh, isExtFunction)
+		})
+		m.buffer.SetStep(evalt)
+		return err
+	}
+	return m.selectPointsInternal(mint, maxt, evalt, fh, isExtFunction)
+}
+
 // matrixIterSlice populates a matrix vector covering the requested range for a
 // single time series, with points retrieved from an iterator.
 //
@@ -304,7 +327,7 @@ func (o *matrixSelector) String() string {
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
 // TODO(fpetkovski): Add max samples limit.
-func (m *matrixScanner) selectPoints(
+func (m *matrixScanner) selectPointsInternal(
 	mint, maxt, evalt int64,
 	fh *histogram.FloatHistogram,
 	isExtFunction bool,
