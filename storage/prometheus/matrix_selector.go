@@ -183,8 +183,7 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 		for currStep := 0; currStep < o.numSteps && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
-
-			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.isExtFunction); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.extLookbackDelta, o.isExtFunction); err != nil {
 				return nil, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
@@ -307,6 +306,7 @@ func (o *matrixSelector) String() string {
 func (m *matrixScanner) selectPoints(
 	mint, maxt, evalt int64,
 	fh *histogram.FloatHistogram,
+	extLookbackDelta int64,
 	isExtFunction bool,
 ) error {
 	m.buffer.Reset(mint, evalt)
@@ -324,7 +324,12 @@ func (m *matrixScanner) selectPoints(
 		mint = maxInt64(mint, m.buffer.MaxT()+1)
 	}
 
-	appendedPointBeforeMint := m.buffer.Len() > 0
+	var (
+		// The sample that we add for x-functions, -1 is a canary value for the situation
+		// where we have no sample in the extended lookback delta
+		extSample = ringbuffer.Sample{T: -1}
+	)
+
 	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
@@ -361,19 +366,17 @@ func (m *matrixScanner) selectPoints(
 				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil
 				return nil
 			}
-			if isExtFunction {
-				if t > mint || !appendedPointBeforeMint {
-					m.buffer.Push(t, ringbuffer.Value{F: v})
-					appendedPointBeforeMint = true
-				} else {
-					m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
-						s.T, s.V.F, s.V.H = t, v, nil
-					})
+			if t > mint {
+				if extSample.T != -1 && isExtFunction {
+					m.buffer.Push(extSample.T, ringbuffer.Value{F: extSample.V.F})
+					extSample.T = -1
 				}
-			} else {
-				if t > mint {
-					m.buffer.Push(t, ringbuffer.Value{F: v})
-				}
+				m.buffer.Push(t, ringbuffer.Value{F: v})
+				continue
+			}
+			if isExtFunction && t > mint-extLookbackDelta {
+				extSample.T = t
+				extSample.V.F = v
 			}
 		}
 	}

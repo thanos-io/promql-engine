@@ -14,16 +14,6 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-type Buffer interface {
-	Len() int
-	MaxT() int64
-	Push(t int64, v Value)
-	Reset(mint int64, evalt int64)
-	Eval(ctx context.Context, _, _ float64, _ *int64) (float64, *histogram.FloatHistogram, bool, error)
-	ReadIntoLast(f func(*Sample))
-	SampleCount() int
-}
-
 // RateBuffer is a Buffer which can calculate rate, increase and delta for a
 // series in a streaming manner, calculating the value incrementally for each
 // step where the sample is used.
@@ -94,8 +84,6 @@ func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bo
 		currentMint:  math.MaxInt64,
 	}
 }
-
-func (r *RateBuffer) Len() int { return r.stepRanges[0].numSamples }
 
 func (r *RateBuffer) SampleCount() int {
 	return r.stepRanges[0].sampleCount
@@ -197,8 +185,6 @@ func (r *RateBuffer) Eval(ctx context.Context, _, _ float64, _ *int64) (float64,
 	numSamples := r.stepRanges[0].numSamples
 	return extrapolatedRate(ctx, r.rateBuffer, numSamples, r.isCounter, r.isRate, r.evalTs, r.selectRange, r.offset)
 }
-
-func (r *RateBuffer) ReadIntoLast(func(*Sample)) {}
 
 func querySteps(o query.Options) int64 {
 	// Instant evaluation is executed as a range evaluation with one step.

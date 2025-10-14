@@ -216,14 +216,14 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 	}
 	for i, s := range v.Samples {
 		buffer := o.buffers[v.SampleIDs[i]]
-		if buffer.Len() > 0 && v.T <= buffer.MaxT() {
+		if !ringbuffer.Empty(buffer) && v.T <= buffer.MaxT() {
 			continue
 		}
 		buffer.Push(v.T, ringbuffer.Value{F: s})
 	}
 	for i, s := range v.Histograms {
 		buffer := o.buffers[v.HistogramIDs[i]]
-		if buffer.Len() > 0 && v.T < buffer.MaxT() {
+		if !ringbuffer.Empty(buffer) && v.T < buffer.MaxT() {
 			continue
 		}
 		// Set any "NotCounterReset" and "CounterReset" hints in native
