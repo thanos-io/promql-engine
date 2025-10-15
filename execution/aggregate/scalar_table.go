@@ -81,30 +81,38 @@ func (t *scalarTable) aggregate(ctx context.Context, vector model.StepVector) er
 	t.ts = vector.T
 
 	for i := range vector.Samples {
-		if err := t.addSample(ctx, vector.SampleIDs[i], vector.Samples[i]); err != nil {
+		warn, err := t.addSample(vector.SampleIDs[i], vector.Samples[i])
+		if err != nil {
 			return err
+		}
+		if warn != nil {
+			warnings.AddToContext(warn, ctx)
 		}
 	}
 	for i := range vector.Histograms {
-		if err := t.addHistogram(ctx, vector.HistogramIDs[i], vector.Histograms[i]); err != nil {
+		warn, err := t.addHistogram(vector.HistogramIDs[i], vector.Histograms[i])
+		if err != nil {
 			return err
+		}
+		if warn != nil {
+			warnings.AddToContext(warn, ctx)
 		}
 	}
 	return nil
 }
 
-func (t *scalarTable) addSample(ctx context.Context, sampleID uint64, sample float64) error {
+func (t *scalarTable) addSample(sampleID uint64, sample float64) (warning, error) {
 	outputSampleID := t.inputs[sampleID]
 	output := t.outputs[outputSampleID]
 
-	return t.accumulators[output.ID].Add(ctx, sample, nil)
+	return t.accumulators[output.ID].Add(sample, nil)
 }
 
-func (t *scalarTable) addHistogram(ctx context.Context, sampleID uint64, h *histogram.FloatHistogram) error {
+func (t *scalarTable) addHistogram(sampleID uint64, h *histogram.FloatHistogram) (warning, error) {
 	outputSampleID := t.inputs[sampleID]
 	output := t.outputs[outputSampleID]
 
-	return t.accumulators[output.ID].Add(ctx, 0, h)
+	return t.accumulators[output.ID].Add(0, h)
 }
 
 func (t *scalarTable) reset(arg float64) {
