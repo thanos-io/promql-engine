@@ -14,10 +14,10 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/execution/warnings"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
+	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -281,6 +281,10 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, false, false, o.selectRange, o.offset)
 	case "count_over_time":
 		return ringbuffer.NewCountOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "max_over_time":
+		return ringbuffer.NewMaxOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "min_over_time":
+		return ringbuffer.NewMinOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	}
 
 	if o.isExtFunction {

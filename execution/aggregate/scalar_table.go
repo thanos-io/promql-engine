@@ -8,11 +8,10 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/thanos-io/promql-engine/compute"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/execution/warnings"
-	"github.com/thanos-io/promql-engine/extmath"
-	"github.com/thanos-io/promql-engine/extwarnings"
+	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -42,7 +41,7 @@ type scalarTable struct {
 	ts           int64
 	inputs       []uint64
 	outputs      []*model.Series
-	accumulators []extmath.Accumulator
+	accumulators []compute.Accumulator
 }
 
 func newScalarTables(stepsBatch int, inputCache []uint64, outputCache []*model.Series, aggregation parser.ItemType) ([]aggregateTable, error) {
@@ -62,7 +61,7 @@ func (t *scalarTable) timestamp() int64 {
 }
 
 func newScalarTable(inputSampleIDs []uint64, outputs []*model.Series, aggregation parser.ItemType) (*scalarTable, error) {
-	accumulators := make([]extmath.Accumulator, len(outputs))
+	accumulators := make([]compute.Accumulator, len(outputs))
 	for i := range accumulators {
 		acc, err := newScalarAccumulator(aggregation)
 		if err != nil {
@@ -83,10 +82,10 @@ func (t *scalarTable) aggregate(vector model.StepVector) error {
 
 	var err error
 	for i := range vector.Samples {
-		err = extwarnings.Coalesce(err, t.addSample(vector.SampleIDs[i], vector.Samples[i]))
+		err = warnings.Coalesce(err, t.addSample(vector.SampleIDs[i], vector.Samples[i]))
 	}
 	for i := range vector.Histograms {
-		err = extwarnings.Coalesce(err, t.addHistogram(vector.HistogramIDs[i], vector.Histograms[i]))
+		err = warnings.Coalesce(err, t.addHistogram(vector.HistogramIDs[i], vector.Histograms[i]))
 	}
 	return err
 }
@@ -116,16 +115,16 @@ func (t *scalarTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 	result := pool.GetStepVector(t.ts)
 	for i, v := range t.outputs {
 		switch t.accumulators[i].ValueType() {
-		case extmath.NoValue:
+		case compute.NoValue:
 			continue
-		case extmath.SingleTypeValue:
+		case compute.SingleTypeValue:
 			f, h := t.accumulators[i].Value()
 			if h == nil {
 				result.AppendSample(pool, v.ID, f)
 			} else {
 				result.AppendHistogram(pool, v.ID, h)
 			}
-		case extmath.MixedTypeValue:
+		case compute.MixedTypeValue:
 			warnings.AddToContext(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}), ctx)
 		}
 	}
@@ -182,29 +181,29 @@ func addRatioSample(ratioLimit float64, series labels.Labels) bool {
 		(ratioLimit < 0 && sampleOffset >= (1.0+ratioLimit))
 }
 
-func newScalarAccumulator(expr parser.ItemType) (extmath.Accumulator, error) {
+func newScalarAccumulator(expr parser.ItemType) (compute.Accumulator, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
-		return extmath.NewSumAcc(), nil
+		return compute.NewSumAcc(), nil
 	case "max":
-		return extmath.NewMaxAcc(), nil
+		return compute.NewMaxAcc(), nil
 	case "min":
-		return extmath.NewMinAcc(), nil
+		return compute.NewMinAcc(), nil
 	case "count":
-		return extmath.NewCountAcc(), nil
+		return compute.NewCountAcc(), nil
 	case "avg":
-		return extmath.NewAvgAcc(), nil
+		return compute.NewAvgAcc(), nil
 	case "group":
-		return extmath.NewGroupAcc(), nil
+		return compute.NewGroupAcc(), nil
 	case "stddev":
-		return extmath.NewStdDevAcc(), nil
+		return compute.NewStdDevAcc(), nil
 	case "stdvar":
-		return extmath.NewStdVarAcc(), nil
+		return compute.NewStdVarAcc(), nil
 	case "quantile":
-		return extmath.NewQuantileAcc(), nil
+		return compute.NewQuantileAcc(), nil
 	case "histogram_avg":
-		return extmath.NewHistogramAvgAcc(), nil
+		return compute.NewHistogramAvgAcc(), nil
 	}
 
 	msg := fmt.Sprintf("unknown aggregation function %s", t)

@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/thanos-io/promql-engine/compute"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/execution/warnings"
-	"github.com/thanos-io/promql-engine/extmath"
+	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -21,7 +21,7 @@ import (
 
 type vectorTable struct {
 	ts          int64
-	accumulator extmath.VectorAccumulator
+	accumulator compute.VectorAccumulator
 }
 
 func newVectorizedTables(stepsBatch int, a parser.ItemType) ([]aggregateTable, error) {
@@ -37,7 +37,7 @@ func newVectorizedTables(stepsBatch int, a parser.ItemType) ([]aggregateTable, e
 	return tables, nil
 }
 
-func newVectorizedTable(a extmath.VectorAccumulator) *vectorTable {
+func newVectorizedTable(a compute.VectorAccumulator) *vectorTable {
 	return &vectorTable{
 		ts:          math.MinInt64,
 		accumulator: a,
@@ -56,16 +56,16 @@ func (t *vectorTable) aggregate(vector model.StepVector) error {
 func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) model.StepVector {
 	result := pool.GetStepVector(t.ts)
 	switch t.accumulator.ValueType() {
-	case extmath.NoValue:
+	case compute.NoValue:
 		return result
-	case extmath.SingleTypeValue:
+	case compute.SingleTypeValue:
 		v, h := t.accumulator.Value()
 		if h == nil {
 			result.AppendSample(pool, 0, v)
 		} else {
 			result.AppendHistogram(pool, 0, h)
 		}
-	case extmath.MixedTypeValue:
+	case compute.MixedTypeValue:
 		warnings.AddToContext(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}), ctx)
 	}
 	return result
@@ -76,21 +76,21 @@ func (t *vectorTable) reset(p float64) {
 	t.accumulator.Reset(p)
 }
 
-func newVectorAccumulator(expr parser.ItemType) (extmath.VectorAccumulator, error) {
+func newVectorAccumulator(expr parser.ItemType) (compute.VectorAccumulator, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
-		return extmath.NewSumAcc(), nil
+		return compute.NewSumAcc(), nil
 	case "max":
-		return extmath.NewMaxAcc(), nil
+		return compute.NewMaxAcc(), nil
 	case "min":
-		return extmath.NewMinAcc(), nil
+		return compute.NewMinAcc(), nil
 	case "count":
-		return extmath.NewCountAcc(), nil
+		return compute.NewCountAcc(), nil
 	case "avg":
-		return extmath.NewAvgAcc(), nil
+		return compute.NewAvgAcc(), nil
 	case "group":
-		return extmath.NewGroupAcc(), nil
+		return compute.NewGroupAcc(), nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)

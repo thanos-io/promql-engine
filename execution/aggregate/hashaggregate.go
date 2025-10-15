@@ -12,9 +12,8 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/execution/warnings"
-	"github.com/thanos-io/promql-engine/extwarnings"
 	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -178,7 +177,7 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 func (a *aggregate) aggregate(in []model.StepVector) error {
 	var err error
 	for i, vector := range in {
-		err = extwarnings.Coalesce(err, a.tables[i].aggregate(vector))
+		err = warnings.Coalesce(err, a.tables[i].aggregate(vector))
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
