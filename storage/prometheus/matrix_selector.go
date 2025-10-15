@@ -281,6 +281,10 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, false, false, o.selectRange, o.offset)
 	case "count_over_time":
 		return ringbuffer.NewCountOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "max_over_time":
+		return ringbuffer.NewMaxOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "min_over_time":
+		return ringbuffer.NewMinOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	}
 
 	if o.isExtFunction {

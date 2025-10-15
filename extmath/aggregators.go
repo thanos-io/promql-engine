@@ -153,6 +153,9 @@ func (c *MaxAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 
 func (c *MaxAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
+		if c.hasValue {
+			return annotations.NewHistogramIgnoredInAggregationInfo("max", posrange.PositionRange{})
+		}
 		return nil
 	}
 
@@ -213,6 +216,9 @@ func (c *MinAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 
 func (c *MinAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
+		if c.hasValue {
+			return annotations.NewHistogramIgnoredInAggregationInfo("min", posrange.PositionRange{})
+		}
 		return nil
 	}
 
