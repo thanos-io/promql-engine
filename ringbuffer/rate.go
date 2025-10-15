@@ -28,8 +28,8 @@ type RateBuffer struct {
 	// rateBuffer is the buffer passed to the rate function. This is a scratch buffer
 	// used to avoid allocating a new slice each time we need to calculate the rate.
 	rateBuffer []Sample
-	// last is the last sample in the current evaluation step.
-	last Sample
+	// lastSample is the lastSample sample in the current evaluation step.
+	lastSample Sample
 
 	currentMint int64
 	selectRange int64
@@ -80,7 +80,7 @@ func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bo
 		offset:       offset,
 		stepRanges:   stepRanges,
 		firstSamples: firstSamples,
-		last:         Sample{T: math.MinInt64},
+		lastSample:   Sample{T: math.MinInt64},
 		currentMint:  math.MaxInt64,
 	}
 }
@@ -89,37 +89,37 @@ func (r *RateBuffer) SampleCount() int {
 	return r.stepRanges[0].sampleCount
 }
 
-func (r *RateBuffer) MaxT() int64 { return r.last.T }
+func (r *RateBuffer) MaxT() int64 { return r.lastSample.T }
 
 func (r *RateBuffer) Push(t int64, v Value) {
 	// Detect resets and store the current and previous sample so that
 	// the rate is properly adjusted.
-	if r.last.T > r.currentMint && v.H != nil && r.last.V.H != nil {
-		if v.H.DetectReset(r.last.V.H) {
+	if r.lastSample.T > r.currentMint && v.H != nil && r.lastSample.V.H != nil {
+		if v.H.DetectReset(r.lastSample.V.H) {
 			r.resets = append(r.resets, Sample{
-				T: r.last.T,
-				V: Value{H: r.last.V.H.Copy()},
+				T: r.lastSample.T,
+				V: Value{H: r.lastSample.V.H.Copy()},
 			})
 			r.resets = append(r.resets, Sample{
 				T: t,
 				V: Value{H: v.H.Copy()},
 			})
 		}
-	} else if r.last.T > r.currentMint && r.last.V.F > v.F {
-		r.resets = append(r.resets, Sample{T: r.last.T, V: Value{F: r.last.V.F}})
+	} else if r.lastSample.T > r.currentMint && r.lastSample.V.F > v.F {
+		r.resets = append(r.resets, Sample{T: r.lastSample.T, V: Value{F: r.lastSample.V.F}})
 		r.resets = append(r.resets, Sample{T: t, V: Value{F: v.F}})
 	}
 
-	// Set the last sample for the current evaluation step.
-	r.last.T, r.last.V.F = t, v.F
+	// Set the lastSample sample for the current evaluation step.
+	r.lastSample.T, r.lastSample.V.F = t, v.F
 	if v.H != nil {
-		if r.last.V.H == nil {
-			r.last.V.H = v.H.Copy()
+		if r.lastSample.V.H == nil {
+			r.lastSample.V.H = v.H.Copy()
 		} else {
-			v.H.CopyTo(r.last.V.H)
+			v.H.CopyTo(r.lastSample.V.H)
 		}
 	} else {
-		r.last.V.H = nil
+		r.lastSample.V.H = nil
 	}
 
 	// Set the first sample for each evaluation step where the currently read sample is used.
@@ -157,29 +157,29 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 	}
 	r.resets = r.resets[dropResets:]
 
-	last := len(r.stepRanges) - 1
+	lastSample := len(r.stepRanges) - 1
 	var (
-		nextMint = r.stepRanges[last].mint + r.step
-		nextMaxt = r.stepRanges[last].maxt + r.step
+		nextMint = r.stepRanges[lastSample].mint + r.step
+		nextMaxt = r.stepRanges[lastSample].maxt + r.step
 	)
 	copy(r.stepRanges, r.stepRanges[1:])
-	r.stepRanges[last] = stepRange{mint: nextMint, maxt: nextMaxt}
+	r.stepRanges[lastSample] = stepRange{mint: nextMint, maxt: nextMaxt}
 
 	nextSample := r.firstSamples[0]
 	copy(r.firstSamples, r.firstSamples[1:])
-	r.firstSamples[last] = nextSample
-	r.firstSamples[last].T = math.MaxInt64
+	r.firstSamples[lastSample] = nextSample
+	r.firstSamples[lastSample].T = math.MaxInt64
 }
 
 func (r *RateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error) {
-	if r.firstSamples[0].T == math.MaxInt64 || r.firstSamples[0].T == r.last.T {
+	if r.firstSamples[0].T == math.MaxInt64 || r.firstSamples[0].T == r.lastSample.T {
 		return 0, nil, false, nil
 	}
 
 	r.rateBuffer = append(append(
 		append(r.rateBuffer[:0], r.firstSamples[0]),
 		r.resets...),
-		r.last,
+		r.lastSample,
 	)
 	r.rateBuffer = slices.CompactFunc(r.rateBuffer, func(s1 Sample, s2 Sample) bool { return s1.T == s2.T })
 	numSamples := r.stepRanges[0].numSamples

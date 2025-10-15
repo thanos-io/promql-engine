@@ -278,13 +278,14 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, true, false, o.selectRange, o.offset)
 	case "delta":
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, false, false, o.selectRange, o.offset)
+	case "count_over_time":
+		return ringbuffer.NewCountOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	}
 
 	if o.isExtFunction {
 		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
 	}
 	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call)
-
 }
 
 func (o *matrixSelector) String() string {
