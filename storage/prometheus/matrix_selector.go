@@ -35,7 +35,7 @@ type matrixScanner struct {
 	buffer           ringbuffer.Buffer
 	iterator         chunkenc.Iterator
 	lastSample       ringbuffer.Sample
-	metricAppearedTs *int64
+	metricAppearedTs int64
 }
 
 type matrixSelector struct {
@@ -238,11 +238,12 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				lbls, _ = extlabels.DropMetricName(lbls, b)
 			}
 			o.scanners[i] = matrixScanner{
-				labels:     lbls,
-				signature:  s.Signature,
-				iterator:   s.Iterator(nil),
-				lastSample: ringbuffer.Sample{T: math.MinInt64},
-				buffer:     o.newBuffer(ctx),
+				labels:           lbls,
+				signature:        s.Signature,
+				iterator:         s.Iterator(nil),
+				lastSample:       ringbuffer.Sample{T: math.MinInt64},
+				buffer:           o.newBuffer(ctx),
+				metricAppearedTs: math.MinInt64,
 			}
 			o.series[i] = lbls
 		}
@@ -358,9 +359,8 @@ func (m *matrixScanner) selectPoints(
 			if value.IsStaleNaN(v) {
 				continue
 			}
-			if m.metricAppearedTs == nil {
-				tCopy := t
-				m.metricAppearedTs = &tCopy
+			if m.metricAppearedTs == math.MinInt64 {
+				m.metricAppearedTs = t
 			}
 			if t > maxt {
 				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil

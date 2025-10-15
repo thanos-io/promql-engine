@@ -189,7 +189,7 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], nil)
+			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], math.MinInt64)
 			if err != nil {
 				return nil, err
 			}

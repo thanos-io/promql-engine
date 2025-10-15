@@ -16,7 +16,7 @@ type Buffer interface {
 	MaxT() int64
 	Push(t int64, v Value)
 	Reset(mint int64, evalt int64)
-	Eval(ctx context.Context, _, _ float64, _ *int64) (float64, *histogram.FloatHistogram, bool, error)
+	Eval(ctx context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error)
 	SampleCount() int
 }
 
@@ -124,7 +124,7 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	r.items = r.items[:keep]
 }
 
-func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64, metricAppearedTs *int64) (float64, *histogram.FloatHistogram, bool, error) {
+func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64, metricAppearedTs int64) (float64, *histogram.FloatHistogram, bool, error) {
 	return r.call(FunctionArgs{
 		ctx:              ctx,
 		Samples:          r.items,
