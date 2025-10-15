@@ -113,8 +113,14 @@ func (r *CountOverTimeBuffer) Reset(mint int64, evalt int64) {
 		nextMint = r.stepRanges[lastSample].mint + r.step
 		nextMaxt = r.stepRanges[lastSample].maxt + r.step
 	)
+
+	nextStepRange := r.stepRanges[0]
 	copy(r.stepRanges, r.stepRanges[1:])
-	r.stepRanges[lastSample] = stepRange{mint: nextMint, maxt: nextMaxt}
+	r.stepRanges[lastSample] = nextStepRange
+	r.stepRanges[lastSample].mint = nextMint
+	r.stepRanges[lastSample].maxt = nextMaxt
+	r.stepRanges[lastSample].sampleCount = 0
+	r.stepRanges[lastSample].numSamples = 0
 
 	copy(r.resultCounts, r.resultCounts[1:])
 	r.resultCounts[lastSample] = 0
