@@ -146,13 +146,20 @@ func (c *maxAcc) AddVector(ctx context.Context, vs []float64, hs []*histogram.Fl
 	}
 
 	fst, rem := vs[0], vs[1:]
-	if _, err := c.Add(fst, nil); err != nil {
+	warn, err := c.Add(fst, nil)
+	if err != nil {
 		return err
+	}
+	if warn != nil {
+		warnings.AddToContext(warn, ctx)
 	}
 	if len(rem) == 0 {
 		return nil
 	}
-	warn, err := c.Add(floats.Max(rem), nil)
+	warn, err = c.Add(floats.Max(rem), nil)
+	if err != nil {
+		return err
+	}
 	if warn != nil {
 		warnings.AddToContext(warn, ctx)
 	}
@@ -211,17 +218,25 @@ func (c *minAcc) AddVector(ctx context.Context, vs []float64, hs []*histogram.Fl
 	}
 
 	fst, rem := vs[0], vs[1:]
-	if _, err := c.Add(fst, nil); err != nil {
+	warn, err := c.Add(fst, nil)
+	if err != nil {
 		return err
+	}
+	if warn != nil {
+		warnings.AddToContext(warn, ctx)
 	}
 	if len(rem) == 0 {
 		return nil
 	}
-	warn, err := c.Add(floats.Min(rem), nil)
+
+	warn, err = c.Add(floats.Min(rem), nil)
+	if err != nil {
+		return err
+	}
 	if warn != nil {
 		warnings.AddToContext(warn, ctx)
 	}
-	return err
+	return nil
 }
 
 func (c *minAcc) Add(v float64, h *histogram.FloatHistogram) (warning, error) {
