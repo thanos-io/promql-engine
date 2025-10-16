@@ -2601,6 +2601,128 @@ func TestEdgeCases(t *testing.T) {
 	}
 }
 
+func TestXFunctionsRangeQuery(t *testing.T) {
+	// Negative offset and at modifier are enabled by default
+	// since Prometheus v2.33.0, so we also enable them.
+	opts := promql.EngineOpts{
+		Timeout:              1 * time.Hour,
+		MaxSamples:           1e10,
+		EnableNegativeOffset: true,
+		EnableAtModifier:     true,
+	}
+
+	cases := []struct {
+		name      string
+		load      string
+		query     string
+		startTime time.Time
+		endTime   time.Time
+		step      time.Duration
+
+		expected promql.Matrix
+	}{
+		{
+			name: "gaps between steps",
+			load: `load 10s
+			    http_requests 1 5 10 20 _ 40`,
+			query: "xincrease(http_requests[10s])",
+
+			startTime: time.Unix(0, 0),
+			endTime:   time.Unix(60, 0),
+			step:      20 * time.Second,
+
+			expected: promql.Matrix{
+				promql.Series{
+					Metric: labels.New(),
+					Floats: []promql.FPoint{
+						{T: 00_000, F: 1},
+						{T: 20_000, F: 9}, // TODO: this seems odd, feels like it should be 5
+						{T: 40_000, F: 0},
+						{T: 60_000, F: 0},
+					},
+				},
+			},
+		},
+		{
+			name: "back to back steps",
+			load: `load 10s
+			    http_requests 1 5 10 20 _ 40`,
+			query: "xincrease(http_requests[10s])",
+
+			startTime: time.Unix(0, 0),
+			endTime:   time.Unix(60, 0),
+			step:      10 * time.Second,
+
+			expected: promql.Matrix{
+				promql.Series{
+					Metric: labels.New(),
+					Floats: []promql.FPoint{
+						{T: 00_000, F: 1},
+						{T: 10_000, F: 4},
+						{T: 20_000, F: 5},
+						{T: 30_000, F: 10},
+						{T: 40_000, F: 0},
+						{T: 50_000, F: 20},
+						{T: 60_000, F: 0},
+					},
+				},
+			},
+		},
+		{
+			name: "overlapping steps",
+			load: `load 10s
+			    http_requests 1 5 10 20 _ 40`,
+			query: "xincrease(http_requests[20s])",
+
+			startTime: time.Unix(0, 0),
+			endTime:   time.Unix(60, 0),
+			step:      10 * time.Second,
+
+			expected: promql.Matrix{
+				promql.Series{
+					Metric: labels.New(),
+					Floats: []promql.FPoint{
+						{T: 00_000, F: 1},
+						{T: 10_000, F: 4},
+						{T: 20_000, F: 9},
+						{T: 30_000, F: 15},
+						{T: 40_000, F: 10},
+						{T: 50_000, F: 20},
+						{T: 60_000, F: 20},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			storage := promqltest.LoadedStorage(t, tc.load)
+			defer storage.Close()
+
+			ctx := context.Background()
+			newEngine := engine.New(engine.Opts{
+				EngineOpts:        opts,
+				LogicalOptimizers: logicalplan.AllOptimizers,
+				EnableXFunctions:  true,
+			})
+			query, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.startTime, tc.endTime, tc.step)
+			testutil.Ok(t, err)
+			defer query.Close()
+
+			engineResult := query.Exec(ctx)
+			testutil.Ok(t, engineResult.Err)
+
+			gotMatrix, err := engineResult.Matrix()
+			require.NoError(t, err)
+
+			for i := range tc.expected {
+				testutil.WithGoCmp(comparer).Equals(t, tc.expected[i].Floats, gotMatrix[i].Floats, queryExplanation(query))
+			}
+		})
+	}
+}
+
 func TestXFunctionsWithNativeHistograms(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
 

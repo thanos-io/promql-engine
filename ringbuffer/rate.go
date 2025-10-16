@@ -192,6 +192,8 @@ func (r *RateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float64, 
 	return extrapolatedRate(ctx, r.rateBuffer, numSamples, r.isCounter, r.isRate, r.evalTs, r.selectRange, r.offset)
 }
 
+func (r *RateBuffer) ReadIntoLast(func(*Sample)) {}
+
 func querySteps(o query.Options) int64 {
 	// Instant evaluation is executed as a range evaluation with one step.
 	if o.Step.Milliseconds() == 0 {

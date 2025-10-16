@@ -18,9 +18,12 @@ type Buffer interface {
 	Reset(mint int64, evalt int64)
 	Eval(ctx context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error)
 	SampleCount() int
+
+	// to handle extlookback properly, only used by buffers that implement xincrease or xrate
+	ReadIntoLast(f func(*Sample))
 }
 
-func Empty(b Buffer) bool { return b.MaxT() != math.MinInt64 }
+func Empty(b Buffer) bool { return b.MaxT() == math.MinInt64 }
 
 type Value struct {
 	F float64
@@ -78,6 +81,11 @@ func (r *GenericRingBuffer) MaxT() int64 {
 		return math.MinInt64
 	}
 	return r.items[len(r.items)-1].T
+}
+
+// ReadIntoLast reads a sample into the last slot in the buffer, replacing the existing sample.
+func (r *GenericRingBuffer) ReadIntoLast(f func(*Sample)) {
+	f(&r.items[len(r.items)-1])
 }
 
 // Push adds a new sample to the buffer.

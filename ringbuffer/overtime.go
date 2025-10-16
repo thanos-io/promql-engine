@@ -131,6 +131,8 @@ func (r *CountOverTimeBuffer) Reset(mint int64, evalt int64) {
 	r.firstTimestamps[lastSample] = math.MaxInt64
 }
 
+func (r *CountOverTimeBuffer) ReadIntoLast(func(*Sample)) {}
+
 func (r *CountOverTimeBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error) {
 	if r.firstTimestamps[0] == math.MaxInt64 {
 		return 0, nil, false, nil
