@@ -135,8 +135,8 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		a.tables[i].reset(p)
 	}
 	if a.lastBatch != nil {
-		if err := a.aggregate(ctx, a.lastBatch); err != nil {
-			return nil, err
+		if warn := a.aggregate(a.lastBatch); warn != nil {
+			warnings.AddToContext(warn, ctx)
 		}
 		a.lastBatch = nil
 	}
@@ -151,8 +151,8 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 		// Keep aggregating samples as long as timestamps of batches are equal.
 		currentTs := a.tables[0].timestamp()
 		if currentTs == math.MinInt64 || next[0].T == currentTs {
-			if err := a.aggregate(ctx, next); err != nil {
-				return nil, err
+			if warn := a.aggregate(next); warn != nil {
+				warnings.AddToContext(warn, ctx)
 			}
 			continue
 		}
@@ -174,15 +174,14 @@ func (a *aggregate) Next(ctx context.Context) ([]model.StepVector, error) {
 	return result, nil
 }
 
-func (a *aggregate) aggregate(ctx context.Context, in []model.StepVector) error {
+func (a *aggregate) aggregate(in []model.StepVector) error {
+	var warn warning
 	for i, vector := range in {
-		if err := a.tables[i].aggregate(ctx, vector); err != nil {
-			return err
-		}
+		warn = coalesceWarn(warn, a.tables[i].aggregate(vector))
 		a.next.GetPool().PutStepVector(vector)
 	}
 	a.next.GetPool().PutVectors(in)
-	return nil
+	return warn
 }
 
 func (a *aggregate) initializeTables(ctx context.Context) error {
