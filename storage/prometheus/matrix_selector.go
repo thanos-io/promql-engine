@@ -28,6 +28,8 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+const notSeenSentinel int64 = math.MinInt64
+
 type matrixScanner struct {
 	labels    labels.Labels
 	signature uint64
@@ -241,9 +243,9 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				labels:           lbls,
 				signature:        s.Signature,
 				iterator:         s.Iterator(nil),
-				lastSample:       ringbuffer.Sample{T: math.MinInt64},
+				lastSample:       ringbuffer.Sample{T: notSeenSentinel},
 				buffer:           o.newBuffer(ctx),
-				metricAppearedTs: math.MinInt64,
+				metricAppearedTs: notSeenSentinel,
 			}
 			o.series[i] = lbls
 		}
@@ -322,16 +324,15 @@ func (m *matrixScanner) selectPoints(
 	mint = maxInt64(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T > mint {
 		m.buffer.Push(m.lastSample.T, m.lastSample.V)
-		m.lastSample.T = math.MinInt64
+		m.lastSample.T = notSeenSentinel
 		mint = maxInt64(mint, m.buffer.MaxT()+1)
 	}
 
 	var (
-		// The sample that we add for x-functions, -1 is a canary value for the situation
+		// The sample that we add for x-functions, notSeenSentinel is a canary value for the situation
 		// where we have no sample in the extended lookback delta
-		extSample = ringbuffer.Sample{T: -1}
+		extSample = ringbuffer.Sample{T: notSeenSentinel}
 	)
-
 	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
@@ -360,7 +361,7 @@ func (m *matrixScanner) selectPoints(
 			if value.IsStaleNaN(v) {
 				continue
 			}
-			if m.metricAppearedTs == math.MinInt64 {
+			if m.metricAppearedTs == notSeenSentinel {
 				m.metricAppearedTs = t
 			}
 			if t > maxt {
@@ -368,9 +369,9 @@ func (m *matrixScanner) selectPoints(
 				return nil
 			}
 			if t > mint {
-				if extSample.T != -1 && isExtFunction {
+				if extSample.T != notSeenSentinel && isExtFunction {
 					m.buffer.Push(extSample.T, ringbuffer.Value{F: extSample.V.F})
-					extSample.T = -1
+					extSample.T = notSeenSentinel
 				}
 				m.buffer.Push(t, ringbuffer.Value{F: v})
 				continue
