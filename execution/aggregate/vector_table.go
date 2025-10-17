@@ -48,9 +48,9 @@ func (t *vectorTable) timestamp() int64 {
 	return t.ts
 }
 
-func (t *vectorTable) aggregate(ctx context.Context, vector model.StepVector) error {
+func (t *vectorTable) aggregate(vector model.StepVector) warning {
 	t.ts = vector.T
-	return t.accumulator.AddVector(ctx, vector.Samples, vector.Histograms)
+	return t.accumulator.AddVector(vector.Samples, vector.Histograms)
 }
 
 func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) model.StepVector {
@@ -96,7 +96,7 @@ func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
 }
 
-func histogramSum(ctx context.Context, current *histogram.FloatHistogram, histograms []*histogram.FloatHistogram) (*histogram.FloatHistogram, error) {
+func histogramSum(current *histogram.FloatHistogram, histograms []*histogram.FloatHistogram) (*histogram.FloatHistogram, warning) {
 	if len(histograms) == 0 {
 		return current, nil
 	}
@@ -117,12 +117,10 @@ func histogramSum(ctx context.Context, current *histogram.FloatHistogram, histog
 			histSum, err = histSum.Add(histograms[i])
 			if err != nil {
 				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-					warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning("", posrange.PositionRange{}), ctx)
-					return nil, nil
+					return nil, annotations.MixedExponentialCustomHistogramsWarning
 				}
 				if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-					warnings.AddToContext(annotations.NewIncompatibleCustomBucketsHistogramsWarning("", posrange.PositionRange{}), ctx)
-					return nil, nil
+					return nil, annotations.IncompatibleCustomBucketsHistogramsWarning
 				}
 				return nil, err
 			}
@@ -130,12 +128,10 @@ func histogramSum(ctx context.Context, current *histogram.FloatHistogram, histog
 			t := histograms[i].Copy()
 			if histSum, err = t.Add(histSum); err != nil {
 				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-					warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning("", posrange.PositionRange{}), ctx)
-					return nil, nil
+					return nil, annotations.NewMixedExponentialCustomHistogramsWarning("", posrange.PositionRange{})
 				}
 				if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-					warnings.AddToContext(annotations.NewIncompatibleCustomBucketsHistogramsWarning("", posrange.PositionRange{}), ctx)
-					return nil, nil
+					return nil, annotations.NewIncompatibleCustomBucketsHistogramsWarning("", posrange.PositionRange{})
 				}
 				return nil, err
 			}
