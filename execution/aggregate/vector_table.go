@@ -11,9 +11,9 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/extmath"
 
 	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -21,7 +21,7 @@ import (
 
 type vectorTable struct {
 	ts          int64
-	accumulator vectorAccumulator
+	accumulator extmath.VectorAccumulator
 }
 
 func newVectorizedTables(stepsBatch int, a parser.ItemType) ([]aggregateTable, error) {
@@ -37,7 +37,7 @@ func newVectorizedTables(stepsBatch int, a parser.ItemType) ([]aggregateTable, e
 	return tables, nil
 }
 
-func newVectorizedTable(a vectorAccumulator) *vectorTable {
+func newVectorizedTable(a extmath.VectorAccumulator) *vectorTable {
 	return &vectorTable{
 		ts:          math.MinInt64,
 		accumulator: a,
@@ -48,7 +48,7 @@ func (t *vectorTable) timestamp() int64 {
 	return t.ts
 }
 
-func (t *vectorTable) aggregate(vector model.StepVector) warning {
+func (t *vectorTable) aggregate(vector model.StepVector) error {
 	t.ts = vector.T
 	return t.accumulator.AddVector(vector.Samples, vector.Histograms)
 }
@@ -56,16 +56,16 @@ func (t *vectorTable) aggregate(vector model.StepVector) warning {
 func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) model.StepVector {
 	result := pool.GetStepVector(t.ts)
 	switch t.accumulator.ValueType() {
-	case NoValue:
+	case extmath.NoValue:
 		return result
-	case SingleTypeValue:
+	case extmath.SingleTypeValue:
 		v, h := t.accumulator.Value()
 		if h == nil {
 			result.AppendSample(pool, 0, v)
 		} else {
 			result.AppendHistogram(pool, 0, h)
 		}
-	case MixedTypeValue:
+	case extmath.MixedTypeValue:
 		warnings.AddToContext(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}), ctx)
 	}
 	return result
@@ -76,66 +76,22 @@ func (t *vectorTable) reset(p float64) {
 	t.accumulator.Reset(p)
 }
 
-func newVectorAccumulator(expr parser.ItemType) (vectorAccumulator, error) {
+func newVectorAccumulator(expr parser.ItemType) (extmath.VectorAccumulator, error) {
 	t := parser.ItemTypeStr[expr]
 	switch t {
 	case "sum":
-		return newSumAcc(), nil
+		return extmath.NewSumAcc(), nil
 	case "max":
-		return newMaxAcc(), nil
+		return extmath.NewMaxAcc(), nil
 	case "min":
-		return newMinAcc(), nil
+		return extmath.NewMinAcc(), nil
 	case "count":
-		return newCountAcc(), nil
+		return extmath.NewCountAcc(), nil
 	case "avg":
-		return newAvgAcc(), nil
+		return extmath.NewAvgAcc(), nil
 	case "group":
-		return newGroupAcc(), nil
+		return extmath.NewGroupAcc(), nil
 	}
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
-}
-
-func histogramSum(current *histogram.FloatHistogram, histograms []*histogram.FloatHistogram) (*histogram.FloatHistogram, warning) {
-	if len(histograms) == 0 {
-		return current, nil
-	}
-	if current == nil && len(histograms) == 1 {
-		return histograms[0].Copy(), nil
-	}
-	var histSum *histogram.FloatHistogram
-	if current != nil {
-		histSum = current.Copy()
-	} else {
-		histSum = histograms[0].Copy()
-		histograms = histograms[1:]
-	}
-
-	var err error
-	for i := range histograms {
-		if histograms[i].Schema >= histSum.Schema {
-			histSum, err = histSum.Add(histograms[i])
-			if err != nil {
-				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-					return nil, annotations.MixedExponentialCustomHistogramsWarning
-				}
-				if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-					return nil, annotations.IncompatibleCustomBucketsHistogramsWarning
-				}
-				return nil, err
-			}
-		} else {
-			t := histograms[i].Copy()
-			if histSum, err = t.Add(histSum); err != nil {
-				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-					return nil, annotations.NewMixedExponentialCustomHistogramsWarning("", posrange.PositionRange{})
-				}
-				if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-					return nil, annotations.NewIncompatibleCustomBucketsHistogramsWarning("", posrange.PositionRange{})
-				}
-				return nil, err
-			}
-		}
-	}
-	return histSum, nil
 }
