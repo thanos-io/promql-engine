@@ -8,15 +8,14 @@ import (
 	"math"
 	"sort"
 
-	"github.com/thanos-io/promql-engine/execution/aggregate"
+	"github.com/thanos-io/promql-engine/compute"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/execution/warnings"
+	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
-	"gonum.org/v1/gonum/stat"
 )
 
 type SamplesBuffer GenericRingBuffer
@@ -289,7 +288,7 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(floats) == 0 {
 			return 0, nil, false, nil
 		}
-		return aggregate.Quantile(f.ScalarPoint, floats), nil, true, nil
+		return compute.Quantile(f.ScalarPoint, floats), nil, true, nil
 	},
 	"changes": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
@@ -742,14 +741,14 @@ func madOverTime(ctx context.Context, points []Sample) (float64, bool) {
 	if len(values) == 0 {
 		return 0, false
 	}
-	median := stat.Quantile(0.5, stat.LinInterp, values, nil)
+	median := compute.Quantile(0.5, values)
 
 	for i, f := range values {
 		values[i] = math.Abs(f - median)
 	}
 	sort.Float64s(values)
 
-	return stat.Quantile(0.5, stat.LinInterp, values, nil), true
+	return compute.Quantile(0.5, values), true
 }
 
 func maxOverTime(ctx context.Context, points []Sample) (float64, int64, bool) {
@@ -843,7 +842,7 @@ func avgOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 		}
 		count = float64(i + 2)
 		if !incrementalMean {
-			newSum, newC := aggregate.KahanSumInc(p.V.F, sum, kahanC)
+			newSum, newC := compute.KahanSumInc(p.V.F, sum, kahanC)
 			// Perform regular mean calculation as long as
 			// the sum doesn't overflow.
 			if !math.IsInf(newSum, 0) {
@@ -857,7 +856,7 @@ func avgOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 			kahanC /= count - 1
 		}
 		q := (count - 1) / count
-		mean, kahanC = aggregate.KahanSumInc(p.V.F/count, q*mean, q*kahanC)
+		mean, kahanC = compute.KahanSumInc(p.V.F/count, q*mean, q*kahanC)
 	}
 	if incrementalMean {
 		return mean + kahanC, nil, true, nil
@@ -888,7 +887,7 @@ func sumOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 			warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
 			return 0, nil, false, nil
 		}
-		res, c = aggregate.KahanSumInc(v.V.F, res, c)
+		res, c = compute.KahanSumInc(v.V.F, res, c)
 	}
 	if math.IsInf(res, 0) {
 		return res, nil, true, nil
@@ -912,8 +911,8 @@ func stddevOverTime(ctx context.Context, points []Sample) (float64, bool) {
 		}
 		count++
 		delta := v.V.F - (mean + cMean)
-		mean, cMean = aggregate.KahanSumInc(delta/count, mean, cMean)
-		aux, cAux = aggregate.KahanSumInc(delta*(v.V.F-(mean+cMean)), aux, cAux)
+		mean, cMean = compute.KahanSumInc(delta/count, mean, cMean)
+		aux, cAux = compute.KahanSumInc(delta*(v.V.F-(mean+cMean)), aux, cAux)
 	}
 
 	if !foundFloat {
@@ -937,8 +936,8 @@ func stdvarOverTime(ctx context.Context, points []Sample) (float64, bool) {
 		}
 		count++
 		delta := v.V.F - (mean + cMean)
-		mean, cMean = aggregate.KahanSumInc(delta/count, mean, cMean)
-		aux, cAux = aggregate.KahanSumInc(delta*(v.V.F-(mean+cMean)), aux, cAux)
+		mean, cMean = compute.KahanSumInc(delta/count, mean, cMean)
+		aux, cAux = compute.KahanSumInc(delta*(v.V.F-(mean+cMean)), aux, cAux)
 	}
 
 	if !foundFloat {
@@ -1159,10 +1158,10 @@ func linearRegression(Samples []Sample, interceptTime int64) (slope, intercept f
 		}
 		n += 1.0
 		x := float64(sample.T-interceptTime) / 1e3
-		sumX, cX = aggregate.KahanSumInc(x, sumX, cX)
-		sumY, cY = aggregate.KahanSumInc(sample.V.F, sumY, cY)
-		sumXY, cXY = aggregate.KahanSumInc(x*sample.V.F, sumXY, cXY)
-		sumX2, cX2 = aggregate.KahanSumInc(x*x, sumX2, cX2)
+		sumX, cX = compute.KahanSumInc(x, sumX, cX)
+		sumY, cY = compute.KahanSumInc(sample.V.F, sumY, cY)
+		sumXY, cXY = compute.KahanSumInc(x*sample.V.F, sumXY, cXY)
+		sumX2, cX2 = compute.KahanSumInc(x*x, sumX2, cX2)
 	}
 	if constY {
 		if math.IsInf(initY, 0) {
