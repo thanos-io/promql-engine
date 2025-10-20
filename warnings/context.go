@@ -5,6 +5,7 @@ package warnings
 
 import (
 	"context"
+	"maps"
 	"sync"
 
 	"github.com/prometheus/prometheus/util/annotations"
@@ -62,5 +63,7 @@ func MergeToContext(annos annotations.Annotations, ctx context.Context) {
 }
 
 func FromContext(ctx context.Context) annotations.Annotations {
-	return ctx.Value(key).(*warnings).get()
+	warns := ctx.Value(key).(*warnings).get()
+
+	return maps.Clone(warns)
 }
