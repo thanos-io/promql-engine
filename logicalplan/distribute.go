@@ -181,8 +181,15 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 	}
 	minEngineOverlap := labelRanges.minOverlap()
 
-	// Preprocess rewrite distributable averages as sum/count
 	var warns = annotations.New()
+	// TODO(fpetkovski): Consider changing TraverseBottomUp to pass in a list of parents in the transform function.
+	parents := make(map[*Node]*Node)
+	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
+		parents[current] = parent
+		return false
+	})
+
+	// Preprocess rewrite distributable averages as sum/count
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		if !(isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(current)) {
 			return true
@@ -213,12 +220,6 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		return !(isDistributive(parent, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(parent))
 	})
 
-	// TODO(fpetkovski): Consider changing TraverseBottomUp to pass in a list of parents in the transform function.
-	parents := make(map[*Node]*Node)
-	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
-		parents[current] = parent
-		return false
-	})
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) {
@@ -257,6 +258,22 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		*current = m.distributeQuery(current, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
 		return true
 	})
+
+	// HACK: Postprocess rewrite all "Selectors" that we missed to remote queries as base case
+	stop := false
+	Traverse(&plan, func(current *Node) {
+		if stop {
+			return
+		}
+		switch (*current).(type) {
+		case *RemoteExecution:
+			// No need to distribute below a remote execution
+			stop = true
+		case *VectorSelector, *MatrixSelector:
+			*current = m.distributeQuery(current, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
+		}
+	})
+
 	return plan, *warns
 }
 
@@ -532,7 +549,7 @@ func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string
 
 	switch e := (*expr).(type) {
 	case Deduplicate, RemoteExecution:
-		return false
+		return true
 	case *Binary:
 		if isBinaryExpressionWithOneScalarSide(e) {
 			return true
