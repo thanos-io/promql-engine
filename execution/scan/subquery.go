@@ -274,7 +274,7 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		for i, s := range series {
 			lbls := s
 			if o.funcExpr.Func.Name != "last_over_time" {
-				lbls, _ = extlabels.DropMetricName(s, b)
+				lbls = extlabels.DropReserved(s, b)
 			}
 			o.series[i] = lbls
 		}

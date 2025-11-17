@@ -10,6 +10,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
+	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
@@ -555,6 +556,8 @@ func (o *vectorOperator) resultMetric(b *labels.Builder, highCard, lowCard label
 
 	if shouldDropMetricName(o.opType, o.returnBool) {
 		b.Del(labels.MetricName)
+		b.Del(extlabels.MetricType)
+		b.Del(extlabels.MetricUnit)
 	}
 
 	if o.matching.Card == parser.CardOneToOne {
@@ -573,6 +576,8 @@ func (o *vectorOperator) resultMetric(b *labels.Builder, highCard, lowCard label
 	}
 	if o.returnBool {
 		b.Del(labels.MetricName)
+		b.Del(extlabels.MetricType)
+		b.Del(extlabels.MetricUnit)
 	}
 	return b.Labels()
 }
