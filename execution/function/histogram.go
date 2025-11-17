@@ -306,7 +306,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 		// We check for duplicate series after dropped labels when
 		// showing the result of the query. Series that are equal after
 		// dropping name should not hash to the same bucket here.
-		lbls, _ = extlabels.DropMetricName(lbls, b)
+		lbls = extlabels.DropReserved(lbls, b)
 
 		seriesHash := hasher.Sum64()
 		seriesID, ok := seriesHashes[seriesHash]

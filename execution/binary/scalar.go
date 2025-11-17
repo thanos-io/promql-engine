@@ -147,12 +147,12 @@ func (o *scalarOperator) loadSeries(ctx context.Context) error {
 	}
 
 	series := make([]labels.Labels, len(vectorSeries))
-	b := labels.ScratchBuilder{}
+	var b labels.ScratchBuilder
 	for i := range vectorSeries {
 		if !vectorSeries[i].IsEmpty() {
 			lbls := vectorSeries[i]
 			if shouldDropMetricName(o.opType, o.returnBool) {
-				lbls, _ = extlabels.DropMetricName(lbls, b)
+				lbls = extlabels.DropReserved(lbls, b)
 			}
 			series[i] = lbls
 		} else {

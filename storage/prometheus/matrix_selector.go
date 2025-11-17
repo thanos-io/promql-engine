@@ -226,7 +226,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
-		b := labels.ScratchBuilder{}
+		var b labels.ScratchBuilder
 
 		for i, s := range series {
 			lbls := s.Labels()
@@ -236,7 +236,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				// we have to copy it here.
 				// TODO(GiedriusS): could we identify somehow whether labels.Labels
 				// is reused between Select() calls?
-				lbls, _ = extlabels.DropMetricName(lbls, b)
+				lbls = extlabels.DropReserved(lbls, b)
 			}
 			o.scanners[i] = matrixScanner{
 				labels:           lbls,
