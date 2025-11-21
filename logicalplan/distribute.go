@@ -31,18 +31,18 @@ type timeRange struct {
 
 type timeRanges []timeRange
 
-// minOverlap returns the smallest overlap between consecutive time ranges.
-func (trs timeRanges) minOverlap() time.Duration {
+// minOverlap returns the smallest overlap between consecutive time ranges that overlap the interval [mint, maxt].
+func (trs timeRanges) minOverlap(mint, maxt int64) time.Duration {
 	var minEngineOverlap time.Duration = math.MaxInt64
 	if len(trs) == 1 {
 		return minEngineOverlap
 	}
 
 	for i := 1; i < len(trs); i++ {
-		overlap := trs[i-1].end.Sub(trs[i].start)
-		if overlap < minEngineOverlap {
-			minEngineOverlap = overlap
+		if trs[i].end.UnixMilli() < mint || trs[i].start.UnixMilli() > maxt {
+			continue
 		}
+		minEngineOverlap = min(minEngineOverlap, trs[i-1].end.Sub(trs[i].start))
 	}
 	return minEngineOverlap
 }
@@ -53,14 +53,11 @@ func (lrs labelSetRanges) addRange(key string, tr timeRange) {
 	lrs[key] = append(lrs[key], tr)
 }
 
-// minOverlap returns the smallest overlap between all label set ranges.
-func (lrs labelSetRanges) minOverlap() time.Duration {
+// minOverlap returns the smallest overlap between all label set ranges that overlap the interval [mint, maxt].
+func (lrs labelSetRanges) minOverlap(mint, maxt int64) time.Duration {
 	var minLabelsetOverlap time.Duration = math.MaxInt64
 	for _, lr := range lrs {
-		minRangeOverlap := lr.minOverlap()
-		if minRangeOverlap < minLabelsetOverlap {
-			minLabelsetOverlap = minRangeOverlap
-		}
+		minLabelsetOverlap = min(minLabelsetOverlap, lr.minOverlap(mint, maxt))
 	}
 
 	return minLabelsetOverlap
@@ -179,7 +176,6 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 			})
 		}
 	}
-	minEngineOverlap := labelRanges.minOverlap()
 
 	// Preprocess rewrite distributable averages as sum/count
 	var warns = annotations.New()
@@ -234,7 +230,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 			}
 
 			remoteAggregation := newRemoteAggregation(aggr, engines)
-			subQueries := m.distributeQuery(&remoteAggregation, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
+			subQueries := m.distributeQuery(&remoteAggregation, engines, m.subqueryOpts(parents, current, opts), labelRanges)
 			*current = &Aggregation{
 				Op:       localAggregation,
 				Expr:     subQueries,
@@ -254,7 +250,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 			return false
 		}
 
-		*current = m.distributeQuery(current, engines, m.subqueryOpts(parents, current, opts), minEngineOverlap)
+		*current = m.distributeQuery(current, engines, m.subqueryOpts(parents, current, opts), labelRanges)
 		return true
 	})
 	return plan, *warns
@@ -310,8 +306,10 @@ func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngi
 // distributeQuery takes a PromQL expression in the form of *parser.Expr and a set of remote engines.
 // For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
-func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, opts *query.Options, allowedStartOffset time.Duration) Node {
+func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, opts *query.Options, labelRanges labelSetRanges) Node {
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
+	allowedStartOffset := labelRanges.minOverlap(opts.Start.UnixMilli()-startOffset.Milliseconds(), opts.End.UnixMilli())
+
 	if allowedStartOffset < startOffset {
 		return *expr
 	}
