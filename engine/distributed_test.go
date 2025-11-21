@@ -326,10 +326,10 @@ func TestDistributedAggregations(t *testing.T) {
 							}
 
 							t.Run("range", func(t *testing.T) {
-								if query.rangeStart == (time.Time{}) {
+								if query.rangeStart.IsZero() {
 									query.rangeStart = rangeStart
 								}
-								if test.rangeEnd == (time.Time{}) {
+								if test.rangeEnd.IsZero() {
 									test.rangeEnd = rangeEnd
 								}
 								distEngine := engine.NewDistributedEngine(opts)
