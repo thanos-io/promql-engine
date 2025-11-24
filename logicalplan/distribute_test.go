@@ -502,6 +502,22 @@ func TestDistributedExecutionWithLongSelectorRanges(t *testing.T) {
 		secondEngineOpts engineOpts
 	}{
 		{
+			name: "sum over 5m with non overlapping engine but second engine is not intersecting query range",
+			firstEngineOpts: engineOpts{
+				minTime: queryEnd.Add(sixHours),
+				maxTime: queryEnd.Add(eightHours),
+			},
+			secondEngineOpts: engineOpts{
+				minTime: queryStart,
+				maxTime: queryEnd,
+			},
+			expr: `sum_over_time(metric[5m])`,
+			expected: `
+dedup(
+  remote(sum_over_time(metric[5m]))
+)`,
+		},
+		{
 			name: "sum over 5m adds a 5 minute offset to latest engine",
 			firstEngineOpts: engineOpts{
 				minTime: queryStart,
