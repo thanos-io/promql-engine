@@ -331,7 +331,11 @@ func (m *matrixScanner) selectPoints(
 	}
 
 	appendedPointBeforeMint := !ringbuffer.Empty(m.buffer)
-	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
+
+	var (
+		valType chunkenc.ValueType
+	)
+	for valType = m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			if isExtFunction {
@@ -382,5 +386,8 @@ func (m *matrixScanner) selectPoints(
 			}
 		}
 	}
-	return m.iterator.Err()
+	if valType == chunkenc.ValNone {
+		return m.iterator.Err()
+	}
+	return nil
 }
