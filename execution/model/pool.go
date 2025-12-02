@@ -76,6 +76,22 @@ func (p *VectorPool) getHistogramBuffers() ([]uint64, []*histogram.FloatHistogra
 }
 
 func (p *VectorPool) PutStepVector(v StepVector) {
+	// Track samples being removed when vector is returned to pool
+	if v.tracker != nil {
+		samplesRemoved := len(v.Samples)
+		if samplesRemoved > 0 {
+			v.tracker.Remove(samplesRemoved)
+		}
+
+		// Track histograms being removed
+		for _, h := range v.Histograms {
+			if h != nil {
+				count := len(h.PositiveBuckets) + len(h.NegativeBuckets) + 2
+				v.tracker.Remove(count)
+			}
+		}
+	}
+
 	if v.SampleIDs != nil {
 		v.SampleIDs = v.SampleIDs[:0]
 		p.sampleIDs.Put(&v.SampleIDs)

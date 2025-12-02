@@ -18,6 +18,8 @@ type Options struct {
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
 	DecodingConcurrency      int
+	MaxSamples               int            // Maximum samples allowed in query execution
+	SampleTracker            *SampleTracker // Tracks current samples in memory (internal)
 }
 
 func (o *Options) NumSteps() int {
