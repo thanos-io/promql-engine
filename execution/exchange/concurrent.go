@@ -119,6 +119,15 @@ func (c *concurrencyOperator) Next(ctx context.Context, buf []model.StepVector) 
 
 func (c *concurrencyOperator) pull(ctx context.Context) {
 	defer close(c.buffer)
+	defer func() {
+		if r := recover(); r != nil {
+			if err, ok := r.(error); ok {
+				c.buffer <- maybeStepVector{err: err}
+			} else {
+				c.buffer <- maybeStepVector{err: fmt.Errorf("%v", r)}
+			}
+		}
+	}()
 
 	for {
 		select {
