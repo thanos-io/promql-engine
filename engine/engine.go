@@ -81,6 +81,10 @@ type Opts struct {
 	// This check can produce false positives when querying time-series data which does not conform to the Prometheus data model,
 	// and can be disabled if it leads to false positives.
 	DisableDuplicateLabelChecks bool
+
+	// MaxSamples limits the maximum number of samples that can be in memory during query execution.
+	// 0 means no limit.
+	MaxSamples int
 }
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
@@ -98,6 +102,9 @@ type QueryOpts struct {
 
 	// LogicalOptimizers can be used to override the LogicalOptimizers engine setting.
 	LogicalOptimizers []logicalplan.Optimizer
+
+	// MaxSamples can be used to override the MaxSamples engine setting.
+	MaxSamples int
 }
 
 func (opts QueryOpts) LookbackDelta() time.Duration { return opts.LookbackDeltaParam }
@@ -198,6 +205,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		},
 		decodingConcurrency: decodingConcurrency,
 		selectorBatchSize:   selectorBatchSize,
+		maxSamples:          opts.MaxSamples,
 	}
 }
 
@@ -227,6 +235,7 @@ type Engine struct {
 	selectorBatchSize        int64
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
+	maxSamples               int
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -444,7 +453,14 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
+		MaxSamples:               e.maxSamples,
 	}
+
+	// Initialize SampleTracker if MaxSamples is set
+	if res.MaxSamples > 0 {
+		res.SampleTracker = query.NewSampleTracker(res.MaxSamples)
+	}
+
 	if opts == nil {
 		return res
 	}
@@ -458,6 +474,12 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 
 	if opts.DecodingConcurrency != 0 {
 		res.DecodingConcurrency = opts.DecodingConcurrency
+	}
+
+	// Allow per-query override of MaxSamples
+	if opts.MaxSamples > 0 {
+		res.MaxSamples = opts.MaxSamples
+		res.SampleTracker = query.NewSampleTracker(res.MaxSamples)
 	}
 
 	return res
@@ -735,5 +757,10 @@ func recoverEngine(logger *slog.Logger, plan logicalplan.Plan, errp *error) {
 
 		logger.Error("runtime panic in engine", "expr", plan.Root().String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
+	case error:
+		// Handle regular errors (like maxSamples exceeded)
+		*errp = err
+	default:
+		*errp = errors.Newf("unexpected panic: %v", e)
 	}
 }
