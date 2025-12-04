@@ -77,10 +77,9 @@ type logicalVectorSelector struct {
 	*logicalplan.VectorSelector
 }
 
-func (c logicalVectorSelector) MakeExecutionOperator(_ context.Context, vectors *model.VectorPool, opts *query.Options, _ storage.SelectHints) (model.VectorOperator, error) {
+func (c logicalVectorSelector) MakeExecutionOperator(_ context.Context, opts *query.Options, _ storage.SelectHints) (model.VectorOperator, error) {
 	oper := &vectorSelectorOperator{
 		stepsBatch: opts.StepsBatch,
-		vectors:    vectors,
 
 		mint:        opts.Start.UnixMilli(),
 		maxt:        opts.End.UnixMilli(),
@@ -97,7 +96,6 @@ func (c vectorSelectorOperator) String() string {
 
 type vectorSelectorOperator struct {
 	stepsBatch int
-	vectors    *model.VectorPool
 
 	mint        int64
 	maxt        int64
@@ -105,19 +103,20 @@ type vectorSelectorOperator struct {
 	currentStep int64
 }
 
-func (c *vectorSelectorOperator) Next(ctx context.Context) ([]model.StepVector, error) {
+func (c *vectorSelectorOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
 	if c.currentStep > c.maxt {
-		return nil, nil
+		return 0, nil
 	}
-	vectors := c.vectors.GetVectorBatch()
-	for i := 0; i < c.stepsBatch && c.currentStep <= c.maxt; i++ {
-		vector := c.vectors.GetStepVector(c.currentStep)
-		vector.AppendSample(c.vectors, 1, 7)
-		vector.AppendSample(c.vectors, 2, 7)
-		vectors = append(vectors, vector)
+
+	n := 0
+	for i := 0; i < c.stepsBatch && c.currentStep <= c.maxt && n < len(buf); i++ {
+		buf[n].Reset(c.currentStep)
+		buf[n].AppendSample(1, 7)
+		buf[n].AppendSample(2, 7)
 		c.currentStep += c.step
+		n++
 	}
-	return vectors, nil
+	return n, nil
 }
 
 func (c *vectorSelectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -125,10 +124,6 @@ func (c *vectorSelectorOperator) Series(ctx context.Context) ([]labels.Labels, e
 		labels.FromStrings(labels.MetricName, "http_requests_total", "container", "a"),
 		labels.FromStrings(labels.MetricName, "http_requests_total", "container", "b"),
 	}, nil
-}
-
-func (c *vectorSelectorOperator) GetPool() *model.VectorPool {
-	return c.vectors
 }
 
 func (c *vectorSelectorOperator) Explain() (next []model.VectorOperator) {
