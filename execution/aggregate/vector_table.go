@@ -53,22 +53,20 @@ func (t *vectorTable) aggregate(vector model.StepVector) error {
 	return t.accumulator.AddVector(vector.Samples, vector.Histograms)
 }
 
-func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) model.StepVector {
-	result := pool.GetStepVector(t.ts)
+func (t *vectorTable) populateVector(ctx context.Context, vec *model.StepVector) {
 	switch t.accumulator.ValueType() {
 	case compute.NoValue:
-		return result
+		return
 	case compute.SingleTypeValue:
 		v, h := t.accumulator.Value()
 		if h == nil {
-			result.AppendSample(pool, 0, v)
+			vec.AppendSample(0, v)
 		} else {
-			result.AppendHistogram(pool, 0, h)
+			vec.AppendHistogram(0, h)
 		}
 	case compute.MixedTypeValue:
 		warnings.AddToContext(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}), ctx)
 	}
-	return result
 }
 
 func (t *vectorTable) reset(p float64) {
