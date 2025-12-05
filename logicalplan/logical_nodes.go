@@ -33,6 +33,7 @@ const (
 	RemoteExecutionNode = "remote_exec"
 	DeduplicateNode     = "dedup"
 	NoopNode            = "noop"
+	CoalesceNode        = "coalesce"
 )
 
 type Cloneable interface {
@@ -66,6 +67,15 @@ type Projection struct {
 	Include bool
 }
 
+// ShardInfo contains information about which shard this selector belongs to.
+// This enables parallel scanning of series data.
+type ShardInfo struct {
+	// Index is the 0-based shard index.
+	Index int
+	// Total is the total number of shards.
+	Total int
+}
+
 // VectorSelector is vector selector with additional configuration set by optimizers.
 type VectorSelector struct {
 	*parser.VectorSelector
@@ -78,6 +88,9 @@ type VectorSelector struct {
 	// CounterResetHint, Count and Sum values populated. Histogram buckets and spans
 	// will not be used during query evaluation.
 	DecodeNativeHistogramStats bool
+	// Shard specifies which shard this selector should scan.
+	// Default is {Index: 0, Total: 1} meaning no sharding (single shard).
+	Shard ShardInfo
 }
 
 func (f *VectorSelector) Clone() Node {
@@ -98,18 +111,24 @@ func (f *VectorSelector) Clone() Node {
 		clone.Timestamp = &ts
 	}
 
+	clone.Shard = f.Shard
+
 	return &clone
 }
 
 func (f *VectorSelector) Type() NodeType { return VectorSelectorNode }
 
 func (f *VectorSelector) String() string {
+	base := f.VectorSelector.String()
 	if f.SelectTimestamp {
 		// If we pushed down timestamp into the vector selector we need to render the proper
 		// PromQL again.
-		return fmt.Sprintf("timestamp(%s)", f.VectorSelector.String())
+		base = fmt.Sprintf("timestamp(%s)", base)
 	}
-	return f.VectorSelector.String()
+	if f.Shard.Total > 1 {
+		return fmt.Sprintf("%s %d mod %d", base, f.Shard.Index, f.Shard.Total)
+	}
+	return base
 }
 
 func (f *VectorSelector) ReturnType() parser.ValueType { return parser.ValueTypeVector }
@@ -136,6 +155,9 @@ func (f *MatrixSelector) Children() []*Node {
 }
 
 func (f *MatrixSelector) String() string {
+	if f.VectorSelector.Shard.Total > 1 {
+		return fmt.Sprintf("%s %d mod %d", f.OriginalString, f.VectorSelector.Shard.Index, f.VectorSelector.Shard.Total)
+	}
 	return f.OriginalString
 }
 
@@ -197,6 +219,48 @@ func (c *StepInvariantExpr) Children() []*Node            { return []*Node{&c.Ex
 func (c *StepInvariantExpr) String() string               { return c.Expr.String() }
 func (c *StepInvariantExpr) ReturnType() parser.ValueType { return c.Expr.ReturnType() }
 func (c *StepInvariantExpr) Type() NodeType               { return StepInvariantNode }
+
+// Coalesce is a logical node that merges results from multiple
+// child expressions into a single output. It enables parallel execution
+// of independent subtrees and can be moved higher up in the execution tree
+// by optimizers to increase parallelism.
+type Coalesce struct {
+	Expressions []Node `json:"-"`
+}
+
+func (c *Coalesce) Clone() Node {
+	clone := *c
+	clone.Expressions = make([]Node, len(c.Expressions))
+	for i, e := range c.Expressions {
+		clone.Expressions[i] = e.Clone()
+	}
+	return &clone
+}
+
+func (c *Coalesce) Children() []*Node {
+	children := make([]*Node, len(c.Expressions))
+	for i := range c.Expressions {
+		children[i] = &c.Expressions[i]
+	}
+	return children
+}
+
+func (c *Coalesce) String() string {
+	exprs := make([]string, len(c.Expressions))
+	for i, e := range c.Expressions {
+		exprs[i] = e.String()
+	}
+	return fmt.Sprintf("coalesce(%s)", strings.Join(exprs, ", "))
+}
+
+func (c *Coalesce) ReturnType() parser.ValueType {
+	if len(c.Expressions) == 0 {
+		return parser.ValueTypeVector
+	}
+	return c.Expressions[0].ReturnType()
+}
+
+func (c *Coalesce) Type() NodeType { return CoalesceNode }
 
 // FunctionCall represents a PromQL function.
 type FunctionCall struct {

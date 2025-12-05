@@ -87,6 +87,10 @@ func unmarshalNode(data []byte) (Node, error) {
 				return nil, err
 			}
 		}
+		// Ensure shard info has valid default if not set in JSON
+		if v.Shard.Total == 0 {
+			v.Shard = ShardInfo{Index: 0, Total: 1}
+		}
 		return v, nil
 	case MatrixSelectorNode:
 		m := &MatrixSelector{}

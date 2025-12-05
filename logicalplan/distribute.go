@@ -100,26 +100,24 @@ func (r RemoteExecution) Type() NodeType { return RemoteExecutionNode }
 
 func (r RemoteExecution) ReturnType() parser.ValueType { return r.Query.ReturnType() }
 
-// Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
+// Deduplicate is a logical plan which deduplicates samples from its child expression.
+// It is typically used together with Coalesce to merge and deduplicate results
+// from multiple remote executions.
 type Deduplicate struct {
-	LeafNode
-	Expressions RemoteExecutions
+	Expr Node `json:"-"`
 }
 
 func (r Deduplicate) Clone() Node {
-	clone := r
-	clone.Expressions = make(RemoteExecutions, len(r.Expressions))
-	for i, e := range r.Expressions {
-		clone.Expressions[i] = e.Clone().(RemoteExecution)
-	}
-	return clone
+	return Deduplicate{Expr: r.Expr.Clone()}
 }
+
+func (r Deduplicate) Children() []*Node { return []*Node{&r.Expr} }
 
 func (r Deduplicate) String() string {
-	return fmt.Sprintf("dedup(%s)", r.Expressions.String())
+	return fmt.Sprintf("dedup(%s)", r.Expr.String())
 }
 
-func (r Deduplicate) ReturnType() parser.ValueType { return r.Expressions[0].ReturnType() }
+func (r Deduplicate) ReturnType() parser.ValueType { return r.Expr.ReturnType() }
 
 func (r Deduplicate) Type() NodeType { return DeduplicateNode }
 
@@ -368,8 +366,14 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 		return Noop{}
 	}
 
+	// Wrap remote queries in a Coalesce node, then wrap that in Deduplicate
+	coalesceExprs := make([]Node, len(remoteQueries))
+	for i, rq := range remoteQueries {
+		coalesceExprs[i] = rq
+	}
+
 	return Deduplicate{
-		Expressions: remoteQueries,
+		Expr: &Coalesce{Expressions: coalesceExprs},
 	}
 }
 
@@ -529,7 +533,7 @@ func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string
 	}
 
 	switch e := (*expr).(type) {
-	case Deduplicate, RemoteExecution:
+	case Deduplicate, RemoteExecution, *Coalesce:
 		return false
 	case *Binary:
 		if isBinaryExpressionWithOneScalarSide(e) {

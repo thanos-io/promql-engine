@@ -37,8 +37,9 @@ load 30s
 	defer storage.Close()
 
 	newEngine := engine.New(engine.Opts{
-		EngineOpts:        opts,
-		LogicalOptimizers: append(slices.Clone(logicalplan.DefaultOptimizers), &injectVectorSelector{}),
+		EngineOpts:          opts,
+		DecodingConcurrency: 1, // Disable sharding for user-defined operators
+		LogicalOptimizers:   append(slices.Clone(logicalplan.DefaultOptimizers), &injectVectorSelector{}),
 	})
 	query := "sum(http_requests_total)"
 	qry, err := newEngine.NewRangeQuery(context.Background(), storage, nil, query, time.Unix(0, 0), time.Unix(90, 0), 30*time.Second)

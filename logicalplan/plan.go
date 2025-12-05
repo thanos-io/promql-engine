@@ -25,6 +25,7 @@ var DefaultOptimizers = []Optimizer{
 	SortMatchers{},
 	MergeSelectsOptimizer{},
 	DetectHistogramStatsOptimizer{},
+	PropagateCoalesceOptimizer{},
 }
 
 type Plan interface {
@@ -254,12 +255,13 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 		return &MatrixSelector{
 			VectorSelector: &VectorSelector{
 				VectorSelector: t.VectorSelector.(*parser.VectorSelector),
+				Shard:          ShardInfo{Index: 0, Total: 1},
 			},
 			Range:          t.Range,
 			OriginalString: t.String(),
 		}
 	case *parser.VectorSelector:
-		return &VectorSelector{VectorSelector: t}
+		return &VectorSelector{VectorSelector: t, Shard: ShardInfo{Index: 0, Total: 1}}
 
 	// TODO: we dont yet have logical nodes for these, keep traversing here but set fields in-place
 	case *parser.Call:
@@ -267,7 +269,7 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 			// pushed-down timestamp function
 			switch v := UnwrapParens(t.Args[0]).(type) {
 			case *parser.VectorSelector:
-				return &VectorSelector{VectorSelector: v, SelectTimestamp: true}
+				return &VectorSelector{VectorSelector: v, SelectTimestamp: true, Shard: ShardInfo{Index: 0, Total: 1}}
 			case *parser.StepInvariantExpr:
 				vs, ok := UnwrapParens(v.Expr).(*parser.VectorSelector)
 				if ok {
@@ -276,7 +278,7 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 						vs.OriginalOffset = 0
 					}
 					return &StepInvariantExpr{
-						Expr: &VectorSelector{VectorSelector: vs, SelectTimestamp: true},
+						Expr: &VectorSelector{VectorSelector: vs, SelectTimestamp: true, Shard: ShardInfo{Index: 0, Total: 1}},
 					}
 				}
 			}

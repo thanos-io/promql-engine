@@ -725,3 +725,57 @@ func synthesizeLoad(numPods, numContainers, numSteps int) string {
 
 	return sb.String()
 }
+
+func BenchmarkShardedCoalesceOptimizer(b *testing.B) {
+	samplesPerHour := 60 * 2
+	storage := setupStorage(b, 1000, 3, 6*samplesPerHour)
+	defer storage.Close()
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	queries := []struct {
+		name  string
+		query string
+	}{
+		{"sum", "sum(http_requests_total)"},
+		{"sum_by_pod", "sum by (pod) (http_requests_total)"},
+		{"sum_rate", "sum(rate(http_requests_total[1m]))"},
+		{"topk", "topk(10, http_requests_total)"},
+		{"max", "max(http_requests_total)"},
+	}
+
+	baseOpts := engine.Opts{
+		EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+		SelectorBatchSize: 256,
+	}
+
+	for _, tc := range queries {
+		b.Run(tc.name, func(b *testing.B) {
+			// Without sharding (DecodingConcurrency: 1)
+			b.Run("no_sharding", func(b *testing.B) {
+				opts := baseOpts
+				opts.DecodingConcurrency = 1
+				b.ResetTimer()
+				b.ReportAllocs()
+				for b.Loop() {
+					result := executeRangeQueryWithOpts(b, tc.query, storage, start, end, step, opts)
+					testutil.Ok(b, result.Err)
+				}
+			})
+
+			// With sharding (DecodingConcurrency: 4)
+			b.Run("sharded_4", func(b *testing.B) {
+				opts := baseOpts
+				opts.DecodingConcurrency = 4
+				b.ResetTimer()
+				b.ReportAllocs()
+				for b.Loop() {
+					result := executeRangeQueryWithOpts(b, tc.query, storage, start, end, step, opts)
+					testutil.Ok(b, result.Err)
+				}
+			})
+		})
+	}
+}

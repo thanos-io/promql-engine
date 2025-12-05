@@ -44,6 +44,29 @@ func TestQueryExplain(t *testing.T) {
 		})
 	}
 
+	// With PropagateCoalesceOptimizer, aggregations are pushed down into each shard
+	// for parallel partial aggregation. Build expected children with inner aggregations.
+	var aggregatedConcurrencyOperators []engine.ExplainOutputNode
+	for i := range totalOperators {
+		aggregatedConcurrencyOperators = append(aggregatedConcurrencyOperators, engine.ExplainOutputNode{
+			OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
+				{
+					OperatorName: "[duplicateLabelCheck]", Children: []engine.ExplainOutputNode{
+						{
+							OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
+								{
+									OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
+										{OperatorName: fmt.Sprintf("[vectorSelector] {[__name__=\"foo\"]} %d mod %d", i, totalOperators)},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+	}
+
 	for _, tc := range []struct {
 		query    string
 		expected *engine.ExplainOutputNode
@@ -72,7 +95,7 @@ func TestQueryExplain(t *testing.T) {
 								OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
 									{
 										OperatorName: "[coalesce]",
-										Children:     concurrencyOperators,
+										Children:     aggregatedConcurrencyOperators,
 									},
 								},
 							},
@@ -292,15 +315,24 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	require.Greater(t, analyzeOutput.PeakSamples(), int64(0))
 	require.Greater(t, analyzeOutput.TotalSamples(), int64(0))
 	result := renderAnalysisTree(analyzeOutput, 0)
+	// With PropagateCoalesceOptimizer, the aggregation is pushed down into each shard
+	// for parallel partial aggregation before the final merge
 	expected := `[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
 |---[concurrent(buff=2)]: max_series: 2 total_samples: 0 peak_samples: 0
 |   |---[aggregate] sum by ([pod]): max_series: 2 total_samples: 0 peak_samples: 0
-|   |   |---[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
-|   |   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
-|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
-|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
+|   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |---[aggregate] sum by ([pod]): max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
+|   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |---[aggregate] sum by ([pod]): max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
 `
 	require.EqualValues(t, expected, result)
 }
@@ -371,18 +403,28 @@ func TestAnalyzPeak(t *testing.T) {
 	analyzeOutput = explainableQuery.Analyze()
 
 	t.Logf("value of peak = %v", analyzeOutput.PeakSamples())
+	// Peak samples remains 200 because shards are processed sequentially, not both in memory at once
 	require.Equal(t, int64(200), analyzeOutput.PeakSamples())
 
 	result := renderAnalysisTree(analyzeOutput, 0)
+	// With PropagateCoalesceOptimizer, the aggregation is pushed down into each shard
+	// for parallel partial aggregation before the final merge
 	expected := `[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
 |---[concurrent(buff=2)]: max_series: 2 total_samples: 0 peak_samples: 0
 |   |---[aggregate] sum by ([pod]): max_series: 2 total_samples: 0 peak_samples: 0
-|   |   |---[duplicateLabelCheck]: max_series: 2 total_samples: 0 peak_samples: 0
-|   |   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
-|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
-|   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
-|   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
+|   |   |---[coalesce]: max_series: 2 total_samples: 0 peak_samples: 0
+|   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |---[aggregate] sum by ([pod]): max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 0 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
+|   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |---[concurrent(buff=2)]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |---[aggregate] sum by ([pod]): max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |---[duplicateLabelCheck]: max_series: 1 total_samples: 0 peak_samples: 0
+|   |   |   |   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
 `
 	require.EqualValues(t, expected, result)
 }

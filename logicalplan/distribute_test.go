@@ -35,40 +35,40 @@ func TestDistributedExecution(t *testing.T) {
 		{
 			name:     "selector",
 			expr:     `http_requests_total`,
-			expected: `dedup(remote(http_requests_total), remote(http_requests_total))`,
+			expected: `dedup(coalesce(remote(http_requests_total), remote(http_requests_total)))`,
 		},
 		{
 			name:     "parentheses",
 			expr:     `(http_requests_total)`,
-			expected: `dedup(remote((http_requests_total)), remote((http_requests_total)))`,
+			expected: `dedup(coalesce(remote((http_requests_total)), remote((http_requests_total))))`,
 		},
 		{
 			name:     "scalar",
 			expr:     `scalar(redis::shard_price_per_month)`,
-			expected: `scalar(dedup(remote(redis::shard_price_per_month), remote(redis::shard_price_per_month)))`,
+			expected: `scalar(dedup(coalesce(remote(redis::shard_price_per_month), remote(redis::shard_price_per_month))))`,
 		},
 		{
 			name:     "rate",
 			expr:     `rate(http_requests_total[5m])`,
-			expected: `dedup(remote(rate(http_requests_total[5m])), remote(rate(http_requests_total[5m])))`,
+			expected: `dedup(coalesce(remote(rate(http_requests_total[5m])), remote(rate(http_requests_total[5m]))))`,
 		},
 		{
 			name: "sum-rate",
 			expr: `sum by (pod) (rate(http_requests_total[5m]))`,
 			expected: `
-sum by (pod) (dedup(
+sum by (pod) (dedup(coalesce(
   remote(sum by (pod, region) (rate(http_requests_total[5m]))),
-  remote(sum by (pod, region) (rate(http_requests_total[5m])))))`,
+  remote(sum by (pod, region) (rate(http_requests_total[5m]))))))`,
 		},
 		{
 			name: "sum-rate without labels preserves engine labels",
 			expr: `sum without (pod, region) (rate(http_requests_total[5m]))`,
 			expected: `
 sum without (pod, region) (
-  dedup(
+  dedup(coalesce(
     remote(sum without (pod) (rate(http_requests_total[5m]))),
     remote(sum without (pod) (rate(http_requests_total[5m])))
-  )
+  ))
 )`,
 		},
 		{
@@ -76,16 +76,16 @@ sum without (pod, region) (
 			expr: `avg(http_requests_total)`,
 			expected: `
 sum(
-  dedup(
+  dedup(coalesce(
     remote(sum by (region) (http_requests_total)),
     remote(sum by (region) (http_requests_total))
-  )
+  ))
 ) / on ()
 sum(
-  dedup(
+  dedup(coalesce(
     remote(count by (region) (http_requests_total)),
     remote(count by (region) (http_requests_total))
-  )
+  ))
 )`,
 		},
 		{
@@ -93,16 +93,16 @@ sum(
 			expr: `avg by (pod) (http_requests_total)`,
 			expected: `
 sum by (pod) (
-  dedup(
+  dedup(coalesce(
     remote(sum by (pod, region) (http_requests_total)),
     remote(sum by (pod, region) (http_requests_total))
-  )
+  ))
 ) / on (pod)
 sum by (pod) (
-  dedup(
+  dedup(coalesce(
     remote(count by (pod, region) (http_requests_total)),
     remote(count by (pod, region) (http_requests_total))
-  )
+  ))
 )`,
 		},
 		{
@@ -110,16 +110,16 @@ sum by (pod) (
 			expr: `avg without (pod) (http_requests_total)`,
 			expected: `
 sum without (pod) (
-  dedup(
+  dedup(coalesce(
     remote(sum without (pod) (http_requests_total)),
     remote(sum without (pod) (http_requests_total))
-  )
+  ))
 ) / ignoring (pod)
 sum without (pod) (
-  dedup(
+  dedup(coalesce(
     remote(count without (pod) (http_requests_total)),
     remote(count without (pod) (http_requests_total))
-  )
+  ))
 )`,
 		},
 		{
@@ -128,10 +128,10 @@ sum without (pod) (
 			expected: `
 avg by (pod) (
   sum by (pod) (
-    dedup(
+    dedup(coalesce(
         remote(sum by (pod, region) (http_requests_total)),
         remote(sum by (pod, region) (http_requests_total))
-    )
+    ))
   )
 )`,
 		},
@@ -140,17 +140,17 @@ avg by (pod) (
 			expr: `avg by (pod) (metric_a / metric_b)`,
 			expected: `
 sum by (pod) (
-  dedup(
+  dedup(coalesce(
     remote(sum by (pod, region) (metric_a / metric_b)),
     remote(sum by (pod, region) (metric_a / metric_b))
-  )
+  ))
 )
 / on (pod)
 sum by (pod) (
-  dedup(
+  dedup(coalesce(
     remote(count by (pod, region) (metric_a / metric_b)),
     remote(count by (pod, region) (metric_a / metric_b))
-  )
+  ))
 )`,
 		},
 		{
@@ -159,10 +159,10 @@ sum by (pod) (
 			expected: `
 max by (pod) (
   sum by (pod) (
-    dedup(
+    dedup(coalesce(
       remote(sum by (pod, region) (http_requests_total)),
       remote(sum by (pod, region) (http_requests_total))
-    )
+    ))
   )
 )`,
 		},
@@ -171,10 +171,10 @@ max by (pod) (
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
 max by (pod) (
-  dedup(
+  dedup(coalesce(
     remote(max by (pod, region) (metric_a / metric_b)),
     remote(max by (pod, region) (metric_a / metric_b))
-  )
+  ))
 )
 `,
 		},
@@ -183,51 +183,51 @@ max by (pod) (
 			expr: `max by (pod) (sort(quantile(0.9, http_requests_total)))`,
 			expected: `
 max by (pod) (quantile(0.9,
-  dedup(
+  dedup(coalesce(
     remote(http_requests_total),
     remote(http_requests_total)
-  )
+  ))
 ))`,
 		},
 		{
 			name: "label replace",
 			expr: `label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")`,
 			expected: `
-dedup(
+dedup(coalesce(
   remote(label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")),
   remote(label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))
-)`,
+))`,
 		},
 		{
 			name: "label replace to internal label before an aggregation",
 			expr: `max by (instance) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))`,
 			expected: `
 max by (instance) (
-  dedup(
+  dedup(coalesce(
     remote(max by (instance, region) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)"))),
     remote(max by (instance, region) (label_replace(http_requests_total, "pod", "$1", "instance", "(.*)")))
-  )
+  ))
 )`,
 		},
 		{
 			name: "label replace to internal label before an aggregation",
 			expr: `max by (location) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))`,
 			expected: `
-max by (location) (dedup(
+max by (location) (dedup(coalesce(
   remote(max by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))),
   remote(max by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)")))
-))`,
+)))`,
 		},
 		{
 			name:       "label replace to external label before an aggregation",
 			expr:       `max by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
-			expected:   `max by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
+			expected:   `max by (location) (label_replace(dedup(coalesce(remote(http_requests_total), remote(http_requests_total))), "region", "$1", "location", "(.*)"))`,
 			expectWarn: true,
 		},
 		{
 			name:       "label replace to external label before an avg",
 			expr:       `avg by (location) (label_replace(http_requests_total, "region", "$1", "location", "(.*)"))`,
-			expected:   `avg by (location) (label_replace(dedup(remote(http_requests_total), remote(http_requests_total)), "region", "$1", "location", "(.*)"))`,
+			expected:   `avg by (location) (label_replace(dedup(coalesce(remote(http_requests_total), remote(http_requests_total))), "region", "$1", "location", "(.*)"))`,
 			expectWarn: true,
 		},
 		{
@@ -235,24 +235,24 @@ max by (location) (dedup(
 			expr: `avg by (location) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))`,
 			expected: `
 sum by (location) (
-  dedup(
+  dedup(coalesce(
     remote(sum by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))),
-    remote(sum by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)")))))
+    remote(sum by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))))))
   / on (location)
 sum by (location) (
-  dedup(
+  dedup(coalesce(
     remote(count by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))),
-    remote(count by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)")))))
+    remote(count by (location, region) (label_replace(http_requests_total, "zone", "$1", "location", "(.*)"))))))
 `,
 		},
 		{
 			name: "label replace after an aggregation",
 			expr: `label_replace(max by (location) (http_requests_total), "region", "$1", "location", "(.*)")`,
 			expected: `
-label_replace(max by (location) (dedup(
+label_replace(max by (location) (dedup(coalesce(
   remote(max by (location, region) (http_requests_total)),
   remote(max by (location, region) (http_requests_total))
-)), "region", "$1", "location", "(.*)")`,
+))), "region", "$1", "location", "(.*)")`,
 			expectWarn: true,
 		},
 		{
@@ -260,10 +260,10 @@ label_replace(max by (location) (dedup(
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
 max by (pod) (
-  dedup(
+  dedup(coalesce(
     remote(max by (pod, region) (metric_a / metric_b)),
     remote(max by (pod, region) (metric_a / metric_b))
-  )
+  ))
 )
 `,
 		},
@@ -271,24 +271,24 @@ max by (pod) (
 			name: "binary operation with aggregations",
 			expr: `sum by (pod) (metric_a) / sum by (pod) (metric_b)`,
 			expected: `
-sum by (pod) (dedup(
+sum by (pod) (dedup(coalesce(
   remote(sum by (pod, region) (metric_a)),
-  remote(sum by (pod, region) (metric_a)))
+  remote(sum by (pod, region) (metric_a))))
 )
 /
-sum by (pod) (dedup(
+sum by (pod) (dedup(coalesce(
   remote(sum by (pod, region) (metric_b)),
   remote(sum by (pod, region) (metric_b))
-))`,
+)))`,
 		},
 		{
 			name: "function sharding",
 			expr: `rate(http_requests_total[2m])`,
 			expected: `
-dedup(
+dedup(coalesce(
   remote(rate(http_requests_total[2m])),
   remote(rate(http_requests_total[2m]))
-)`,
+))`,
 		},
 		{
 			name:     "top level function with no args",
@@ -304,15 +304,15 @@ dedup(
 			name: `histogram quantile`,
 			expr: `histogram_quantile(0.5, sum by (le) (rate(coredns_dns_request_duration_seconds_bucket[5m])))`,
 			expected: `
-histogram_quantile(0.5, sum by (le) (dedup(
+histogram_quantile(0.5, sum by (le) (dedup(coalesce(
   remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m]))),
   remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m])))
-)))`,
+))))`,
 		},
 		{
 			name:     "binary expression with time",
 			expr:     `time() - max by (foo) (bar)`,
-			expected: `time() - max by (foo) (dedup(remote(max by (foo, region) (bar)), remote(max by (foo, region) (bar))))`,
+			expected: `time() - max by (foo) (dedup(coalesce(remote(max by (foo, region) (bar)), remote(max by (foo, region) (bar)))))`,
 		},
 		{
 			name:     "number literal",
@@ -322,7 +322,7 @@ histogram_quantile(0.5, sum by (le) (dedup(
 		{
 			name:     "aggregation with number literal",
 			expr:     `max(foo) - 1`,
-			expected: `max(dedup(remote(max by (region) (foo)), remote(max by (region) (foo)))) - 1`,
+			expected: `max(dedup(coalesce(remote(max by (region) (foo)), remote(max by (region) (foo))))) - 1`,
 		},
 		{
 			name:     "absent",
@@ -337,38 +337,38 @@ histogram_quantile(0.5, sum by (le) (dedup(
 		{
 			name: "binary expression with constant",
 			expr: `sum by (pod) (rate(http_requests_total[2m]) * 60)`,
-			expected: `sum by (pod) (dedup(
+			expected: `sum by (pod) (dedup(coalesce(
 remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60)),
-remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60))))`,
+remote(sum by (pod, region) (rate(http_requests_total[2m]) * 60)))))`,
 		},
 		{
 			name:     "binary expression with no arg function",
 			expr:     `time() - last_update_timestamp`,
-			expected: `time() - dedup(remote(last_update_timestamp), remote(last_update_timestamp))`,
+			expected: `time() - dedup(coalesce(remote(last_update_timestamp), remote(last_update_timestamp)))`,
 		},
 		{
 			name:     "subquery",
 			expr:     `sum_over_time(http_requests_total[5m:1m])`,
-			expected: `dedup(remote(sum_over_time(http_requests_total[5m:1m])), remote(sum_over_time(http_requests_total[5m:1m])))`,
+			expected: `dedup(coalesce(remote(sum_over_time(http_requests_total[5m:1m])), remote(sum_over_time(http_requests_total[5m:1m]))))`,
 		},
 		{
 			name:     "subquery over range function",
 			expr:     `sum_over_time(rate(http_requests_total[5m])[5m:1m])`,
-			expected: `dedup(remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])), remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])))`,
+			expected: `dedup(coalesce(remote(sum_over_time(rate(http_requests_total[5m])[5m:1m])), remote(sum_over_time(rate(http_requests_total[5m])[5m:1m]))))`,
 		},
 		{
 			name: "subquery over range aggregation",
 			expr: `sum_over_time(max(http_requests_total)[5m:1m])`,
 			expected: `
-sum_over_time(max(dedup(
+sum_over_time(max(dedup(coalesce(
 	remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC, 1970-01-01 00:00:00 +0000 UTC],
-	remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC, 1970-01-01 00:00:00 +0000 UTC])
+	remote(max by (region) (http_requests_total)) [1969-12-31 23:55:00 +0000 UTC, 1970-01-01 00:00:00 +0000 UTC]))
 )[5m:1m])`,
 		},
 		{
 			name:     "label based pruning matches one engine",
 			expr:     `sum by (pod) (rate(http_requests_total{region="west"}[2m]))`,
-			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="west"}[2m])))))`,
+			expected: `sum by (pod) (dedup(coalesce(remote(sum by (pod, region) (rate(http_requests_total{region="west"}[2m]))))))`,
 		},
 		{
 			name:     "label based pruning matches no engines",
@@ -383,27 +383,27 @@ sum_over_time(max(dedup(
 		{
 			name:     "label based pruning with grouping matches single engine",
 			expr:     `sum by (pod) (rate(http_requests_total{region="south"}[2m]))`,
-			expected: `sum by (pod) (dedup(remote(sum by (pod, region) (rate(http_requests_total{region="south"}[2m])))))`,
+			expected: `sum by (pod) (dedup(coalesce(remote(sum by (pod, region) (rate(http_requests_total{region="south"}[2m]))))))`,
 		},
 		{
 			name:     "binary matching where hash contains partitioning label with on",
 			expr:     `X * on (region) Y`,
-			expected: `dedup(remote(X * on (region) Y), remote(X * on (region) Y))`,
+			expected: `dedup(coalesce(remote(X * on (region) Y), remote(X * on (region) Y)))`,
 		},
 		{
 			name:     "binary matching where hash contains partitioning label with ignoring",
 			expr:     `X * ignoring (foo) Y`,
-			expected: `dedup(remote(X * ignoring (foo) Y), remote(X * ignoring (foo) Y))`,
+			expected: `dedup(coalesce(remote(X * ignoring (foo) Y), remote(X * ignoring (foo) Y)))`,
 		},
 		{
 			name:     "binary matching where hash doesnt contain partitioning label with ignoring",
 			expr:     `X * ignoring (region) Y`,
-			expected: `dedup(remote(X), remote(X)) * ignoring (region) dedup(remote(Y), remote(Y))`,
+			expected: `dedup(coalesce(remote(X), remote(X))) * ignoring (region) dedup(coalesce(remote(Y), remote(Y)))`,
 		},
 		{
 			name:     "binary matching where hash doesnt contain partitioning label with on",
 			expr:     `X * on (foo) Y`,
-			expected: `dedup(remote(X), remote(X)) * on (foo) dedup(remote(Y), remote(Y))`,
+			expected: `dedup(coalesce(remote(X), remote(X))) * on (foo) dedup(coalesce(remote(Y), remote(Y)))`,
 		},
 
 		{
@@ -414,9 +414,9 @@ count by (cluster) (
 	* on(region) group_left(project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*")
 )`,
 			expected: `
-sum by (cluster) (dedup(
+sum by (cluster) (dedup(coalesce(
 	remote(count by (cluster, region) (label_replace(up, "ns", "$0", "namespace", ".*") * on (region) group_left (project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))),
-	remote(count by (cluster, region) (label_replace(up, "ns", "$0", "namespace", ".*") * on (region) group_left (project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))))
+	remote(count by (cluster, region) (label_replace(up, "ns", "$0", "namespace", ".*") * on (region) group_left (project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*")))))
 )`,
 		},
 		{
@@ -427,18 +427,18 @@ count by (cluster) (
     * on(region) group_left(project) label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))`,
 			expected: `
 count by (cluster) (
- 	label_replace(dedup(remote(up), remote(up)), "region", "$0", "k8s_region", ".*")
-	* on (region) group_left (project) dedup(
+ 	label_replace(dedup(coalesce(remote(up), remote(up))), "region", "$0", "k8s_region", ".*")
+	* on (region) group_left (project) dedup(coalesce(
 		remote(label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*")),
 		remote(label_replace(k8s_cluster_info, "k8s_cluster", "$0", "cluster", ".*"))
-	)
+	))
 )`,
 			expectWarn: true,
 		},
 		{
 			name:              "skip binary pushdown when configured",
 			expr:              `metric_a / metric_b`,
-			expected:          `dedup(remote(metric_a), remote(metric_a)) / dedup(remote(metric_b), remote(metric_b))`,
+			expected:          `dedup(coalesce(remote(metric_a), remote(metric_a))) / dedup(coalesce(remote(metric_b), remote(metric_b)))`,
 			skipBinopPushdown: true,
 		},
 	}
@@ -513,9 +513,9 @@ func TestDistributedExecutionWithLongSelectorRanges(t *testing.T) {
 			},
 			expr: `sum_over_time(metric[5m])`,
 			expected: `
-dedup(
+dedup(coalesce(
   remote(sum_over_time(metric[5m]))
-)`,
+))`,
 		},
 		{
 			name: "sum over 5m adds a 5 minute offset to latest engine",
@@ -529,10 +529,10 @@ dedup(
 			},
 			expr: `sum_over_time(metric[5m])`,
 			expected: `
-dedup(
+dedup(coalesce(
   remote(sum_over_time(metric[5m])),
   remote(sum_over_time(metric[5m])) [1970-01-01 06:05:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
-)`,
+))`,
 		},
 		{
 			name: "sum over 2h adds a 2 hour offset to latest engine",
@@ -546,10 +546,10 @@ dedup(
 			},
 			expr: `sum_over_time(metric[2h])`,
 			expected: `
-dedup(
+dedup(coalesce(
   remote(sum_over_time(metric[2h])),
   remote(sum_over_time(metric[2h])) [1970-01-01 08:00:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
-)`,
+))`,
 		},
 		{
 			name: "subquery with a total 2h range is distributed with proper offsets",
@@ -563,10 +563,10 @@ dedup(
 			},
 			expr: `sum_over_time(sum_over_time(metric[1h])[1h:30m])`,
 			expected: `
-dedup(
+dedup(coalesce(
   remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])),
   remote(sum_over_time(sum_over_time(metric[1h])[1h:30m])) [1970-01-01 08:00:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
-)`,
+))`,
 		},
 		{
 			name: "multiple subqueries with a total 90m range get distributed with proper offsets",
@@ -579,9 +579,9 @@ dedup(
 				maxTime: queryEnd,
 			},
 			expr: `max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])`,
-			expected: `dedup(
+			expected: `dedup(coalesce(
   remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])),
-  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC])`,
+  remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]))`,
 		},
 		{
 			name: "subquery with a total 4h range is cannot be distributed",
@@ -621,10 +621,10 @@ dedup(
 			},
 			expr: `sum(metric @ 25200)`,
 			expected: `
-sum(dedup(
+sum(dedup(coalesce(
   remote(sum by (region) (metric @ 25200.000)),
   remote(sum by (region) (metric @ 25200.000)) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC]
-))`,
+)))`,
 		},
 		{
 			name: "skip distributing queries with timestamps outside of the range of an engine",
@@ -684,14 +684,14 @@ func TestDistributedExecutionPruningByTime(t *testing.T) {
 			expr:       `sum(metric)`,
 			queryStart: time.Unix(0, 0).Add(7 * time.Hour),
 			queryEnd:   time.Unix(0, 0).Add(8 * time.Hour),
-			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 07:00:00 +0000 UTC, 1970-01-01 08:00:00 +0000 UTC]))`,
+			expected:   `sum(dedup(coalesce(remote(sum by (region) (metric)) [1970-01-01 07:00:00 +0000 UTC, 1970-01-01 08:00:00 +0000 UTC])))`,
 		},
 		{
 			name:       "1 hour range query at the start of the range prunes the second engine",
 			expr:       `sum(metric)`,
 			queryStart: time.Unix(0, 0).Add(1 * time.Hour),
 			queryEnd:   time.Unix(0, 0).Add(2 * time.Hour),
-			expected:   `sum(dedup(remote(sum by (region) (metric)) [1970-01-01 01:00:00 +0000 UTC, 1970-01-01 02:00:00 +0000 UTC]))`,
+			expected:   `sum(dedup(coalesce(remote(sum by (region) (metric)) [1970-01-01 01:00:00 +0000 UTC, 1970-01-01 02:00:00 +0000 UTC])))`,
 		},
 		{
 			name:       "instant query in the overlapping range queries both engines",
@@ -700,10 +700,10 @@ func TestDistributedExecutionPruningByTime(t *testing.T) {
 			queryEnd:   time.Unix(0, 0).Add(6 * time.Hour),
 			expected: `
 sum(
-  dedup(
+  dedup(coalesce(
     remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 06:00:00 +0000 UTC],
     remote(sum by (region) (metric)) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 06:00:00 +0000 UTC]
-  )
+  ))
 )`,
 		},
 	}
@@ -738,16 +738,16 @@ func TestDistributedExecutionPruningByLabelset(t *testing.T) {
 		{
 			name:     "querying by labelsets restricts to partition that matches that labelset",
 			expr:     `sum by (pod) (rate(http_requests_total{region="west"}[2m]))`,
-			expected: `sum by (pod) (dedup(remote(sum by (datacenter, pod) (rate(http_requests_total{region="west"}[2m])))))`,
+			expected: `sum by (pod) (dedup(coalesce(remote(sum by (datacenter, pod) (rate(http_requests_total{region="west"}[2m]))))))`,
 		},
 		{
 			name: "querying by labelsets restricts to partition that matches that labelset",
 			expr: `sum by (pod) (rate(http_requests_total{region="east"}[2m]))`,
 			expected: `
-sum by (pod) (dedup(
+sum by (pod) (dedup(coalesce(
   remote(sum by (datacenter, pod) (rate(http_requests_total{region="east"}[2m]))),
   remote(sum by (datacenter, pod) (rate(http_requests_total{region="east"}[2m])))
-))`,
+)))`,
 		},
 	}
 
@@ -796,10 +796,10 @@ func TestDistributedExecutionClonesNodes(t *testing.T) {
 		end      = time.Unix(0, 0).Add(6 * time.Hour)
 		step     = time.Second
 		expected = `
-sum(dedup(
+sum(dedup(coalesce(
   remote(sum by (region) (metric{region="east"})),
   remote(sum by (region) (metric{region="east"}))
-))`
+)))`
 	)
 	expr, err := parser.ParseExpr(`sum(metric{region="east"})`)
 	testutil.Ok(t, err)
@@ -823,7 +823,8 @@ sum(dedup(
 	testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
 
 	getSelector := func(i int) *VectorSelector {
-		return optimizedPlan.Root().(*CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expressions[i].Query.(*Aggregation).Expr.(*VectorSelector)
+		coalesce := optimizedPlan.Root().(*CheckDuplicateLabels).Expr.(*Aggregation).Expr.(Deduplicate).Expr.(*Coalesce)
+		return coalesce.Expressions[i].(RemoteExecution).Query.(*Aggregation).Expr.(*VectorSelector)
 	}
 
 	// Assert that modifying one subquery does not affect the other one.

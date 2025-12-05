@@ -79,6 +79,8 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 		return newDuplicateLabelCheck(ctx, e, storage, opts, hints)
 	case logicalplan.Noop:
 		return noop.NewOperator(opts), nil
+	case *logicalplan.Coalesce:
+		return newCoalesce(ctx, e, storage, opts, hints)
 	case logicalplan.UserDefinedExpr:
 		return e.MakeExecutionOperator(ctx, model.NewVectorPool(opts.StepsBatch), opts, hints)
 	default:
@@ -355,25 +357,42 @@ func newStepInvariantExpression(ctx context.Context, e *logicalplan.StepInvarian
 	return step_invariant.NewStepInvariantOperator(model.NewVectorPoolWithSize(opts.StepsBatch, 1), next, e.Expr, opts)
 }
 
-func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
-	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
-	// Sorting engines by MaxT ensures that samples produced due to
-	// staleness will be overwritten and corrected by samples coming from
-	// engines with a higher max time.
-	sort.Slice(e.Expressions, func(i, j int) bool {
-		return e.Expressions[i].Engine.MaxT() < e.Expressions[j].Engine.MaxT()
-	})
-
+func newCoalesce(ctx context.Context, e *logicalplan.Coalesce, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	operators := make([]model.VectorOperator, len(e.Expressions))
 	for i, expr := range e.Expressions {
 		operator, err := newOperator(ctx, expr, scanners, opts, hints)
 		if err != nil {
 			return nil, err
 		}
-		operators[i] = operator
+		// Wrap each child in a concurrent operator to enable parallel pipelined execution.
+		// This allows each branch of the coalesce to run in its own goroutine,
+		// buffering results and maximizing throughput when processing sharded data.
+		operators[i] = exchange.NewConcurrent(operator, 2, opts)
 	}
-	coalesce := exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...)
-	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), coalesce, opts)
+	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, 0, operators...), nil
+}
+
+func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
+	// The Deduplicate operator will deduplicate samples using a last-sample-wins strategy.
+	// If the child is a Coalesce with RemoteExecutions, we need to sort them by MaxT
+	// to ensure that samples produced due to staleness will be overwritten and corrected
+	// by samples coming from engines with a higher max time.
+	if coalesce, ok := e.Expr.(*logicalplan.Coalesce); ok {
+		sort.Slice(coalesce.Expressions, func(i, j int) bool {
+			ri, iOk := coalesce.Expressions[i].(logicalplan.RemoteExecution)
+			rj, jOk := coalesce.Expressions[j].(logicalplan.RemoteExecution)
+			if !iOk || !jOk {
+				return false
+			}
+			return ri.Engine.MaxT() < rj.Engine.MaxT()
+		})
+	}
+
+	inner, err := newOperator(ctx, e.Expr, scanners, opts, hints)
+	if err != nil {
+		return nil, err
+	}
+	dedup := exchange.NewDedupOperator(model.NewVectorPool(opts.StepsBatch), inner, opts)
 	return exchange.NewConcurrent(dedup, 2, opts), nil
 }
 
