@@ -31,6 +31,13 @@ type Accumulator interface {
 	Reset(float64)
 }
 
+// CopyableAccumulator is an Accumulator that can be efficiently copied.
+// This is used by sliding window buffers to create checkpoints.
+type CopyableAccumulator interface {
+	Accumulator
+	Copy() CopyableAccumulator
+}
+
 type VectorAccumulator interface {
 	AddVector(vs []float64, hs []*histogram.FloatHistogram) error
 	Value() (float64, *histogram.FloatHistogram)
@@ -132,6 +139,19 @@ func (s *SumAcc) Reset(_ float64) {
 	s.hasHistError = false
 	s.value = 0
 	s.compensation = 0
+}
+
+func (s *SumAcc) Copy() CopyableAccumulator {
+	cp := &SumAcc{
+		value:        s.value,
+		compensation: s.compensation,
+		hasFloatVal:  s.hasFloatVal,
+		hasHistError: s.hasHistError,
+	}
+	if s.histSum != nil {
+		cp.histSum = s.histSum.Copy()
+	}
+	return cp
 }
 
 func NewMaxAcc() *MaxAcc {
@@ -520,6 +540,29 @@ func (a *AvgAcc) Reset(_ float64) {
 	a.hasHistError = false
 }
 
+func (a *AvgAcc) Copy() CopyableAccumulator {
+	cp := &AvgAcc{
+		kahanSum:     a.kahanSum,
+		kahanC:       a.kahanC,
+		avg:          a.avg,
+		incremental:  a.incremental,
+		count:        a.count,
+		hasValue:     a.hasValue,
+		histCount:    a.histCount,
+		hasHistError: a.hasHistError,
+	}
+	if a.histSum != nil {
+		cp.histSum = a.histSum.Copy()
+	}
+	if a.histScratch != nil {
+		cp.histScratch = a.histScratch.Copy()
+	}
+	if a.histSumScratch != nil {
+		cp.histSumScratch = a.histSumScratch.Copy()
+	}
+	return cp
+}
+
 type statAcc struct {
 	count    float64
 	mean     float64
@@ -654,6 +697,24 @@ func (s *StdDevOverTimeAcc) Value() (float64, *histogram.FloatHistogram) {
 	return math.Sqrt(s.variance()), nil
 }
 
+func (s *StdDevOverTimeAcc) Copy() CopyableAccumulator {
+	return &StdDevOverTimeAcc{
+		statOverTimeAcc: statOverTimeAcc{
+			statAcc: statAcc{
+				count:    s.count,
+				mean:     s.mean,
+				cMean:    s.cMean,
+				value:    s.value,
+				cValue:   s.cValue,
+				hasValue: s.hasValue,
+				hasNaN:   s.hasNaN,
+			},
+			seenHist:   s.seenHist,
+			warnedHist: s.warnedHist,
+		},
+	}
+}
+
 type StdVarOverTimeAcc struct {
 	statOverTimeAcc
 }
@@ -668,6 +729,24 @@ func (s *StdVarOverTimeAcc) Add(v float64, h *histogram.FloatHistogram) error {
 
 func (s *StdVarOverTimeAcc) Value() (float64, *histogram.FloatHistogram) {
 	return s.variance(), nil
+}
+
+func (s *StdVarOverTimeAcc) Copy() CopyableAccumulator {
+	return &StdVarOverTimeAcc{
+		statOverTimeAcc: statOverTimeAcc{
+			statAcc: statAcc{
+				count:    s.count,
+				mean:     s.mean,
+				cMean:    s.cMean,
+				value:    s.value,
+				cValue:   s.cValue,
+				hasValue: s.hasValue,
+				hasNaN:   s.hasNaN,
+			},
+			seenHist:   s.seenHist,
+			warnedHist: s.warnedHist,
+		},
+	}
 }
 
 type QuantileAcc struct {

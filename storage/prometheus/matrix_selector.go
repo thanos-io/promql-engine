@@ -272,6 +272,11 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 }
 
 func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
+	// Use sliding buffers for range queries (step > 0) where window slides
+	// and benefits from O(1) amortized updates. For instant queries, use
+	// the standard OverTimeBuffer.
+	isRangeQuery := o.opts.Step.Milliseconds() > 0
+
 	switch o.functionName {
 	case "rate":
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, true, true, o.selectRange, o.offset)
@@ -282,16 +287,34 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 	case "count_over_time":
 		return ringbuffer.NewCountOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "max_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingMaxOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewMaxOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "min_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingMinOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewMinOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "sum_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingSumOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewSumOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "avg_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingAvgOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewAvgOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "stddev_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingStdDevOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewStdDevOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "stdvar_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingStdVarOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewStdVarOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "present_over_time":
 		return ringbuffer.NewPresentOverTimeBuffer(*o.opts, o.selectRange, o.offset)

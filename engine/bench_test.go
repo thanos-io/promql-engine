@@ -314,6 +314,52 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query:   `double_exponential_smoothing(http_requests_total[1m], 0.1, 0.1)`,
 			storage: sixHourDataset,
 		},
+		// over_time functions
+		{
+			name:    "count_over_time",
+			query:   `count_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "sum_over_time",
+			query:   `sum_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "avg_over_time",
+			query:   `avg_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "min_over_time",
+			query:   `min_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "max_over_time",
+			query:   `max_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time",
+			query:   `stddev_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stdvar_over_time",
+			query:   `stdvar_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "last_over_time",
+			query:   `last_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "present_over_time",
+			query:   `present_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
 	}
 
 	opts := engine.Opts{
