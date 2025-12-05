@@ -16,6 +16,26 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+// If we use $__interval as steps and $__rate_interval for the sliding window
+// we usually have an overlap of 4 steps here. This should ensure we use the
+// optimized streaming approach normally, but wont regress if a user wants a very
+// high overlap.
+const maxStreamingStepOverlap = 5
+
+// overlapSteps calculates the number of evaluation steps that a range window overlaps.
+// This is the number of steps where a single sample contributes to the result.
+func overlapSteps(opts query.Options, selectRange int64) int64 {
+	step := max(1, opts.Step.Milliseconds())
+	return min(
+		(selectRange-1)/step+1,
+		querySteps(opts),
+	)
+}
+
+func UseStreamingRingBuffers(opts query.Options, selectRange int64) bool {
+	return overlapSteps(opts, selectRange) <= maxStreamingStepOverlap
+}
+
 // OverTimeBuffer is a Buffer which can calculate [agg]_over_time for a series in a
 // streaming manner, calculating the value incrementally for each step where the sample is used.
 type OverTimeBuffer struct {
@@ -23,7 +43,6 @@ type OverTimeBuffer struct {
 	stepRanges []stepRange
 	// stepStates contains the aggregation state for the corresponding stepRange
 	stepStates []stepState
-
 	// firstTimestamps contains the timestamp of the first sample for each evaluation step.
 	firstTimestamps []int64
 
@@ -41,10 +60,7 @@ type stepState struct {
 func newOverTimeBuffer(opts query.Options, selectRange, offset int64, accMaker func() compute.Accumulator) *OverTimeBuffer {
 	var (
 		step     = max(1, opts.Step.Milliseconds())
-		numSteps = min(
-			(selectRange-1)/step+1,
-			querySteps(opts),
-		)
+		numSteps = overlapSteps(opts, selectRange)
 
 		current         = opts.Start.UnixMilli()
 		firstTimestamps = make([]int64, 0, numSteps)
@@ -72,24 +88,40 @@ func newOverTimeBuffer(opts query.Options, selectRange, offset int64, accMaker f
 	}
 }
 
-// NewCountOverTimeBuffer creates a new OverTimeBuffer for the count_over_time function.
 func NewCountOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
 	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewCountAcc() })
 }
 
-// NewMaxOverTimeBuffer creates a new OverTimeBuffer for the max_over_time function.
 func NewMaxOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
 	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewMaxAcc() })
 }
 
-// NewMinOverTime creates a new OverTimeBuffer for the min_over_time function.
 func NewMinOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
 	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewMinAcc() })
 }
 
-// NewSumOverTime creates a new OverTimeBuffer for the sum_over_time function.
 func NewSumOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
 	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewSumAcc() })
+}
+
+func NewAvgOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewAvgAcc() })
+}
+
+func NewStdDevOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdDevOverTimeAcc() })
+}
+
+func NewStdVarOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdVarOverTimeAcc() })
+}
+
+func NewPresentOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewGroupAcc() })
+}
+
+func NewLastOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewLastAcc() })
 }
 
 func (r *OverTimeBuffer) SampleCount() int {

@@ -314,6 +314,113 @@ func BenchmarkRangeQuery(b *testing.B) {
 			query:   `double_exponential_smoothing(http_requests_total[1m], 0.1, 0.1)`,
 			storage: sixHourDataset,
 		},
+		// over_time functions
+		{
+			name:    "count_over_time_5m",
+			query:   `count_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "count_over_time_1h",
+			query:   `count_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "count_over_time_6h",
+			query:   `count_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "sum_over_time_5m",
+			query:   `sum_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "sum_over_time_1h",
+			query:   `sum_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "sum_over_time_6h",
+			query:   `sum_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+
+		{
+			name:    "avg_over_time_5m",
+			query:   `avg_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "avg_over_time_1h",
+			query:   `avg_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "avg_over_time_6h",
+			query:   `avg_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "min_over_time_5m",
+			query:   `min_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "min_over_time_1h",
+			query:   `min_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "min_over_time_6h",
+			query:   `min_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "max_over_time_5m",
+			query:   `max_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "max_over_time_1h",
+			query:   `max_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "max_over_time_6h",
+			query:   `max_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time_5m",
+			query:   `stddev_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time_1h",
+			query:   `stddev_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time_6h",
+			query:   `stddev_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stdvar_over_time",
+			query:   `stdvar_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "last_over_time",
+			query:   `last_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "present_over_time",
+			query:   `present_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
 	}
 
 	opts := engine.Opts{
@@ -493,7 +600,12 @@ func BenchmarkInstantQuery(b *testing.B) {
 	storage := setupStorage(b, 1000, 3, 720)
 	defer storage.Close()
 
+	// 6 hour dataset at 30s intervals for long range queries
+	sixHourStorage := setupStorage(b, 1000, 3, 6*60*2)
+	defer sixHourStorage.Close()
+
 	queryTime := time.Unix(50, 0)
+	sixHourQueryTime := time.Unix(6*60*60, 0) // End of 6h dataset
 
 	cases := []struct {
 		name  string
@@ -575,6 +687,69 @@ func BenchmarkInstantQuery(b *testing.B) {
 			name:  "double exponential smoothing",
 			query: `double_exponential_smoothing(http_requests_total[1m], 0.1, 0.1)`,
 		},
+	}
+
+	// Long range instant query cases - these benefit from OverTimeBuffer
+	longRangeCases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "count_over_time 6h",
+			query: `count_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "sum_over_time 6h",
+			query: `sum_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "avg_over_time 6h",
+			query: `avg_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "min_over_time 6h",
+			query: `min_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "max_over_time 6h",
+			query: `max_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "stddev_over_time 6h",
+			query: `stddev_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "stdvar_over_time 6h",
+			query: `stdvar_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "present_over_time 6h",
+			query: `present_over_time(http_requests_total[6h])`,
+		},
+		{
+			name:  "last_over_time 6h",
+			query: `last_over_time(http_requests_total[6h])`,
+		},
+	}
+
+	for _, tc := range longRangeCases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("new_engine", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second},
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewInstantQuery(context.Background(), sixHourStorage, nil, tc.query, sixHourQueryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+		})
 	}
 
 	for _, tc := range cases {
