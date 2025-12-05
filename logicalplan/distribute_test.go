@@ -5,14 +5,17 @@ package logicalplan
 
 import (
 	"math"
+	"math/rand"
 	"regexp"
 	"testing"
 	"time"
 
+	"github.com/cortexproject/promqlsmith"
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
@@ -32,6 +35,16 @@ func TestDistributedExecution(t *testing.T) {
 		expectWarn        bool
 		expected          string
 	}{
+		{
+			name: "this is a bug",
+			expr: `group by (region) (foo) * on (region) bar`,
+			expected: `
+group by (region) (
+  dedup(
+    remote(group by (region) (foo)),
+    remote(group by (region) (foo)))
+) * on (region) dedup(remote(bar), remote(bar))`,
+		},
 		{
 			name:     "selector",
 			expr:     `http_requests_total`,
@@ -584,7 +597,7 @@ dedup(
   remote(max_over_time(sum_over_time(sum_over_time(metric[5m])[45m:10m])[15m:15m])) [1970-01-01 07:05:00 +0000 UTC, 1970-01-01 12:00:00 +0000 UTC])`,
 		},
 		{
-			name: "subquery with a total 4h range is cannot be distributed",
+			name: "subquery with a total 6h range is cannot be distributed",
 			firstEngineOpts: engineOpts{
 				minTime: queryStart,
 				maxTime: time.Unix(0, 0).Add(eightHours),
@@ -593,8 +606,8 @@ dedup(
 				minTime: time.Unix(0, 0).Add(sixHours),
 				maxTime: queryEnd,
 			},
-			expr:     `sum_over_time(sum_over_time(metric[2h])[2h:30m])`,
-			expected: `sum_over_time(sum_over_time(metric[2h])[2h:30m])`,
+			expr:     `sum_over_time(sum_over_time(metric[4h])[2h:30m])`,
+			expected: `sum_over_time(sum_over_time(metric[4h])[2h:30m])`,
 		},
 		{
 			name: "sum over 3h does not distribute the query due to insufficient engine overlap",
@@ -832,6 +845,37 @@ sum(dedup(
 
 	vs1 := getSelector(1)
 	testutil.Assert(t, len(vs1.LabelMatchers) == len(vs0.LabelMatchers)-1, "expected %d label matchers, got %d", len(vs0.LabelMatchers)-1, len(vs1.LabelMatchers))
+}
+
+func FuzzDistributedEnginePlanNoUnnecessarySelectCalls(f *testing.F) {
+	engines := []api.RemoteEngine{
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
+	}
+	f.Add(int64(0))
+	f.Fuzz(func(t *testing.T, seed int64) {
+		rnd := rand.New(rand.NewSource(seed))
+		ps := promqlsmith.New(rnd, []labels.Labels{
+			labels.FromStrings(model.MetricNameLabel, "foo", "bar", "baz", "region", "east"),
+			labels.FromStrings(model.MetricNameLabel, "foo", "bar", "quz", "region", "west"),
+		})
+		expr := ps.WalkInstantQuery()
+		lplan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
+
+		oplan, _ := lplan.Optimize([]Optimizer{
+			DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+		})
+		root := oplan.Root()
+
+		Traverse(&root, func(n *Node) {
+			switch (*n).(type) {
+			case *MatrixSelector:
+				t.Fatal("unexpected matrixselector in: ", renderExprTree(root), "from: ", expr.String())
+			case *VectorSelector:
+				t.Fatal("unexpected vectorselector in: ", renderExprTree(root), "from: ", expr.String())
+			}
+		})
+	})
 }
 
 type engineMock struct {
