@@ -92,6 +92,22 @@ func NewSumOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTi
 	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewSumAcc() })
 }
 
+func NewAvgOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewAvgAcc() })
+}
+
+func NewStdDevOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdDevAcc() })
+}
+
+func NewStdVarOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdVarAcc() })
+}
+
+func NewPresentOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewGroupAcc() })
+}
+
 func (r *OverTimeBuffer) SampleCount() int {
 	return r.stepRanges[0].sampleCount
 }

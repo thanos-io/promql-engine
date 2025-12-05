@@ -287,6 +287,14 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		return ringbuffer.NewMinOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "sum_over_time":
 		return ringbuffer.NewSumOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "avg_over_time":
+		return ringbuffer.NewAvgOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "stddev_over_time":
+		return ringbuffer.NewStdDevOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "stdvar_over_time":
+		return ringbuffer.NewStdVarOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "present_over_time":
+		return ringbuffer.NewPresentOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	}
 
 	if o.isExtFunction {

@@ -351,6 +351,7 @@ type AvgAcc struct {
 	histScratch    *histogram.FloatHistogram
 	histSumScratch *histogram.FloatHistogram
 	histCount      float64
+	hasHistError   bool
 }
 
 func NewAvgAcc() *AvgAcc {
@@ -359,6 +360,9 @@ func NewAvgAcc() *AvgAcc {
 
 func (a *AvgAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
+		if a.hasHistError {
+			return nil
+		}
 		a.histCount++
 		if a.histSum == nil {
 			a.histSum = h.Copy()
@@ -373,10 +377,31 @@ func (a *AvgAcc) Add(v float64, h *histogram.FloatHistogram) error {
 		right := a.histSumScratch.Div(a.histCount)
 		toAdd, err := left.Sub(right)
 		if err != nil {
+			a.histSum = nil
+			a.histCount = 0
+			a.hasHistError = true
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				return annotations.MixedExponentialCustomHistogramsWarning
+			}
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				return annotations.IncompatibleCustomBucketsHistogramsWarning
+			}
 			return err
 		}
 		a.histSum, err = a.histSum.Add(toAdd)
-		return err
+		if err != nil {
+			a.histSum = nil
+			a.histCount = 0
+			a.hasHistError = true
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+				return annotations.MixedExponentialCustomHistogramsWarning
+			}
+			if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
+				return annotations.IncompatibleCustomBucketsHistogramsWarning
+			}
+			return err
+		}
+		return nil
 	}
 
 	a.count++
@@ -492,13 +517,16 @@ func (a *AvgAcc) Reset(_ float64) {
 
 	a.histCount = 0
 	a.histSum = nil
+	a.hasHistError = false
 }
 
 type statAcc struct {
-	count    float64
-	mean     float64
-	value    float64
-	hasValue bool
+	count      float64
+	mean       float64
+	value      float64
+	hasValue   bool
+	seenHist   bool
+	warnedHist bool
 }
 
 func (s *statAcc) ValueType() ValueType {
@@ -510,6 +538,8 @@ func (s *statAcc) ValueType() ValueType {
 }
 func (s *statAcc) Reset(_ float64) {
 	s.hasValue = false
+	s.seenHist = false
+	s.warnedHist = false
 	s.count = 0
 	s.mean = 0
 	s.value = 0
@@ -525,9 +555,17 @@ func NewStdDevAcc() *StdDevAcc {
 
 func (s *StdDevAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		return annotations.NewHistogramIgnoredInAggregationInfo("stddev", posrange.PositionRange{})
+		s.seenHist = true
+		if s.hasValue && !s.warnedHist {
+			s.warnedHist = true
+			return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
+		}
+		return nil
 	}
 
+	if s.seenHist && !s.warnedHist {
+		s.warnedHist = true
+	}
 	s.hasValue = true
 	s.count++
 
@@ -537,6 +575,9 @@ func (s *StdDevAcc) Add(v float64, h *histogram.FloatHistogram) error {
 		delta := v - s.mean
 		s.mean += delta / s.count
 		s.value += delta * (v - s.mean)
+	}
+	if s.seenHist && s.warnedHist {
+		return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
 	}
 	return nil
 }
@@ -562,9 +603,17 @@ func NewStdVarAcc() *StdVarAcc {
 
 func (s *StdVarAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		return annotations.NewHistogramIgnoredInAggregationInfo("stdvar", posrange.PositionRange{})
+		s.seenHist = true
+		if s.hasValue && !s.warnedHist {
+			s.warnedHist = true
+			return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
+		}
+		return nil
 	}
 
+	if s.seenHist && !s.warnedHist {
+		s.warnedHist = true
+	}
 	s.hasValue = true
 	s.count++
 
@@ -574,6 +623,9 @@ func (s *StdVarAcc) Add(v float64, h *histogram.FloatHistogram) error {
 		delta := v - s.mean
 		s.mean += delta / s.count
 		s.value += delta * (v - s.mean)
+	}
+	if s.seenHist && s.warnedHist {
+		return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
 	}
 	return nil
 }
