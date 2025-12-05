@@ -16,23 +16,6 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-type slidingSample struct {
-	t int64
-	f float64
-	h *histogram.FloatHistogram
-}
-
-// estimateCapacity estimates the number of samples in a range window.
-// Assumes ~15s scrape interval as a reasonable default.
-func estimateCapacity(selectRange int64) int {
-	// selectRange is in milliseconds, assume 15s scrape interval
-	capacity := int(selectRange/15000) + 1
-	if capacity < 8 {
-		capacity = 8
-	}
-	return capacity
-}
-
 // =============================================================================
 // SlidingDequeBuffer - min/max using monotonic deque (O(1) amortized)
 // =============================================================================
@@ -40,32 +23,29 @@ func estimateCapacity(selectRange int64) int {
 type DequeComparator func(a, b float64) bool
 
 type SlidingDequeBuffer struct {
-	samples []slidingSample
-	size    int
-	lastT   int64
-
-	deque       []int
+	samples     []Sample
+	tail        []Sample // scratch space for Reset
+	lastT       int64
+	deque       []int // indices into samples for monotonic deque
 	floatCount  int
 	sampleCount int
 	shouldEvict DequeComparator
 }
 
-func NewSlidingMinOverTimeBuffer(_ query.Options, selectRange, _ int64) *SlidingDequeBuffer {
-	capacity := estimateCapacity(selectRange)
+func NewSlidingMinOverTimeBuffer(_ query.Options, _, _ int64) *SlidingDequeBuffer {
 	return &SlidingDequeBuffer{
-		samples:     make([]slidingSample, 0, capacity),
+		samples:     make([]Sample, 0, 8),
 		lastT:       math.MinInt64,
-		deque:       make([]int, 0, capacity),
+		deque:       make([]int, 0, 8),
 		shouldEvict: func(back, new float64) bool { return back >= new },
 	}
 }
 
-func NewSlidingMaxOverTimeBuffer(_ query.Options, selectRange, _ int64) *SlidingDequeBuffer {
-	capacity := estimateCapacity(selectRange)
+func NewSlidingMaxOverTimeBuffer(_ query.Options, _, _ int64) *SlidingDequeBuffer {
 	return &SlidingDequeBuffer{
-		samples:     make([]slidingSample, 0, capacity),
+		samples:     make([]Sample, 0, 8),
 		lastT:       math.MinInt64,
-		deque:       make([]int, 0, capacity),
+		deque:       make([]int, 0, 8),
 		shouldEvict: func(back, new float64) bool { return back <= new },
 	}
 }
@@ -78,25 +58,37 @@ func (r *SlidingDequeBuffer) Push(t int64, v Value) {
 	r.lastT = t
 	idx := len(r.samples)
 
+	// Append sample (same as GenericRingBuffer)
+	n := len(r.samples)
+	if n < cap(r.samples) {
+		r.samples = r.samples[:n+1]
+	} else {
+		r.samples = append(r.samples, Sample{})
+	}
+	r.samples[n].T = t
+	r.samples[n].V.F = v.F
 	if v.H != nil {
 		r.sampleCount += telemetry.CalculateHistogramSampleCount(v.H)
-		r.samples = append(r.samples, slidingSample{t: t, f: math.NaN(), h: v.H})
-		r.size++
+		if r.samples[n].V.H == nil {
+			r.samples[n].V.H = v.H.Copy()
+		} else {
+			v.H.CopyTo(r.samples[n].V.H)
+		}
 		return
 	}
+	r.samples[n].V.H = nil
 
 	r.sampleCount++
 	r.floatCount++
-	r.samples = append(r.samples, slidingSample{t: t, f: v.F})
-	r.size++
 
 	if math.IsNaN(v.F) {
 		return
 	}
 
-	// Maintain monotonic deque - store absolute indices
+	// Maintain monotonic deque
 	for len(r.deque) > 0 {
-		backVal := r.samples[r.deque[len(r.deque)-1]].f
+		backIdx := r.deque[len(r.deque)-1]
+		backVal := r.samples[backIdx].V.F
 		if r.shouldEvict(backVal, v.F) || math.IsNaN(backVal) {
 			r.deque = r.deque[:len(r.deque)-1]
 		} else {
@@ -107,52 +99,58 @@ func (r *SlidingDequeBuffer) Push(t int64, v Value) {
 }
 
 func (r *SlidingDequeBuffer) Reset(mint int64, _ int64) {
-	// Find first sample with t > mint
-	start := len(r.samples) - r.size
-	newStart := start
-	for i := start; i < len(r.samples); i++ {
-		if r.samples[i].t > mint {
-			break
-		}
-		s := &r.samples[i]
-		if s.h != nil {
-			r.sampleCount -= telemetry.CalculateHistogramSampleCount(s.h)
+	if len(r.samples) == 0 || r.samples[len(r.samples)-1].T <= mint {
+		r.samples = r.samples[:0]
+		r.deque = r.deque[:0]
+		r.sampleCount = 0
+		r.floatCount = 0
+		return
+	}
+
+	// Find first sample to keep
+	var drop int
+	for drop = 0; drop < len(r.samples) && r.samples[drop].T <= mint; drop++ {
+		s := &r.samples[drop]
+		if s.V.H != nil {
+			r.sampleCount -= telemetry.CalculateHistogramSampleCount(s.V.H)
 		} else {
 			r.sampleCount--
 			r.floatCount--
 		}
-		newStart = i + 1
-	}
-	r.size = len(r.samples) - newStart
-
-	// Remove old indices from deque front
-	for len(r.deque) > 0 && r.deque[0] < newStart {
-		r.deque = r.deque[1:]
 	}
 
-	// Compact when start position exceeds size (more garbage than data)
-	if newStart > r.size {
-		r.compact(newStart)
+	if drop == 0 {
+		return
 	}
-}
 
-func (r *SlidingDequeBuffer) compact(start int) {
-	n := copy(r.samples, r.samples[start:])
-	r.samples = r.samples[:n]
-	// Adjust deque indices
+	// Remove old indices from deque and adjust remaining
+	var dequeDrop int
+	for dequeDrop = 0; dequeDrop < len(r.deque) && r.deque[dequeDrop] < drop; dequeDrop++ {
+	}
+	keep := len(r.deque) - dequeDrop
+	copy(r.deque, r.deque[dequeDrop:])
+	r.deque = r.deque[:keep]
 	for i := range r.deque {
-		r.deque[i] -= start
+		r.deque[i] -= drop
 	}
+
+	// Shift samples (same as GenericRingBuffer)
+	keep = len(r.samples) - drop
+	r.tail = resize(r.tail, drop)
+	copy(r.tail, r.samples[:drop])
+	copy(r.samples, r.samples[drop:])
+	copy(r.samples[keep:], r.tail)
+	r.samples = r.samples[:keep]
 }
 
 func (r *SlidingDequeBuffer) Eval(_ context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error) {
-	if r.size == 0 || r.floatCount == 0 {
+	if len(r.samples) == 0 || r.floatCount == 0 {
 		return 0, nil, false, nil
 	}
 	if len(r.deque) == 0 {
 		return math.NaN(), nil, true, nil
 	}
-	return r.samples[r.deque[0]].f, nil, true, nil
+	return r.samples[r.deque[0]].V.F, nil, true, nil
 }
 
 // =============================================================================
@@ -162,28 +160,25 @@ func (r *SlidingDequeBuffer) Eval(_ context.Context, _, _ float64, _ int64) (flo
 // SlidingAccumulatorBuffer wraps a compute.CheckpointableAccumulator with sliding window support.
 // It provides O(removed) Reset by subtracting removed samples.
 type SlidingAccumulatorBuffer struct {
-	samples []slidingSample
-	size    int
-	lastT   int64
-
+	samples     []Sample
+	tail        []Sample // scratch space for Reset
+	lastT       int64
 	acc         compute.CheckpointableAccumulator
 	sampleCount int
 	warn        error
 }
 
-func NewSlidingSumOverTimeBuffer(_ query.Options, selectRange, _ int64) *SlidingAccumulatorBuffer {
-	capacity := estimateCapacity(selectRange)
+func NewSlidingSumOverTimeBuffer(_ query.Options, _, _ int64) *SlidingAccumulatorBuffer {
 	return &SlidingAccumulatorBuffer{
-		samples: make([]slidingSample, 0, capacity),
+		samples: make([]Sample, 0, 8),
 		lastT:   math.MinInt64,
 		acc:     compute.NewSumAcc(),
 	}
 }
 
-func NewSlidingAvgOverTimeBuffer(_ query.Options, selectRange, _ int64) *SlidingAccumulatorBuffer {
-	capacity := estimateCapacity(selectRange)
+func NewSlidingAvgOverTimeBuffer(_ query.Options, _, _ int64) *SlidingAccumulatorBuffer {
 	return &SlidingAccumulatorBuffer{
-		samples: make([]slidingSample, 0, capacity),
+		samples: make([]Sample, 0, 8),
 		lastT:   math.MinInt64,
 		acc:     compute.NewAvgAcc(),
 	}
@@ -196,16 +191,26 @@ func (r *SlidingAccumulatorBuffer) ReadIntoLast(func(*Sample)) {}
 func (r *SlidingAccumulatorBuffer) Push(t int64, v Value) {
 	r.lastT = t
 
-	var h *histogram.FloatHistogram
+	// Append sample (same as GenericRingBuffer)
+	n := len(r.samples)
+	if n < cap(r.samples) {
+		r.samples = r.samples[:n+1]
+	} else {
+		r.samples = append(r.samples, Sample{})
+	}
+	r.samples[n].T = t
+	r.samples[n].V.F = v.F
 	if v.H != nil {
-		h = v.H.Copy()
 		r.sampleCount += telemetry.CalculateHistogramSampleCount(v.H)
+		if r.samples[n].V.H == nil {
+			r.samples[n].V.H = v.H.Copy()
+		} else {
+			v.H.CopyTo(r.samples[n].V.H)
+		}
 	} else {
 		r.sampleCount++
+		r.samples[n].V.H = nil
 	}
-
-	r.samples = append(r.samples, slidingSample{t: t, f: v.F, h: h})
-	r.size++
 
 	if err := r.acc.Add(v.F, v.H); err != nil {
 		r.warn = err
@@ -215,31 +220,38 @@ func (r *SlidingAccumulatorBuffer) Push(t int64, v Value) {
 func (r *SlidingAccumulatorBuffer) Reset(mint int64, _ int64) {
 	r.warn = nil
 
-	// Find first sample with t > mint, subtracting removed samples
-	start := len(r.samples) - r.size
-	newStart := start
-	for i := start; i < len(r.samples); i++ {
-		s := &r.samples[i]
-		if s.t > mint {
-			break
-		}
-		if err := r.acc.Sub(s.f, s.h); err != nil {
+	if len(r.samples) == 0 || r.samples[len(r.samples)-1].T <= mint {
+		r.samples = r.samples[:0]
+		r.sampleCount = 0
+		r.acc.Reset(0)
+		return
+	}
+
+	// Find first sample to keep, subtracting removed samples
+	var drop int
+	for drop = 0; drop < len(r.samples) && r.samples[drop].T <= mint; drop++ {
+		s := &r.samples[drop]
+		if err := r.acc.Sub(s.V.F, s.V.H); err != nil {
 			r.warn = err
 		}
-		if s.h != nil {
-			r.sampleCount -= telemetry.CalculateHistogramSampleCount(s.h)
+		if s.V.H != nil {
+			r.sampleCount -= telemetry.CalculateHistogramSampleCount(s.V.H)
 		} else {
 			r.sampleCount--
 		}
-		newStart = i + 1
 	}
-	r.size = len(r.samples) - newStart
 
-	// Compact when start position exceeds size (more garbage than data)
-	if newStart > r.size {
-		n := copy(r.samples, r.samples[newStart:])
-		r.samples = r.samples[:n]
+	if drop == 0 {
+		return
 	}
+
+	// Shift samples (same as GenericRingBuffer)
+	keep := len(r.samples) - drop
+	r.tail = resize(r.tail, drop)
+	copy(r.tail, r.samples[:drop])
+	copy(r.samples, r.samples[drop:])
+	copy(r.samples[keep:], r.tail)
+	r.samples = r.samples[:keep]
 }
 
 func (r *SlidingAccumulatorBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error) {
@@ -247,7 +259,7 @@ func (r *SlidingAccumulatorBuffer) Eval(ctx context.Context, _, _ float64, _ int
 		warnings.AddToContext(r.warn, ctx)
 	}
 
-	if r.size == 0 {
+	if len(r.samples) == 0 {
 		return 0, nil, false, nil
 	}
 

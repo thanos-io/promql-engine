@@ -321,28 +321,78 @@ func BenchmarkRangeQuery(b *testing.B) {
 			storage: sixHourDataset,
 		},
 		{
-			name:    "sum_over_time",
+			name:    "sum_over_time_5m",
 			query:   `sum_over_time(http_requests_total[5m])`,
 			storage: sixHourDataset,
 		},
 		{
-			name:    "avg_over_time",
+			name:    "sum_over_time_1h",
+			query:   `sum_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "sum_over_time_6h",
+			query:   `sum_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "avg_over_time_5m",
 			query:   `avg_over_time(http_requests_total[5m])`,
 			storage: sixHourDataset,
 		},
 		{
-			name:    "min_over_time",
+			name:    "avg_over_time_1h",
+			query:   `avg_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "avg_over_time_6h",
+			query:   `avg_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "min_over_time_5m",
 			query:   `min_over_time(http_requests_total[5m])`,
 			storage: sixHourDataset,
 		},
 		{
-			name:    "max_over_time",
+			name:    "min_over_time_1h",
+			query:   `min_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "min_over_time_6h",
+			query:   `min_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "max_over_time_5m",
 			query:   `max_over_time(http_requests_total[5m])`,
 			storage: sixHourDataset,
 		},
 		{
-			name:    "stddev_over_time",
+			name:    "max_over_time_1h",
+			query:   `max_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "max_over_time_6h",
+			query:   `max_over_time(http_requests_total[6h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time_5m",
 			query:   `stddev_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time_1h",
+			query:   `stddev_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "stddev_over_time_6h",
+			query:   `stddev_over_time(http_requests_total[6h])`,
 			storage: sixHourDataset,
 		},
 		{
