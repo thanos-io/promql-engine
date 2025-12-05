@@ -521,28 +521,49 @@ func (a *AvgAcc) Reset(_ float64) {
 }
 
 type statAcc struct {
-	count      float64
-	mean       float64
-	value      float64
-	hasValue   bool
-	seenHist   bool
-	warnedHist bool
+	count    float64
+	mean     float64
+	cMean    float64
+	value    float64
+	cValue   float64
+	hasValue bool
+	hasNaN   bool
 }
 
 func (s *statAcc) ValueType() ValueType {
 	if s.hasValue {
 		return SingleTypeValue
-	} else {
-		return NoValue
 	}
+	return NoValue
 }
+
 func (s *statAcc) Reset(_ float64) {
 	s.hasValue = false
-	s.seenHist = false
-	s.warnedHist = false
+	s.hasNaN = false
 	s.count = 0
 	s.mean = 0
+	s.cMean = 0
 	s.value = 0
+	s.cValue = 0
+}
+
+func (s *statAcc) add(v float64) {
+	s.hasValue = true
+	s.count++
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		s.hasNaN = true
+		return
+	}
+	delta := v - (s.mean + s.cMean)
+	s.mean, s.cMean = KahanSumInc(delta/s.count, s.mean, s.cMean)
+	s.value, s.cValue = KahanSumInc(delta*(v-(s.mean+s.cMean)), s.value, s.cValue)
+}
+
+func (s *statAcc) variance() float64 {
+	if s.hasNaN {
+		return math.NaN()
+	}
+	return (s.value + s.cValue) / s.count
 }
 
 type StdDevAcc struct {
@@ -555,42 +576,14 @@ func NewStdDevAcc() *StdDevAcc {
 
 func (s *StdDevAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		s.seenHist = true
-		if s.hasValue && !s.warnedHist {
-			s.warnedHist = true
-			return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
-		}
-		return nil
+		return annotations.NewHistogramIgnoredInAggregationInfo("stddev", posrange.PositionRange{})
 	}
-
-	if s.seenHist && !s.warnedHist {
-		s.warnedHist = true
-	}
-	s.hasValue = true
-	s.count++
-
-	if math.IsNaN(v) || math.IsInf(v, 0) {
-		s.value = math.NaN()
-	} else {
-		delta := v - s.mean
-		s.mean += delta / s.count
-		s.value += delta * (v - s.mean)
-	}
-	if s.seenHist && s.warnedHist {
-		return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
-	}
+	s.add(v)
 	return nil
 }
 
 func (s *StdDevAcc) Value() (float64, *histogram.FloatHistogram) {
-	if math.IsNaN(s.value) {
-		return math.NaN(), nil
-	}
-
-	if s.count == 1 {
-		return 0, nil
-	}
-	return math.Sqrt(s.value / s.count), nil
+	return math.Sqrt(s.variance()), nil
 }
 
 type StdVarAcc struct {
@@ -603,6 +596,30 @@ func NewStdVarAcc() *StdVarAcc {
 
 func (s *StdVarAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
+		return annotations.NewHistogramIgnoredInAggregationInfo("stdvar", posrange.PositionRange{})
+	}
+	s.add(v)
+	return nil
+}
+
+func (s *StdVarAcc) Value() (float64, *histogram.FloatHistogram) {
+	return s.variance(), nil
+}
+
+type statOverTimeAcc struct {
+	statAcc
+	seenHist   bool
+	warnedHist bool
+}
+
+func (s *statOverTimeAcc) Reset(_ float64) {
+	s.statAcc.Reset(0)
+	s.seenHist = false
+	s.warnedHist = false
+}
+
+func (s *statOverTimeAcc) addWithHist(v float64, h *histogram.FloatHistogram) error {
+	if h != nil {
 		s.seenHist = true
 		if s.hasValue && !s.warnedHist {
 			s.warnedHist = true
@@ -614,31 +631,43 @@ func (s *StdVarAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if s.seenHist && !s.warnedHist {
 		s.warnedHist = true
 	}
-	s.hasValue = true
-	s.count++
-
-	if math.IsNaN(v) || math.IsInf(v, 0) {
-		s.value = math.NaN()
-	} else {
-		delta := v - s.mean
-		s.mean += delta / s.count
-		s.value += delta * (v - s.mean)
-	}
+	s.add(v)
 	if s.seenHist && s.warnedHist {
 		return annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{})
 	}
 	return nil
 }
 
-func (s *StdVarAcc) Value() (float64, *histogram.FloatHistogram) {
-	if math.IsNaN(s.value) {
-		return math.NaN(), nil
-	}
+type StdDevOverTimeAcc struct {
+	statOverTimeAcc
+}
 
-	if s.count == 1 {
-		return 0, nil
-	}
-	return s.value / s.count, nil
+func NewStdDevOverTimeAcc() *StdDevOverTimeAcc {
+	return &StdDevOverTimeAcc{}
+}
+
+func (s *StdDevOverTimeAcc) Add(v float64, h *histogram.FloatHistogram) error {
+	return s.addWithHist(v, h)
+}
+
+func (s *StdDevOverTimeAcc) Value() (float64, *histogram.FloatHistogram) {
+	return math.Sqrt(s.variance()), nil
+}
+
+type StdVarOverTimeAcc struct {
+	statOverTimeAcc
+}
+
+func NewStdVarOverTimeAcc() *StdVarOverTimeAcc {
+	return &StdVarOverTimeAcc{}
+}
+
+func (s *StdVarOverTimeAcc) Add(v float64, h *histogram.FloatHistogram) error {
+	return s.addWithHist(v, h)
+}
+
+func (s *StdVarOverTimeAcc) Value() (float64, *histogram.FloatHistogram) {
+	return s.variance(), nil
 }
 
 type QuantileAcc struct {
