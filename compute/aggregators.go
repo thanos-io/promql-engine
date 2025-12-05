@@ -43,6 +43,7 @@ type SumAcc struct {
 	compensation float64
 	histSum      *histogram.FloatHistogram
 	hasFloatVal  bool
+	hasHistError bool
 }
 
 func NewSumAcc() *SumAcc {
@@ -68,6 +69,9 @@ func (s *SumAcc) Add(v float64, h *histogram.FloatHistogram) error {
 		s.value, s.compensation = KahanSumInc(v, s.value, s.compensation)
 		return nil
 	}
+	if s.hasHistError {
+		return nil
+	}
 	if s.histSum == nil {
 		s.histSum = h.Copy()
 		return nil
@@ -77,6 +81,8 @@ func (s *SumAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	var err error
 	if h.Schema >= s.histSum.Schema {
 		if s.histSum, err = s.histSum.Add(h); err != nil {
+			s.histSum = nil
+			s.hasHistError = true
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return annotations.MixedExponentialCustomHistogramsWarning
 			}
@@ -88,6 +94,8 @@ func (s *SumAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	} else {
 		t := h.Copy()
 		if s.histSum, err = t.Add(s.histSum); err != nil {
+			s.histSum = nil
+			s.hasHistError = true
 			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 				return annotations.MixedExponentialCustomHistogramsWarning
 			}
@@ -121,6 +129,7 @@ func (s *SumAcc) ValueType() ValueType {
 func (s *SumAcc) Reset(_ float64) {
 	s.histSum = nil
 	s.hasFloatVal = false
+	s.hasHistError = false
 	s.value = 0
 	s.compensation = 0
 }
