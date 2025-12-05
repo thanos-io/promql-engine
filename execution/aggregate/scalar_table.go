@@ -29,9 +29,8 @@ type aggregateTable interface {
 	timestamp() int64
 	// aggregate aggregates the given vector into the table.
 	aggregate(vector model.StepVector) error
-	// toVector writes out the accumulated result to the given vector and
-	// resets the table.
-	toVector(ctx context.Context, pool *model.VectorPool) model.StepVector
+	// populateVector writes out the accumulated result into the provided vector.
+	populateVector(ctx context.Context, vec *model.StepVector)
 	// reset resets the table with a new aggregation argument.
 	// The argument is currently used for quantile aggregation.
 	reset(arg float64)
@@ -111,8 +110,8 @@ func (t *scalarTable) reset(arg float64) {
 	t.ts = math.MinInt64
 }
 
-func (t *scalarTable) toVector(ctx context.Context, pool *model.VectorPool) model.StepVector {
-	result := pool.GetStepVector(t.ts)
+func (t *scalarTable) populateVector(ctx context.Context, vec *model.StepVector) {
+	hint := len(t.outputs)
 	for i, v := range t.outputs {
 		switch t.accumulators[i].ValueType() {
 		case compute.NoValue:
@@ -120,15 +119,14 @@ func (t *scalarTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 		case compute.SingleTypeValue:
 			f, h := t.accumulators[i].Value()
 			if h == nil {
-				result.AppendSample(pool, v.ID, f)
+				vec.AppendSampleWithHint(v.ID, f, hint)
 			} else {
-				result.AppendHistogram(pool, v.ID, h)
+				vec.AppendHistogramWithHint(v.ID, h, hint)
 			}
 		case compute.MixedTypeValue:
 			warnings.AddToContext(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}), ctx)
 		}
 	}
-	return result
 }
 
 func hashMetric(
