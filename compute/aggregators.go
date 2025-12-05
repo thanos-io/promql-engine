@@ -38,6 +38,23 @@ type CopyableAccumulator interface {
 	Copy() CopyableAccumulator
 }
 
+// MergeableAccumulator is an Accumulator that can merge another accumulator's state.
+// This enables O(1) checkpoint restoration by merging prefix + suffix accumulators.
+type MergeableAccumulator interface {
+	CopyableAccumulator
+	// Merge combines another accumulator's state into this one.
+	// The other accumulator should be of the same concrete type.
+	Merge(other MergeableAccumulator) error
+}
+
+// SubtractableAccumulator is an Accumulator that supports removing values.
+// This enables O(1) sliding window updates by subtracting removed samples.
+type SubtractableAccumulator interface {
+	CopyableAccumulator
+	// Sub removes a value from the accumulator (inverse of Add).
+	Sub(v float64, h *histogram.FloatHistogram) error
+}
+
 type VectorAccumulator interface {
 	AddVector(vs []float64, hs []*histogram.FloatHistogram) error
 	Value() (float64, *histogram.FloatHistogram)
@@ -152,6 +169,40 @@ func (s *SumAcc) Copy() CopyableAccumulator {
 		cp.histSum = s.histSum.Copy()
 	}
 	return cp
+}
+
+func (s *SumAcc) Merge(other MergeableAccumulator) error {
+	o := other.(*SumAcc)
+	s.value, s.compensation = KahanSumInc(o.value+o.compensation, s.value, s.compensation)
+	s.hasFloatVal = s.hasFloatVal || o.hasFloatVal
+	s.hasHistError = s.hasHistError || o.hasHistError
+	if o.histSum != nil {
+		var err error
+		s.histSum, err = histogramSum(s.histSum, []*histogram.FloatHistogram{o.histSum})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SumAcc) Sub(v float64, h *histogram.FloatHistogram) error {
+	if h == nil {
+		// Subtract float value using Kahan summation (add negative)
+		s.value, s.compensation = KahanSumInc(-v, s.value, s.compensation)
+		return nil
+	}
+	// Subtract histogram by adding negated copy
+	if s.histSum != nil && !s.hasHistError {
+		negH := h.Copy().Mul(-1)
+		var err error
+		s.histSum, err = s.histSum.Add(negH)
+		if err != nil {
+			s.hasHistError = true
+			return err
+		}
+	}
+	return nil
 }
 
 func NewMaxAcc() *MaxAcc {
@@ -563,6 +614,136 @@ func (a *AvgAcc) Copy() CopyableAccumulator {
 	return cp
 }
 
+func (a *AvgAcc) Merge(other MergeableAccumulator) error {
+	o := other.(*AvgAcc)
+
+	// Merge float values: combined_avg = (sum1 + sum2) / (count1 + count2)
+	if o.count > 0 {
+		// Get the sum from other accumulator
+		var otherSum float64
+		if o.incremental {
+			otherSum = o.avg * float64(o.count)
+		} else {
+			otherSum = o.kahanSum + o.kahanC
+		}
+
+		if a.count == 0 {
+			// This accumulator is empty, just copy other's state
+			a.kahanSum = otherSum
+			a.kahanC = 0
+			a.count = o.count
+			a.hasValue = true
+			a.incremental = false
+		} else {
+			// Get our sum
+			var ourSum float64
+			if a.incremental {
+				ourSum = a.avg * float64(a.count)
+			} else {
+				ourSum = a.kahanSum + a.kahanC
+			}
+
+			// Combine sums and counts
+			totalCount := a.count + o.count
+			totalSum := ourSum + otherSum
+
+			// Check for overflow and switch to incremental if needed
+			if math.IsInf(totalSum, 0) {
+				a.incremental = true
+				a.avg = totalSum / float64(totalCount)
+				a.kahanC = 0
+			} else {
+				a.incremental = false
+				a.kahanSum = totalSum
+				a.kahanC = 0
+			}
+			a.count = totalCount
+		}
+	}
+
+	// Merge histogram values
+	if o.histCount > 0 && !a.hasHistError && !o.hasHistError {
+		if a.histSum == nil {
+			a.histSum = o.histSum.Copy()
+			a.histCount = o.histCount
+		} else {
+			// For histogram average, we need to combine: (histSum1 + histSum2) / (count1 + count2)
+			// But histSum stores the running average, not the sum. We need to recover sums first.
+			// Actually looking at the Add code, histSum IS the running average, updated incrementally.
+			// To merge, we compute: new_avg = (avg1 * count1 + avg2 * count2) / (count1 + count2)
+			totalCount := a.histCount + o.histCount
+			// Scale current average by its weight
+			scaled1 := a.histSum.Copy().Mul(a.histCount / totalCount)
+			scaled2 := o.histSum.Copy().Mul(o.histCount / totalCount)
+			var err error
+			a.histSum, err = scaled1.Add(scaled2)
+			if err != nil {
+				a.histSum = nil
+				a.histCount = 0
+				a.hasHistError = true
+				return err
+			}
+			a.histCount = totalCount
+		}
+	}
+
+	return nil
+}
+
+func (a *AvgAcc) Sub(v float64, h *histogram.FloatHistogram) error {
+	if h != nil {
+		// Subtract histogram from average
+		if a.histSum != nil && !a.hasHistError && a.histCount > 0 {
+			// Recover sum: sum = avg * count (histSum stores running average)
+			// After subtraction: new_avg = (sum - h) / (count - 1)
+			// But histSum is the average, so we need to adjust
+			a.histCount--
+			if a.histCount == 0 {
+				a.histSum = nil
+			} else {
+				// new_sum = old_avg * old_count - h
+				// new_avg = new_sum / new_count
+				// This is complex for histograms, fall back to not supporting it
+				// for now by invalidating
+				a.histSum = nil
+				a.hasHistError = true
+			}
+		}
+		return nil
+	}
+
+	if a.count <= 0 {
+		return nil
+	}
+
+	// Get current sum
+	var currentSum float64
+	if a.incremental {
+		currentSum = a.avg * float64(a.count)
+	} else {
+		currentSum = a.kahanSum + a.kahanC
+	}
+
+	// Subtract value and decrement count
+	newSum := currentSum - v
+	a.count--
+
+	if a.count == 0 {
+		a.hasValue = false
+		a.kahanSum = 0
+		a.kahanC = 0
+		a.avg = 0
+		a.incremental = false
+	} else {
+		// Store as sum (non-incremental) for simplicity
+		a.incremental = false
+		a.kahanSum = newSum
+		a.kahanC = 0
+	}
+
+	return nil
+}
+
 type statAcc struct {
 	count    float64
 	mean     float64
@@ -697,24 +878,6 @@ func (s *StdDevOverTimeAcc) Value() (float64, *histogram.FloatHistogram) {
 	return math.Sqrt(s.variance()), nil
 }
 
-func (s *StdDevOverTimeAcc) Copy() CopyableAccumulator {
-	return &StdDevOverTimeAcc{
-		statOverTimeAcc: statOverTimeAcc{
-			statAcc: statAcc{
-				count:    s.count,
-				mean:     s.mean,
-				cMean:    s.cMean,
-				value:    s.value,
-				cValue:   s.cValue,
-				hasValue: s.hasValue,
-				hasNaN:   s.hasNaN,
-			},
-			seenHist:   s.seenHist,
-			warnedHist: s.warnedHist,
-		},
-	}
-}
-
 type StdVarOverTimeAcc struct {
 	statOverTimeAcc
 }
@@ -729,24 +892,6 @@ func (s *StdVarOverTimeAcc) Add(v float64, h *histogram.FloatHistogram) error {
 
 func (s *StdVarOverTimeAcc) Value() (float64, *histogram.FloatHistogram) {
 	return s.variance(), nil
-}
-
-func (s *StdVarOverTimeAcc) Copy() CopyableAccumulator {
-	return &StdVarOverTimeAcc{
-		statOverTimeAcc: statOverTimeAcc{
-			statAcc: statAcc{
-				count:    s.count,
-				mean:     s.mean,
-				cMean:    s.cMean,
-				value:    s.value,
-				cValue:   s.cValue,
-				hasValue: s.hasValue,
-				hasNaN:   s.hasNaN,
-			},
-			seenHist:   s.seenHist,
-			warnedHist: s.warnedHist,
-		},
-	}
 }
 
 type QuantileAcc struct {

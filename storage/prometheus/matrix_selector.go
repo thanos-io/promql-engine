@@ -307,14 +307,8 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		}
 		return ringbuffer.NewAvgOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "stddev_over_time":
-		if isRangeQuery {
-			return ringbuffer.NewSlidingStdDevOverTimeBuffer(*o.opts, o.selectRange, o.offset)
-		}
 		return ringbuffer.NewStdDevOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "stdvar_over_time":
-		if isRangeQuery {
-			return ringbuffer.NewSlidingStdVarOverTimeBuffer(*o.opts, o.selectRange, o.offset)
-		}
 		return ringbuffer.NewStdVarOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "present_over_time":
 		return ringbuffer.NewPresentOverTimeBuffer(*o.opts, o.selectRange, o.offset)

@@ -223,30 +223,18 @@ func (r *SlidingDequeBuffer) growWithDeque() {
 
 // =============================================================================
 // SlidingAccumulatorBuffer - Generic sliding buffer using compute.Accumulator
-// with suffix checkpoints for efficient window sliding.
+// with O(removed) updates for subtractable accumulators.
 // =============================================================================
 
-// suffixCheckpoint stores accumulator state for samples from startIdx to the end
-// of the window at the time of checkpoint creation.
-type suffixCheckpoint struct {
-	startIdx int                         // first sample index included in this checkpoint
-	endIdx   int                         // last sample index included (size-1 at creation time)
-	acc      compute.CopyableAccumulator // accumulator state for samples[startIdx..endIdx]
-}
-
 // SlidingAccumulatorBuffer wraps any compute.CopyableAccumulator with sliding window support.
-// It uses suffix checkpoints: each checkpoint stores the accumulated state for samples
-// from a certain index to the end. When samples are removed from the front, we can
-// restore from a checkpoint whose startIdx >= removedCount.
+//
+// For SubtractableAccumulator (like SumAcc): O(removed) Reset by subtracting removed samples.
+// For other accumulators: O(window) rebuild on Reset.
 type SlidingAccumulatorBuffer struct {
 	slidingBase
 
 	acc        compute.CopyableAccumulator
 	newAccFunc func() compute.CopyableAccumulator
-
-	// Suffix checkpoints for efficient restoration
-	checkpoints     []suffixCheckpoint
-	checkpointEvery int // samples between checkpoint creation
 
 	sampleCount int
 	warn        error
@@ -255,18 +243,10 @@ type SlidingAccumulatorBuffer struct {
 func newSlidingAccumulatorBuffer(opts query.Options, selectRange, offset int64, newAcc func() compute.CopyableAccumulator) *SlidingAccumulatorBuffer {
 	base := newSlidingBase(opts, selectRange, offset)
 
-	// Create checkpoints periodically
-	checkpointEvery := int(math.Sqrt(float64(base.capacity)))
-	if checkpointEvery < 8 {
-		checkpointEvery = 8
-	}
-
 	return &SlidingAccumulatorBuffer{
-		slidingBase:     base,
-		acc:             newAcc(),
-		newAccFunc:      newAcc,
-		checkpoints:     make([]suffixCheckpoint, 0, 8),
-		checkpointEvery: checkpointEvery,
+		slidingBase: base,
+		acc:         newAcc(),
+		newAccFunc:  newAcc,
 	}
 }
 
@@ -278,20 +258,11 @@ func NewSlidingAvgOverTimeBuffer(opts query.Options, selectRange, offset int64) 
 	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CopyableAccumulator { return compute.NewAvgAcc() })
 }
 
-func NewSlidingStdDevOverTimeBuffer(opts query.Options, selectRange, offset int64) *SlidingAccumulatorBuffer {
-	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CopyableAccumulator { return compute.NewStdDevOverTimeAcc() })
-}
-
-func NewSlidingStdVarOverTimeBuffer(opts query.Options, selectRange, offset int64) *SlidingAccumulatorBuffer {
-	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CopyableAccumulator { return compute.NewStdVarOverTimeAcc() })
-}
-
 func (r *SlidingAccumulatorBuffer) SampleCount() int { return r.sampleCount }
 
 func (r *SlidingAccumulatorBuffer) Push(t int64, v Value) {
 	r.lastT = t
 
-	// Store sample in buffer
 	if r.size >= r.capacity {
 		r.grow()
 	}
@@ -308,39 +279,11 @@ func (r *SlidingAccumulatorBuffer) Push(t int64, v Value) {
 	r.head = (r.head + 1) % r.capacity
 	r.size++
 
-	// Add to accumulator
+	// Add to main accumulator
 	if err := r.acc.Add(v.F, v.H); err != nil {
 		r.warn = err
 	}
 
-	// Periodically create suffix checkpoints at different starting points
-	// This gives us O(sqrt(n)) restoration cost
-	if r.size%r.checkpointEvery == 0 && r.size > 0 {
-		r.createSuffixCheckpoint()
-	}
-}
-
-// createSuffixCheckpoint creates a checkpoint for samples from current position to end.
-// Called periodically during Push to maintain checkpoints at regular intervals.
-func (r *SlidingAccumulatorBuffer) createSuffixCheckpoint() {
-	// Create a suffix checkpoint: accumulate from current checkpoint start to end
-	startIdx := r.size - r.checkpointEvery
-	if startIdx < 0 {
-		startIdx = 0
-	}
-
-	// Build accumulator for suffix [startIdx, size-1]
-	suffixAcc := r.newAccFunc()
-	for i := startIdx; i < r.size; i++ {
-		s := r.sampleAt(i)
-		suffixAcc.Add(s.f, s.h)
-	}
-
-	r.checkpoints = append(r.checkpoints, suffixCheckpoint{
-		startIdx: startIdx,
-		endIdx:   r.size - 1,
-		acc:      suffixAcc,
-	})
 }
 
 func (r *SlidingAccumulatorBuffer) Reset(mint int64, evalt int64) {
@@ -348,8 +291,14 @@ func (r *SlidingAccumulatorBuffer) Reset(mint int64, evalt int64) {
 	r.sampleCount = 0
 	r.warn = nil
 
-	// Count samples to remove
-	removeCount := r.removeOldSamples(mint)
+	// Count how many samples will be removed (without removing yet)
+	removeCount := 0
+	for i := 0; i < r.size; i++ {
+		if r.sampleAt(i).t > mint {
+			break
+		}
+		removeCount++
+	}
 
 	if removeCount == 0 {
 		// No samples removed - accumulator is still valid
@@ -357,71 +306,21 @@ func (r *SlidingAccumulatorBuffer) Reset(mint int64, evalt int64) {
 		return
 	}
 
-	// Find best checkpoint: one whose startIdx (after adjustment) is 0
-	// meaning it covers exactly the samples we need
-	var bestCheckpoint *suffixCheckpoint
-	validCheckpoints := r.checkpoints[:0]
-
-	for i := range r.checkpoints {
-		cp := &r.checkpoints[i]
-		// Adjust indices for removed samples
-		newStartIdx := cp.startIdx - removeCount
-		newEndIdx := cp.endIdx - removeCount
-
-		// Checkpoint is valid if it's entirely within remaining samples
-		if newStartIdx >= 0 && newEndIdx < r.size {
-			cp.startIdx = newStartIdx
-			cp.endIdx = newEndIdx
-			validCheckpoints = append(validCheckpoints, *cp)
-
-			// Best checkpoint is one that starts at 0 (covers all remaining samples)
-			// or the one with smallest startIdx (least work to prepend)
-			if newStartIdx == 0 {
-				bestCheckpoint = &validCheckpoints[len(validCheckpoints)-1]
-			} else if bestCheckpoint == nil || newStartIdx < bestCheckpoint.startIdx {
-				bestCheckpoint = &validCheckpoints[len(validCheckpoints)-1]
-			}
-		}
-	}
-	r.checkpoints = validCheckpoints
-
-	// Rebuild accumulator
-	r.acc.Reset(0)
-
-	if bestCheckpoint != nil && bestCheckpoint.startIdx == 0 {
-		// Perfect match: checkpoint covers exactly [0, endIdx]
-		// Just copy it and add any new samples after endIdx
-		r.acc = bestCheckpoint.acc.Copy()
-		for i := bestCheckpoint.endIdx + 1; i < r.size; i++ {
+	// Check if accumulator supports subtraction (like SumAcc)
+	if subAcc, ok := r.acc.(compute.SubtractableAccumulator); ok {
+		// O(removed) update: subtract the samples being removed
+		for i := 0; i < removeCount; i++ {
 			s := r.sampleAt(i)
-			if err := r.acc.Add(s.f, s.h); err != nil {
+			if err := subAcc.Sub(s.f, s.h); err != nil {
 				r.warn = err
 			}
 		}
-	} else if bestCheckpoint != nil {
-		// Checkpoint starts after 0: add samples [0, startIdx-1] then copy checkpoint
-		for i := 0; i < bestCheckpoint.startIdx; i++ {
-			s := r.sampleAt(i)
-			if err := r.acc.Add(s.f, s.h); err != nil {
-				r.warn = err
-			}
-		}
-		// Add checkpoint's accumulated value by replaying its samples
-		for i := bestCheckpoint.startIdx; i <= bestCheckpoint.endIdx; i++ {
-			s := r.sampleAt(i)
-			if err := r.acc.Add(s.f, s.h); err != nil {
-				r.warn = err
-			}
-		}
-		// Add any samples after checkpoint
-		for i := bestCheckpoint.endIdx + 1; i < r.size; i++ {
-			s := r.sampleAt(i)
-			if err := r.acc.Add(s.f, s.h); err != nil {
-				r.warn = err
-			}
-		}
+		// Now remove the samples from the buffer
+		r.removeOldSamples(mint)
 	} else {
-		// No valid checkpoint - rebuild from scratch
+		// Non-subtractable: rebuild from remaining samples
+		r.removeOldSamples(mint)
+		r.acc.Reset(0)
 		for i := 0; i < r.size; i++ {
 			s := r.sampleAt(i)
 			if err := r.acc.Add(s.f, s.h); err != nil {
@@ -450,6 +349,11 @@ func (r *SlidingAccumulatorBuffer) Eval(ctx context.Context, _, _ float64, _ int
 		warnings.AddToContext(r.warn, ctx)
 	}
 
+	// No samples in buffer = no value
+	if r.size == 0 {
+		return 0, nil, false, nil
+	}
+
 	valueType := r.acc.ValueType()
 	if valueType == compute.NoValue {
 		return 0, nil, false, nil
@@ -469,6 +373,5 @@ func (r *SlidingAccumulatorBuffer) Eval(ctx context.Context, _, _ float64, _ int
 
 func (r *SlidingAccumulatorBuffer) grow() {
 	r.slidingBase.grow()
-	// Invalidate all checkpoints on grow since sample indices change
-	r.checkpoints = r.checkpoints[:0]
+	// Checkpoint remains valid - indices don't change, just internal buffer layout
 }
