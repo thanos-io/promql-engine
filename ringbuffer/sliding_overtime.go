@@ -176,27 +176,23 @@ func (r *SlidingDequeBuffer) Push(t int64, v Value) {
 
 func (r *SlidingDequeBuffer) Reset(mint int64, evalt int64) {
 	r.currentMint = mint
-	r.sampleCount = 0
-	r.floatCount = 0
 
 	for r.size > 0 {
 		oldestIdx := r.oldestIndex()
-		if r.samples[oldestIdx].t > mint {
+		s := &r.samples[oldestIdx]
+		if s.t > mint {
 			break
+		}
+		// Decrement sample count
+		if s.h != nil {
+			r.sampleCount -= telemetry.CalculateHistogramSampleCount(s.h)
+		} else {
+			r.sampleCount--
+			r.floatCount--
 		}
 		r.size--
 		if len(r.deque) > 0 && r.deque[0] == oldestIdx {
 			r.deque = r.deque[1:]
-		}
-	}
-
-	for i := 0; i < r.size; i++ {
-		s := r.sampleAt(i)
-		if s.h != nil {
-			r.sampleCount += telemetry.CalculateHistogramSampleCount(s.h)
-		} else {
-			r.sampleCount++
-			r.floatCount++
 		}
 	}
 }
@@ -226,21 +222,19 @@ func (r *SlidingDequeBuffer) growWithDeque() {
 // with O(removed) updates for subtractable accumulators.
 // =============================================================================
 
-// SlidingAccumulatorBuffer wraps any compute.CopyableAccumulator with sliding window support.
-//
-// For SubtractableAccumulator (like SumAcc): O(removed) Reset by subtracting removed samples.
-// For other accumulators: O(window) rebuild on Reset.
+// SlidingAccumulatorBuffer wraps a compute.CheckpointableAccumulator with sliding window support.
+// It provides O(removed) Reset by subtracting removed samples.
 type SlidingAccumulatorBuffer struct {
 	slidingBase
 
-	acc        compute.CopyableAccumulator
-	newAccFunc func() compute.CopyableAccumulator
+	acc        compute.CheckpointableAccumulator
+	newAccFunc func() compute.CheckpointableAccumulator
 
 	sampleCount int
 	warn        error
 }
 
-func newSlidingAccumulatorBuffer(opts query.Options, selectRange, offset int64, newAcc func() compute.CopyableAccumulator) *SlidingAccumulatorBuffer {
+func newSlidingAccumulatorBuffer(opts query.Options, selectRange, offset int64, newAcc func() compute.CheckpointableAccumulator) *SlidingAccumulatorBuffer {
 	base := newSlidingBase(opts, selectRange, offset)
 
 	return &SlidingAccumulatorBuffer{
@@ -251,11 +245,11 @@ func newSlidingAccumulatorBuffer(opts query.Options, selectRange, offset int64, 
 }
 
 func NewSlidingSumOverTimeBuffer(opts query.Options, selectRange, offset int64) *SlidingAccumulatorBuffer {
-	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CopyableAccumulator { return compute.NewSumAcc() })
+	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CheckpointableAccumulator { return compute.NewSumAcc() })
 }
 
 func NewSlidingAvgOverTimeBuffer(opts query.Options, selectRange, offset int64) *SlidingAccumulatorBuffer {
-	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CopyableAccumulator { return compute.NewAvgAcc() })
+	return newSlidingAccumulatorBuffer(opts, selectRange, offset, func() compute.CheckpointableAccumulator { return compute.NewAvgAcc() })
 }
 
 func (r *SlidingAccumulatorBuffer) SampleCount() int { return r.sampleCount }
@@ -288,59 +282,24 @@ func (r *SlidingAccumulatorBuffer) Push(t int64, v Value) {
 
 func (r *SlidingAccumulatorBuffer) Reset(mint int64, evalt int64) {
 	r.currentMint = mint
-	r.sampleCount = 0
 	r.warn = nil
 
-	// Count how many samples will be removed (without removing yet)
-	removeCount := 0
-	for i := 0; i < r.size; i++ {
-		if r.sampleAt(i).t > mint {
+	// O(removed) update: subtract the samples being removed
+	for r.size > 0 {
+		s := r.sampleAt(0)
+		if s.t > mint {
 			break
 		}
-		removeCount++
-	}
-
-	if removeCount == 0 {
-		// No samples removed - accumulator is still valid
-		r.recalcSampleCount()
-		return
-	}
-
-	// Check if accumulator supports subtraction (like SumAcc)
-	if subAcc, ok := r.acc.(compute.SubtractableAccumulator); ok {
-		// O(removed) update: subtract the samples being removed
-		for i := 0; i < removeCount; i++ {
-			s := r.sampleAt(i)
-			if err := subAcc.Sub(s.f, s.h); err != nil {
-				r.warn = err
-			}
+		if err := r.acc.Sub(s.f, s.h); err != nil {
+			r.warn = err
 		}
-		// Now remove the samples from the buffer
-		r.removeOldSamples(mint)
-	} else {
-		// Non-subtractable: rebuild from remaining samples
-		r.removeOldSamples(mint)
-		r.acc.Reset(0)
-		for i := 0; i < r.size; i++ {
-			s := r.sampleAt(i)
-			if err := r.acc.Add(s.f, s.h); err != nil {
-				r.warn = err
-			}
-		}
-	}
-
-	r.recalcSampleCount()
-}
-
-func (r *SlidingAccumulatorBuffer) recalcSampleCount() {
-	r.sampleCount = 0
-	for i := 0; i < r.size; i++ {
-		s := r.sampleAt(i)
+		// Decrement sample count
 		if s.h != nil {
-			r.sampleCount += telemetry.CalculateHistogramSampleCount(s.h)
+			r.sampleCount -= telemetry.CalculateHistogramSampleCount(s.h)
 		} else {
-			r.sampleCount++
+			r.sampleCount--
 		}
+		r.size--
 	}
 }
 

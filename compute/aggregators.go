@@ -31,27 +31,13 @@ type Accumulator interface {
 	Reset(float64)
 }
 
-// CopyableAccumulator is an Accumulator that can be efficiently copied.
+// CheckpointableAccumulator is an Accumulator that can be efficiently copied.
 // This is used by sliding window buffers to create checkpoints.
-type CopyableAccumulator interface {
+type CheckpointableAccumulator interface {
 	Accumulator
-	Copy() CopyableAccumulator
-}
-
-// MergeableAccumulator is an Accumulator that can merge another accumulator's state.
-// This enables O(1) checkpoint restoration by merging prefix + suffix accumulators.
-type MergeableAccumulator interface {
-	CopyableAccumulator
-	// Merge combines another accumulator's state into this one.
-	// The other accumulator should be of the same concrete type.
-	Merge(other MergeableAccumulator) error
-}
-
-// SubtractableAccumulator is an Accumulator that supports removing values.
-// This enables O(1) sliding window updates by subtracting removed samples.
-type SubtractableAccumulator interface {
-	CopyableAccumulator
+	Copy() CheckpointableAccumulator
 	// Sub removes a value from the accumulator (inverse of Add).
+	// This enables O(removed) sliding window updates by subtracting removed samples.
 	Sub(v float64, h *histogram.FloatHistogram) error
 }
 
@@ -158,7 +144,7 @@ func (s *SumAcc) Reset(_ float64) {
 	s.compensation = 0
 }
 
-func (s *SumAcc) Copy() CopyableAccumulator {
+func (s *SumAcc) Copy() CheckpointableAccumulator {
 	cp := &SumAcc{
 		value:        s.value,
 		compensation: s.compensation,
@@ -169,21 +155,6 @@ func (s *SumAcc) Copy() CopyableAccumulator {
 		cp.histSum = s.histSum.Copy()
 	}
 	return cp
-}
-
-func (s *SumAcc) Merge(other MergeableAccumulator) error {
-	o := other.(*SumAcc)
-	s.value, s.compensation = KahanSumInc(o.value+o.compensation, s.value, s.compensation)
-	s.hasFloatVal = s.hasFloatVal || o.hasFloatVal
-	s.hasHistError = s.hasHistError || o.hasHistError
-	if o.histSum != nil {
-		var err error
-		s.histSum, err = histogramSum(s.histSum, []*histogram.FloatHistogram{o.histSum})
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (s *SumAcc) Sub(v float64, h *histogram.FloatHistogram) error {
@@ -591,7 +562,7 @@ func (a *AvgAcc) Reset(_ float64) {
 	a.hasHistError = false
 }
 
-func (a *AvgAcc) Copy() CopyableAccumulator {
+func (a *AvgAcc) Copy() CheckpointableAccumulator {
 	cp := &AvgAcc{
 		kahanSum:     a.kahanSum,
 		kahanC:       a.kahanC,
@@ -612,82 +583,6 @@ func (a *AvgAcc) Copy() CopyableAccumulator {
 		cp.histSumScratch = a.histSumScratch.Copy()
 	}
 	return cp
-}
-
-func (a *AvgAcc) Merge(other MergeableAccumulator) error {
-	o := other.(*AvgAcc)
-
-	// Merge float values: combined_avg = (sum1 + sum2) / (count1 + count2)
-	if o.count > 0 {
-		// Get the sum from other accumulator
-		var otherSum float64
-		if o.incremental {
-			otherSum = o.avg * float64(o.count)
-		} else {
-			otherSum = o.kahanSum + o.kahanC
-		}
-
-		if a.count == 0 {
-			// This accumulator is empty, just copy other's state
-			a.kahanSum = otherSum
-			a.kahanC = 0
-			a.count = o.count
-			a.hasValue = true
-			a.incremental = false
-		} else {
-			// Get our sum
-			var ourSum float64
-			if a.incremental {
-				ourSum = a.avg * float64(a.count)
-			} else {
-				ourSum = a.kahanSum + a.kahanC
-			}
-
-			// Combine sums and counts
-			totalCount := a.count + o.count
-			totalSum := ourSum + otherSum
-
-			// Check for overflow and switch to incremental if needed
-			if math.IsInf(totalSum, 0) {
-				a.incremental = true
-				a.avg = totalSum / float64(totalCount)
-				a.kahanC = 0
-			} else {
-				a.incremental = false
-				a.kahanSum = totalSum
-				a.kahanC = 0
-			}
-			a.count = totalCount
-		}
-	}
-
-	// Merge histogram values
-	if o.histCount > 0 && !a.hasHistError && !o.hasHistError {
-		if a.histSum == nil {
-			a.histSum = o.histSum.Copy()
-			a.histCount = o.histCount
-		} else {
-			// For histogram average, we need to combine: (histSum1 + histSum2) / (count1 + count2)
-			// But histSum stores the running average, not the sum. We need to recover sums first.
-			// Actually looking at the Add code, histSum IS the running average, updated incrementally.
-			// To merge, we compute: new_avg = (avg1 * count1 + avg2 * count2) / (count1 + count2)
-			totalCount := a.histCount + o.histCount
-			// Scale current average by its weight
-			scaled1 := a.histSum.Copy().Mul(a.histCount / totalCount)
-			scaled2 := o.histSum.Copy().Mul(o.histCount / totalCount)
-			var err error
-			a.histSum, err = scaled1.Add(scaled2)
-			if err != nil {
-				a.histSum = nil
-				a.histCount = 0
-				a.hasHistError = true
-				return err
-			}
-			a.histCount = totalCount
-		}
-	}
-
-	return nil
 }
 
 func (a *AvgAcc) Sub(v float64, h *histogram.FloatHistogram) error {
