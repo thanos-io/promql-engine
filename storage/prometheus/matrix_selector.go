@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -23,9 +22,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type matrixScanner struct {
@@ -71,9 +68,6 @@ type matrixSelector struct {
 
 	// Lookback delta for extended range functions.
 	extLookbackDelta int64
-
-	nonCounterMetric string
-	hasFloats        bool
 }
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
@@ -154,10 +148,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 	}
 
 	if o.currentStep > o.maxt {
-		if o.nonCounterMetric != "" && o.hasFloats {
-			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
-		}
-
 		return nil, nil
 	}
 	if err := o.loadSeries(ctx); err != nil {
@@ -201,7 +191,6 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 					vectors[currStep].AppendHistogram(o.vectorPool, scanner.signature, h)
 				} else {
 					vectors[currStep].AppendSample(o.vectorPool, scanner.signature, f)
-					o.hasFloats = true
 				}
 			}
 			o.telemetry.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs)
@@ -253,20 +242,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			o.seriesBatchSize = numSeries
 		}
 		o.vectorPool.SetStepSize(int(o.seriesBatchSize))
-
-		// Add a warning if rate or increase is applied on metrics which are not named like counters.
-		if o.functionName == "rate" || o.functionName == "increase" {
-			if len(series) > 0 {
-				metricName := series[0].Labels().Get(labels.MetricName)
-				if metricName != "" &&
-					!strings.HasSuffix(metricName, "_total") &&
-					!strings.HasSuffix(metricName, "_sum") &&
-					!strings.HasSuffix(metricName, "_count") &&
-					!strings.HasSuffix(metricName, "_bucket") {
-					o.nonCounterMetric = metricName
-				}
-			}
-		}
 	})
 	return err
 }
