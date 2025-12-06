@@ -12,7 +12,6 @@ import (
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/warnings"
 
-	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -116,11 +115,8 @@ func instantValue(ctx context.Context, samples []Sample, isRate bool) (float64, 
 
 		if !isRate || !ss[1].V.H.DetectReset(ss[0].V.H) {
 			_, err := resultSample.V.H.Sub(ss[0].V.H)
-			if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-				warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning("", posrange.PositionRange{}), ctx)
-				return 0, nil, false
-			} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-				warnings.AddToContext(annotations.NewIncompatibleCustomBucketsHistogramsWarning("", posrange.PositionRange{}), ctx)
+			if err != nil {
+				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 				return 0, nil, false
 			}
 		}
@@ -144,18 +140,6 @@ func instantValue(ctx context.Context, samples []Sample, isRate bool) (float64, 
 	}
 
 	return resultSample.V.F, resultSample.V.H, true
-}
-
-func handleHistogramErr(ctx context.Context, err error) error {
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
-		warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning("", posrange.PositionRange{}), ctx)
-		return nil
-	} else if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		warnings.AddToContext(annotations.NewIncompatibleCustomBucketsHistogramsWarning("", posrange.PositionRange{}), ctx)
-		return nil
-	}
-
-	return err
 }
 
 var rangeVectorFuncs = map[string]FunctionCall{
@@ -693,9 +677,7 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histo
 
 	h := last.CopyToSchema(minSchema)
 	if _, err := h.Sub(prev); err != nil {
-		if err := handleHistogramErr(ctx, err); err != nil {
-			return nil, err
-		}
+		warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 		return nil, nil
 	}
 
@@ -705,9 +687,7 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histo
 			curr := currPoint.V.H
 			if curr.DetectReset(prev) {
 				if _, err := h.Add(prev); err != nil {
-					if err := handleHistogramErr(ctx, err); err != nil {
-						return nil, err
-					}
+					warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 					return nil, nil
 				}
 			}
@@ -723,17 +703,19 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) (*histo
 
 func madOverTime(ctx context.Context, points []Sample) (float64, bool) {
 	values := make([]float64, 0, len(points))
-	var floatsDetected bool
+	var floatsDetected, histDetected bool
 	for _, f := range points {
 		if f.V.H != nil {
 			if floatsDetected {
 				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
 			}
+			histDetected = true
 			continue
-		} else {
-			floatsDetected = true
-
 		}
+		if histDetected {
+			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		}
+		floatsDetected = true
 		values = append(values, f.V.F)
 	}
 	sort.Float64s(values)
@@ -752,17 +734,26 @@ func madOverTime(ctx context.Context, points []Sample) (float64, bool) {
 }
 
 func maxOverTime(ctx context.Context, points []Sample) (float64, int64, bool) {
-	resv := points[0].V.F
-	rest := points[0].T
+	var resv float64
+	var rest int64
+	var foundFloat, foundHist bool
 
-	var foundFloat bool
 	for _, v := range points {
 		if v.V.H != nil {
 			if foundFloat {
 				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
 			}
-		} else {
+			foundHist = true
+			continue
+		}
+		if foundHist {
+			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		}
+		if !foundFloat {
+			resv = v.V.F
+			rest = v.T
 			foundFloat = true
+			continue
 		}
 		if v.V.F >= resv || math.IsNaN(resv) {
 			resv = v.V.F
@@ -777,17 +768,26 @@ func maxOverTime(ctx context.Context, points []Sample) (float64, int64, bool) {
 }
 
 func minOverTime(ctx context.Context, points []Sample) (float64, int64, bool) {
-	resv := points[0].V.F
-	rest := points[0].T
+	var resv float64
+	var rest int64
+	var foundFloat, foundHist bool
 
-	var foundFloat bool
 	for _, v := range points {
 		if v.V.H != nil {
 			if foundFloat {
 				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
 			}
-		} else {
+			foundHist = true
+			continue
+		}
+		if foundHist {
+			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		}
+		if !foundFloat {
+			resv = v.V.F
+			rest = v.T
 			foundFloat = true
+			continue
 		}
 		if v.V.F <= resv || math.IsNaN(resv) {
 			resv = v.V.F
@@ -819,10 +819,12 @@ func avgOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 			right := mean.Copy().Div(count)
 			toAdd, err := left.Sub(right)
 			if err != nil {
-				return 0, nil, false, handleHistogramErr(ctx, err)
+				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
+				return 0, nil, false, nil
 			}
 			if _, err = mean.Add(toAdd); err != nil {
-				return 0, nil, false, handleHistogramErr(ctx, err)
+				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
+				return 0, nil, false, nil
 			}
 		}
 		return 0, mean, true, nil
@@ -874,7 +876,8 @@ func sumOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 				return 0, nil, false, nil
 			}
 			if _, err := res.Add(v.V.H); err != nil {
-				return 0, nil, false, handleHistogramErr(ctx, err)
+				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
+				return 0, nil, false, nil
 			}
 		}
 		return 0, res, true, nil
@@ -901,14 +904,19 @@ func stddevOverTime(ctx context.Context, points []Sample) (float64, bool) {
 	var mean, cMean float64
 	var aux, cAux float64
 
-	var foundFloat bool
+	var foundFloat, foundHist bool
 	for _, v := range points {
-		if v.V.H == nil {
-			foundFloat = true
-		} else if foundFloat && v.V.H != nil {
-			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		if v.V.H != nil {
+			if foundFloat {
+				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+			}
+			foundHist = true
 			continue
 		}
+		if foundHist {
+			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		}
+		foundFloat = true
 		count++
 		delta := v.V.F - (mean + cMean)
 		mean, cMean = compute.KahanSumInc(delta/count, mean, cMean)
@@ -926,14 +934,19 @@ func stdvarOverTime(ctx context.Context, points []Sample) (float64, bool) {
 	var mean, cMean float64
 	var aux, cAux float64
 
-	var foundFloat bool
+	var foundFloat, foundHist bool
 	for _, v := range points {
-		if v.V.H == nil {
-			foundFloat = true
-		} else if foundFloat && v.V.H != nil {
-			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		if v.V.H != nil {
+			if foundFloat {
+				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+			}
+			foundHist = true
 			continue
 		}
+		if foundHist {
+			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+		}
+		foundFloat = true
 		count++
 		delta := v.V.F - (mean + cMean)
 		mean, cMean = compute.KahanSumInc(delta/count, mean, cMean)
@@ -970,15 +983,20 @@ func changes(points []Sample) float64 {
 
 func deriv(ctx context.Context, points []Sample) (float64, bool) {
 	var floats int
+	var histSeen bool
 
 	for _, p := range points {
-		if p.V.H == nil {
-			floats++
+		if p.V.H != nil {
+			if floats > 0 {
+				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+			}
+			histSeen = true
+			continue
 		}
-
-		if floats > 0 && p.V.H != nil {
+		if histSeen {
 			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
 		}
+		floats++
 	}
 
 	if floats < 2 {
@@ -1001,15 +1019,20 @@ func deriv(ctx context.Context, points []Sample) (float64, bool) {
 
 func predictLinear(ctx context.Context, points []Sample, duration float64, stepTime int64) (float64, bool) {
 	var floats int
+	var histSeen bool
 
 	for _, p := range points {
-		if p.V.H == nil {
-			floats++
+		if p.V.H != nil {
+			if floats > 0 {
+				warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
+			}
+			histSeen = true
+			continue
 		}
-
-		if floats > 0 && p.V.H != nil {
+		if histSeen {
 			warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo("", posrange.PositionRange{}), ctx)
 		}
+		floats++
 	}
 
 	if floats < 2 {

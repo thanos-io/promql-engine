@@ -109,11 +109,11 @@ func NewAvgOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTi
 }
 
 func NewStdDevOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
-	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdDevOverTimeAcc() })
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdDevAcc() })
 }
 
 func NewStdVarOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
-	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdVarOverTimeAcc() })
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewStdVarAcc() })
 }
 
 func NewPresentOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
@@ -143,10 +143,11 @@ func (r *OverTimeBuffer) Push(t int64, v Value) {
 			r.stepRanges[i].sampleCount++
 		}
 
-		// Aggregate the sample to the current step
+		// Aggregate the sample to the current step.
+		// Accumulators track error state internally and become no-ops after an error.
+		// Float-only accumulators skip histograms and track via HasIgnoredHistograms().
 		if err := r.stepStates[i].acc.Add(v.F, v.H); err != nil {
 			r.stepStates[i].warn = err
-			continue
 		}
 
 		if fts := r.firstTimestamps[i]; t >= fts {
@@ -197,11 +198,17 @@ func (r *OverTimeBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float
 		return 0, nil, false, nil
 	}
 
-	f, h := r.stepStates[0].acc.Value()
+	acc := r.stepStates[0].acc
+	f, h := acc.Value()
 
-	if r.stepStates[0].acc.ValueType() == compute.MixedTypeValue {
+	if acc.ValueType() == compute.MixedTypeValue {
 		warnings.AddToContext(annotations.MixedFloatsHistogramsWarning, ctx)
 		return 0, nil, false, nil
 	}
-	return f, h, r.stepStates[0].acc.ValueType() == compute.SingleTypeValue, nil
+
+	// Float-only accumulators track skipped histograms; emit info-level warning
+	if acc.HasIgnoredHistograms() && acc.ValueType() == compute.SingleTypeValue {
+		warnings.AddToContext(annotations.HistogramIgnoredInMixedRangeInfo, ctx)
+	}
+	return f, h, acc.ValueType() == compute.SingleTypeValue, nil
 }
