@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
@@ -71,7 +71,7 @@ func TestScannersMinMaxTime(t *testing.T) {
 			p, err := parser.ParseExpr(tcase.expr)
 			require.NoError(t, err)
 
-			qOpts := &query.Options{
+			qOpts := &execopts.Options{
 				Start:         tcase.start,
 				End:           tcase.end,
 				Step:          tcase.step,

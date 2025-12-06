@@ -4,14 +4,14 @@
 package logicalplan
 
 import (
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type DetectHistogramStatsOptimizer struct{}
 
-func (d DetectHistogramStatsOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+func (d DetectHistogramStatsOptimizer) Optimize(plan Node, _ *execopts.Options) (Node, annotations.Annotations) {
 	return d.optimize(plan, false)
 }
 

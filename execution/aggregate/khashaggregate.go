@@ -11,9 +11,9 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
@@ -51,7 +51,7 @@ func NewKHashAggregate(
 	aggregation parser.ItemType,
 	by bool,
 	labels []string,
-	opts *query.Options,
+	opts *execopts.Options,
 ) (model.VectorOperator, error) {
 	var compare func(float64, float64) bool
 

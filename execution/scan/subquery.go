@@ -9,11 +9,11 @@ import (
 	"math"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
 
 	"github.com/prometheus/prometheus/model/histogram"
@@ -34,7 +34,7 @@ type subqueryOperator struct {
 	currentStep int64
 	step        int64
 	stepsBatch  int
-	opts        *query.Options
+	opts        *execopts.Options
 
 	funcExpr *logicalplan.FunctionCall
 	subQuery *logicalplan.Subquery
@@ -53,7 +53,7 @@ type subqueryOperator struct {
 	params2 []float64
 }
 
-func NewSubqueryOperator(pool *model.VectorPool, next, paramOp, paramOp2 model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
+func NewSubqueryOperator(pool *model.VectorPool, next, paramOp, paramOp2 model.VectorOperator, opts *execopts.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(funcExpr.Func.Name)
 	if err != nil {
 		return nil, err

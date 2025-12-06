@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage/prometheus"
 	"github.com/thanos-io/promql-engine/warnings"
 
@@ -2482,7 +2482,7 @@ type scannersWithWarns struct {
 	promScanners *prometheus.Scanners
 }
 
-func newScannersWithWarns(warn error, qOpts *query.Options, lplan logicalplan.Plan) (*scannersWithWarns, error) {
+func newScannersWithWarns(warn error, qOpts *execopts.Options, lplan logicalplan.Plan) (*scannersWithWarns, error) {
 	scanners, err := prometheus.NewPrometheusScanners(&storage.MockQueryable{
 		MockQuerier: storage.NoopQuerier(),
 	}, qOpts, lplan)
@@ -2497,12 +2497,12 @@ func newScannersWithWarns(warn error, qOpts *query.Options, lplan logicalplan.Pl
 
 func (s *scannersWithWarns) Close() error { return nil }
 
-func (s scannersWithWarns) NewVectorSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error) {
+func (s scannersWithWarns) NewVectorSelector(ctx context.Context, opts *execopts.Options, hints storage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error) {
 	warnings.AddToContext(s.warn, ctx)
 	return s.promScanners.NewVectorSelector(ctx, opts, hints, selector)
 }
 
-func (s scannersWithWarns) NewMatrixSelector(ctx context.Context, opts *query.Options, hints storage.SelectHints, selector logicalplan.MatrixSelector, call logicalplan.FunctionCall) (model.VectorOperator, error) {
+func (s scannersWithWarns) NewMatrixSelector(ctx context.Context, opts *execopts.Options, hints storage.SelectHints, selector logicalplan.MatrixSelector, call logicalplan.FunctionCall) (model.VectorOperator, error) {
 	warnings.AddToContext(s.warn, ctx)
 	return s.promScanners.NewMatrixSelector(ctx, opts, hints, selector, call)
 }
@@ -2513,7 +2513,7 @@ func TestWarningsPlanCreation(t *testing.T) {
 		expectedWarn = errors.New("test warning")
 	)
 
-	scnrs, err := newScannersWithWarns(expectedWarn, &query.Options{}, nil)
+	scnrs, err := newScannersWithWarns(expectedWarn, &execopts.Options{}, nil)
 	testutil.Ok(t, err)
 	newEngine := engine.NewWithScanners(opts, scnrs)
 	q1, err := newEngine.NewRangeQuery(context.Background(), nil, nil, "http_requests_total", time.UnixMilli(0), time.UnixMilli(600), 30*time.Second)

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -30,16 +30,16 @@ var DefaultOptimizers = []Optimizer{
 type Plan interface {
 	Optimize([]Optimizer) (Plan, annotations.Annotations)
 	Root() Node
-	MinMaxTime(*query.Options) (int64, int64)
+	MinMaxTime(*execopts.Options) (int64, int64)
 }
 
 type Optimizer interface {
-	Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations)
+	Optimize(plan Node, opts *execopts.Options) (Node, annotations.Annotations)
 }
 
 type plan struct {
 	expr     Node
-	opts     *query.Options
+	opts     *execopts.Options
 	planOpts PlanOptions
 }
 
@@ -48,7 +48,7 @@ type PlanOptions struct {
 }
 
 // New creates a new logical plan from logical node.
-func New(root Node, queryOpts *query.Options, planOpts PlanOptions) Plan {
+func New(root Node, queryOpts *execopts.Options, planOpts PlanOptions) Plan {
 	return &plan{
 		expr:     root,
 		opts:     queryOpts,
@@ -56,7 +56,7 @@ func New(root Node, queryOpts *query.Options, planOpts PlanOptions) Plan {
 	}
 }
 
-func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions) (Plan, error) {
+func NewFromAST(ast parser.Expr, queryOpts *execopts.Options, planOpts PlanOptions) (Plan, error) {
 	ast, err := promql.PreprocessExpr(ast, queryOpts.Start, queryOpts.End, queryOpts.Step)
 	if err != nil {
 		return nil, err
@@ -82,7 +82,7 @@ func NewFromAST(ast parser.Expr, queryOpts *query.Options, planOpts PlanOptions)
 
 // NewFromBytes creates a new logical plan from a byte slice created with Marshal.
 // This method is used to deserialize a logical plan which has been sent over the wire.
-func NewFromBytes(bytes []byte, queryOpts *query.Options, planOpts PlanOptions) (Plan, error) {
+func NewFromBytes(bytes []byte, queryOpts *execopts.Options, planOpts PlanOptions) (Plan, error) {
 	root, err := Unmarshal(bytes)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func NewFromBytes(bytes []byte, queryOpts *query.Options, planOpts PlanOptions) 
 	}, nil
 }
 
-func getTimeRangesForSelector(qOpts *query.Options, n *parser.VectorSelector, parents []*Node, evalRange time.Duration) (int64, int64) {
+func getTimeRangesForSelector(qOpts *execopts.Options, n *parser.VectorSelector, parents []*Node, evalRange time.Duration) (int64, int64) {
 	start, end := qOpts.Start.UnixMilli(), qOpts.End.UnixMilli()
 	subqOffset, subqRange, subqTs := logicalSubqueryTimes(parents)
 
@@ -152,7 +152,7 @@ func extractFuncFromPath(p []*Node) string {
 	return extractFuncFromPath(p[:len(p)-1])
 }
 
-func (p *plan) MinMaxTime(qOpts *query.Options) (int64, int64) {
+func (p *plan) MinMaxTime(qOpts *execopts.Options) (int64, int64) {
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -546,10 +546,10 @@ func logicalSubqueryTimes(path []*Node) (time.Duration, time.Duration, *int64) {
 	return subqOffset, subqRange, tsp
 }
 
-func setOffsetForInnerSubqueries(expr parser.Expr, opts *query.Options) {
+func setOffsetForInnerSubqueries(expr parser.Expr, opts *execopts.Options) {
 	switch n := expr.(type) {
 	case *parser.SubqueryExpr:
-		nOpts := query.NestedOptionsForSubquery(opts, n.Step, n.Range, n.Offset)
+		nOpts := execopts.NestedOptionsForSubquery(opts, n.Step, n.Range, n.Offset)
 		setOffsetForAtModifier(nOpts.Start.UnixMilli(), n.Expr)
 		setOffsetForInnerSubqueries(n.Expr, nOpts)
 	default:

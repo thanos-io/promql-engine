@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/api"
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -459,7 +459,7 @@ count by (cluster) (
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &execopts.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			optimizedPlan, warns := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Root().String())
@@ -654,7 +654,7 @@ sum(dedup(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan, _ := NewFromAST(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &execopts.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, optimizedPlan.Root().String())
@@ -721,7 +721,7 @@ sum(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan, _ := NewFromAST(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &execopts.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
 			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
@@ -781,7 +781,7 @@ sum by (pod) (dedup(
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			plan, err := NewFromAST(expr, &execopts.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			testutil.Ok(t, err)
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			expectedPlan := cleanUp(replacements, tcase.expected)
@@ -809,7 +809,7 @@ sum(dedup(
 		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
 	}
 
-	lplan, _ := NewFromAST(expr, &query.Options{Start: start, End: end, Step: step}, PlanOptions{})
+	lplan, _ := NewFromAST(expr, &execopts.Options{Start: start, End: end, Step: step}, PlanOptions{})
 	optimizedPlan, _ := lplan.Optimize([]Optimizer{
 		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 	})

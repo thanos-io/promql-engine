@@ -10,9 +10,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
 	prommodel "github.com/prometheus/common/model"
@@ -37,7 +37,7 @@ type countValuesOperator struct {
 	once sync.Once
 }
 
-func NewCountValues(pool *model.VectorPool, next model.VectorOperator, param string, by bool, grouping []string, opts *query.Options) model.VectorOperator {
+func NewCountValues(pool *model.VectorPool, next model.VectorOperator, param string, by bool, grouping []string, opts *execopts.Options) model.VectorOperator {
 	// Grouping labels need to be sorted in order for metric hashing to work.
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
 	slices.Sort(grouping)

@@ -5,7 +5,7 @@ package logicalplan
 
 import (
 	"github.com/thanos-io/promql-engine/api"
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -38,11 +38,11 @@ func labelSetsMatch(matchers []*labels.Matcher, lset ...labels.Labels) bool {
 	return false
 }
 
-func matchingEngineTime(e api.RemoteEngine, opts *query.Options) bool {
+func matchingEngineTime(e api.RemoteEngine, opts *execopts.Options) bool {
 	return !(opts.Start.UnixMilli() > e.MaxT() || opts.End.UnixMilli() < e.MinT())
 }
 
-func (m PassthroughOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
+func (m PassthroughOptimizer) Optimize(plan Node, opts *execopts.Options) (Node, annotations.Annotations) {
 	engines := m.Endpoints.Engines()
 	if len(engines) == 1 {
 		if !matchingEngineTime(engines[0], opts) {

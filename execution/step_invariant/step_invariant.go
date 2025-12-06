@@ -7,10 +7,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -45,7 +45,7 @@ func NewStepInvariantOperator(
 	pool *model.VectorPool,
 	next model.VectorOperator,
 	expr logicalplan.Node,
-	opts *query.Options,
+	opts *execopts.Options,
 ) (model.VectorOperator, error) {
 	// We set interval to be at least 1.
 	u := &stepInvariantOperator{

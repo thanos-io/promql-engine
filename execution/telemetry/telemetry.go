@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -33,21 +33,21 @@ type OperatorTelemetry interface {
 	UpdatePeak(count int)
 }
 
-func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
+func NewTelemetry(operator fmt.Stringer, opts *execopts.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
 		return NewTrackedTelemetry(operator, opts, nil)
 	}
 	return NewNoopTelemetry(operator)
 }
 
-func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
+func NewSubqueryTelemetry(operator fmt.Stringer, opts *execopts.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
 		return NewTrackedTelemetry(operator, opts, &logicalplan.Subquery{})
 	}
 	return NewNoopTelemetry(operator)
 }
 
-func NewStepInvariantTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
+func NewStepInvariantTelemetry(operator fmt.Stringer, opts *execopts.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
 		return NewTrackedTelemetry(operator, opts, &logicalplan.StepInvariantExpr{})
 	}
@@ -105,7 +105,7 @@ type TrackedTelemetry struct {
 	logicalNode   logicalplan.Node
 }
 
-func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, logicalPlanNode logicalplan.Node) *TrackedTelemetry {
+func NewTrackedTelemetry(operator fmt.Stringer, opts *execopts.Options, logicalPlanNode logicalplan.Node) *TrackedTelemetry {
 	ss := stats.NewQuerySamples(opts.EnablePerStepStats)
 	ss.InitStepTracking(opts.Start.UnixMilli(), opts.End.UnixMilli(), StepTrackingInterval(opts.Step))
 	return &TrackedTelemetry{

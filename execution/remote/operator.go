@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 	promstorage "github.com/thanos-io/promql-engine/storage/prometheus"
 	"github.com/thanos-io/promql-engine/warnings"
 
@@ -25,14 +25,14 @@ import (
 type Execution struct {
 	storage         *storageAdapter
 	query           promql.Query
-	opts            *query.Options
+	opts            *execopts.Options
 	queryRangeStart time.Time
 	queryRangeEnd   time.Time
 
 	vectorSelector model.VectorOperator
 }
 
-func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart, queryRangeEnd time.Time, engineLabels []labels.Labels, opts *query.Options, _ storage.SelectHints) model.VectorOperator {
+func NewExecution(query promql.Query, pool *model.VectorPool, queryRangeStart, queryRangeEnd time.Time, engineLabels []labels.Labels, opts *execopts.Options, _ storage.SelectHints) model.VectorOperator {
 	storage := newStorageFromQuery(query, opts, engineLabels)
 	oper := &Execution{
 		storage:         storage,
@@ -87,7 +87,7 @@ func (e *Execution) Samples() *stats.QuerySamples {
 
 type storageAdapter struct {
 	query promql.Query
-	opts  *query.Options
+	opts  *execopts.Options
 	lbls  []labels.Labels
 
 	once   sync.Once
@@ -95,7 +95,7 @@ type storageAdapter struct {
 	series []promstorage.SignedSeries
 }
 
-func newStorageFromQuery(query promql.Query, opts *query.Options, lbls []labels.Labels) *storageAdapter {
+func newStorageFromQuery(query promql.Query, opts *execopts.Options, lbls []labels.Labels) *storageAdapter {
 	return &storageAdapter{
 		query: query,
 		opts:  opts,

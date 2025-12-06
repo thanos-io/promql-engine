@@ -6,7 +6,7 @@ package logicalplan
 import (
 	"slices"
 
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -23,7 +23,7 @@ import (
 // and apply an additional filter for {c="d"}.
 type MergeSelectsOptimizer struct{}
 
-func (m MergeSelectsOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+func (m MergeSelectsOptimizer) Optimize(plan Node, _ *execopts.Options) (Node, annotations.Annotations) {
 	heap := make(matcherHeap)
 	extractSelectors(heap, plan)
 	replaceMatchers(heap, &plan)

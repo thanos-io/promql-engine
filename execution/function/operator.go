@@ -9,19 +9,19 @@ import (
 	"math"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
-func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *execopts.Options) (model.VectorOperator, error) {
 	// Some functions need to be handled in special operators
 	switch funcExpr.Func.Name {
 	case "scalar":
@@ -44,7 +44,7 @@ func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.Vec
 	return newInstantVectorFunctionOperator(funcExpr, nextOps, stepsBatch, opts)
 }
 
-func newNoArgsFunctionOperator(funcExpr *logicalplan.FunctionCall, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newNoArgsFunctionOperator(funcExpr *logicalplan.FunctionCall, stepsBatch int, opts *execopts.Options) (model.VectorOperator, error) {
 	call, ok := noArgFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, parse.UnknownFunctionError(funcExpr.Func.Name)
@@ -92,7 +92,7 @@ type functionOperator struct {
 	scalarPoints [][]float64
 }
 
-func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *query.Options) (model.VectorOperator, error) {
+func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.VectorOperator, stepsBatch int, opts *execopts.Options) (model.VectorOperator, error) {
 	call, ok := instantVectorFuncs[funcExpr.Func.Name]
 	if !ok {
 		return nil, parse.UnknownFunctionError(funcExpr.Func.Name)

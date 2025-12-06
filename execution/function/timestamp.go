@@ -7,10 +7,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -22,7 +22,7 @@ type timestampOperator struct {
 	once   sync.Once
 }
 
-func newTimestampOperator(next model.VectorOperator, opts *query.Options) model.VectorOperator {
+func newTimestampOperator(next model.VectorOperator, opts *execopts.Options) model.VectorOperator {
 	oper := &timestampOperator{
 		next: next,
 	}

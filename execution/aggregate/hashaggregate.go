@@ -9,10 +9,10 @@ import (
 	"math"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
@@ -49,7 +49,7 @@ func NewHashAggregate(
 	aggregation parser.ItemType,
 	by bool,
 	labels []string,
-	opts *query.Options,
+	opts *execopts.Options,
 ) (model.VectorOperator, error) {
 	// Verify that the aggregation is supported.
 	if _, err := newScalarAccumulator(aggregation); err != nil {

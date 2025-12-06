@@ -9,9 +9,9 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -48,7 +48,7 @@ type coalesce struct {
 	sampleOffsets []uint64
 }
 
-func NewCoalesce(pool *model.VectorPool, opts *query.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
+func NewCoalesce(pool *model.VectorPool, opts *execopts.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
 	if len(operators) == 1 {
 		return operators[0]
 	}

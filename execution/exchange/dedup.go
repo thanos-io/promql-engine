@@ -7,9 +7,9 @@ import (
 	"context"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -41,7 +41,7 @@ type dedupOperator struct {
 	dedupCache  dedupCache
 }
 
-func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options) model.VectorOperator {
+func NewDedupOperator(pool *model.VectorPool, next model.VectorOperator, opts *execopts.Options) model.VectorOperator {
 	oper := &dedupOperator{
 		next: next,
 		pool: pool,

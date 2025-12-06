@@ -7,10 +7,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -27,7 +27,7 @@ func newAbsentOperator(
 	funcExpr *logicalplan.FunctionCall,
 	pool *model.VectorPool,
 	next model.VectorOperator,
-	opts *query.Options,
+	opts *execopts.Options,
 ) model.VectorOperator {
 	oper := &absentOperator{
 		funcExpr: funcExpr,
