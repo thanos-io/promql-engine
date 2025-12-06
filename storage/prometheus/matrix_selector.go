@@ -279,12 +279,24 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 
 	switch o.functionName {
 	case "rate":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingRateBuffer(ctx, *o.opts, true, true, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, true, true, o.selectRange, o.offset)
 	case "increase":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingRateBuffer(ctx, *o.opts, true, false, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, true, false, o.selectRange, o.offset)
 	case "delta":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingRateBuffer(ctx, *o.opts, false, false, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewRateBuffer(ctx, *o.opts, false, false, o.selectRange, o.offset)
 	case "count_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingCountOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewCountOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "max_over_time":
 		if isRangeQuery {
@@ -311,7 +323,14 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 	case "stdvar_over_time":
 		return ringbuffer.NewStdVarOverTimeBuffer(*o.opts, o.selectRange, o.offset)
 	case "present_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingPresentOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 		return ringbuffer.NewPresentOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+	case "last_over_time":
+		if isRangeQuery {
+			return ringbuffer.NewSlidingLastOverTimeBuffer(*o.opts, o.selectRange, o.offset)
+		}
 	}
 
 	if o.isExtFunction {

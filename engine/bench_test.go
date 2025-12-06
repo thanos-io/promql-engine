@@ -316,8 +316,18 @@ func BenchmarkRangeQuery(b *testing.B) {
 		},
 		// over_time functions
 		{
-			name:    "count_over_time",
+			name:    "count_over_time_5m",
 			query:   `count_over_time(http_requests_total[5m])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "count_over_time_1h",
+			query:   `count_over_time(http_requests_total[1h])`,
+			storage: sixHourDataset,
+		},
+		{
+			name:    "count_over_time_6h",
+			query:   `count_over_time(http_requests_total[6h])`,
 			storage: sixHourDataset,
 		},
 		{
