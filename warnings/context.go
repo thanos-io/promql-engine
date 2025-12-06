@@ -17,6 +17,8 @@ import (
 // MixedFloatsHistogramsAggWarning is used when an aggregation encounters both floats and histograms.
 // We define this here because Prometheus's NewMixedFloatsHistogramsAggWarning requires a posrange
 // which we don't have at the accumulator level.
+//
+//lint:ignore faillint We need fmt.Errorf to match Prometheus error format exactly.
 var MixedFloatsHistogramsAggWarning = fmt.Errorf("%w aggregation", annotations.MixedFloatsHistogramsWarning)
 
 type warningKey string

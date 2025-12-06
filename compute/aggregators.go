@@ -28,7 +28,7 @@ const (
 // the caller can check the HasIgnoredHistograms method and add appropriate
 // annotations.
 // The ValueType function can be checked to see if the aggregator encountered
-// mixed values for its slot so the caller can again add the apporpriate annotations.
+// mixed values for its slot so the caller can again add the appropriate annotations.
 type Accumulator interface {
 	Add(v float64, h *histogram.FloatHistogram) error
 	Value() (float64, *histogram.FloatHistogram)
@@ -162,9 +162,9 @@ func (c *MaxAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 	}
 
 	fst, rem := vs[0], vs[1:]
-	c.Add(fst, nil)
+	_ = c.Add(fst, nil)
 	if len(rem) > 0 {
-		c.Add(floats.Max(rem), nil)
+		_ = c.Add(floats.Max(rem), nil)
 	}
 	return nil
 }
@@ -230,9 +230,9 @@ func (c *MinAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 	}
 
 	fst, rem := vs[0], vs[1:]
-	c.Add(fst, nil)
+	_ = c.Add(fst, nil)
 	if len(rem) > 0 {
-		c.Add(floats.Min(rem), nil)
+		_ = c.Add(floats.Min(rem), nil)
 	}
 	return nil
 }
