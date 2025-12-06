@@ -17,17 +17,14 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
-// =============================================================================
-// SlidingDequeBuffer - min/max using monotonic deque (O(1) amortized)
-// =============================================================================
-
 type DequeComparator func(a, b float64) bool
 
+// SlidingDequeBuffer implements min/max_over_time using a monotonic deque for O(1) amortized lookups.
 type SlidingDequeBuffer struct {
 	samples     []Sample
-	tail        []Sample // scratch space for Reset
+	tail        []Sample
 	lastT       int64
-	deque       []int // indices into samples for monotonic deque
+	deque       []int
 	floatCount  int
 	sampleCount int
 	shouldEvict DequeComparator
@@ -59,7 +56,6 @@ func (r *SlidingDequeBuffer) Push(t int64, v Value) {
 	r.lastT = t
 	idx := len(r.samples)
 
-	// Append sample (same as GenericRingBuffer)
 	n := len(r.samples)
 	if n < cap(r.samples) {
 		r.samples = r.samples[:n+1]
@@ -86,7 +82,6 @@ func (r *SlidingDequeBuffer) Push(t int64, v Value) {
 		return
 	}
 
-	// Maintain monotonic deque
 	for len(r.deque) > 0 {
 		backIdx := r.deque[len(r.deque)-1]
 		backVal := r.samples[backIdx].V.F
@@ -108,7 +103,6 @@ func (r *SlidingDequeBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Find first sample to keep
 	var drop int
 	for drop = 0; drop < len(r.samples) && r.samples[drop].T <= mint; drop++ {
 		s := &r.samples[drop]
@@ -124,7 +118,6 @@ func (r *SlidingDequeBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Remove old indices from deque and adjust remaining
 	var dequeDrop int
 	for dequeDrop = 0; dequeDrop < len(r.deque) && r.deque[dequeDrop] < drop; dequeDrop++ {
 	}
@@ -135,7 +128,6 @@ func (r *SlidingDequeBuffer) Reset(mint int64, _ int64) {
 		r.deque[i] -= drop
 	}
 
-	// Shift samples (same as GenericRingBuffer)
 	keep = len(r.samples) - drop
 	r.tail = resize(r.tail, drop)
 	copy(r.tail, r.samples[:drop])
@@ -154,15 +146,10 @@ func (r *SlidingDequeBuffer) Eval(_ context.Context, _, _ float64, _ int64) (flo
 	return r.samples[r.deque[0]].V.F, nil, true, nil
 }
 
-// =============================================================================
-// SlidingAccumulatorBuffer - sliding buffer with O(removed) updates
-// =============================================================================
-
-// SlidingAccumulatorBuffer wraps a compute.CheckpointableAccumulator with sliding window support.
-// It provides O(removed) Reset by subtracting removed samples.
+// SlidingAccumulatorBuffer uses a CheckpointableAccumulator for O(removed) window slides.
 type SlidingAccumulatorBuffer struct {
 	samples     []Sample
-	tail        []Sample // scratch space for Reset
+	tail        []Sample
 	lastT       int64
 	acc         compute.CheckpointableAccumulator
 	sampleCount int
@@ -192,7 +179,6 @@ func (r *SlidingAccumulatorBuffer) ReadIntoLast(func(*Sample)) {}
 func (r *SlidingAccumulatorBuffer) Push(t int64, v Value) {
 	r.lastT = t
 
-	// Append sample (same as GenericRingBuffer)
 	n := len(r.samples)
 	if n < cap(r.samples) {
 		r.samples = r.samples[:n+1]
@@ -228,7 +214,6 @@ func (r *SlidingAccumulatorBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Find first sample to keep, subtracting removed samples
 	var drop int
 	for drop = 0; drop < len(r.samples) && r.samples[drop].T <= mint; drop++ {
 		s := &r.samples[drop]
@@ -246,7 +231,6 @@ func (r *SlidingAccumulatorBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Shift samples (same as GenericRingBuffer)
 	keep := len(r.samples) - drop
 	r.tail = resize(r.tail, drop)
 	copy(r.tail, r.samples[:drop])
@@ -281,15 +265,10 @@ func (r *SlidingAccumulatorBuffer) Eval(ctx context.Context, _, _ float64, _ int
 	return f, h, true, nil
 }
 
-// =============================================================================
-// SlidingCountBuffer - count_over_time with O(1) updates
-// =============================================================================
-
-// SlidingCountBuffer counts samples in a sliding window.
-// It only stores timestamps (not values) since count doesn't need values.
+// SlidingCountBuffer counts samples in a sliding window, storing only timestamps.
 type SlidingCountBuffer struct {
 	timestamps  []int64
-	tail        []int64 // scratch space for Reset
+	tail        []int64
 	lastT       int64
 	count       int
 	sampleCount int
@@ -309,7 +288,6 @@ func (r *SlidingCountBuffer) ReadIntoLast(func(*Sample)) {}
 func (r *SlidingCountBuffer) Push(t int64, v Value) {
 	r.lastT = t
 
-	// Append timestamp
 	n := len(r.timestamps)
 	if n < cap(r.timestamps) {
 		r.timestamps = r.timestamps[:n+1]
@@ -334,18 +312,16 @@ func (r *SlidingCountBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Find first sample to keep
 	var drop int
 	for drop = 0; drop < len(r.timestamps) && r.timestamps[drop] <= mint; drop++ {
 		r.count--
-		r.sampleCount-- // Approximate - we don't track histogram sample counts individually
+		r.sampleCount--
 	}
 
 	if drop == 0 {
 		return
 	}
 
-	// Shift timestamps
 	keep := len(r.timestamps) - drop
 	if cap(r.tail) < drop {
 		r.tail = make([]int64, drop)
@@ -365,12 +341,7 @@ func (r *SlidingCountBuffer) Eval(_ context.Context, _, _ float64, _ int64) (flo
 	return float64(r.count), nil, true, nil
 }
 
-// =============================================================================
-// SlidingPresentBuffer - present_over_time with O(1) updates
-// =============================================================================
-
 // SlidingPresentBuffer returns 1 if any samples exist in the window.
-// Reuses SlidingCountBuffer logic.
 type SlidingPresentBuffer struct {
 	SlidingCountBuffer
 }
@@ -391,15 +362,10 @@ func (r *SlidingPresentBuffer) Eval(_ context.Context, _, _ float64, _ int64) (f
 	return 1, nil, true, nil
 }
 
-// =============================================================================
-// SlidingLastBuffer - last_over_time with O(1) updates
-// =============================================================================
-
 // SlidingLastBuffer returns the last sample value in the window.
-// Only needs to store timestamps for window management, and the last value.
 type SlidingLastBuffer struct {
 	timestamps  []int64
-	tail        []int64 // scratch space for Reset
+	tail        []int64
 	lastT       int64
 	lastV       Value
 	hasValue    bool
@@ -420,8 +386,6 @@ func (r *SlidingLastBuffer) ReadIntoLast(func(*Sample)) {}
 func (r *SlidingLastBuffer) Push(t int64, v Value) {
 	r.lastT = t
 	r.hasValue = true
-
-	// Store last value
 	r.lastV.F = v.F
 	if v.H != nil {
 		if r.lastV.H == nil {
@@ -435,7 +399,6 @@ func (r *SlidingLastBuffer) Push(t int64, v Value) {
 		r.sampleCount++
 	}
 
-	// Append timestamp
 	n := len(r.timestamps)
 	if n < cap(r.timestamps) {
 		r.timestamps = r.timestamps[:n+1]
@@ -453,7 +416,6 @@ func (r *SlidingLastBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Find first sample to keep
 	var drop int
 	for drop = 0; drop < len(r.timestamps) && r.timestamps[drop] <= mint; drop++ {
 		r.sampleCount--
@@ -463,7 +425,6 @@ func (r *SlidingLastBuffer) Reset(mint int64, _ int64) {
 		return
 	}
 
-	// Shift timestamps
 	keep := len(r.timestamps) - drop
 	if cap(r.tail) < drop {
 		r.tail = make([]int64, drop)
@@ -474,8 +435,6 @@ func (r *SlidingLastBuffer) Reset(mint int64, _ int64) {
 	copy(r.timestamps, r.timestamps[drop:])
 	copy(r.timestamps[keep:], r.tail)
 	r.timestamps = r.timestamps[:keep]
-
-	// hasValue and lastV remain valid since last sample is still in window
 }
 
 func (r *SlidingLastBuffer) Eval(_ context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error) {
@@ -488,30 +447,15 @@ func (r *SlidingLastBuffer) Eval(_ context.Context, _, _ float64, _ int64) (floa
 	return r.lastV.F, nil, true, nil
 }
 
-// =============================================================================
-// SlidingRateBuffer - rate/increase/delta with sliding window optimization
-// =============================================================================
-
-// SlidingRateBuffer provides an optimized sliding window implementation for
-// rate, increase, and delta functions. Instead of storing all counter reset
-// samples, it tracks the cumulative counter correction incrementally.
-//
-// Key optimizations:
-// - O(1) Push: just update last sample and detect resets
-// - O(removed) Reset: only process samples leaving the window
-// - Memory: O(window_size) for samples, no unbounded reset storage
+// SlidingRateBuffer implements rate/increase/delta with incremental counter correction tracking.
 type SlidingRateBuffer struct {
-	ctx context.Context
-
-	// samples stores all samples in the current window for counter reset tracking
-	samples []Sample
-	tail    []Sample // scratch space for Reset
-
-	// Tracking for rate calculation
+	ctx                 context.Context
+	samples             []Sample
+	tail                []Sample
 	lastT               int64
-	counterCorrection   float64 // cumulative counter correction for current window
+	counterCorrection   float64 // cumulative correction for counter resets
 	numSamples          int
-	sampleCount         int // for telemetry
+	sampleCount         int
 	selectRange         int64
 	offset              int64
 	isCounter           bool
@@ -519,11 +463,10 @@ type SlidingRateBuffer struct {
 	evalTs              int64
 	currentMint         int64
 	hasHistograms       bool
-	histogramResets     []Sample // only used when histograms are detected
+	histogramResets     []Sample
 	histogramResetsTail []Sample
 }
 
-// NewSlidingRateBuffer creates a new sliding rate buffer.
 func NewSlidingRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bool, selectRange, offset int64) *SlidingRateBuffer {
 	return &SlidingRateBuffer{
 		ctx:         ctx,
@@ -542,12 +485,10 @@ func (r *SlidingRateBuffer) MaxT() int64                { return r.lastT }
 func (r *SlidingRateBuffer) ReadIntoLast(func(*Sample)) {}
 
 func (r *SlidingRateBuffer) Push(t int64, v Value) {
-	// Detect counter reset before updating last sample
 	if r.isCounter && len(r.samples) > 0 {
 		last := &r.samples[len(r.samples)-1]
 		if last.T > r.currentMint {
 			if v.H != nil && last.V.H != nil {
-				// Histogram reset detection
 				r.hasHistograms = true
 				if v.H.DetectReset(last.V.H) {
 					r.histogramResets = append(r.histogramResets, Sample{
@@ -560,7 +501,6 @@ func (r *SlidingRateBuffer) Push(t int64, v Value) {
 					})
 				}
 			} else if v.H == nil && last.V.H == nil && last.V.F > v.F {
-				// Float counter reset - add the pre-reset value to correction
 				r.counterCorrection += last.V.F
 			}
 		}
@@ -568,7 +508,6 @@ func (r *SlidingRateBuffer) Push(t int64, v Value) {
 
 	r.lastT = t
 
-	// Append sample
 	n := len(r.samples)
 	if n < cap(r.samples) {
 		r.samples = r.samples[:n+1]
@@ -604,7 +543,6 @@ func (r *SlidingRateBuffer) Reset(mint int64, evalt int64) {
 		return
 	}
 
-	// Find first sample to keep and adjust counter correction
 	var drop int
 	for drop = 0; drop < len(r.samples) && r.samples[drop].T <= mint; drop++ {
 		s := &r.samples[drop]
@@ -615,15 +553,10 @@ func (r *SlidingRateBuffer) Reset(mint int64, evalt int64) {
 		}
 		r.numSamples--
 
-		// If we're dropping a sample that was part of a counter reset,
-		// we need to remove its contribution from counterCorrection.
-		// A reset contributes the pre-reset value to counterCorrection.
-		// We detect this by checking if the next sample (if exists and in window)
-		// has a lower value than this one.
+		// Remove counter correction contribution if this sample was a reset point
 		if r.isCounter && !r.hasHistograms && drop+1 < len(r.samples) {
 			next := &r.samples[drop+1]
 			if next.T > mint && s.V.F > next.V.F {
-				// This sample's value was added to counterCorrection during a reset
 				r.counterCorrection -= s.V.F
 			}
 		}
@@ -633,7 +566,6 @@ func (r *SlidingRateBuffer) Reset(mint int64, evalt int64) {
 		return
 	}
 
-	// Drop histogram resets that are now outside the window
 	if r.hasHistograms {
 		dropResets := 0
 		for ; dropResets < len(r.histogramResets) && r.histogramResets[dropResets].T <= mint; dropResets++ {
@@ -648,7 +580,6 @@ func (r *SlidingRateBuffer) Reset(mint int64, evalt int64) {
 		}
 	}
 
-	// Shift samples
 	keep := len(r.samples) - drop
 	r.tail = resize(r.tail, drop)
 	copy(r.tail, r.samples[:drop])
@@ -665,7 +596,6 @@ func (r *SlidingRateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (fl
 	first := &r.samples[0]
 	last := &r.samples[len(r.samples)-1]
 
-	// Check for mixed float/histogram
 	if r.hasHistograms {
 		var fd, hd bool
 		for i := range r.samples {
@@ -686,27 +616,18 @@ func (r *SlidingRateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (fl
 	)
 
 	if first.V.H != nil {
-		// Build samples slice for histogram rate calculation
-		// We need all samples plus reset info
-		samples := make([]Sample, 0, len(r.samples)+len(r.histogramResets))
-		samples = append(samples, r.samples...)
-		// histogramResets are stored as pairs (pre-reset, post-reset)
-		// We need to insert them into the samples for proper rate calculation
-		// For now, fall back to using histogramRate with all samples
 		var err error
 		resultHistogram, err = histogramRate(ctx, r.samples, r.isCounter)
 		if err != nil {
 			return 0, nil, false, err
 		}
 	} else {
-		// Float rate calculation with pre-computed counter correction
 		resultValue = last.V.F - first.V.F
 		if r.isCounter {
 			resultValue += r.counterCorrection
 		}
 	}
 
-	// Extrapolation calculation (same as extrapolatedRate)
 	durationToStart := float64(first.T-rangeStart) / 1000
 	durationToEnd := float64(rangeEnd-last.T) / 1000
 	sampledInterval := float64(last.T-first.T) / 1000
@@ -714,7 +635,6 @@ func (r *SlidingRateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (fl
 		return 0, nil, false, nil
 	}
 	averageDurationBetweenSamples := sampledInterval / float64(r.numSamples-1)
-
 	extrapolationThreshold := averageDurationBetweenSamples * 1.1
 
 	if durationToStart >= extrapolationThreshold {
