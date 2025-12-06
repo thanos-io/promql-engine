@@ -531,6 +531,13 @@ type compatibilityQuery struct {
 	scanners engstorage.Scanners
 }
 
+func (q *compatibilityQuery) totalSteps() int {
+	if q.step == 0 {
+		return 1
+	}
+	return int((q.end.UnixMilli()-q.start.UnixMilli())/q.step.Milliseconds() + 1)
+}
+
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	idx, err := q.engine.activeQueryTracker.Insert(ctx, q.String())
 	if err != nil {
@@ -567,6 +574,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	for i, s := range resultSeries {
 		series[i].Metric = s
 	}
+	totalSteps := q.totalSteps()
 loop:
 	for {
 		select {
@@ -590,7 +598,7 @@ loop:
 			for _, vector := range r {
 				for i, s := range vector.SampleIDs {
 					if len(series[s].Floats) == 0 {
-						series[s].Floats = make([]promql.FPoint, 0, 121) // Typically 1h of data.
+						series[s].Floats = make([]promql.FPoint, 0, totalSteps)
 					}
 					series[s].Floats = append(series[s].Floats, promql.FPoint{
 						T: vector.T,
@@ -599,7 +607,7 @@ loop:
 				}
 				for i, s := range vector.HistogramIDs {
 					if len(series[s].Histograms) == 0 {
-						series[s].Histograms = make([]promql.HPoint, 0, 121) // Typically 1h of data.
+						series[s].Histograms = make([]promql.HPoint, 0, totalSteps)
 					}
 					series[s].Histograms = append(series[s].Histograms, promql.HPoint{
 						T: vector.T,
