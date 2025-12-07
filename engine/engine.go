@@ -273,7 +273,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 	e.metrics.totalQueries.Inc()
 	return &compatibilityQuery{
-		Query:      &Query{exec: exec, opts: opts},
+		Query:      &Query{exec: exec, opts: qOpts},
 		engine:     e,
 		plan:       optimizedPlan,
 		warns:      warns,
@@ -281,9 +281,6 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 		t:          InstantQuery,
 		resultSort: resultSort,
 		scanners:   scanners,
-		start:      ts,
-		end:        ts,
-		step:       0,
 	}, nil
 }
 
@@ -318,7 +315,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
-		Query:  &Query{exec: exec, opts: opts},
+		Query:  &Query{exec: exec, opts: qOpts},
 		engine: e,
 		plan:   lplan,
 		warns:  warns,
@@ -327,9 +324,6 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 		// TODO(fpetkovski): Infer the sort order from the plan, ideally without copying the newResultSort function.
 		resultSort: noSortResultSort{},
 		scanners:   scnrs,
-		start:      ts,
-		end:        ts,
-		step:       0,
 	}, nil
 }
 
@@ -378,15 +372,12 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
-		Query:    &Query{exec: exec, opts: opts},
+		Query:    &Query{exec: exec, opts: qOpts},
 		engine:   e,
 		plan:     optimizedPlan,
 		warns:    warns,
 		t:        RangeQuery,
 		scanners: scnrs,
-		start:    start,
-		end:      end,
-		step:     step,
 	}, nil
 }
 
@@ -420,15 +411,12 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	e.metrics.totalQueries.Inc()
 
 	return &compatibilityQuery{
-		Query:    &Query{exec: exec, opts: opts},
+		Query:    &Query{exec: exec, opts: qOpts},
 		engine:   e,
 		plan:     lplan,
 		warns:    warns,
 		t:        RangeQuery,
 		scanners: scnrs,
-		start:    start,
-		end:      end,
-		step:     step,
 	}, nil
 }
 
@@ -498,7 +486,7 @@ func (e *Engine) storageScanners(queryable storage.Queryable, qOpts *query.Optio
 
 type Query struct {
 	exec model.VectorOperator
-	opts promql.QueryOpts
+	opts *query.Options
 }
 
 // Explain returns human-readable explanation of the created executor.
@@ -520,22 +508,12 @@ type compatibilityQuery struct {
 	plan   logicalplan.Plan
 	ts     time.Time // Empty for range queries.
 	warns  annotations.Annotations
-	start  time.Time
-	end    time.Time
-	step   time.Duration
 
 	t          QueryType
 	resultSort resultSorter
 	cancel     context.CancelFunc
 
 	scanners engstorage.Scanners
-}
-
-func (q *compatibilityQuery) totalSteps() int {
-	if q.step == 0 {
-		return 1
-	}
-	return int((q.end.UnixMilli()-q.start.UnixMilli())/q.step.Milliseconds() + 1)
 }
 
 func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
@@ -574,7 +552,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	for i, s := range resultSeries {
 		series[i].Metric = s
 	}
-	totalSteps := q.totalSteps()
+	totalSteps := q.opts.TotalSteps()
 loop:
 	for {
 		select {
@@ -703,15 +681,12 @@ func (q *compatibilityQuery) Statement() parser.Statement { return nil }
 
 // Stats always returns empty query stats for now to avoid panic.
 func (q *compatibilityQuery) Stats() *stats.Statistics {
-	var enablePerStepStats bool
-	if q.opts != nil {
-		enablePerStepStats = q.opts.EnablePerStepStats()
-	}
+	enablePerStepStats := q.opts.EnablePerStepStats
 
 	analysis := q.Analyze()
 	samples := stats.NewQuerySamples(enablePerStepStats)
 	if enablePerStepStats {
-		samples.InitStepTracking(q.start.UnixMilli(), q.end.UnixMilli(), telemetry.StepTrackingInterval(q.step))
+		samples.InitStepTracking(q.opts.Start.UnixMilli(), q.opts.End.UnixMilli(), telemetry.StepTrackingInterval(q.opts.Step))
 	}
 
 	if analysis != nil {
