@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -59,7 +59,7 @@ type vectorSelector struct {
 func NewVectorSelector(
 	pool *model.VectorPool,
 	selector SeriesSelector,
-	queryOpts *query.Options,
+	queryOpts *execopts.Options,
 	offset time.Duration,
 	batchSize int64,
 	selectTimestamp bool,

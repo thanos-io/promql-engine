@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -27,7 +27,7 @@ type concurrencyOperator struct {
 	bufferSize int
 }
 
-func NewConcurrent(next model.VectorOperator, bufferSize int, opts *query.Options) model.VectorOperator {
+func NewConcurrent(next model.VectorOperator, bufferSize int, opts *execopts.Options) model.VectorOperator {
 	oper := &concurrencyOperator{
 		next:       next,
 		buffer:     make(chan maybeStepVector, bufferSize),

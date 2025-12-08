@@ -7,10 +7,10 @@ import (
 	"context"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -24,7 +24,7 @@ type unaryNegation struct {
 	series []labels.Labels
 }
 
-func NewUnaryNegation(next model.VectorOperator, opts *query.Options) (model.VectorOperator, error) {
+func NewUnaryNegation(next model.VectorOperator, opts *execopts.Options) (model.VectorOperator, error) {
 	u := &unaryNegation{
 		next: next,
 	}

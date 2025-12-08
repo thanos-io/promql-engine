@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -60,7 +60,7 @@ load 30s
 
 type injectVectorSelector struct{}
 
-func (i injectVectorSelector) Optimize(plan logicalplan.Node, _ *query.Options) (logicalplan.Node, annotations.Annotations) {
+func (i injectVectorSelector) Optimize(plan logicalplan.Node, _ *execopts.Options) (logicalplan.Node, annotations.Annotations) {
 	logicalplan.TraverseBottomUp(nil, &plan, func(_, current *logicalplan.Node) bool {
 		switch t := (*current).(type) {
 		case *logicalplan.VectorSelector:
@@ -77,7 +77,7 @@ type logicalVectorSelector struct {
 	*logicalplan.VectorSelector
 }
 
-func (c logicalVectorSelector) MakeExecutionOperator(_ context.Context, vectors *model.VectorPool, opts *query.Options, _ storage.SelectHints) (model.VectorOperator, error) {
+func (c logicalVectorSelector) MakeExecutionOperator(_ context.Context, vectors *model.VectorPool, opts *execopts.Options, _ storage.SelectHints) (model.VectorOperator, error) {
 	oper := &vectorSelectorOperator{
 		stepsBatch: opts.StepsBatch,
 		vectors:    vectors,

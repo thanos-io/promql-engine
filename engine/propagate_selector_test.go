@@ -120,7 +120,7 @@ func TestPropagateMatchers(t *testing.T) {
 		}
 
 		t.Run(fmt.Sprintf("Query_%d", i), func(t *testing.T) {
-			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, &engine.QueryOpts{}, query, queryTime)
+			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, nil, query, queryTime)
 			testutil.Ok(t, err)
 			defer normalQuery.Close()
 			normalResult := normalQuery.Exec(ctx)
@@ -130,7 +130,7 @@ func TestPropagateMatchers(t *testing.T) {
 			}
 			testutil.Ok(t, normalResult.Err, "query: %s", query)
 
-			optimizedQuery, err := optimizedEngine.MakeInstantQuery(ctx, storage, &engine.QueryOpts{}, query, queryTime)
+			optimizedQuery, err := optimizedEngine.MakeInstantQuery(ctx, storage, nil, query, queryTime)
 			testutil.Ok(t, err)
 
 			defer optimizedQuery.Close()

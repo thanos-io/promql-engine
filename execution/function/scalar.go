@@ -7,9 +7,9 @@ import (
 	"context"
 	"math"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -19,7 +19,7 @@ type scalarOperator struct {
 	next model.VectorOperator
 }
 
-func newScalarOperator(pool *model.VectorPool, next model.VectorOperator, opts *query.Options) model.VectorOperator {
+func newScalarOperator(pool *model.VectorPool, next model.VectorOperator, opts *execopts.Options) model.VectorOperator {
 	oper := &scalarOperator{
 		pool: pool,
 		next: next,

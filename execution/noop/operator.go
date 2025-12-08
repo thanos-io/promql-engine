@@ -6,8 +6,8 @@ package noop
 import (
 	"context"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/storage/prometheus"
 
 	"github.com/prometheus/prometheus/model/labels"
@@ -17,7 +17,7 @@ type operator struct {
 	model.VectorOperator
 }
 
-func NewOperator(opts *query.Options) model.VectorOperator {
+func NewOperator(opts *execopts.Options) model.VectorOperator {
 	scanner := prometheus.NewVectorSelector(
 		model.NewVectorPool(0),
 		noopSelector{},

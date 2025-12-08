@@ -11,11 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
 	"github.com/thanos-io/promql-engine/warnings"
 
@@ -52,7 +52,7 @@ type matrixSelector struct {
 	functionName string
 	call         ringbuffer.FunctionCall
 	fhReader     *histogram.FloatHistogram
-	opts         *query.Options
+	opts         *execopts.Options
 
 	numSteps      int
 	mint          int64
@@ -85,7 +85,7 @@ func NewMatrixSelector(
 	functionName string,
 	arg float64,
 	arg2 float64,
-	opts *query.Options,
+	opts *execopts.Options,
 	selectRange, offset time.Duration,
 	batchSize int64,
 	shard, numShard int,

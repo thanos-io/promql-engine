@@ -8,10 +8,10 @@ import (
 	"math"
 
 	"github.com/thanos-io/promql-engine/execution/exchange"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
@@ -32,7 +32,7 @@ func (s *Scanners) Close() error {
 	return s.querier.Close()
 }
 
-func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (*Scanners, error) {
+func NewPrometheusScanners(queryable storage.Queryable, qOpts *execopts.Options, lplan logicalplan.Plan) (*Scanners, error) {
 	var min, max int64
 	if lplan != nil {
 		min, max = lplan.MinMaxTime(qOpts)
@@ -49,7 +49,7 @@ func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lp
 
 func (p Scanners) NewVectorSelector(
 	_ context.Context,
-	opts *query.Options,
+	opts *execopts.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.VectorSelector,
 ) (model.VectorOperator, error) {
@@ -85,7 +85,7 @@ func (p Scanners) NewVectorSelector(
 
 func (p Scanners) NewMatrixSelector(
 	ctx context.Context,
-	opts *query.Options,
+	opts *execopts.Options,
 	hints storage.SelectHints,
 	logicalNode logicalplan.MatrixSelector,
 	call logicalplan.FunctionCall,

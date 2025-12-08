@@ -242,7 +242,7 @@ func TestProjectionWithFuzz(t *testing.T) {
 				Queryable: storage,
 			}
 
-			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, &engine.QueryOpts{}, query, queryTime)
+			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, nil, query, queryTime)
 			testutil.Ok(t, err)
 			defer normalQuery.Close()
 			normalResult := normalQuery.Exec(ctx)
@@ -252,7 +252,7 @@ func TestProjectionWithFuzz(t *testing.T) {
 			}
 			testutil.Ok(t, normalResult.Err, "query: %s", query)
 
-			projectionQuery, err := projectionEngine.MakeInstantQuery(ctx, projectionStorage, &engine.QueryOpts{}, query, queryTime)
+			projectionQuery, err := projectionEngine.MakeInstantQuery(ctx, projectionStorage, nil, query, queryTime)
 			testutil.Ok(t, err)
 
 			defer projectionQuery.Close()

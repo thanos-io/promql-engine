@@ -8,8 +8,8 @@ import (
 	"math"
 	"slices"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -49,7 +49,7 @@ type stepRange struct {
 }
 
 // NewRateBuffer creates a new RateBuffer.
-func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bool, selectRange, offset int64) *RateBuffer {
+func NewRateBuffer(ctx context.Context, opts execopts.Options, isCounter, isRate bool, selectRange, offset int64) *RateBuffer {
 	var (
 		step     = max(1, opts.Step.Milliseconds())
 		numSteps = min(
@@ -194,7 +194,7 @@ func (r *RateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float64, 
 
 func (r *RateBuffer) ReadIntoLast(func(*Sample)) {}
 
-func querySteps(o query.Options) int64 {
+func querySteps(o execopts.Options) int64 {
 	// Instant evaluation is executed as a range evaluation with one step.
 	if o.Step.Milliseconds() == 0 {
 		return 1

@@ -6,7 +6,7 @@ package logicalplan
 import (
 	"sort"
 
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -16,7 +16,7 @@ import (
 // can rely on this property.
 type SortMatchers struct{}
 
-func (m SortMatchers) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+func (m SortMatchers) Optimize(plan Node, _ *execopts.Options) (Node, annotations.Annotations) {
 	Traverse(&plan, func(node *Node) {
 		e, ok := (*node).(*VectorSelector)
 		if !ok {

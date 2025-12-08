@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
-	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/cespare/xxhash/v2"
@@ -63,7 +63,7 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	opType parser.ItemType,
 	returnBool bool,
-	opts *query.Options,
+	opts *execopts.Options,
 ) (model.VectorOperator, error) {
 	op := &vectorOperator{
 		pool:       pool,

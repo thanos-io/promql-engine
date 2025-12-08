@@ -6,7 +6,7 @@ package logicalplan
 import (
 	"testing"
 
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -49,7 +49,7 @@ func TestMergeSelects(t *testing.T) {
 			expr, err := parser.ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
-			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
+			plan, _ := NewFromAST(expr, &execopts.Options{}, PlanOptions{})
 			optimizedPlan, _ := plan.Optimize(optimizers)
 			testutil.Equals(t, tcase.expected, renderExprTree(optimizedPlan.Root()))
 		})
@@ -169,7 +169,7 @@ func TestMergeSelectsWithProjections(t *testing.T) {
 	optimizer := MergeSelectsOptimizer{}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			optimizedPlan, _ := optimizer.Optimize(tc.plan, &query.Options{})
+			optimizedPlan, _ := optimizer.Optimize(tc.plan, &execopts.Options{})
 			testutil.Equals(t, tc.expected, renderExprTree(optimizedPlan))
 		})
 	}

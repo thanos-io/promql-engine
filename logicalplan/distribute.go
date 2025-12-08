@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/api"
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
@@ -156,7 +156,7 @@ type DistributedExecutionOptimizer struct {
 	SkipBinaryPushdown bool
 }
 
-func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
+func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *execopts.Options) (Node, annotations.Annotations) {
 	engines := m.Endpoints.Engines()
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
@@ -256,7 +256,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 	return plan, *warns
 }
 
-func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*Node]*Node, current *Node, opts *query.Options) *query.Options {
+func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*Node]*Node, current *Node, opts *execopts.Options) *execopts.Options {
 	subqueryParents := make([]*Subquery, 0, len(parents))
 	for p := parents[current]; p != nil; p = parents[p] {
 		if subquery, ok := (*p).(*Subquery); ok {
@@ -264,7 +264,7 @@ func (m DistributedExecutionOptimizer) subqueryOpts(parents map[*Node]*Node, cur
 		}
 	}
 	for i := len(subqueryParents) - 1; i >= 0; i-- {
-		opts = query.NestedOptionsForSubquery(
+		opts = execopts.NestedOptionsForSubquery(
 			opts,
 			subqueryParents[i].Step,
 			subqueryParents[i].Range,
@@ -306,7 +306,7 @@ func newRemoteAggregation(rootAggregation *Aggregation, engines []api.RemoteEngi
 // distributeQuery takes a PromQL expression in the form of *parser.Expr and a set of remote engines.
 // For each engine which matches the time range of the query, it creates a RemoteExecution scoped to the range of the engine.
 // All remote executions are wrapped in a Deduplicate logical node to make sure that results from overlapping engines are deduplicated.
-func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, opts *query.Options, labelRanges labelSetRanges) Node {
+func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api.RemoteEngine, opts *execopts.Options, labelRanges labelSetRanges) Node {
 	startOffset := calculateStartOffset(expr, opts.LookbackDelta)
 	allowedStartOffset := labelRanges.minOverlap(opts.Start.UnixMilli()-startOffset.Milliseconds(), opts.End.UnixMilli())
 
@@ -373,7 +373,7 @@ func (m DistributedExecutionOptimizer) distributeQuery(expr *Node, engines []api
 	}
 }
 
-func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api.RemoteEngine, startOffset time.Duration, opts *query.Options) Node {
+func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api.RemoteEngine, startOffset time.Duration, opts *execopts.Options) Node {
 	queries := make(RemoteExecutions, 0, len(engines))
 	for i, e := range engines {
 		if e.MaxT() < opts.Start.UnixMilli()-startOffset.Milliseconds() {
@@ -423,7 +423,7 @@ func isAbsent(expr Node) bool {
 	return call.Func.Name == "absent" || call.Func.Name == "absent_over_time"
 }
 
-func getStartTimeForEngine(e api.RemoteEngine, opts *query.Options, offset time.Duration, globalMinT int64) (time.Time, bool) {
+func getStartTimeForEngine(e api.RemoteEngine, opts *execopts.Options, offset time.Duration, globalMinT int64) (time.Time, bool) {
 	if e.MinT() > opts.End.UnixMilli() {
 		return time.Time{}, false
 	}
@@ -457,7 +457,7 @@ func getStartTimeForEngine(e api.RemoteEngine, opts *query.Options, offset time.
 // engine min time and the query step size.
 // The purpose of this alignment is to make sure that the steps for the remote query
 // have the same timestamps as the ones for the central query.
-func calculateStepAlignedStart(opts *query.Options, engineMinTime time.Time) time.Time {
+func calculateStepAlignedStart(opts *execopts.Options, engineMinTime time.Time) time.Time {
 	originalSteps := numSteps(opts.Start, opts.End, opts.Step)
 	remoteQuerySteps := numSteps(engineMinTime, opts.End, opts.Step)
 

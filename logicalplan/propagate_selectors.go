@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
@@ -19,7 +19,7 @@ import (
 // two vector selectors in a binary expression.
 type PropagateMatchersOptimizer struct{}
 
-func (m PropagateMatchersOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+func (m PropagateMatchersOptimizer) Optimize(plan Node, _ *execopts.Options) (Node, annotations.Annotations) {
 	Traverse(&plan, func(expr *Node) {
 		binOp, ok := (*expr).(*Binary)
 		if !ok {

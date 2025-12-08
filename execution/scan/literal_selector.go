@@ -8,9 +8,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/labels"
 )
@@ -30,7 +30,7 @@ type numberLiteralSelector struct {
 	val float64
 }
 
-func NewNumberLiteralSelector(pool *model.VectorPool, opts *query.Options, val float64) model.VectorOperator {
+func NewNumberLiteralSelector(pool *model.VectorPool, opts *execopts.Options, val float64) model.VectorOperator {
 	oper := &numberLiteralSelector{
 		vectorPool:  pool,
 		numSteps:    opts.NumSteps(),

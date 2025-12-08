@@ -7,7 +7,7 @@ import (
 	"maps"
 	"slices"
 
-	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/execution/execopts"
 
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -17,7 +17,7 @@ type ProjectionOptimizer struct {
 	SeriesHashLabel string
 }
 
-func (p ProjectionOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
+func (p ProjectionOptimizer) Optimize(plan Node, _ *execopts.Options) (Node, annotations.Annotations) {
 	p.pushProjection(&plan, nil)
 	return plan, nil
 }

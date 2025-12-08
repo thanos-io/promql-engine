@@ -6,8 +6,8 @@ package logicalplan
 import (
 	"context"
 
+	"github.com/thanos-io/promql-engine/execution/execopts"
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/storage"
 )
@@ -18,7 +18,7 @@ type UserDefinedExpr interface {
 	MakeExecutionOperator(
 		ctx context.Context,
 		vectors *model.VectorPool,
-		opts *query.Options,
+		opts *execopts.Options,
 		hints storage.SelectHints,
 	) (model.VectorOperator, error)
 }
