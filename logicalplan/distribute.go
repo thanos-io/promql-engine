@@ -573,24 +573,105 @@ func isBinaryExpressionWithDistributableMatching(expr *Binary, engineLabels map[
 	if expr.VectorMatching == nil {
 		return false
 	}
-	// TODO: think about "or" but for safety we dont push it down for now.
-	if expr.Op == parser.LOR {
+
+	isSetOperation := expr.Op == parser.LOR || expr.Op == parser.LUNLESS
+
+	// For set operations (or/unless) with a constant expression on either side,
+	// distribution is not safe because the constant will be evaluated by each
+	// engine and cause duplicates. For example, `bar or on () vector(0)` would
+	// have vector(0) returned by every engine.
+	if isSetOperation && (IsConstantExpr(expr.LHS) || IsConstantExpr(expr.RHS)) {
 		return false
 	}
 
-	if expr.VectorMatching.On {
-		// on (...) - if ... contains all partition labels we can distribute
-		for lbl := range engineLabels {
-			if !slices.Contains(expr.VectorMatching.MatchingLabels, lbl) {
-				return false
-			}
+	// Default matching (no explicit on() or ignoring()) matches on all labels.
+	// For this to be safe, both sides must preserve partition labels so that the
+	// matching will include them. If only one side has partition labels, the matching
+	// behavior differs per partition.
+	if len(expr.VectorMatching.MatchingLabels) == 0 && !expr.VectorMatching.On {
+		// For or/unless with default matching, we can distribute if:
+		// 1. Both sides preserve partition labels (matching will include them), OR
+		// 2. Both sides have the same partition label scope (both global, or both
+		//    filtered to the same partition values)
+		//
+		// Case 2 is important because it allows queries like:
+		//   metric_a or metric_b  (both global)
+		//   metric_a{zone="east"} or metric_b{zone="east"}  (same partition)
+		if isSetOperation {
+			lhsMatchers := getPartitionMatchers(expr.LHS, engineLabels)
+			rhsMatchers := getPartitionMatchers(expr.RHS, engineLabels)
+			return partitionMatchersEqual(lhsMatchers, rhsMatchers)
 		}
 		return true
 	}
-	// ignoring (...) - if ... does contain any engine labels we cannot distribute
+
 	for lbl := range engineLabels {
-		if slices.Contains(expr.VectorMatching.MatchingLabels, lbl) {
+		inMatching := slices.Contains(expr.VectorMatching.MatchingLabels, lbl)
+		inInclude := slices.Contains(expr.VectorMatching.Include, lbl)
+		// If a partition label is in group_left/group_right (Include), distribution
+		// changes match cardinality semantics. Each partition only sees one value for
+		// that label, so what's many-to-many globally may become one-to-one per partition,
+		// producing results instead of errors (or vice versa).
+		return !inInclude && inMatching == expr.VectorMatching.On
+	}
+	// At this point, partition labels are in the matching set (either via on() or
+	// by not being in ignoring()). This means or/unless can be safely distributed
+	// because the matching ensures series are paired by partition.
+	return true
+}
+
+// getPartitionMatchers extracts matchers for partition labels from all selectors in the expression.
+// Returns a map of partition label name to a list of matchers found across all selectors.
+// If a selector has no matcher for a partition label, it's considered "global" for that label.
+func getPartitionMatchers(expr Node, partitionLabels map[string]struct{}) map[string][]*labels.Matcher {
+	result := make(map[string][]*labels.Matcher)
+	for lbl := range partitionLabels {
+		result[lbl] = nil
+	}
+
+	Traverse(&expr, func(current *Node) {
+		vs, ok := (*current).(*VectorSelector)
+		if !ok {
+			return
+		}
+		for _, m := range vs.LabelMatchers {
+			if _, isPartition := partitionLabels[m.Name]; isPartition {
+				result[m.Name] = append(result[m.Name], m)
+			}
+		}
+	})
+
+	return result
+}
+
+// partitionMatchersEqual checks if two sets of partition matchers are equivalent.
+func partitionMatchersEqual(a, b map[string][]*labels.Matcher) bool {
+	for lbl := range a {
+		aMatchers := a[lbl]
+		bMatchers := b[lbl]
+
+		// Both global (no matchers) for this label
+		if len(aMatchers) == 0 && len(bMatchers) == 0 {
+			continue
+		}
+
+		// One has matchers, other doesn't - not equal
+		if len(aMatchers) != len(bMatchers) {
 			return false
+		}
+
+		// Compare matchers - they should be identical
+		// Sort by name+type+value for comparison
+		aSet := make(map[string]struct{})
+		for _, m := range aMatchers {
+			key := fmt.Sprintf("%s:%d:%s", m.Name, m.Type, m.Value)
+			aSet[key] = struct{}{}
+		}
+		for _, m := range bMatchers {
+			key := fmt.Sprintf("%s:%d:%s", m.Name, m.Type, m.Value)
+			if _, ok := aSet[key]; !ok {
+				return false
+			}
 		}
 	}
 	return true

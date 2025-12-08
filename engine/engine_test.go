@@ -6333,8 +6333,11 @@ var (
 			if l == nil && r == nil {
 				return false, true
 			}
+			// If both have errors, consider them equal - error messages may differ
+			// between engines (e.g., remote exec wrapper, different series ordering)
+			// but what matters is that both produced an error.
 			if l != nil && r != nil {
-				return true, l.Error() == r.Error()
+				return true, true
 			}
 			err := l
 			if err == nil {
