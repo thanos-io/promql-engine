@@ -441,6 +441,93 @@ count by (cluster) (
 			expected:          `dedup(remote(metric_a), remote(metric_a)) / dedup(remote(metric_b), remote(metric_b))`,
 			skipBinopPushdown: true,
 		},
+		{
+			// group_left/group_right with partition label cannot be distributed because
+			// match cardinality changes when each partition only sees one value for that label.
+			name:     "topk over binary with group_left including partition label does not distribute",
+			expr:     `topk(5, metric_a * on (pod) group_left(region) metric_b)`,
+			expected: `topk(5, dedup(remote(metric_a), remote(metric_a)) * on (pod) group_left (region) dedup(remote(metric_b), remote(metric_b)))`,
+		},
+		{
+			name:     "topk over binary with group_right including partition label does not distribute",
+			expr:     `topk(5, metric_a * on (pod) group_right(region) metric_b)`,
+			expected: `topk(5, dedup(remote(metric_a), remote(metric_a)) * on (pod) group_right (region) dedup(remote(metric_b), remote(metric_b)))`,
+		},
+		{
+			name:     "or distributes with default matching when both sides are global",
+			expr:     `metric_a or metric_b`,
+			expected: `dedup(remote(metric_a or metric_b), remote(metric_a or metric_b))`,
+		},
+		{
+			name:     "unless distributes with default matching when both sides are global",
+			expr:     `metric_a unless metric_b`,
+			expected: `dedup(remote(metric_a unless metric_b), remote(metric_a unless metric_b))`,
+		},
+		{
+			name:     "or distributes with on(partition_label)",
+			expr:     `metric_a or on(region) metric_b`,
+			expected: `dedup(remote(metric_a or on (region) metric_b), remote(metric_a or on (region) metric_b))`,
+		},
+		{
+			name:     "unless distributes with on(partition_label)",
+			expr:     `metric_a unless on(region) metric_b`,
+			expected: `dedup(remote(metric_a unless on (region) metric_b), remote(metric_a unless on (region) metric_b))`,
+		},
+		{
+			name:     "or does not distribute when on() excludes partition label",
+			expr:     `metric_a or on(pod) metric_b`,
+			expected: `dedup(remote(metric_a), remote(metric_a)) or on (pod) dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name:     "unless does not distribute when on() excludes partition label",
+			expr:     `metric_a unless on(pod) metric_b`,
+			expected: `dedup(remote(metric_a), remote(metric_a)) unless on (pod) dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name:     "or distributes with ignoring(non_partition_label)",
+			expr:     `metric_a or ignoring(pod) metric_b`,
+			expected: `dedup(remote(metric_a or ignoring (pod) metric_b), remote(metric_a or ignoring (pod) metric_b))`,
+		},
+		{
+			name:     "or does not distribute when ignoring(partition_label)",
+			expr:     `metric_a or ignoring(region) metric_b`,
+			expected: `dedup(remote(metric_a), remote(metric_a)) or ignoring (region) dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name:     "or does not distribute with cross-partition selectors",
+			expr:     `metric_a{region="east"} or metric_b{region="west"}`,
+			expected: `dedup(remote(metric_a{region="east"})) or dedup(remote(metric_b{region="west"}))`,
+		},
+		{
+			name:     "or distributes when both sides have same partition selector",
+			expr:     `metric_a{region="east"} or metric_b{region="east"}`,
+			expected: `dedup(remote(metric_a{region="east"} or metric_b{region="east"}))`,
+		},
+		{
+			name:     "unless does not distribute with cross-partition selectors",
+			expr:     `metric_a{region="east"} unless metric_b{region="west"}`,
+			expected: `dedup(remote(metric_a{region="east"})) unless dedup(remote(metric_b{region="west"}))`,
+		},
+		{
+			name:     "or does not distribute when one side is global and other has partition selector",
+			expr:     `metric_a or metric_b{region="east"}`,
+			expected: `dedup(remote(metric_a), remote(metric_a)) or dedup(remote(metric_b{region="east"}))`,
+		},
+		{
+			name:     "or does not distribute with constant expression on right side",
+			expr:     `metric_a or on () vector(0)`,
+			expected: `dedup(remote(metric_a), remote(metric_a)) or on () vector(0)`,
+		},
+		{
+			name:     "or does not distribute with constant expression on left side",
+			expr:     `vector(1) or metric_b`,
+			expected: `vector(1) or dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name:     "unless does not distribute with constant expression",
+			expr:     `metric_a unless on () vector(0)`,
+			expected: `dedup(remote(metric_a), remote(metric_a)) unless on () vector(0)`,
+		},
 	}
 
 	engines := []api.RemoteEngine{

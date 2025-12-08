@@ -398,7 +398,7 @@ func TestReduceConstantExpressions(t *testing.T) {
 		{
 			name:     "unary negation",
 			expr:     "2+(-5)",
-			expected: "-3",
+			expected: "(-3)",
 		},
 		{
 			name:     "function",
