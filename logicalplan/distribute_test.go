@@ -523,6 +523,13 @@ count by (cluster) (
 			skipBinopPushdown: true,
 		},
 		{
+			// When the RHS of unless has an aggregation that drops the partition label,
+			// both sides should still be distributed independently.
+			name:     "unless with aggregation that drops partition label distributes both sides",
+			expr:     `group by (region, instance) (metric_a unless on (region, instance) max by (instance) (metric_b))`,
+			expected: `group by (region, instance) (dedup(remote(metric_a), remote(metric_a)) unless on (region, instance) max by (instance) (dedup(remote(max by (instance, region) (metric_b)), remote(max by (instance, region) (metric_b)))))`,
+		},
+		{
 			// group_left/group_right with partition label cannot be distributed because
 			// match cardinality changes when each partition only sees one value for that label.
 			name:     "binary with group_left including partition label does not distribute",
