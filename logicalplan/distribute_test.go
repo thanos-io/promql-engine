@@ -33,6 +33,66 @@ func TestDistributedExecution(t *testing.T) {
 		expected          string
 	}{
 		{
+			name: "binary with aggregation distributes entire expression",
+			expr: `sum(node_uname_info * group by (region) (server_running))`,
+			expected: `
+sum(dedup(
+  remote(sum by (region) (node_uname_info * group by (region) (server_running))),
+  remote(sum by (region) (node_uname_info * group by (region) (server_running)))))`,
+		},
+		{
+			name: "nested binary with multiple aggregations",
+			expr: `sum(metric_a * sum by (region, pod) (metric_b) + metric_c)`,
+			expected: `
+sum(dedup(
+  remote(sum by (region) (metric_a * sum by (region, pod) (metric_b) + metric_c)),
+  remote(sum by (region) (metric_a * sum by (region, pod) (metric_b) + metric_c))))`,
+		},
+		{
+			name: "max over binary with nested group",
+			expr: `max(metric_a / group by (region) (metric_b))`,
+			expected: `
+max(dedup(
+  remote(max by (region) (metric_a / group by (region) (metric_b))),
+  remote(max by (region) (metric_a / group by (region) (metric_b)))))`,
+		},
+		{
+			name: "count over binary with nested sum",
+			expr: `count(metric_a + sum by (region, pod) (metric_b))`,
+			expected: `
+sum(dedup(
+  remote(count by (region) (metric_a + sum by (region, pod) (metric_b))),
+  remote(count by (region) (metric_a + sum by (region, pod) (metric_b)))))`,
+		},
+		{
+			name: "avg nested inside sum does not defer",
+			expr: `sum(avg by (pod) (metric_a))`,
+			expected: `
+sum(
+  sum by (pod) (dedup(
+    remote(sum by (pod, region) (metric_a)),
+    remote(sum by (pod, region) (metric_a))))
+  / on (pod)
+  sum by (pod) (dedup(
+    remote(count by (pod, region) (metric_a)),
+    remote(count by (pod, region) (metric_a)))))`,
+		},
+		{
+			name: "avg in binary expression with outer sum distributes avg independently",
+			expr: `sum(metric_a * avg by (region) (metric_b))`,
+			expected: `
+sum(
+  dedup(remote(metric_a), remote(metric_a))
+  *
+  sum by (region) (dedup(
+    remote(sum by (region) (metric_b)),
+    remote(sum by (region) (metric_b))))
+  / on (region)
+  sum by (region) (dedup(
+    remote(count by (region) (metric_b)),
+    remote(count by (region) (metric_b)))))`,
+		},
+		{
 			name:     "selector",
 			expr:     `http_requests_total`,
 			expected: `dedup(remote(http_requests_total), remote(http_requests_total))`,
@@ -282,6 +342,15 @@ sum by (pod) (dedup(
 ))`,
 		},
 		{
+			name: "binary operation with aggregations preserving partition labels distributes entire expression",
+			expr: `sum by (region, pod) (metric_a) / count by (region, pod) (metric_b)`,
+			expected: `
+dedup(
+  remote(sum by (region, pod) (metric_a) / count by (region, pod) (metric_b)),
+  remote(sum by (region, pod) (metric_a) / count by (region, pod) (metric_b))
+)`,
+		},
+		{
 			name: "function sharding",
 			expr: `rate(http_requests_total[2m])`,
 			expected: `
@@ -442,16 +511,28 @@ count by (cluster) (
 			skipBinopPushdown: true,
 		},
 		{
-			// group_left/group_right with partition label cannot be distributed because
-			// match cardinality changes when each partition only sees one value for that label.
-			name:     "topk over binary with group_left including partition label does not distribute",
-			expr:     `topk(5, metric_a * on (pod) group_left(region) metric_b)`,
-			expected: `topk(5, dedup(remote(metric_a), remote(metric_a)) * on (pod) group_left (region) dedup(remote(metric_b), remote(metric_b)))`,
+			name:              "skip binary pushdown with nested aggregation",
+			expr:              `sum(metric_a * group by (region) (metric_b))`,
+			expected:          `sum(dedup(remote(metric_a), remote(metric_a)) * group by (region) (dedup(remote(group by (region) (metric_b)), remote(group by (region) (metric_b)))))`,
+			skipBinopPushdown: true,
 		},
 		{
-			name:     "topk over binary with group_right including partition label does not distribute",
-			expr:     `topk(5, metric_a * on (pod) group_right(region) metric_b)`,
-			expected: `topk(5, dedup(remote(metric_a), remote(metric_a)) * on (pod) group_right (region) dedup(remote(metric_b), remote(metric_b)))`,
+			name:              "skip binary pushdown with outer aggregation",
+			expr:              `max(metric_a + sum by (region, pod) (metric_b))`,
+			expected:          `max(dedup(remote(metric_a), remote(metric_a)) + sum by (region, pod) (dedup(remote(sum by (pod, region) (metric_b)), remote(sum by (pod, region) (metric_b)))))`,
+			skipBinopPushdown: true,
+		},
+		{
+			// group_left/group_right with partition label cannot be distributed because
+			// match cardinality changes when each partition only sees one value for that label.
+			name:     "binary with group_left including partition label does not distribute",
+			expr:     `max(metric_a * on (pod) group_left(region) metric_b)`,
+			expected: `max(dedup(remote(metric_a), remote(metric_a)) * on (pod) group_left (region) dedup(remote(metric_b), remote(metric_b)))`,
+		},
+		{
+			name:     "binary with group_right including partition label does not distribute",
+			expr:     `max(metric_a * on (pod) group_right(region) metric_b)`,
+			expected: `max(dedup(remote(metric_a), remote(metric_a)) * on (pod) group_right (region) dedup(remote(metric_b), remote(metric_b)))`,
 		},
 		{
 			name:     "or distributes with default matching when both sides are global",
@@ -527,6 +608,56 @@ count by (cluster) (
 			name:     "unless does not distribute with constant expression",
 			expr:     `metric_a unless on () vector(0)`,
 			expected: `dedup(remote(metric_a), remote(metric_a)) unless on () vector(0)`,
+		},
+		{
+			name:     "max over sum by partition",
+			expr:     `max(sum by (region, instance) (http_requests_total))`,
+			expected: `max(dedup(remote(max by (region) (sum by (region, instance) (http_requests_total))), remote(max by (region) (sum by (region, instance) (http_requests_total)))))`,
+		},
+		{
+			name:     "min over max by partition",
+			expr:     `min(max by (region, pod) (cpu_usage))`,
+			expected: `min(dedup(remote(min by (region) (max by (region, pod) (cpu_usage))), remote(min by (region) (max by (region, pod) (cpu_usage)))))`,
+		},
+		{
+			name:     "max over sum without partition",
+			expr:     `max(sum by (instance) (http_requests_total))`,
+			expected: `max(sum by (instance) (dedup(remote(sum by (instance, region) (http_requests_total)), remote(sum by (instance, region) (http_requests_total)))))`,
+		},
+		{
+			name:     "count over sum by partition",
+			expr:     `count(sum by (region, pod) (http_requests_total))`,
+			expected: `sum(dedup(remote(count by (region) (sum by (region, pod) (http_requests_total))), remote(count by (region) (sum by (region, pod) (http_requests_total)))))`,
+		},
+		{
+			name:     "max over binary with on() including partition",
+			expr:     `max(metric_a * on (region, pod) metric_b)`,
+			expected: `max(dedup(remote(max by (region) (metric_a * on (region, pod) metric_b)), remote(max by (region) (metric_a * on (region, pod) metric_b))))`,
+		},
+		{
+			name:     "max over binary with on() excluding partition",
+			expr:     `max(metric_a * on (pod) metric_b)`,
+			expected: `max(dedup(remote(metric_a), remote(metric_a)) * on (pod) dedup(remote(metric_b), remote(metric_b)))`,
+		},
+		{
+			name:     "max over binary with ignoring() excluding partition",
+			expr:     `max(metric_a * ignoring (pod) metric_b)`,
+			expected: `max(dedup(remote(max by (region) (metric_a * ignoring (pod) metric_b)), remote(max by (region) (metric_a * ignoring (pod) metric_b))))`,
+		},
+		{
+			name:     "max over binary with ignoring() including partition",
+			expr:     `max(metric_a * ignoring (region) metric_b)`,
+			expected: `max(dedup(remote(metric_a), remote(metric_a)) * ignoring (region) dedup(remote(metric_b), remote(metric_b)))`,
+		},
+		{
+			name:     "max over sum with without() excluding partition",
+			expr:     `max(sum without (pod) (metric_a))`,
+			expected: `max(dedup(remote(max by (region) (sum without (pod) (metric_a))), remote(max by (region) (sum without (pod) (metric_a)))))`,
+		},
+		{
+			name:     "max over sum with without() including partition",
+			expr:     `max(sum without (region) (metric_a))`,
+			expected: `max(sum without (region) (dedup(remote(sum without () (metric_a)), remote(sum without () (metric_a)))))`,
 		},
 	}
 

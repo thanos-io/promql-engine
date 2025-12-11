@@ -177,37 +177,7 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		}
 	}
 
-	// Preprocess rewrite distributable averages as sum/count
 	var warns = annotations.New()
-	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
-		if !(isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(current)) {
-			return true
-		}
-		// If the current node is avg(), distribute the operation and
-		// stop the traversal.
-		if aggr, ok := (*current).(*Aggregation); ok {
-			if aggr.Op != parser.AVG {
-				return true
-			}
-
-			sum := *(*current).(*Aggregation)
-			sum.Op = parser.SUM
-			count := *(*current).(*Aggregation)
-			count.Op = parser.COUNT
-			*current = &Binary{
-				Op:  parser.DIV,
-				LHS: &sum,
-				RHS: &count,
-				VectorMatching: &parser.VectorMatching{
-					Include:        aggr.Grouping,
-					MatchingLabels: aggr.Grouping,
-					On:             !aggr.Without,
-				},
-			}
-			return true
-		}
-		return !(isDistributive(parent, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(parent))
-	})
 
 	// TODO(fpetkovski): Consider changing TraverseBottomUp to pass in a list of parents in the transform function.
 	parents := make(map[*Node]*Node)
@@ -216,14 +186,43 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 		return false
 	})
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
+		// Handle avg() specially - it's not distributive but can be distributed as sum/count.
+		if isAvgAggregation(current) {
+			*current = m.distributeAvg(*current, engines, m.subqueryOpts(parents, current, opts), labelRanges)
+			return true
+		}
+
 		// If the current operation is not distributive, stop the traversal.
 		if !isDistributive(current, m.SkipBinaryPushdown, engineLabels, warns) {
 			return true
 		}
 
-		// If the current node is an aggregation, distribute the operation and
-		// stop the traversal.
+		// Handle absent functions specially
+		if isAbsent(current) {
+			*current = m.distributeAbsent(*current, engines, calculateStartOffset(current, opts.LookbackDelta), m.subqueryOpts(parents, current, opts))
+			return true
+		}
+
+		// If the current node is an aggregation, check if we should distribute here
+		// or continue traversing up.
 		if aggr, ok := (*current).(*Aggregation); ok {
+			// If this aggregation preserves partition labels and there's a
+			// distributive aggregation ancestor, continue up to let it handle distribution.
+			// This enables patterns like:
+			//   - topk(10, sum by (P, instance) (X))
+			//   - sum(metric_a * group by (P) (metric_b))
+			//   - max(sum by (P, instance) (X))
+			// where P is a partition label - we can push the entire expression
+			// to remote engines.
+			//
+			// We need to check ancestors (not just immediate parent) because the
+			// aggregation might be nested inside a binary expression that is itself
+			// inside another aggregation: sum(A * group by (P) (B))
+			if preservesPartitionLabels(*current, engineLabels) {
+				if hasDistributiveAncestor(parents, current, m.SkipBinaryPushdown, engineLabels, warns) {
+					return false
+				}
+			}
 			localAggregation := aggr.Op
 			if aggr.Op == parser.COUNT {
 				localAggregation = parser.SUM
@@ -240,13 +239,10 @@ func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) 
 			}
 			return true
 		}
-		if isAbsent(*current) {
-			*current = m.distributeAbsent(*current, engines, calculateStartOffset(current, opts.LookbackDelta), m.subqueryOpts(parents, current, opts))
-			return true
-		}
 
-		// If the parent operation is distributive, continue the traversal.
-		if isDistributive(parent, m.SkipBinaryPushdown, engineLabels, warns) {
+		// If the parent operation is distributive or is an avg (which we handle specially),
+		// continue the traversal.
+		if isDistributive(parent, m.SkipBinaryPushdown, engineLabels, warns) || isAvgAggregation(parent) {
 			return false
 		}
 
@@ -415,12 +411,59 @@ func (m DistributedExecutionOptimizer) distributeAbsent(expr Node, engines []api
 	return rootExpr
 }
 
-func isAbsent(expr Node) bool {
-	call, ok := expr.(*FunctionCall)
+func isAbsent(expr *Node) bool {
+	if expr == nil {
+		return false
+	}
+	call, ok := (*expr).(*FunctionCall)
 	if !ok {
 		return false
 	}
 	return call.Func.Name == "absent" || call.Func.Name == "absent_over_time"
+}
+
+// distributeAvg distributes an avg() aggregation by rewriting it as sum()/count()
+// where each side is distributed independently. This is necessary because averaging
+// averages gives incorrect results - we must sum all values and count all values
+// separately, then divide.
+func (m DistributedExecutionOptimizer) distributeAvg(expr Node, engines []api.RemoteEngine, opts *query.Options, labelRanges labelSetRanges) Node {
+	aggr := expr.(*Aggregation)
+
+	sumAggr := *aggr
+	sumAggr.Op = parser.SUM
+	sumRemote := newRemoteAggregation(&sumAggr, engines)
+	sumSubQueries := m.distributeQuery(&sumRemote, engines, opts, labelRanges)
+	distributedSum := &Aggregation{
+		Op:       parser.SUM,
+		Expr:     sumSubQueries,
+		Param:    aggr.Param,
+		Grouping: aggr.Grouping,
+		Without:  aggr.Without,
+	}
+
+	countAggr := *aggr
+	countAggr.Op = parser.COUNT
+	countAggr.Expr = aggr.Expr.Clone()
+	countRemote := newRemoteAggregation(&countAggr, engines)
+	countSubQueries := m.distributeQuery(&countRemote, engines, opts, labelRanges)
+	distributedCount := &Aggregation{
+		Op:       parser.SUM,
+		Expr:     countSubQueries,
+		Param:    aggr.Param,
+		Grouping: aggr.Grouping,
+		Without:  aggr.Without,
+	}
+
+	return &Binary{
+		Op:  parser.DIV,
+		LHS: distributedSum,
+		RHS: distributedCount,
+		VectorMatching: &parser.VectorMatching{
+			Include:        aggr.Grouping,
+			MatchingLabels: aggr.Grouping,
+			On:             !aggr.Without,
+		},
+	}
 }
 
 func getStartTimeForEngine(e api.RemoteEngine, opts *query.Options, offset time.Duration, globalMinT int64) (time.Time, bool) {
@@ -521,6 +564,73 @@ func getQueryTimestamps(expr *Node) []int64 {
 
 func numSteps(start, end time.Time, step time.Duration) int64 {
 	return (end.UnixMilli()-start.UnixMilli())/step.Milliseconds() + 1
+}
+
+// preservesPartitionLabels checks if an expression preserves all partition labels.
+// An expression preserves partition labels if the output series will still have
+// those labels, meaning results from different engines won't overlap and can be
+// coalesced without deduplication.
+//
+// This enables pushing more operations to remote engines. For example:
+//
+//	topk(10, sum by (P, instance) (X))
+//
+// If P is a partition label, the sum preserves P, so topk can also be pushed
+// down since each engine's top 10 won't overlap with other engines' top 10.
+func preservesPartitionLabels(expr Node, partitionLabels map[string]struct{}) bool {
+	if len(partitionLabels) == 0 {
+		return true
+	}
+
+	switch e := expr.(type) {
+	case *VectorSelector, *MatrixSelector, *NumberLiteral, *StringLiteral:
+		return true
+	case *Aggregation:
+		for lbl := range partitionLabels {
+			if slices.Contains(e.Grouping, lbl) == e.Without {
+				return false
+			}
+		}
+		return true
+	case *Binary:
+		if e.VectorMatching != nil {
+			for lbl := range partitionLabels {
+				inMatching := slices.Contains(e.VectorMatching.MatchingLabels, lbl)
+				inInclude := slices.Contains(e.VectorMatching.Include, lbl)
+				if !inInclude && inMatching != e.VectorMatching.On {
+					return false
+				}
+			}
+		}
+		return preservesPartitionLabels(e.LHS, partitionLabels) &&
+			preservesPartitionLabels(e.RHS, partitionLabels)
+	case *FunctionCall:
+		if e.Func.Name == "label_replace" {
+			if _, ok := partitionLabels[UnsafeUnwrapString(e.Args[1])]; ok {
+				return false
+			}
+		}
+		for _, arg := range e.Args {
+			if arg.ReturnType() == parser.ValueTypeVector || arg.ReturnType() == parser.ValueTypeMatrix {
+				if !preservesPartitionLabels(arg, partitionLabels) {
+					return false
+				}
+			}
+		}
+		return true
+	case *Unary:
+		return preservesPartitionLabels(e.Expr, partitionLabels)
+	case *Parens:
+		return preservesPartitionLabels(e.Expr, partitionLabels)
+	case *StepInvariantExpr:
+		return preservesPartitionLabels(e.Expr, partitionLabels)
+	case *CheckDuplicateLabels:
+		return preservesPartitionLabels(e.Expr, partitionLabels)
+	case *Subquery:
+		return preservesPartitionLabels(e.Expr, partitionLabels)
+	default:
+		return false
+	}
 }
 
 func isDistributive(expr *Node, skipBinaryPushdown bool, engineLabels map[string]struct{}, warns *annotations.Annotations) bool {
@@ -716,6 +826,23 @@ func matchesExternalLabels(ms []*labels.Matcher, externalLabels labels.Labels) b
 		}
 	}
 	return true
+}
+
+// hasDistributiveAncestor checks if there's a distributive node somewhere up the
+// parent chain from the current node that can handle distribution.
+// We must have an unbroken chain of distributive nodes to the ancestor for it to
+// be able to handle distribution on our behalf.
+func hasDistributiveAncestor(parents map[*Node]*Node, current *Node, skipBinaryPushdown bool, engineLabels map[string]struct{}, warns *annotations.Annotations) bool {
+	for p := parents[current]; p != nil; p = parents[p] {
+		if !isDistributive(p, skipBinaryPushdown, engineLabels, warns) {
+			// We hit a non-distributive node, so we can't push through it.
+			// No ancestor can help us distribute.
+			return false
+		}
+	}
+	// All ancestors are distributive, so the root (or the point where we
+	// stop traversing) can handle distribution.
+	return parents[current] != nil
 }
 
 func maxTime(a, b time.Time) time.Time {
