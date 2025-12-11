@@ -219,6 +219,19 @@ func unmarshalNode(data []byte) (Node, error) {
 			return nil, err
 		}
 		return u, nil
+	case CoalesceNode:
+		n := &Coalesce{}
+		if err := json.Unmarshal(t.Data, n); err != nil {
+			return nil, err
+		}
+		for _, c := range t.Children {
+			child, err := unmarshalNode(c)
+			if err != nil {
+				return nil, err
+			}
+			n.Exprs = append(n.Exprs, child)
+		}
+		return n, nil
 	}
 	return nil, nil
 }

@@ -20,6 +20,10 @@ type Options struct {
 	DecodingConcurrency      int
 }
 
+func (o *Options) NumShards() int {
+	return max(o.DecodingConcurrency, 1)
+}
+
 func (o *Options) NumSteps() int {
 	// Instant evaluation is executed as a range evaluation with one step.
 	if o.Step.Milliseconds() == 0 {

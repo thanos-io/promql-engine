@@ -25,7 +25,6 @@ const (
 	NumberLiteralNode  = "number_literal"
 	StringLiteralNode  = "string_literal"
 	SubqueryNode       = "subquery"
-	CheckDuplicateNode = "check_duplicate"
 	StepInvariantNode  = "step_invariant"
 	ParensNode         = "parens"
 	UnaryNode          = "unary"
@@ -33,6 +32,9 @@ const (
 	RemoteExecutionNode = "remote_exec"
 	DeduplicateNode     = "dedup"
 	NoopNode            = "noop"
+
+	CheckDuplicateNode = "check_duplicate"
+	CoalesceNode       = "coalesce"
 )
 
 type Cloneable interface {
@@ -78,6 +80,9 @@ type VectorSelector struct {
 	// CounterResetHint, Count and Sum values populated. Histogram buckets and spans
 	// will not be used during query evaluation.
 	DecodeNativeHistogramStats bool
+
+	Shard     int
+	NumShards int
 }
 
 func (f *VectorSelector) Clone() Node {
@@ -97,6 +102,11 @@ func (f *VectorSelector) Clone() Node {
 		ts := *f.VectorSelector.Timestamp
 		clone.Timestamp = &ts
 	}
+
+	clone.Shard = f.Shard
+	clone.NumShards = f.NumShards
+	clone.DecodeNativeHistogramStats = f.DecodeNativeHistogramStats
+	clone.BatchSize = f.BatchSize
 
 	return &clone
 }
@@ -580,4 +590,34 @@ func isAvgAggregation(expr *Node) bool {
 		return aggr.Op == parser.AVG
 	}
 	return false
+}
+
+type Coalesce struct {
+	// We assume to always have at least one expression
+	Exprs []Node `json:"-"`
+}
+
+func (c *Coalesce) ReturnType() parser.ValueType { return parser.ValueTypeVector }
+
+func (c *Coalesce) Type() NodeType { return CoalesceNode }
+
+func (c *Coalesce) Clone() Node {
+	clone := *c
+	clone.Exprs = make([]Node, 0, len(c.Exprs))
+	for _, arg := range c.Exprs {
+		clone.Exprs = append(clone.Exprs, arg.Clone())
+	}
+	return &clone
+}
+
+func (c *Coalesce) Children() []*Node {
+	children := make([]*Node, 0, len(c.Exprs))
+	for i := range c.Exprs {
+		children = append(children, &c.Exprs[i])
+	}
+	return children
+}
+
+func (c *Coalesce) String() string {
+	return c.Exprs[0].String()
 }
