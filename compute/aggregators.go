@@ -21,6 +21,20 @@ const (
 	MixedTypeValue
 )
 
+// CounterResetState tracks which counter reset hints have been seen during aggregation.
+// Used to detect collisions between CounterReset and NotCounterReset hints.
+type CounterResetState uint8
+
+const (
+	SeenCounterReset    CounterResetState = 1 << iota // histogram with CounterReset hint was seen
+	SeenNotCounterReset                               // histogram with NotCounterReset hint was seen
+)
+
+// HasCollision returns true if both CounterReset and NotCounterReset hints were seen.
+func (s CounterResetState) HasCollision() bool {
+	return s&SeenCounterReset != 0 && s&SeenNotCounterReset != 0
+}
+
 // Accumulators map prometheus behavior for aggregations, either operators or
 // "[...]_over_time" functions. The caller is responsible to add all errors
 // returned by Add as annotations.
@@ -44,18 +58,13 @@ type VectorAccumulator interface {
 }
 
 type SumAcc struct {
-	value        float64
-	compensation float64
-	histSum      *histogram.FloatHistogram
-	hasFloatVal  bool
-	hasError     bool // histogram error occurred; accumulator becomes no-op
-	warn         warnings.Warnings
-
-	// Counter reset tracking for collision detection.
-	// We track if we've seen histograms with CounterReset and NotCounterReset hints
-	// independently, and emit a warning if both are seen in the same aggregation.
-	counterResetSeen    bool
-	notCounterResetSeen bool
+	value             float64
+	compensation      float64
+	histSum           *histogram.FloatHistogram
+	hasFloatVal       bool
+	hasError          bool // histogram error occurred; accumulator becomes no-op
+	warn              warnings.Warnings
+	counterResetState CounterResetState
 }
 
 func NewSumAcc() *SumAcc {
@@ -76,9 +85,9 @@ func (s *SumAcc) AddVector(float64s []float64, histograms []*histogram.FloatHist
 		for _, h := range histograms {
 			switch h.CounterResetHint {
 			case histogram.CounterReset:
-				s.counterResetSeen = true
+				s.counterResetState |= SeenCounterReset
 			case histogram.NotCounterReset:
-				s.notCounterResetSeen = true
+				s.counterResetState |= SeenNotCounterReset
 			}
 		}
 
@@ -112,9 +121,9 @@ func (s *SumAcc) addHistogram(h *histogram.FloatHistogram) error {
 	// Track counter reset hints for collision detection.
 	switch h.CounterResetHint {
 	case histogram.CounterReset:
-		s.counterResetSeen = true
+		s.counterResetState |= SeenCounterReset
 	case histogram.NotCounterReset:
-		s.notCounterResetSeen = true
+		s.counterResetState |= SeenNotCounterReset
 	}
 
 	if s.histSum == nil {
@@ -169,7 +178,7 @@ func (s *SumAcc) Warnings() warnings.Warnings {
 		warn |= warnings.WarnMixedFloatsHistograms
 	}
 	// Detect counter reset collision: if we've seen both CounterReset and NotCounterReset hints.
-	if s.counterResetSeen && s.notCounterResetSeen {
+	if s.counterResetState.HasCollision() {
 		warn |= warnings.WarnCounterResetCollision
 	}
 	return warn
@@ -182,8 +191,7 @@ func (s *SumAcc) Reset(_ float64) {
 	s.warn = 0
 	s.value = 0
 	s.compensation = 0
-	s.counterResetSeen = false
-	s.notCounterResetSeen = false
+	s.counterResetState = 0
 }
 
 func NewMaxAcc() *MaxAcc {
@@ -436,15 +444,12 @@ type AvgAcc struct {
 	hasValue    bool
 	hasError    bool // histogram error occurred; accumulator becomes no-op
 
-	histSum        *histogram.FloatHistogram
-	histScratch    *histogram.FloatHistogram
-	histSumScratch *histogram.FloatHistogram
-	histCount      float64
-	warn           warnings.Warnings
-
-	// Counter reset tracking for collision detection.
-	counterResetSeen    bool
-	notCounterResetSeen bool
+	histSum           *histogram.FloatHistogram
+	histScratch       *histogram.FloatHistogram
+	histSumScratch    *histogram.FloatHistogram
+	histCount         float64
+	warn              warnings.Warnings
+	counterResetState CounterResetState
 }
 
 func NewAvgAcc() *AvgAcc {
@@ -465,9 +470,9 @@ func (a *AvgAcc) addHistogram(h *histogram.FloatHistogram) error {
 	// Track counter reset hints for collision detection.
 	switch h.CounterResetHint {
 	case histogram.CounterReset:
-		a.counterResetSeen = true
+		a.counterResetState |= SeenCounterReset
 	case histogram.NotCounterReset:
-		a.notCounterResetSeen = true
+		a.counterResetState |= SeenNotCounterReset
 	}
 
 	a.histCount++
@@ -608,7 +613,7 @@ func (a *AvgAcc) Warnings() warnings.Warnings {
 		warn |= warnings.WarnMixedFloatsHistograms
 	}
 	// Detect counter reset collision: if we've seen both CounterReset and NotCounterReset hints.
-	if a.counterResetSeen && a.notCounterResetSeen {
+	if a.counterResetState.HasCollision() {
 		warn |= warnings.WarnCounterResetCollision
 	}
 	return warn
@@ -625,8 +630,7 @@ func (a *AvgAcc) Reset(_ float64) {
 	a.histCount = 0
 	a.histSum = nil
 	a.warn = 0
-	a.counterResetSeen = false
-	a.notCounterResetSeen = false
+	a.counterResetState = 0
 }
 
 type statAcc struct {
