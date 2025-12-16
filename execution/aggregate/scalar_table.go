@@ -108,7 +108,9 @@ func (t *scalarTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 		acc := t.accumulators[i]
 		emitAccumulatorWarnings(ctx, acc.Warnings())
 		switch acc.ValueType() {
-		case compute.NoValue:
+		case compute.NoValue, compute.MixedTypeValue:
+			// MixedTypeValue: warning already emitted by emitAccumulatorWarnings
+			// for accumulators that track mixed floats/histograms.
 			continue
 		case compute.SingleTypeValue:
 			f, h := acc.Value()
@@ -117,8 +119,6 @@ func (t *scalarTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 			} else {
 				result.AppendHistogram(pool, v.ID, h)
 			}
-		case compute.MixedTypeValue:
-			warnings.AddToContext(warnings.MixedFloatsHistogramsAggWarning, ctx)
 		}
 	}
 	return result
@@ -208,10 +208,16 @@ func emitAccumulatorWarnings(ctx context.Context, warn warnings.Warnings) {
 	if warn == 0 {
 		return
 	}
-	if warn&warnings.WarnHistogramIgnoredInMixedRange != 0 {
+	if warn&warnings.WarnHistogramIgnoredInAggregation != 0 {
 		warnings.AddToContext(annotations.HistogramIgnoredInAggregationInfo, ctx)
 	}
 	if warn&warnings.WarnMixedFloatsHistograms != 0 {
-		warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
+		warnings.AddToContext(warnings.MixedFloatsHistogramsAggWarning, ctx)
+	}
+	if warn&warnings.WarnCounterResetCollision != 0 {
+		warnings.AddToContext(annotations.NewHistogramCounterResetCollisionWarning(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
+	}
+	if warn&warnings.WarnNHCBBoundsReconciledAgg != 0 {
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
 	}
 }

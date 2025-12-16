@@ -4,6 +4,7 @@
 package ringbuffer
 
 import (
+	"errors"
 	"math"
 	"sort"
 
@@ -111,9 +112,17 @@ func instantValue(samples []Sample, isRate bool) (float64, *histogram.FloatHisto
 		}
 
 		if !isRate || !ss[1].V.H.DetectReset(ss[0].V.H) {
-			_, _, _, err := resultSample.V.H.Sub(ss[0].V.H)
+			_, _, nhcbBoundsReconciled, err := resultSample.V.H.Sub(ss[0].V.H)
 			if err != nil {
+				// Convert incompatible schema error to warning
+				if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+					warn |= warnings.WarnMixedExponentialCustomBuckets
+					return 0, nil, false, warn, nil
+				}
 				return 0, nil, false, warn, err
+			}
+			if nhcbBoundsReconciled {
+				warn |= warnings.WarnNHCBBoundsReconciled
 			}
 		}
 
@@ -704,8 +713,10 @@ func histogramRate(points []Sample, isCounter bool) (*histogram.FloatHistogram, 
 	}
 
 	h := last.CopyToSchema(minSchema)
-	if _, _, _, err := h.Sub(prev); err != nil {
+	if _, _, nhcbBoundsReconciled, err := h.Sub(prev); err != nil {
 		return nil, warn, err
+	} else if nhcbBoundsReconciled {
+		warn |= warnings.WarnNHCBBoundsReconciled
 	}
 
 	if isCounter {

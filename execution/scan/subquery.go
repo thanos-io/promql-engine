@@ -314,4 +314,13 @@ func emitRingbufferWarnings(ctx context.Context, warn warnings.Warnings, metricN
 	if warn&warnings.WarnHistogramIgnoredInMixedRange != 0 {
 		warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, posrange.PositionRange{}), ctx)
 	}
+	if warn&warnings.WarnCounterResetCollision != 0 {
+		warnings.AddToContext(annotations.NewHistogramCounterResetCollisionWarning(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
+	}
+	if warn&warnings.WarnNHCBBoundsReconciled != 0 {
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramSub), ctx)
+	}
+	if warn&warnings.WarnNHCBBoundsReconciledAgg != 0 {
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
+	}
 }

@@ -31,9 +31,11 @@ const (
 	WarnNotGauge
 	WarnMixedFloatsHistograms
 	WarnMixedExponentialCustomBuckets
-	WarnHistogramIgnoredInMixedRange
+	WarnHistogramIgnoredInMixedRange  // for _over_time functions, only when both floats and histograms
+	WarnHistogramIgnoredInAggregation // for aggregations (max, min, stddev, etc.), always when histograms ignored
 	WarnCounterResetCollision
-	WarnNHCBBoundsReconciled
+	WarnNHCBBoundsReconciled    // for subtraction operations (rate, irate, delta)
+	WarnNHCBBoundsReconciledAgg // for aggregation operations (sum, avg, sum_over_time, avg_over_time)
 	WarnIncompatibleTypesInBinOp
 )
 

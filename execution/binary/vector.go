@@ -370,6 +370,10 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 		}
 		if warn != 0 {
 			emitBinaryOpWarnings(ctx, warn, o.opType)
+			// Skip emitting results for incompatible type comparisons.
+			if warn&warnings.WarnIncompatibleTypesInBinOp != 0 {
+				continue
+			}
 		}
 
 		switch {

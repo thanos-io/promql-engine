@@ -57,7 +57,9 @@ func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 	result := pool.GetStepVector(t.ts)
 	emitAccumulatorWarnings(ctx, t.accumulator.Warnings())
 	switch t.accumulator.ValueType() {
-	case compute.NoValue:
+	case compute.NoValue, compute.MixedTypeValue:
+		// MixedTypeValue: warning already emitted by emitAccumulatorWarnings
+		// for accumulators that track mixed floats/histograms.
 		return result
 	case compute.SingleTypeValue:
 		v, h := t.accumulator.Value()
@@ -66,8 +68,6 @@ func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 		} else {
 			result.AppendHistogram(pool, 0, h)
 		}
-	case compute.MixedTypeValue:
-		warnings.AddToContext(warnings.MixedFloatsHistogramsAggWarning, ctx)
 	}
 	return result
 }
