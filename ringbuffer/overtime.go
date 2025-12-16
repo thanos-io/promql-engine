@@ -203,11 +203,20 @@ func (r *OverTimeBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float
 	f, h := acc.Value()
 
 	// Include accumulator warnings (mixed types, ignored histograms)
-	warn |= acc.Warnings()
+	accWarn := acc.Warnings()
 
 	if acc.ValueType() == compute.MixedTypeValue {
+		warn |= accWarn
 		return 0, nil, false, warn, nil
 	}
+
+	// For _over_time functions returning a float value, translate WarnHistogramIgnoredInAggregation
+	// to WarnHistogramIgnoredInMixedRange (which indicates histograms were ignored in a mixed range).
+	// Only do this when we actually have a float result, not when returning no value.
+	if acc.ValueType() == compute.SingleTypeValue && h == nil && accWarn&warnings.WarnHistogramIgnoredInAggregation != 0 {
+		accWarn = (accWarn &^ warnings.WarnHistogramIgnoredInAggregation) | warnings.WarnHistogramIgnoredInMixedRange
+	}
+	warn |= accWarn
 
 	return f, h, acc.ValueType() == compute.SingleTypeValue, warn, nil
 }

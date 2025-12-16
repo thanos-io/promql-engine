@@ -199,14 +199,14 @@ func NewMaxAcc() *MaxAcc {
 }
 
 type MaxAcc struct {
-	value       float64
-	hasValue    bool
-	ignoredHist bool
+	value    float64
+	hasValue bool
+	warn     warnings.Warnings
 }
 
 func (c *MaxAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 	if len(hs) > 0 {
-		c.ignoredHist = true
+		c.warn |= warnings.WarnHistogramIgnoredInAggregation
 	}
 	if len(vs) == 0 {
 		return nil
@@ -222,7 +222,7 @@ func (c *MaxAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 
 func (c *MaxAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		c.ignoredHist = true
+		c.warn |= warnings.WarnHistogramIgnoredInAggregation
 		return nil
 	}
 	c.addFloat(v)
@@ -230,17 +230,7 @@ func (c *MaxAcc) Add(v float64, h *histogram.FloatHistogram) error {
 }
 
 func (c *MaxAcc) Warnings() warnings.Warnings {
-	if c.ignoredHist {
-		// Set both flags - caller decides which to emit based on context
-		// For aggregations: use WarnHistogramIgnoredInAggregation
-		// For _over_time: use WarnHistogramIgnoredInMixedRange (only if hasValue is also true)
-		warn := warnings.WarnHistogramIgnoredInAggregation
-		if c.hasValue {
-			warn |= warnings.WarnHistogramIgnoredInMixedRange
-		}
-		return warn
-	}
-	return 0
+	return c.warn
 }
 
 func (c *MaxAcc) addFloat(v float64) {
@@ -268,7 +258,7 @@ func (c *MaxAcc) ValueType() ValueType {
 
 func (c *MaxAcc) Reset(_ float64) {
 	c.hasValue = false
-	c.ignoredHist = false
+	c.warn = 0
 	c.value = 0
 }
 
@@ -277,14 +267,14 @@ func NewMinAcc() *MinAcc {
 }
 
 type MinAcc struct {
-	value       float64
-	hasValue    bool
-	ignoredHist bool
+	value    float64
+	hasValue bool
+	warn     warnings.Warnings
 }
 
 func (c *MinAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 	if len(hs) > 0 {
-		c.ignoredHist = true
+		c.warn |= warnings.WarnHistogramIgnoredInAggregation
 	}
 	if len(vs) == 0 {
 		return nil
@@ -300,7 +290,7 @@ func (c *MinAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
 
 func (c *MinAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		c.ignoredHist = true
+		c.warn |= warnings.WarnHistogramIgnoredInAggregation
 		return nil
 	}
 	c.addFloat(v)
@@ -308,14 +298,7 @@ func (c *MinAcc) Add(v float64, h *histogram.FloatHistogram) error {
 }
 
 func (c *MinAcc) Warnings() warnings.Warnings {
-	if c.ignoredHist {
-		warn := warnings.WarnHistogramIgnoredInAggregation
-		if c.hasValue {
-			warn |= warnings.WarnHistogramIgnoredInMixedRange
-		}
-		return warn
-	}
-	return 0
+	return c.warn
 }
 
 func (c *MinAcc) addFloat(v float64) {
@@ -343,7 +326,7 @@ func (c *MinAcc) ValueType() ValueType {
 
 func (c *MinAcc) Reset(_ float64) {
 	c.hasValue = false
-	c.ignoredHist = false
+	c.warn = 0
 	c.value = 0
 }
 
@@ -634,14 +617,14 @@ func (a *AvgAcc) Reset(_ float64) {
 }
 
 type statAcc struct {
-	count       float64
-	mean        float64
-	cMean       float64
-	value       float64
-	cValue      float64
-	hasValue    bool
-	hasNaN      bool
-	ignoredHist bool
+	count    float64
+	mean     float64
+	cMean    float64
+	value    float64
+	cValue   float64
+	hasValue bool
+	hasNaN   bool
+	warn     warnings.Warnings
 }
 
 func (s *statAcc) ValueType() ValueType {
@@ -652,20 +635,13 @@ func (s *statAcc) ValueType() ValueType {
 }
 
 func (s *statAcc) Warnings() warnings.Warnings {
-	if s.ignoredHist {
-		warn := warnings.WarnHistogramIgnoredInAggregation
-		if s.hasValue {
-			warn |= warnings.WarnHistogramIgnoredInMixedRange
-		}
-		return warn
-	}
-	return 0
+	return s.warn
 }
 
 func (s *statAcc) Reset(_ float64) {
 	s.hasValue = false
 	s.hasNaN = false
-	s.ignoredHist = false
+	s.warn = 0
 	s.count = 0
 	s.mean = 0
 	s.cMean = 0
@@ -702,7 +678,7 @@ func NewStdDevAcc() *StdDevAcc {
 
 func (s *StdDevAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		s.ignoredHist = true
+		s.warn |= warnings.WarnHistogramIgnoredInAggregation
 		return nil
 	}
 	s.add(v)
@@ -723,7 +699,7 @@ func NewStdVarAcc() *StdVarAcc {
 
 func (s *StdVarAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		s.ignoredHist = true
+		s.warn |= warnings.WarnHistogramIgnoredInAggregation
 		return nil
 	}
 	s.add(v)
@@ -735,10 +711,10 @@ func (s *StdVarAcc) Value() (float64, *histogram.FloatHistogram) {
 }
 
 type QuantileAcc struct {
-	arg         float64
-	points      []float64
-	hasValue    bool
-	ignoredHist bool
+	arg      float64
+	points   []float64
+	hasValue bool
+	warn     warnings.Warnings
 }
 
 func NewQuantileAcc() Accumulator {
@@ -747,7 +723,7 @@ func NewQuantileAcc() Accumulator {
 
 func (q *QuantileAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	if h != nil {
-		q.ignoredHist = true
+		q.warn |= warnings.WarnHistogramIgnoredInAggregation
 		return nil
 	}
 
@@ -769,19 +745,12 @@ func (q *QuantileAcc) ValueType() ValueType {
 }
 
 func (q *QuantileAcc) Warnings() warnings.Warnings {
-	if q.ignoredHist {
-		warn := warnings.WarnHistogramIgnoredInAggregation
-		if q.hasValue {
-			warn |= warnings.WarnHistogramIgnoredInMixedRange
-		}
-		return warn
-	}
-	return 0
+	return q.warn
 }
 
 func (q *QuantileAcc) Reset(f float64) {
 	q.hasValue = false
-	q.ignoredHist = false
+	q.warn = 0
 	q.arg = f
 	q.points = q.points[:0]
 }

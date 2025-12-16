@@ -773,13 +773,10 @@ func maxOverTime(points []Sample) (float64, int64, bool, warnings.Warnings) {
 	resv := points[0].V.F
 	rest := points[0].T
 
-	var foundFloat bool
-	var warn warnings.Warnings
+	var foundFloat, foundHist bool
 	for _, v := range points {
 		if v.V.H != nil {
-			if foundFloat {
-				warn |= warnings.WarnHistogramIgnoredInMixedRange
-			}
+			foundHist = true
 		} else {
 			foundFloat = true
 		}
@@ -790,7 +787,11 @@ func maxOverTime(points []Sample) (float64, int64, bool, warnings.Warnings) {
 	}
 
 	if !foundFloat {
-		return 0, 0, false, warn
+		return 0, 0, false, 0
+	}
+	var warn warnings.Warnings
+	if foundHist {
+		warn = warnings.WarnHistogramIgnoredInMixedRange
 	}
 	return resv, rest, true, warn
 }
@@ -799,13 +800,10 @@ func minOverTime(points []Sample) (float64, int64, bool, warnings.Warnings) {
 	resv := points[0].V.F
 	rest := points[0].T
 
-	var foundFloat bool
-	var warn warnings.Warnings
+	var foundFloat, foundHist bool
 	for _, v := range points {
 		if v.V.H != nil {
-			if foundFloat {
-				warn |= warnings.WarnHistogramIgnoredInMixedRange
-			}
+			foundHist = true
 		} else {
 			foundFloat = true
 		}
@@ -816,7 +814,11 @@ func minOverTime(points []Sample) (float64, int64, bool, warnings.Warnings) {
 	}
 
 	if !foundFloat {
-		return 0, 0, false, warn
+		return 0, 0, false, 0
+	}
+	var warn warnings.Warnings
+	if foundHist {
+		warn = warnings.WarnHistogramIgnoredInMixedRange
 	}
 	return resv, rest, true, warn
 }
