@@ -51,9 +51,6 @@ type histogramOperator struct {
 	// If outputIndex[i] is nil then series[i] has no valid `le` label.
 	outputIndex []*histogramSeries
 
-	// needed to compile warnings on mixed histograms
-	inputSeriesNames []string
-
 	// seriesBuckets are the buckets for each individual conventional histogram series.
 	seriesBuckets []promql.Buckets
 }
@@ -229,15 +226,15 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				var v float64
 				switch o.funcName {
 				case "histogram_quantile":
-					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
+					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], "", posrange.PositionRange{})
 					step.AppendSample(o.pool, uint64(outputSeriesID), v)
 				case "histogram_fraction":
-					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
+					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], "", posrange.PositionRange{})
 					step.AppendSample(o.pool, uint64(outputSeriesID), v)
 				}
 				warnings.MergeToContext(annos, ctx)
 			} else {
-				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning(o.inputSeriesNames[seriesID], posrange.PositionRange{}), ctx)
+				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning("", posrange.PositionRange{}), ctx)
 				o.seriesBuckets[outputSeriesID] = o.seriesBuckets[outputSeriesID][:0]
 			}
 		}
@@ -247,20 +244,25 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 			if len(stepBuckets) == 0 {
 				continue
 			}
-			// If there is only bucket or if we are after how many
-			// scalar points we have then it needs to be NaN.
-			if len(stepBuckets) == 1 || stepIndex >= len(o.scalar1Points) {
+			// If we are after how many scalar points we have then it needs to be NaN.
+			if stepIndex >= len(o.scalar1Points) {
 				step.AppendSample(o.pool, uint64(i), math.NaN())
 				continue
 			}
 			switch o.funcName {
 			case "histogram_quantile":
+				// histogram_quantile requires at least 2 buckets.
+				if len(stepBuckets) == 1 {
+					step.AppendSample(o.pool, uint64(i), math.NaN())
+					continue
+				}
 				v, forcedMonotonicity, _ := promql.BucketQuantile(o.scalar1Points[stepIndex], stepBuckets)
 				step.AppendSample(o.pool, uint64(i), v)
 				if forcedMonotonicity {
-					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.inputSeriesNames[i], posrange.PositionRange{}), ctx)
+					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo("", posrange.PositionRange{}), ctx)
 				}
 			case "histogram_fraction":
+				// BucketFraction handles single bucket and other edge cases properly.
 				v := promql.BucketFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], stepBuckets)
 				step.AppendSample(o.pool, uint64(i), v)
 			}
@@ -286,7 +288,6 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	)
 
 	o.series = make([]labels.Labels, 0)
-	o.inputSeriesNames = make([]string, len(series))
 	o.outputIndex = make([]*histogramSeries, len(series))
 	b := labels.ScratchBuilder{}
 	for i, s := range series {
@@ -316,7 +317,6 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 			seriesHashes[seriesHash] = seriesID
 		}
 
-		o.inputSeriesNames[i] = s.Get(labels.MetricName)
 		o.outputIndex[i] = &histogramSeries{
 			outputID:       seriesID,
 			upperBound:     value,

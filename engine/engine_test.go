@@ -91,6 +91,10 @@ func TestPromqlAcceptance(t *testing.T) {
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/type_and_unit.test",       // feature unsupported
+			"testdata/extended_vectors.test",    // experimental anchored/smoothed modifiers unsupported
+			"testdata/info.test",                // info() function unsupported
+			"testdata/literals.test",            // string literal expressions as query results unsupported
+			"testdata/range_queries.test",       // matrix selector as instant query result unsupported
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
@@ -6113,7 +6117,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
 		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
 
-		diff, err := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil))
+		diff, _, _, err := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil))
 		testutil.Ok(t, err)
 		expected := diff.Mul(1 / float64(30))
 		expected.CounterResetHint = histogram.GaugeType

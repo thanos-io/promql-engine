@@ -114,7 +114,7 @@ func instantValue(ctx context.Context, samples []Sample, isRate bool) (float64, 
 		}
 
 		if !isRate || !ss[1].V.H.DetectReset(ss[0].V.H) {
-			_, err := resultSample.V.H.Sub(ss[0].V.H)
+			_, _, _, err := resultSample.V.H.Sub(ss[0].V.H)
 			if err != nil {
 				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 				return 0, nil, false
@@ -201,6 +201,17 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		}
 		return float64(t) / 1000, nil, true, nil
 	},
+	"ts_of_first_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		if len(f.Samples) == 0 {
+			return 0., nil, false, nil
+		}
+
+		t := f.Samples[0].T
+		for _, s := range f.Samples[1:] {
+			t = min(t, s.T)
+		}
+		return float64(t) / 1000, nil, true, nil
+	},
 	"stddev_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
 		if len(f.Samples) == 0 {
 			return 0., nil, false, nil
@@ -243,6 +254,39 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		}
 
 		if f.Samples[hi].T > f.Samples[fi].T {
+			return 0, f.Samples[hi].V.H.Copy(), true, nil
+		}
+		return f.Samples[fi].V.F, nil, true, nil
+	},
+	"first_over_time": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, error) {
+		if len(f.Samples) == 0 {
+			return 0., nil, false, nil
+		}
+
+		var fi, hi int = -1, -1
+		var ft, ht int64 = math.MaxInt64, math.MaxInt64
+		for i, s := range f.Samples {
+			if s.V.H != nil {
+				if s.T < ht {
+					ht = s.T
+					hi = i
+				}
+			} else {
+				if s.T < ft {
+					ft = s.T
+					fi = i
+				}
+			}
+		}
+
+		if hi == -1 {
+			return f.Samples[fi].V.F, nil, true, nil
+		}
+		if fi == -1 {
+			return 0, f.Samples[hi].V.H.Copy(), true, nil
+		}
+
+		if ht < ft {
 			return 0, f.Samples[hi].V.H.Copy(), true, nil
 		}
 		return f.Samples[fi].V.F, nil, true, nil
@@ -659,7 +703,7 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) *histog
 	}
 
 	h := last.CopyToSchema(minSchema)
-	if _, err := h.Sub(prev); err != nil {
+	if _, _, _, err := h.Sub(prev); err != nil {
 		warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 		return nil
 	}
@@ -669,7 +713,7 @@ func histogramRate(ctx context.Context, points []Sample, isCounter bool) *histog
 		for _, currPoint := range points[1:] {
 			curr := currPoint.V.H
 			if curr.DetectReset(prev) {
-				if _, err := h.Add(prev); err != nil {
+				if _, _, _, err := h.Add(prev); err != nil {
 					warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 					return nil
 				}
@@ -780,12 +824,12 @@ func avgOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 			count := float64(i + 2)
 			left := sample.V.H.Copy().Div(count)
 			right := mean.Copy().Div(count)
-			toAdd, err := left.Sub(right)
+			toAdd, _, _, err := left.Sub(right)
 			if err != nil {
 				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 				return 0, nil, false, nil
 			}
-			if _, err = mean.Add(toAdd); err != nil {
+			if _, _, _, err = mean.Add(toAdd); err != nil {
 				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 				return 0, nil, false, nil
 			}
@@ -838,7 +882,7 @@ func sumOverTime(ctx context.Context, points []Sample) (float64, *histogram.Floa
 				warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
 				return 0, nil, false, nil
 			}
-			if _, err := res.Add(v.V.H); err != nil {
+			if _, _, _, err := res.Add(v.V.H); err != nil {
 				warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 				return 0, nil, false, nil
 			}

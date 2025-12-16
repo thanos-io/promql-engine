@@ -230,12 +230,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 		for i, s := range series {
 			lbls := s.Labels()
-			if o.functionName != "last_over_time" {
-				// This modifies the array in place. Because labels.Labels
-				// can be re-used between different Select() calls, it means that
-				// we have to copy it here.
-				// TODO(GiedriusS): could we identify somehow whether labels.Labels
-				// is reused between Select() calls?
+			if o.functionName != "last_over_time" && o.functionName != "first_over_time" {
 				lbls = extlabels.DropReserved(lbls, b)
 			}
 			o.scanners[i] = matrixScanner{

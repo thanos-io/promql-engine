@@ -99,10 +99,10 @@ func (s *SumAcc) addHistogram(h *histogram.FloatHistogram) error {
 	// https://github.com/prometheus/prometheus/blob/57bcbf18880f7554ae34c5b341d52fc53f059a97/promql/engine.go#L2448-L2456
 	var err error
 	if h.Schema >= s.histSum.Schema {
-		s.histSum, err = s.histSum.Add(h)
+		s.histSum, _, _, err = s.histSum.Add(h)
 	} else {
 		t := h.Copy()
-		if s.histSum, err = t.Add(s.histSum); err == nil {
+		if s.histSum, _, _, err = t.Add(s.histSum); err == nil {
 			s.histSum = t
 		}
 	}
@@ -409,9 +409,9 @@ func (a *AvgAcc) addHistogram(h *histogram.FloatHistogram) error {
 	left := a.histScratch.Div(a.histCount)
 	a.histSum.CopyTo(a.histSumScratch)
 	right := a.histSumScratch.Div(a.histCount)
-	toAdd, err := left.Sub(right)
+	toAdd, _, _, err := left.Sub(right)
 	if err == nil {
-		a.histSum, err = a.histSum.Add(toAdd)
+		a.histSum, _, _, err = a.histSum.Add(toAdd)
 	}
 	if err != nil {
 		a.histSum = nil
@@ -694,12 +694,12 @@ func (acc *HistogramAvgAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	}
 	var err error
 	if h.Schema >= acc.sum.Schema {
-		if acc.sum, err = acc.sum.Add(h); err != nil {
+		if acc.sum, _, _, err = acc.sum.Add(h); err != nil {
 			return err
 		}
 	} else {
 		t := h.Copy()
-		if _, err = t.Add(acc.sum); err != nil {
+		if _, _, _, err = t.Add(acc.sum); err != nil {
 			return err
 		}
 		acc.sum = t
@@ -836,10 +836,10 @@ func histogramSum(current *histogram.FloatHistogram, histograms []*histogram.Flo
 	var err error
 	for i := range histograms {
 		if histograms[i].Schema >= histSum.Schema {
-			histSum, err = histSum.Add(histograms[i])
+			histSum, _, _, err = histSum.Add(histograms[i])
 		} else {
 			t := histograms[i].Copy()
-			histSum, err = t.Add(histSum)
+			histSum, _, _, err = t.Add(histSum)
 		}
 		if err != nil {
 			return nil, warnings.ConvertHistogramError(err)

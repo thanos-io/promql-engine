@@ -87,8 +87,5 @@ func ConvertHistogramError(err error) error {
 	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
 		return annotations.MixedExponentialCustomHistogramsWarning
 	}
-	if errors.Is(err, histogram.ErrHistogramsIncompatibleBounds) {
-		return annotations.IncompatibleCustomBucketsHistogramsWarning
-	}
 	return err
 }
