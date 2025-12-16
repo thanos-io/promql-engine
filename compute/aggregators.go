@@ -24,16 +24,13 @@ const (
 // Accumulators map prometheus behavior for aggregations, either operators or
 // "[...]_over_time" functions. The caller is responsible to add all errors
 // returned by Add as annotations.
-// Accumulators might ignore histograms (for example min or max), if they do
-// the caller can check the HasIgnoredHistograms method and add appropriate
-// annotations.
-// The ValueType function can be checked to see if the aggregator encountered
-// mixed values for its slot so the caller can again add the appropriate annotations.
+// The Warnings method returns a bitset of warning conditions that occurred
+// during accumulation (e.g., ignored histograms, mixed types).
 type Accumulator interface {
 	Add(v float64, h *histogram.FloatHistogram) error
 	Value() (float64, *histogram.FloatHistogram)
 	ValueType() ValueType
-	HasIgnoredHistograms() bool
+	Warnings() warnings.Warnings
 	Reset(float64)
 }
 
@@ -42,7 +39,7 @@ type VectorAccumulator interface {
 	AddVector(vs []float64, hs []*histogram.FloatHistogram) error
 	Value() (float64, *histogram.FloatHistogram)
 	ValueType() ValueType
-	HasIgnoredHistograms() bool
+	Warnings() warnings.Warnings
 	Reset(float64)
 }
 
@@ -131,8 +128,11 @@ func (s *SumAcc) ValueType() ValueType {
 	return NoValue
 }
 
-func (s *SumAcc) HasIgnoredHistograms() bool {
-	return false // Sum handles histograms; use ValueType() instead
+func (s *SumAcc) Warnings() warnings.Warnings {
+	if s.ValueType() == MixedTypeValue {
+		return warnings.WarnMixedFloatsHistograms
+	}
+	return 0
 }
 
 func (s *SumAcc) Reset(_ float64) {
@@ -178,8 +178,11 @@ func (c *MaxAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	return nil
 }
 
-func (c *MaxAcc) HasIgnoredHistograms() bool {
-	return c.ignoredHist
+func (c *MaxAcc) Warnings() warnings.Warnings {
+	if c.ignoredHist {
+		return warnings.WarnHistogramIgnoredInMixedRange
+	}
+	return 0
 }
 
 func (c *MaxAcc) addFloat(v float64) {
@@ -246,8 +249,11 @@ func (c *MinAcc) Add(v float64, h *histogram.FloatHistogram) error {
 	return nil
 }
 
-func (c *MinAcc) HasIgnoredHistograms() bool {
-	return c.ignoredHist
+func (c *MinAcc) Warnings() warnings.Warnings {
+	if c.ignoredHist {
+		return warnings.WarnHistogramIgnoredInMixedRange
+	}
+	return 0
 }
 
 func (c *MinAcc) addFloat(v float64) {
@@ -315,8 +321,8 @@ func (c *GroupAcc) ValueType() ValueType {
 	}
 }
 
-func (c *GroupAcc) HasIgnoredHistograms() bool {
-	return false
+func (c *GroupAcc) Warnings() warnings.Warnings {
+	return 0
 }
 
 func (c *GroupAcc) Reset(_ float64) {
@@ -358,8 +364,8 @@ func (c *CountAcc) ValueType() ValueType {
 		return NoValue
 	}
 }
-func (c *CountAcc) HasIgnoredHistograms() bool {
-	return false
+func (c *CountAcc) Warnings() warnings.Warnings {
+	return 0
 }
 
 func (c *CountAcc) Reset(_ float64) {
@@ -518,8 +524,11 @@ func (a *AvgAcc) ValueType() ValueType {
 	return NoValue
 }
 
-func (a *AvgAcc) HasIgnoredHistograms() bool {
-	return false // Avg handles histograms; use ValueType() instead
+func (a *AvgAcc) Warnings() warnings.Warnings {
+	if a.ValueType() == MixedTypeValue {
+		return warnings.WarnMixedFloatsHistograms
+	}
+	return 0
 }
 
 func (a *AvgAcc) Reset(_ float64) {
@@ -552,8 +561,11 @@ func (s *statAcc) ValueType() ValueType {
 	return NoValue
 }
 
-func (s *statAcc) HasIgnoredHistograms() bool {
-	return s.ignoredHist
+func (s *statAcc) Warnings() warnings.Warnings {
+	if s.ignoredHist {
+		return warnings.WarnHistogramIgnoredInMixedRange
+	}
+	return 0
 }
 
 func (s *statAcc) Reset(_ float64) {
@@ -662,8 +674,11 @@ func (q *QuantileAcc) ValueType() ValueType {
 	}
 }
 
-func (q *QuantileAcc) HasIgnoredHistograms() bool {
-	return q.ignoredHist
+func (q *QuantileAcc) Warnings() warnings.Warnings {
+	if q.ignoredHist {
+		return warnings.WarnHistogramIgnoredInMixedRange
+	}
+	return 0
 }
 
 func (q *QuantileAcc) Reset(f float64) {
@@ -719,8 +734,8 @@ func (acc *HistogramAvgAcc) ValueType() ValueType {
 	return NoValue
 }
 
-func (acc *HistogramAvgAcc) HasIgnoredHistograms() bool {
-	return false // HistogramAvg handles histograms; use ValueType() instead
+func (acc *HistogramAvgAcc) Warnings() warnings.Warnings {
+	return 0
 }
 
 func (acc *HistogramAvgAcc) Reset(f float64) {
@@ -768,8 +783,8 @@ func (l *LastAcc) ValueType() ValueType {
 	return NoValue
 }
 
-func (l *LastAcc) HasIgnoredHistograms() bool {
-	return false // Last handles histograms; use ValueType() instead
+func (l *LastAcc) Warnings() warnings.Warnings {
+	return 0
 }
 
 func (l *LastAcc) Reset(_ float64) {

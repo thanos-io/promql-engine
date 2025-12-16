@@ -29,8 +29,9 @@ import (
 )
 
 type matrixScanner struct {
-	labels    labels.Labels
-	signature uint64
+	labels     labels.Labels
+	metricName string
+	signature  uint64
 
 	buffer           ringbuffer.Buffer
 	iterator         chunkenc.Iterator
@@ -191,9 +192,12 @@ func (o *matrixSelector) Next(ctx context.Context) ([]model.StepVector, error) {
 			// Also, allow operator to exist independently without being nested
 			// under parser.Call by implementing new data model.
 			// https://github.com/thanos-io/promql-engine/issues/39
-			f, h, ok, err := scanner.buffer.Eval(ctx, o.scalarArg, o.scalarArg2, scanner.metricAppearedTs)
+			f, h, ok, warn, err := scanner.buffer.Eval(ctx, o.scalarArg, o.scalarArg2, scanner.metricAppearedTs)
 			if err != nil {
 				return nil, err
+			}
+			if warn != 0 {
+				emitRingbufferWarnings(ctx, warn, scanner.metricName)
 			}
 			if ok {
 				vectors[currStep].T = seriesTs
@@ -229,12 +233,14 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 		var b labels.ScratchBuilder
 
 		for i, s := range series {
-			lbls := s.Labels()
+			origLbls := s.Labels()
+			lbls := origLbls
 			if o.functionName != "last_over_time" && o.functionName != "first_over_time" {
 				lbls = extlabels.DropReserved(lbls, b)
 			}
 			o.scanners[i] = matrixScanner{
 				labels:           lbls,
+				metricName:       origLbls.Get(labels.MetricName),
 				signature:        s.Signature,
 				iterator:         s.Iterator(nil),
 				lastSample:       ringbuffer.Sample{T: math.MinInt64},
@@ -392,4 +398,25 @@ func (m *matrixScanner) selectPoints(
 		}
 	}
 	return m.iterator.Err()
+}
+
+// emitRingbufferWarnings converts warnings.Warnings flags to proper annotations with metric names.
+func emitRingbufferWarnings(ctx context.Context, warn warnings.Warnings, metricName string) {
+	if warn&warnings.WarnNotCounter != 0 {
+		warnings.AddToContext(annotations.NewNativeHistogramNotCounterWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnNotGauge != 0 {
+		warnings.AddToContext(annotations.NewNativeHistogramNotGaugeWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnMixedFloatsHistograms != 0 {
+		warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnMixedExponentialCustomBuckets != 0 {
+		warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnHistogramIgnoredInMixedRange != 0 {
+		warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, posrange.PositionRange{}), ctx)
+	}
+	// WarnCounterResetCollision and WarnNHCBBoundsReconciled are handled separately
+	// at the aggregation level where the histogram operation type is known.
 }

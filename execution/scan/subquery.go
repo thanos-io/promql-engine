@@ -15,9 +15,12 @@ import (
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
+	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type subqueryOperator struct {
@@ -39,8 +42,9 @@ type subqueryOperator struct {
 	funcExpr *logicalplan.FunctionCall
 	subQuery *logicalplan.Subquery
 
-	onceSeries sync.Once
-	series     []labels.Labels
+	onceSeries  sync.Once
+	series      []labels.Labels
+	metricNames []string
 
 	lastVectors   []model.StepVector
 	lastCollected int
@@ -189,9 +193,17 @@ func (o *subqueryOperator) Next(ctx context.Context) ([]model.StepVector, error)
 
 		sv := o.pool.GetStepVector(o.currentStep)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], math.MinInt64)
+			f, h, ok, warn, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], math.MinInt64)
 			if err != nil {
 				return nil, err
+			}
+			if warn != 0 {
+				// For subqueries, emit warnings with metric name from series
+				metricName := ""
+				if sampleId < len(o.metricNames) {
+					metricName = o.metricNames[sampleId]
+				}
+				emitRingbufferWarnings(ctx, warn, metricName)
 			}
 			if ok {
 				if h != nil {
@@ -266,12 +278,14 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		}
 
 		o.series = make([]labels.Labels, len(series))
+		o.metricNames = make([]string, len(series))
 		o.buffers = make([]*ringbuffer.GenericRingBuffer, len(series))
 		for i := range o.buffers {
 			o.buffers[i] = ringbuffer.New(ctx, 8, o.subQuery.Range.Milliseconds(), o.subQuery.Offset.Milliseconds(), o.call)
 		}
 		var b labels.ScratchBuilder
 		for i, s := range series {
+			o.metricNames[i] = s.Get(labels.MetricName)
 			lbls := s
 			if o.funcExpr.Func.Name != "last_over_time" && o.funcExpr.Func.Name != "first_over_time" {
 				lbls = extlabels.DropReserved(s, b)
@@ -281,4 +295,23 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		o.pool.SetStepSize(len(o.series))
 	})
 	return err
+}
+
+// emitRingbufferWarnings converts warnings.Warnings flags to proper annotations with metric names.
+func emitRingbufferWarnings(ctx context.Context, warn warnings.Warnings, metricName string) {
+	if warn&warnings.WarnNotCounter != 0 {
+		warnings.AddToContext(annotations.NewNativeHistogramNotCounterWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnNotGauge != 0 {
+		warnings.AddToContext(annotations.NewNativeHistogramNotGaugeWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnMixedFloatsHistograms != 0 {
+		warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnMixedExponentialCustomBuckets != 0 {
+		warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
+	}
+	if warn&warnings.WarnHistogramIgnoredInMixedRange != 0 {
+		warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, posrange.PositionRange{}), ctx)
+	}
 }

@@ -177,19 +177,23 @@ func (o *scalarOperator) execBinaryOperation(ctx context.Context, lhs, rhs model
 		v    float64
 		h    *histogram.FloatHistogram
 		keep bool
+		warn warnings.Warnings
 		err  error
 	)
 	for i, otherVal := range other.Samples {
 		scalarVal := scalar.Samples[0]
 
 		if o.lhsType == parser.ValueTypeScalar {
-			v, _, keep, err = binOp(o.opType, scalarVal, otherVal, nil, nil)
+			v, _, keep, warn, err = binOp(o.opType, scalarVal, otherVal, nil, nil)
 		} else {
-			v, _, keep, err = binOp(o.opType, otherVal, scalarVal, nil, nil)
+			v, _, keep, warn, err = binOp(o.opType, otherVal, scalarVal, nil, nil)
 		}
 		if err != nil {
-			warnings.AddToContext(err, ctx)
+			warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
 			continue
+		}
+		if warn != 0 {
+			emitBinaryOpWarnings(ctx, warn, o.opType)
 		}
 		// in comparison operations between scalars and vectors, the vectors are filtered, regardless if lhs or rhs
 		if keep && o.opType.IsComparisonOperator() && (o.lhsType == parser.ValueTypeVector || o.rhsType == parser.ValueTypeVector) {
@@ -209,12 +213,18 @@ func (o *scalarOperator) execBinaryOperation(ctx context.Context, lhs, rhs model
 		scalarVal := scalar.Samples[0]
 
 		if o.lhsType == parser.ValueTypeScalar {
-			_, h, _, err = binOp(o.opType, scalarVal, 0., nil, otherVal)
+			_, h, keep, warn, err = binOp(o.opType, scalarVal, 0., nil, otherVal)
 		} else {
-			_, h, _, err = binOp(o.opType, 0., scalarVal, otherVal, nil)
+			_, h, keep, warn, err = binOp(o.opType, 0., scalarVal, otherVal, nil)
 		}
 		if err != nil {
-			warnings.AddToContext(err, ctx)
+			warnings.AddToContext(warnings.ConvertHistogramError(err), ctx)
+			continue
+		}
+		if warn != 0 {
+			emitBinaryOpWarnings(ctx, warn, o.opType)
+		}
+		if !keep {
 			continue
 		}
 		step.AppendHistogram(o.pool, other.HistogramIDs[i], h)

@@ -16,6 +16,7 @@ import (
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -105,9 +106,7 @@ func (t *scalarTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 	result := pool.GetStepVector(t.ts)
 	for i, v := range t.outputs {
 		acc := t.accumulators[i]
-		if acc.HasIgnoredHistograms() {
-			warnings.AddToContext(annotations.HistogramIgnoredInAggregationInfo, ctx)
-		}
+		emitAccumulatorWarnings(ctx, acc.Warnings())
 		switch acc.ValueType() {
 		case compute.NoValue:
 			continue
@@ -202,4 +201,17 @@ func newScalarAccumulator(expr parser.ItemType) (compute.Accumulator, error) {
 
 	msg := fmt.Sprintf("unknown aggregation function %s", t)
 	return nil, errors.Wrap(parse.ErrNotSupportedExpr, msg)
+}
+
+// emitAccumulatorWarnings converts accumulator warning flags to annotations and adds them to context.
+func emitAccumulatorWarnings(ctx context.Context, warn warnings.Warnings) {
+	if warn == 0 {
+		return
+	}
+	if warn&warnings.WarnHistogramIgnoredInMixedRange != 0 {
+		warnings.AddToContext(annotations.HistogramIgnoredInAggregationInfo, ctx)
+	}
+	if warn&warnings.WarnMixedFloatsHistograms != 0 {
+		warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning("", posrange.PositionRange{}), ctx)
+	}
 }

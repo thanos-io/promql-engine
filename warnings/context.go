@@ -21,6 +21,22 @@ import (
 //lint:ignore faillint We need fmt.Errorf to match Prometheus error format exactly.
 var MixedFloatsHistogramsAggWarning = fmt.Errorf("%w aggregation", annotations.MixedFloatsHistogramsWarning)
 
+// Warnings is a bitset of warning flags that can be returned by functions
+// to indicate warning conditions. The actual warning messages with metric
+// names are emitted by operators that have access to series labels.
+type Warnings uint32
+
+const (
+	WarnNotCounter Warnings = 1 << iota
+	WarnNotGauge
+	WarnMixedFloatsHistograms
+	WarnMixedExponentialCustomBuckets
+	WarnHistogramIgnoredInMixedRange
+	WarnCounterResetCollision
+	WarnNHCBBoundsReconciled
+	WarnIncompatibleTypesInBinOp
+)
+
 type warningKey string
 
 const key warningKey = "promql-warnings"
