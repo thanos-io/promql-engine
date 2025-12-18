@@ -5401,7 +5401,7 @@ func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 				for _, s := range series {
 					for _, m := range matchers {
 						lbl := s.Labels().Get(m.Name)
-						if lbl != "" && !m.Matches(lbl) {
+						if !m.Matches(lbl) {
 							continue loopSeries
 						}
 					}
