@@ -25,9 +25,10 @@ import (
 )
 
 type histogramSeries struct {
-	outputID       int
-	upperBound     float64
-	hasBucketValue bool
+	outputID         int
+	upperBound       float64
+	hasBucketValue   bool
+	bucketLabelValue string // original bucket label value for use in warnings
 }
 
 // histogramOperator is a function operator that calculates percentiles.
@@ -51,11 +52,17 @@ type histogramOperator struct {
 	// If outputIndex[i] is nil then series[i] has no valid `le` label.
 	outputIndex []*histogramSeries
 
-	// needed to compile warnings on mixed histograms
-	inputSeriesNames []string
+	// inputMetricNames maps input series ID to the metric name for use in warnings.
+	inputMetricNames []string
+
+	// outputMetricNames maps output series ID to the metric name for use in warnings.
+	outputMetricNames []string
 
 	// seriesBuckets are the buckets for each individual conventional histogram series.
 	seriesBuckets []promql.Buckets
+
+	// badBucketWarned tracks which series have already emitted bad bucket label warnings.
+	badBucketWarned map[uint64]bool
 }
 
 func newHistogramOperator(
@@ -207,6 +214,12 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 			outputSeries := o.outputIndex[seriesID]
 			// This means that it has an invalid `le` label.
 			if outputSeries == nil || !outputSeries.hasBucketValue {
+				// Emit warning for invalid bucket label (only once per series).
+				if outputSeries != nil && !o.badBucketWarned[uint64(seriesID)] {
+					o.badBucketWarned[uint64(seriesID)] = true
+					metricName := o.inputMetricNames[seriesID]
+					warnings.AddToContext(annotations.NewBadBucketLabelWarning(metricName, outputSeries.bucketLabelValue, posrange.PositionRange{}), ctx)
+				}
 				continue
 			}
 
@@ -221,6 +234,7 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 		step := o.pool.GetStepVector(vector.T)
 		for i, seriesID := range vector.HistogramIDs {
 			outputSeriesID := o.outputIndex[seriesID].outputID
+			metricName := o.inputMetricNames[seriesID]
 			// We need to check if there is a conventional histogram mapped to this output series ID.
 			// If that is the case, it means we have mixed data types for a single step and this behavior is undefined.
 			// In that case, we reset the conventional buckets to avoid emitting a sample.
@@ -229,15 +243,15 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				var v float64
 				switch o.funcName {
 				case "histogram_quantile":
-					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
+					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], metricName, posrange.PositionRange{})
 					step.AppendSample(o.pool, uint64(outputSeriesID), v)
 				case "histogram_fraction":
-					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
+					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], metricName, posrange.PositionRange{})
 					step.AppendSample(o.pool, uint64(outputSeriesID), v)
 				}
 				warnings.MergeToContext(annos, ctx)
 			} else {
-				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning(o.inputSeriesNames[seriesID], posrange.PositionRange{}), ctx)
+				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
 				o.seriesBuckets[outputSeriesID] = o.seriesBuckets[outputSeriesID][:0]
 			}
 		}
@@ -247,20 +261,25 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 			if len(stepBuckets) == 0 {
 				continue
 			}
-			// If there is only bucket or if we are after how many
-			// scalar points we have then it needs to be NaN.
-			if len(stepBuckets) == 1 || stepIndex >= len(o.scalar1Points) {
+			// If we are after how many scalar points we have then it needs to be NaN.
+			if stepIndex >= len(o.scalar1Points) {
 				step.AppendSample(o.pool, uint64(i), math.NaN())
 				continue
 			}
 			switch o.funcName {
 			case "histogram_quantile":
+				// histogram_quantile requires at least 2 buckets.
+				if len(stepBuckets) == 1 {
+					step.AppendSample(o.pool, uint64(i), math.NaN())
+					continue
+				}
 				v, forcedMonotonicity, _ := promql.BucketQuantile(o.scalar1Points[stepIndex], stepBuckets)
 				step.AppendSample(o.pool, uint64(i), v)
 				if forcedMonotonicity {
-					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.inputSeriesNames[i], posrange.PositionRange{}), ctx)
+					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.outputMetricNames[i], posrange.PositionRange{}), ctx)
 				}
 			case "histogram_fraction":
+				// BucketFraction handles single bucket and other edge cases properly.
 				v := promql.BucketFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], stepBuckets)
 				step.AppendSample(o.pool, uint64(i), v)
 			}
@@ -286,10 +305,11 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	)
 
 	o.series = make([]labels.Labels, 0)
-	o.inputSeriesNames = make([]string, len(series))
 	o.outputIndex = make([]*histogramSeries, len(series))
+	o.inputMetricNames = make([]string, len(series))
 	b := labels.ScratchBuilder{}
 	for i, s := range series {
+		o.inputMetricNames[i] = s.Get(labels.MetricName)
 		hasBucketValue := true
 		lbls, bucketLabel := extlabels.DropBucketLabel(s, b)
 		value, err := strconv.ParseFloat(bucketLabel.Value, 64)
@@ -312,18 +332,20 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 		seriesID, ok := seriesHashes[seriesHash]
 		if !ok {
 			o.series = append(o.series, lbls)
+			o.outputMetricNames = append(o.outputMetricNames, o.inputMetricNames[i])
 			seriesID = len(o.series) - 1
 			seriesHashes[seriesHash] = seriesID
 		}
 
-		o.inputSeriesNames[i] = s.Get(labels.MetricName)
 		o.outputIndex[i] = &histogramSeries{
-			outputID:       seriesID,
-			upperBound:     value,
-			hasBucketValue: hasBucketValue,
+			outputID:         seriesID,
+			upperBound:       value,
+			hasBucketValue:   hasBucketValue,
+			bucketLabelValue: bucketLabel.Value,
 		}
 	}
 	o.seriesBuckets = make([]promql.Buckets, len(o.series))
+	o.badBucketWarned = make(map[uint64]bool)
 	o.pool.SetStepSize(len(o.series))
 	return nil
 }

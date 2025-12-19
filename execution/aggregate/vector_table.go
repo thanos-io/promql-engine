@@ -15,7 +15,6 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type vectorTable struct {
@@ -56,11 +55,11 @@ func (t *vectorTable) aggregate(ctx context.Context, vector model.StepVector) {
 
 func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) model.StepVector {
 	result := pool.GetStepVector(t.ts)
-	if t.accumulator.HasIgnoredHistograms() {
-		warnings.AddToContext(annotations.HistogramIgnoredInAggregationInfo, ctx)
-	}
+	emitAccumulatorWarnings(ctx, t.accumulator.Warnings())
 	switch t.accumulator.ValueType() {
-	case compute.NoValue:
+	case compute.NoValue, compute.MixedTypeValue:
+		// MixedTypeValue: warning already emitted by emitAccumulatorWarnings
+		// for accumulators that track mixed floats/histograms.
 		return result
 	case compute.SingleTypeValue:
 		v, h := t.accumulator.Value()
@@ -69,8 +68,6 @@ func (t *vectorTable) toVector(ctx context.Context, pool *model.VectorPool) mode
 		} else {
 			result.AppendHistogram(pool, 0, h)
 		}
-	case compute.MixedTypeValue:
-		warnings.AddToContext(warnings.MixedFloatsHistogramsAggWarning, ctx)
 	}
 	return result
 }
