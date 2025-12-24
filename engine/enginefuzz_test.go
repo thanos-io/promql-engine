@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -366,7 +366,7 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 func normalizeBuckets(a, b, c uint64) []uint64 {
 	// Ensure strictly increasing positive values (cumulative form).
 	buckets := []uint64{a, b, c}
-	sort.Slice(buckets, func(i, j int) bool { return buckets[i] < buckets[j] })
+	slices.Sort(buckets)
 
 	// Avoid zero counts
 	for i := range buckets {
