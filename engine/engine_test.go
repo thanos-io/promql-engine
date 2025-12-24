@@ -90,7 +90,6 @@ func TestPromqlAcceptance(t *testing.T) {
 	st := &skipTest{
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
-			"testdata/type_and_unit.test",       // feature unsupported
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
