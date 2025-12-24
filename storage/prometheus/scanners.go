@@ -64,23 +64,17 @@ func (p Scanners) NewVectorSelector(
 		selector = newHistogramStatsSelector(selector)
 	}
 
-	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
-	for i := range opts.DecodingConcurrency {
-		operator := exchange.NewConcurrent(
-			NewVectorSelector(
-				model.NewVectorPool(opts.StepsBatch),
-				selector,
-				opts,
-				logicalNode.Offset,
-				logicalNode.BatchSize,
-				logicalNode.SelectTimestamp,
-				i,
-				opts.DecodingConcurrency,
-			), 2, opts)
-		operators = append(operators, operator)
-	}
-
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, logicalNode.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+	return exchange.NewConcurrent(
+		NewVectorSelector(
+			model.NewVectorPool(opts.StepsBatch),
+			selector,
+			opts,
+			logicalNode.Offset,
+			logicalNode.BatchSize,
+			logicalNode.SelectTimestamp,
+			logicalNode.Shard,
+			logicalNode.NumShards,
+		), 2, opts), nil
 }
 
 func (p Scanners) NewMatrixSelector(
@@ -137,28 +131,23 @@ func (p Scanners) NewMatrixSelector(
 		selector = newHistogramStatsSelector(selector)
 	}
 
-	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
-	for i := range opts.DecodingConcurrency {
-		operator, err := NewMatrixSelector(
-			model.NewVectorPool(opts.StepsBatch),
-			selector,
-			call.Func.Name,
-			arg,
-			arg2,
-			opts,
-			logicalNode.Range,
-			vs.Offset,
-			vs.BatchSize,
-			i,
-			opts.DecodingConcurrency,
-		)
-		if err != nil {
-			return nil, err
-		}
-		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
+	mat, err := NewMatrixSelector(
+		model.NewVectorPool(opts.StepsBatch),
+		selector,
+		call.Func.Name,
+		arg,
+		arg2,
+		opts,
+		logicalNode.Range,
+		vs.Offset,
+		vs.BatchSize,
+		vs.Shard,
+		vs.NumShards,
+	)
+	if err != nil {
+		return nil, err
 	}
-
-	return exchange.NewCoalesce(model.NewVectorPool(opts.StepsBatch), opts, vs.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+	return exchange.NewConcurrent(mat, 2, opts), nil
 }
 
 type histogramStatsSelector struct {
