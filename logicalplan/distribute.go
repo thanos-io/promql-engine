@@ -157,7 +157,7 @@ type DistributedExecutionOptimizer struct {
 }
 
 func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
-	engines := m.Endpoints.Engines()
+	engines := getRemoteEngines(m.Endpoints, plan, opts)
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
 	})
@@ -857,4 +857,21 @@ func maxDuration(a, b time.Duration) time.Duration {
 		return a
 	}
 	return b
+}
+
+func getRemoteEngines(endpoints api.RemoteEndpoints, plan Node, opts *query.Options) []api.RemoteEngine {
+	if v3, ok := endpoints.(api.RemoteEndpointsV3); ok {
+		mint, maxt := MinMaxTime(plan, opts)
+		return v3.EnginesV3(api.RemoteEndpointsQuery{
+			MinT: mint,
+			MaxT: maxt,
+		})
+	}
+
+	if v2, ok := endpoints.(api.RemoteEndpointsV2); ok {
+		mint, maxt := MinMaxTime(plan, opts)
+		return v2.EnginesV2(mint, maxt)
+	}
+
+	return endpoints.Engines()
 }
