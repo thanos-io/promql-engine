@@ -189,10 +189,11 @@ func (o *subqueryOperator) Next(ctx context.Context, buf []model.StepVector) (in
 		buf[n].Reset(o.currentStep)
 		hint := len(o.buffers)
 		for sampleId, rangeSamples := range o.buffers {
-			f, h, ok, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], math.MinInt64)
+			f, h, ok, _, err := rangeSamples.Eval(ctx, o.params[i], o.params2[i], math.MinInt64)
 			if err != nil {
 				return 0, err
 			}
+			// Note: warnings from subqueries are currently ignored since we don't have metric names here
 			if ok {
 				if h != nil {
 					buf[n].AppendHistogramWithSizeHint(uint64(sampleId), h, hint)
