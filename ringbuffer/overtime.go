@@ -128,6 +128,23 @@ func (r *OverTimeBuffer) SampleCount() int {
 	return r.stepRanges[0].sampleCount
 }
 
+func (r *OverTimeBuffer) Clear() {
+	r.lastTimestamp = math.MinInt64
+	
+	for i := range r.firstTimestamps {
+		r.firstTimestamps[i] = math.MaxInt64
+	}
+	
+	for i := range r.stepStates {
+		r.stepStates[i].acc.Reset(0)
+		r.stepStates[i].warn = nil
+	}
+	
+	for i := range r.stepRanges {
+		r.stepRanges[i].numSamples = 0
+		r.stepRanges[i].sampleCount = 0
+	}
+}
 func (r *OverTimeBuffer) MaxT() int64 { return r.lastTimestamp }
 
 func (r *OverTimeBuffer) Push(t int64, v Value) {

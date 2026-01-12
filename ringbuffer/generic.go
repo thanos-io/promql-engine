@@ -18,6 +18,7 @@ type Buffer interface {
 	Reset(mint int64, evalt int64)
 	Eval(ctx context.Context, _, _ float64, _ int64) (float64, *histogram.FloatHistogram, bool, error)
 	SampleCount() int
+	Clear()
 
 	// to handle extlookback properly, only used by buffers that implement xincrease or xrate
 	ReadIntoLast(f func(*Sample))
@@ -143,6 +144,11 @@ func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarA
 		ScalarPoint2:     scalarArg2, // only for double_exponential_smoothing
 		MetricAppearedTs: metricAppearedTs,
 	})
+}
+
+func (r *GenericRingBuffer) Clear() {
+	r.items = r.items[:0]
+	r.currentStep = 0
 }
 
 func resize(s []Sample, n int) []Sample {

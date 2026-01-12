@@ -81,6 +81,18 @@ type Opts struct {
 	// This check can produce false positives when querying time-series data which does not conform to the Prometheus data model,
 	// and can be disabled if it leads to false positives.
 	DisableDuplicateLabelChecks bool
+
+	// EnableHighOverlapBatching reduces memory for queries with long lookback windows.
+	// Requires DisableDuplicateLabelChecks=true to exceed the 64-step limit.
+	EnableHighOverlapBatching bool
+
+	// HighOverlapBatchSize is the series batch size for high-overlap queries.
+	// Defaults to 1000.
+	HighOverlapBatchSize int64
+
+	// HighOverlapThreshold is the overlap threshold that triggers the optimization.
+	// Defaults to 100.
+	HighOverlapThreshold int64
 }
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
@@ -173,6 +185,17 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 	selectorBatchSize := opts.SelectorBatchSize
 
+	enableHighOverlapBatching := opts.EnableHighOverlapBatching
+	
+	highOverlapBatchSize := opts.HighOverlapBatchSize
+	if highOverlapBatchSize == 0 {
+		highOverlapBatchSize = 1000
+	}
+	
+	highOverlapThreshold := opts.HighOverlapThreshold
+	if highOverlapThreshold == 0 {
+		highOverlapThreshold = 100
+	}
 	var queryTracker promql.QueryTracker = nopQueryTracker{}
 	if opts.ActiveQueryTracker != nil {
 		queryTracker = opts.ActiveQueryTracker
@@ -198,6 +221,10 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		},
 		decodingConcurrency: decodingConcurrency,
 		selectorBatchSize:   selectorBatchSize,
+		enableHighOverlapBatching:        enableHighOverlapBatching,
+		highOverlapBatchSize:             highOverlapBatchSize,
+		highOverlapThreshold:             highOverlapThreshold,
+
 	}
 }
 
@@ -227,6 +254,10 @@ type Engine struct {
 	selectorBatchSize        int64
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
+
+	enableHighOverlapBatching bool
+	highOverlapBatchSize      int64
+	highOverlapThreshold      int64
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -246,7 +277,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	resultSort := newResultSort(expr)
 
 	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 
@@ -292,7 +323,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 	defer e.activeQueryTracker.Delete(idx)
 
 	qOpts := e.makeQueryOpts(ts, ts, 0, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 	planOpts := logicalplan.PlanOptions{
@@ -344,7 +375,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 		return nil, errors.Newf("invalid expression type %q for range query, must be Scalar or instant Vector", parser.DocumentedType(expr.Type()))
 	}
 	qOpts := e.makeQueryOpts(start, end, step, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 	planOpts := logicalplan.PlanOptions{
@@ -389,7 +420,7 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	defer e.activeQueryTracker.Delete(idx)
 
 	qOpts := e.makeQueryOpts(start, end, step, opts)
-	if qOpts.StepsBatch > 64 {
+	if !e.disableDuplicateLabelChecks && qOpts.StepsBatch > 64 {
 		return nil, ErrStepsBatchTooLarge
 	}
 	planOpts := logicalplan.PlanOptions{
@@ -474,7 +505,12 @@ func (e *Engine) getLogicalOptimizers(opts *QueryOpts) []logicalplan.Optimizer {
 	if opts.SelectorBatchSize != 0 {
 		selectorBatchSize = opts.SelectorBatchSize
 	}
-	return append(optimizers, logicalplan.SelectorBatchSize{Size: selectorBatchSize})
+	return append(optimizers, logicalplan.SelectorBatchSize{
+		DefaultBatchSize:          selectorBatchSize,
+		EnableHighOverlapBatching: e.enableHighOverlapBatching,
+		HighOverlapBatchSize:      e.highOverlapBatchSize,
+		HighOverlapThreshold:      e.highOverlapThreshold,
+	})
 }
 
 func (e *Engine) storageScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (engstorage.Scanners, error) {

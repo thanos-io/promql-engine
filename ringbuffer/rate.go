@@ -194,6 +194,21 @@ func (r *RateBuffer) Eval(ctx context.Context, _, _ float64, _ int64) (float64, 
 
 func (r *RateBuffer) ReadIntoLast(func(*Sample)) {}
 
+func (r *RateBuffer) Clear() {
+	r.resets = r.resets[:0]
+	r.lastSample = Sample{T: math.MinInt64}
+	r.currentMint = math.MaxInt64
+	
+	for i := range r.firstSamples {
+		r.firstSamples[i] = Sample{T: math.MaxInt64}
+	}
+	
+	for i := range r.stepRanges {
+		r.stepRanges[i].numSamples = 0
+		r.stepRanges[i].sampleCount = 0
+	}
+}
+
 func querySteps(o query.Options) int64 {
 	// Instant evaluation is executed as a range evaluation with one step.
 	if o.Step.Milliseconds() == 0 {
