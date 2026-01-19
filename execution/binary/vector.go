@@ -302,14 +302,12 @@ func (o *vectorOperator) execBinaryUnless(lhs, rhs model.StepVector, step *model
 	return nil
 }
 
-func (o *vectorOperator) computeBinaryPairing(hval, lval float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, error) {
+func (o *vectorOperator) computeBinaryPairing(hval, lval float64, hlhs, hrhs *histogram.FloatHistogram) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 	// operand is not commutative so we need to address potential swapping
 	if o.matching.Card == parser.CardOneToMany {
-		v, h, keep, err := binOp(o.opType, lval, hval, hlhs, hrhs)
-		return v, h, keep, err
+		return binOp(o.opType, lval, hval, hlhs, hrhs)
 	}
-	v, h, keep, err := binOp(o.opType, hval, lval, hlhs, hrhs)
-	return v, h, keep, err
+	return binOp(o.opType, hval, lval, hlhs, hrhs)
 }
 
 func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs model.StepVector, step *model.StepVector) error {
@@ -373,14 +371,22 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 		}
 		jp.bts = ts
 
+		var warn warnings.Warnings
 		if jp.histogramVal != nil {
-			_, h, keep, err = o.computeBinaryPairing(0, 0, hcs.Histograms[i], jp.histogramVal)
+			_, h, keep, warn, err = o.computeBinaryPairing(0, 0, hcs.Histograms[i], jp.histogramVal)
 		} else {
-			_, h, keep, err = o.computeBinaryPairing(0, jp.val, hcs.Histograms[i], nil)
+			_, h, keep, warn, err = o.computeBinaryPairing(0, jp.val, hcs.Histograms[i], nil)
 		}
 		if err != nil {
 			warnings.AddToContext(err, ctx)
 			continue
+		}
+		if warn != 0 {
+			emitBinaryOpWarnings(ctx, warn, o.opType)
+			// For incompatible types, skip entirely - don't produce any output
+			if warn&warnings.WarnIncompatibleTypesInBinOp != 0 {
+				continue
+			}
 		}
 
 		switch {
@@ -412,19 +418,32 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 		}
 		jp.bts = ts
 		var val float64
+		var warn warnings.Warnings
 
 		if jp.histogramVal != nil {
-			_, h, _, err = o.computeBinaryPairing(hcs.Samples[i], 0, nil, jp.histogramVal)
+			_, h, keep, warn, err = o.computeBinaryPairing(hcs.Samples[i], 0, nil, jp.histogramVal)
 			if err != nil {
 				warnings.AddToContext(err, ctx)
 				continue
 			}
+			if warn != 0 {
+				emitBinaryOpWarnings(ctx, warn, o.opType)
+				if warn&warnings.WarnIncompatibleTypesInBinOp != 0 {
+					continue
+				}
+			}
+			if !keep {
+				continue
+			}
 			step.AppendHistogramWithSizeHint(o.outputSeriesID(sampleID+1, jp.sid+1), h, histogramHint)
 		} else {
-			val, _, keep, err = o.computeBinaryPairing(hcs.Samples[i], jp.val, nil, nil)
+			val, _, keep, warn, err = o.computeBinaryPairing(hcs.Samples[i], jp.val, nil, nil)
 			if err != nil {
 				warnings.AddToContext(err, ctx)
 				continue
+			}
+			if warn != 0 {
+				emitBinaryOpWarnings(ctx, warn, o.opType)
 			}
 			if o.returnBool {
 				val = 0

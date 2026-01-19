@@ -11,12 +11,9 @@ import (
 	"github.com/thanos-io/promql-engine/compute"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/parse"
-	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/util/annotations"
 )
 
 type vectorTable struct {
@@ -54,11 +51,10 @@ func (t *vectorTable) aggregate(vector model.StepVector) error {
 }
 
 func (t *vectorTable) populateVector(ctx context.Context, vec *model.StepVector) {
-	if t.accumulator.HasIgnoredHistograms() {
-		warnings.AddToContext(annotations.HistogramIgnoredInAggregationInfo, ctx)
-	}
+	emitAccumulatorWarnings(ctx, t.accumulator.Warnings())
 	switch t.accumulator.ValueType() {
-	case compute.NoValue:
+	case compute.NoValue, compute.MixedTypeValue:
+		// MixedTypeValue: warning already emitted by emitAccumulatorWarnings
 		return
 	case compute.SingleTypeValue:
 		v, h := t.accumulator.Value()
@@ -67,8 +63,6 @@ func (t *vectorTable) populateVector(ctx context.Context, vec *model.StepVector)
 		} else {
 			vec.AppendHistogram(0, h)
 		}
-	case compute.MixedTypeValue:
-		warnings.AddToContext(annotations.NewMixedFloatsHistogramsAggWarning(posrange.PositionRange{}), ctx)
 	}
 }
 
