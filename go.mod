@@ -17,7 +17,7 @@ require (
 	go.uber.org/goleak v1.3.0
 	golang.org/x/exp v0.0.0-20250808145144-a408d31f581a
 	golang.org/x/tools v0.37.0
-	gonum.org/v1/gonum v0.16.0
+	gonum.org/v1/gonum v0.17.0
 )
 
 require (
