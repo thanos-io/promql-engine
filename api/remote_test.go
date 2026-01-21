@@ -4,7 +4,6 @@
 package api
 
 import (
-	"math"
 	"testing"
 
 	"github.com/efficientgo/core/testutil"
@@ -12,32 +11,20 @@ import (
 )
 
 func TestCachedEndpoints(t *testing.T) {
-	engines := remoteEndpointsV2Func(func(mint, maxt int64) []RemoteEngine {
+	engines := remoteEndpointsFunc(func(mint, maxt int64) []RemoteEngine {
 		testutil.Equals(t, int64(10), mint)
 		testutil.Equals(t, int64(20), maxt)
 		return []RemoteEngine{newEngineMock(0, 1, nil)}
 	})
 	endpoints := NewCachedEndpoints(engines)
 
-	es := getEngines(endpoints, 10, 20)
-	testutil.Equals(t, 1, len(es))
-}
-
-func TestCachedEndpointsAllEnginesByDefault(t *testing.T) {
-	engines := remoteEndpointsV2Func(func(mint, maxt int64) []RemoteEngine {
-		testutil.Equals(t, int64(math.MinInt64), mint)
-		testutil.Equals(t, int64(math.MaxInt64), maxt)
-		return []RemoteEngine{newEngineMock(0, 1, nil)}
-	})
-	endpoints := NewCachedEndpoints(engines)
-
-	es := endpoints.Engines()
+	es := endpoints.Engines(10, 20)
 	testutil.Equals(t, 1, len(es))
 }
 
 func TestCachedEndpointsCachesEngines(t *testing.T) {
 	var calls int
-	engines := remoteEndpointsV2Func(func(mint, maxt int64) []RemoteEngine {
+	engines := remoteEndpointsFunc(func(mint, maxt int64) []RemoteEngine {
 		calls++
 		return []RemoteEngine{
 			newEngineMock(100*int64(calls), 1000*int64(calls), nil),
@@ -46,10 +33,10 @@ func TestCachedEndpointsCachesEngines(t *testing.T) {
 	})
 	endpoints := NewCachedEndpoints(engines)
 
-	es1 := getEngines(endpoints, 10, 10000)
+	es1 := endpoints.Engines(10, 10000)
 	testutil.Equals(t, 2, len(es1))
 
-	es2 := getEngines(endpoints, 20, 20000)
+	es2 := endpoints.Engines(20, 20000)
 	testutil.Equals(t, 2, len(es2))
 
 	testutil.Equals(t, 1, calls)
@@ -61,13 +48,9 @@ func TestCachedEndpointsCachesEngines(t *testing.T) {
 	testutil.Equals(t, int64(1337), es2[0].MaxT())
 }
 
-type remoteEndpointsV2Func func(mint, maxt int64) []RemoteEngine
+type remoteEndpointsFunc func(mint, maxt int64) []RemoteEngine
 
-func (f remoteEndpointsV2Func) Engines() []RemoteEngine {
-	panic("Engines not implemented")
-}
-
-func (f remoteEndpointsV2Func) EnginesV2(mint, maxt int64) []RemoteEngine {
+func (f remoteEndpointsFunc) Engines(mint, maxt int64) []RemoteEngine {
 	return f(mint, maxt)
 }
 

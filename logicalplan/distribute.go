@@ -860,10 +860,6 @@ func maxDuration(a, b time.Duration) time.Duration {
 }
 
 func getRemoteEngines(endpoints api.RemoteEndpoints, plan Node, opts *query.Options) []api.RemoteEngine {
-	if v2, ok := endpoints.(api.RemoteEndpointsV2); ok {
-		mint, maxt := MinMaxTime(plan, opts)
-		return v2.EnginesV2(mint, maxt)
-	}
-
-	return endpoints.Engines()
+	mint, maxt := MinMaxTime(plan, opts)
+	return endpoints.Engines(mint, maxt)
 }

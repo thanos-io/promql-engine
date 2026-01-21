@@ -6,7 +6,6 @@ package api
 import (
 	"context"
 	"fmt"
-	"math"
 	"sync"
 	"time"
 
@@ -18,11 +17,7 @@ type RemoteQuery interface {
 	fmt.Stringer
 }
 
-type RemoteEndpoints interface {
-	Engines() []RemoteEngine
-}
-
-// RemoteEndpointsV2 describes endpoints that accept pruning hints when
+// RemoteEndpoints describes endpoints that accept pruning hints when
 // selecting remote engines.
 //
 // For example implementations may use the hints to prune the TSDBInfos, but
@@ -31,8 +26,11 @@ type RemoteEndpoints interface {
 // NOTE(Aleksandr Krivoshchekov):
 // We add a new interface as a temporary backward compatibility.
 // RemoteEndpoints will be replaced with it in a future breaking change.
-type RemoteEndpointsV2 interface {
-	EnginesV2(mint, maxt int64) []RemoteEngine
+type RemoteEndpoints interface {
+	// TODO comment.
+	// Should call with:
+	// const mint, maxt = math.MinInt64, math.MaxInt64
+	Engines(mint, maxt int64) []RemoteEngine
 }
 
 type RemoteEngine interface {
@@ -55,11 +53,7 @@ type staticEndpoints struct {
 	engines []RemoteEngine
 }
 
-func (m staticEndpoints) Engines() []RemoteEngine {
-	return m.engines
-}
-
-func (m staticEndpoints) EnginesV2(mint, maxt int64) []RemoteEngine {
+func (m staticEndpoints) Engines(mint, maxt int64) []RemoteEngine {
 	return m.engines
 }
 
@@ -74,24 +68,11 @@ type cachedEndpoints struct {
 	engines     []RemoteEngine
 }
 
-func (l *cachedEndpoints) Engines() []RemoteEngine {
-	const mint, maxt = math.MinInt64, math.MaxInt64
-	return l.EnginesV2(mint, maxt)
-}
-
-func (l *cachedEndpoints) EnginesV2(mint, maxt int64) []RemoteEngine {
+func (l *cachedEndpoints) Engines(mint, maxt int64) []RemoteEngine {
 	l.enginesOnce.Do(func() {
-		l.engines = getEngines(l.endpoints, mint, maxt)
+		l.engines = l.endpoints.Engines(mint, maxt)
 	})
 	return l.engines
-}
-
-func getEngines(endpoints RemoteEndpoints, mint, maxt int64) []RemoteEngine {
-	if v2, ok := endpoints.(RemoteEndpointsV2); ok {
-		return v2.EnginesV2(mint, maxt)
-	}
-
-	return endpoints.Engines()
 }
 
 // NewCachedEndpoints returns an endpoints wrapper that
