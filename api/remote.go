@@ -18,8 +18,6 @@ type RemoteQuery interface {
 	fmt.Stringer
 }
 
-// Deprecated: RemoteEndpoints will be replaced with
-// RemoteEndpointsV2 / RemoteEndpointsV3 in a future breaking change.
 type RemoteEndpoints interface {
 	Engines() []RemoteEngine
 }
@@ -35,27 +33,6 @@ type RemoteEndpoints interface {
 // RemoteEndpoints will be replaced with it in a future breaking change.
 type RemoteEndpointsV2 interface {
 	EnginesV2(mint, maxt int64) []RemoteEngine
-}
-
-type RemoteEndpointsQuery struct {
-	MinT int64
-	MaxT int64
-}
-
-// RemoteEndpointsV3 describes endpoints that accept pruning hints when
-// selecting remote engines.
-//
-// For example implementations may use the hints to prune the TSDBInfos, but
-// also may safely ignore them and return all available remote engines.
-//
-// NOTE(Aleksandr Krivoshchekov):
-// We add a new interface as a temporary backward compatibility.
-// RemoteEndpoints will be replaced with it in a future breaking change.
-//
-// Unlike RemoteEndpointsV2, this interface can be extended with more hints
-// in the future, without making any breaking changes.
-type RemoteEndpointsV3 interface {
-	EnginesV3(query RemoteEndpointsQuery) []RemoteEngine
 }
 
 type RemoteEngine interface {
@@ -86,10 +63,6 @@ func (m staticEndpoints) EnginesV2(mint, maxt int64) []RemoteEngine {
 	return m.engines
 }
 
-func (m staticEndpoints) EnginesV3(query RemoteEndpointsQuery) []RemoteEngine {
-	return m.engines
-}
-
 func NewStaticEndpoints(engines []RemoteEngine) RemoteEndpoints {
 	return &staticEndpoints{engines: engines}
 }
@@ -102,33 +75,20 @@ type cachedEndpoints struct {
 }
 
 func (l *cachedEndpoints) Engines() []RemoteEngine {
-	return l.EnginesV3(RemoteEndpointsQuery{
-		MaxT: math.MinInt64,
-		MinT: math.MaxInt64,
-	})
+	const mint, maxt = math.MaxInt64, math.MinInt64
+	return l.EnginesV2(mint, maxt)
 }
 
 func (l *cachedEndpoints) EnginesV2(mint, maxt int64) []RemoteEngine {
-	return l.EnginesV3(RemoteEndpointsQuery{
-		MaxT: maxt,
-		MinT: mint,
-	})
-}
-
-func (l *cachedEndpoints) EnginesV3(query RemoteEndpointsQuery) []RemoteEngine {
 	l.enginesOnce.Do(func() {
-		l.engines = getEngines(l.endpoints, query)
+		l.engines = getEngines(l.endpoints, mint, maxt)
 	})
 	return l.engines
 }
 
-func getEngines(endpoints RemoteEndpoints, query RemoteEndpointsQuery) []RemoteEngine {
-	if v3, ok := endpoints.(RemoteEndpointsV3); ok {
-		return v3.EnginesV3(query)
-	}
-
+func getEngines(endpoints RemoteEndpoints, mint, maxt int64) []RemoteEngine {
 	if v2, ok := endpoints.(RemoteEndpointsV2); ok {
-		return v2.EnginesV2(query.MinT, query.MaxT)
+		return v2.EnginesV2(mint, maxt)
 	}
 
 	return endpoints.Engines()
