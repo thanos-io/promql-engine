@@ -17,19 +17,19 @@ type RemoteQuery interface {
 	fmt.Stringer
 }
 
-// RemoteEndpoints describes endpoints that accept pruning hints when
-// selecting remote engines.
+// RemoteEndpoints returns remote engines.
 //
-// For example implementations may use the hints to prune the TSDBInfos, but
-// also may safely ignore them and return all available remote engines.
+// Implementations should use mint and maxt to prune engine metadata
+// (e.g., filter TSDBInfos to only those overlapping the time range),
+// reducing unnecessary computations in subsequent calls to methods like
+// RemoteEngine.LabelSets().
 //
-// NOTE(Aleksandr Krivoshchekov):
-// We add a new interface as a temporary backward compatibility.
-// RemoteEndpoints will be replaced with it in a future breaking change.
+// All available engines should be returned regardless of pruning.
 type RemoteEndpoints interface {
-	// TODO comment.
-	// Should call with:
-	// const mint, maxt = math.MinInt64, math.MaxInt64
+	// Engines returns remote engines.
+	//
+	// If mint and/or maxt of the query is unknown, the caller must pass
+	// math.MinInt64 and math.MaxInt64 respectively to retrieve unpruned engines.
 	Engines(mint, maxt int64) []RemoteEngine
 }
 
