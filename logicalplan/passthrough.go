@@ -43,7 +43,7 @@ func matchingEngineTime(e api.RemoteEngine, opts *query.Options) bool {
 }
 
 func (m PassthroughOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
-	engines := getRemoteEngines(m.Endpoints, plan, opts)
+	engines := m.Endpoints.Engines(MinMaxTime(plan, opts))
 	if len(engines) == 0 {
 		return plan, nil
 	}
