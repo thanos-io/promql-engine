@@ -157,7 +157,7 @@ type DistributedExecutionOptimizer struct {
 }
 
 func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
-	engines := m.Endpoints.Engines()
+	engines := m.Endpoints.Engines(MinMaxTime(plan, opts))
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
 	})
