@@ -40,9 +40,6 @@ type RateBuffer struct {
 	isRate      bool
 
 	evalTs int64
-
-	// tracker tracks samples in memory for maxSamples limit
-	tracker *query.SampleTracker
 }
 
 type stepRange struct {
@@ -75,7 +72,7 @@ func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bo
 		current += step
 	}
 
-	rb := &RateBuffer{
+	return &RateBuffer{
 		ctx:          ctx,
 		isCounter:    isCounter,
 		isRate:       isRate,
@@ -86,20 +83,8 @@ func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bo
 		firstSamples: firstSamples,
 		lastSample:   Sample{T: math.MinInt64},
 		currentMint:  math.MaxInt64,
-		tracker:      opts.SampleTracker,
 	}
-
-	// Track fixed allocations: firstSamples array + last sample
-	if rb.tracker != nil {
-		if err := rb.tracker.Add(int(numSteps) + 1); err != nil {
-			panic(err)
-		}
-	}
-
-	return rb
 }
-
-func (r *RateBuffer) Len() int { return r.stepRanges[0].numSamples }
 
 func (r *RateBuffer) SampleCount() int {
 	return r.stepRanges[0].sampleCount
@@ -120,22 +105,10 @@ func (r *RateBuffer) Push(t int64, v Value) {
 				T: t,
 				V: Value{H: v.H.Copy()},
 			})
-			// Track resets array growth (only dynamic part)
-			if r.tracker != nil {
-				if err := r.tracker.Add(2); err != nil {
-					panic(err)
-				}
-			}
 		}
 	} else if r.lastSample.T > r.currentMint && r.lastSample.V.F > v.F {
 		r.resets = append(r.resets, Sample{T: r.lastSample.T, V: Value{F: r.lastSample.V.F}})
 		r.resets = append(r.resets, Sample{T: t, V: Value{F: v.F}})
-		// Track resets array growth (only dynamic part)
-		if r.tracker != nil {
-			if err := r.tracker.Add(2); err != nil {
-				panic(err)
-			}
-		}
 	}
 
 	// Set the lastSample sample for the current evaluation step.
@@ -182,9 +155,6 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 	}
 	dropResets := 0
 	for ; dropResets < len(r.resets) && r.resets[dropResets].T <= mint; dropResets++ {
-	}
-	if r.tracker != nil && dropResets > 0 {
-		r.tracker.Remove(dropResets)
 	}
 	r.resets = r.resets[dropResets:]
 

@@ -9,7 +9,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/warnings"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 )
@@ -47,19 +46,13 @@ type GenericRingBuffer struct {
 	selectRange int64
 	extLookback int64
 	call        FunctionCall
-
-	tracker *query.SampleTracker
 }
 
-func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall, opts *query.Options) *GenericRingBuffer {
-	return NewWithExtLookback(ctx, size, selectRange, offset, 0, call, opts)
+func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
+	return NewWithExtLookback(ctx, size, selectRange, offset, 0, call)
 }
 
-func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall, opts *query.Options) *GenericRingBuffer {
-	var tracker *query.SampleTracker
-	if opts != nil {
-		tracker = opts.SampleTracker
-	}
+func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
 	return &GenericRingBuffer{
 		ctx:         ctx,
 		items:       make([]Sample, 0, size),
@@ -67,7 +60,6 @@ func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extL
 		offset:      offset,
 		extLookback: extLookback,
 		call:        call,
-		tracker:     tracker,
 	}
 }
 
@@ -118,35 +110,11 @@ func (r *GenericRingBuffer) Push(t int64, v Value) {
 	} else {
 		r.items[n].V.H = nil
 	}
-
-	// Track samples added (count histogram buckets like Prometheus)
-	if r.tracker != nil {
-		samplesAdded := 1
-		if v.H != nil {
-			// Count histogram size in 16-byte units (same as Prometheus)
-			samplesAdded = (v.H.Size() + 8) / 16
-		}
-		if err := r.tracker.Add(samplesAdded); err != nil {
-			panic(err)
-		}
-	}
 }
 
 func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	r.currentStep = evalt
 	if r.extLookback == 0 && (len(r.items) == 0 || r.items[len(r.items)-1].T < mint) {
-		// Track samples removed (count histogram sizes like Prometheus)
-		if r.tracker != nil && len(r.items) > 0 {
-			samplesRemoved := 0
-			for _, item := range r.items {
-				if item.V.H != nil {
-					samplesRemoved += (item.V.H.Size() + 8) / 16
-				} else {
-					samplesRemoved++
-				}
-			}
-			r.tracker.Remove(samplesRemoved)
-		}
 		r.items = r.items[:0]
 		return
 	}
@@ -155,19 +123,6 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	}
 	if r.extLookback > 0 && drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
 		drop--
-	}
-
-	// Track samples removed (count histogram sizes like Prometheus)
-	if r.tracker != nil && drop > 0 {
-		samplesRemoved := 0
-		for i := 0; i < drop; i++ {
-			if r.items[i].V.H != nil {
-				samplesRemoved += (r.items[i].V.H.Size() + 8) / 16
-			} else {
-				samplesRemoved++
-			}
-		}
-		r.tracker.Remove(samplesRemoved)
 	}
 
 	keep := len(r.items) - drop

@@ -74,6 +74,8 @@ type matrixSelector struct {
 
 	nonCounterMetric string
 	hasFloats        bool
+
+	lastTrackedSamples int
 }
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
@@ -218,6 +220,23 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs += o.step
 		}
 	}
+
+	if o.opts.SampleTracker != nil {
+		totalSamplesInBatch := 0
+		for i := range o.scanners {
+			totalSamplesInBatch += o.scanners[i].buffer.SampleCount()
+		}
+		if totalSamplesInBatch > o.lastTrackedSamples {
+			o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+		} else if totalSamplesInBatch < o.lastTrackedSamples {
+			o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+		}
+		o.lastTrackedSamples = totalSamplesInBatch
+		if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+			return 0, err
+		}
+	}
+
 	if o.currentSeries == int64(len(o.scanners)) {
 		o.currentStep += o.step * int64(n)
 		o.currentSeries = 0
@@ -308,9 +327,9 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 	}
 
 	if o.isExtFunction {
-		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call, o.opts)
+		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
 	}
-	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call, o.opts)
+	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call)
 
 }
 

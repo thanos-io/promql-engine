@@ -4,52 +4,49 @@
 package query
 
 import (
+	"fmt"
 	"sync/atomic"
-
-	"github.com/efficientgo/core/errors"
 )
 
-// SampleTracker tracks the number of samples currently in memory during query execution.
-// It enforces a maximum sample limit to prevent out-of-memory errors.
 type SampleTracker struct {
-	current atomic.Int64 // Current samples in memory
-	limit   int64        // Maximum samples allowed (0 = no limit)
+	current atomic.Int64
+	limit   int64
 }
 
-// NewSampleTracker creates a new sample tracker with the given limit.
 func NewSampleTracker(maxSamples int) *SampleTracker {
 	return &SampleTracker{
 		limit: int64(maxSamples),
 	}
 }
 
-// Add increments the current sample count and checks against the limit.
-// Returns an error if adding these samples would exceed the limit.
-func (st *SampleTracker) Add(count int) error {
-	if count <= 0 {
-		return nil
-	}
-
-	newCurrent := st.current.Add(int64(count))
-
-	// Check limit
-	if st.limit > 0 && newCurrent > st.limit {
-		return errors.Newf("query exceeded maximum samples limit: current=%d, limit=%d", newCurrent, st.limit)
-	}
-
-	return nil
+func (st *SampleTracker) Add(count int) {
+	st.current.Add(int64(count))
 }
 
-// Remove decrements the current sample count.
-// This should be called when samples are freed from memory.
 func (st *SampleTracker) Remove(count int) {
-	if count <= 0 {
-		return
-	}
 	st.current.Add(-int64(count))
 }
 
-// Current returns the current number of samples in memory.
 func (st *SampleTracker) Current() int64 {
 	return st.current.Load()
+}
+
+func (st *SampleTracker) CheckLimit() error {
+	if st.limit <= 0 {
+		return nil
+	}
+	current := st.current.Load()
+	if current > st.limit {
+		return ErrMaxSamplesExceeded{Current: current, Limit: st.limit}
+	}
+	return nil
+}
+
+type ErrMaxSamplesExceeded struct {
+	Current int64
+	Limit   int64
+}
+
+func (e ErrMaxSamplesExceeded) Error() string {
+	return fmt.Sprintf("query exceeded maximum samples limit: current=%d, limit=%d", e.Current, e.Limit)
 }
