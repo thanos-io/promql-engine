@@ -8,7 +8,6 @@ import (
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/thanos-io/promql-engine/query"
 )
 
 type Series struct {
@@ -25,12 +24,6 @@ type StepVector struct {
 
 	HistogramIDs []uint64
 	Histograms   []*histogram.FloatHistogram
-
-	tracker *query.SampleTracker
-}
-
-func (s *StepVector) SetTracker(tracker *query.SampleTracker) {
-	s.tracker = tracker
 }
 
 // Reset resets the StepVector to the given timestamp while preserving slice capacity.
@@ -69,13 +62,6 @@ func (s *StepVector) AppendSampleWithSizeHint(id uint64, val float64, hint int) 
 	}
 	s.SampleIDs = append(s.SampleIDs, id)
 	s.Samples = append(s.Samples, val)
-
-	// Track sample added
-	if s.tracker != nil {
-		if err := s.tracker.Add(1); err != nil {
-			panic(err)
-		}
-	}
 }
 
 func (s *StepVector) AppendSamples(ids []uint64, vals []float64) {
@@ -84,23 +70,11 @@ func (s *StepVector) AppendSamples(ids []uint64, vals []float64) {
 	}
 	s.SampleIDs = append(s.SampleIDs, ids...)
 	s.Samples = append(s.Samples, vals...)
-
-	// Track samples added
-	if s.tracker != nil {
-		if err := s.tracker.Add(len(vals)); err != nil {
-			panic(err)
-		}
-	}
 }
 
 func (s *StepVector) RemoveSample(index int) {
 	s.Samples = slices.Delete(s.Samples, index, index+1)
 	s.SampleIDs = slices.Delete(s.SampleIDs, index, index+1)
-
-	// Track sample removed
-	if s.tracker != nil {
-		s.tracker.Remove(1)
-	}
 }
 
 func (s *StepVector) AppendHistogram(histogramID uint64, h *histogram.FloatHistogram) {
@@ -122,15 +96,6 @@ func (s *StepVector) AppendHistogramWithSizeHint(histogramID uint64, h *histogra
 	}
 	s.HistogramIDs = append(s.HistogramIDs, histogramID)
 	s.Histograms = append(s.Histograms, h)
-
-	// Track histogram added (histograms count as multiple samples based on bucket count)
-	if s.tracker != nil && h != nil {
-		// Count histogram buckets as samples
-		count := len(h.PositiveBuckets) + len(h.NegativeBuckets) + 2 // +2 for count and sum
-		if err := s.tracker.Add(count); err != nil {
-			panic(err)
-		}
-	}
 }
 
 func (s *StepVector) AppendHistograms(histogramIDs []uint64, hs []*histogram.FloatHistogram) {
@@ -139,33 +104,9 @@ func (s *StepVector) AppendHistograms(histogramIDs []uint64, hs []*histogram.Flo
 	}
 	s.HistogramIDs = append(s.HistogramIDs, histogramIDs...)
 	s.Histograms = append(s.Histograms, hs...)
-
-	// Track histograms added
-	if s.tracker != nil {
-		totalCount := 0
-		for _, h := range hs {
-			if h != nil {
-				totalCount += len(h.PositiveBuckets) + len(h.NegativeBuckets) + 2
-			}
-		}
-		if totalCount > 0 {
-			if err := s.tracker.Add(totalCount); err != nil {
-				panic(err)
-			}
-		}
-	}
 }
 
 func (s *StepVector) RemoveHistogram(index int) {
-	// Track histogram being removed
-	if s.tracker != nil && index < len(s.Histograms) {
-		h := s.Histograms[index]
-		if h != nil {
-			count := len(h.PositiveBuckets) + len(h.NegativeBuckets) + 2
-			s.tracker.Remove(count)
-		}
-	}
-
 	s.Histograms = slices.Delete(s.Histograms, index, index+1)
 	s.HistogramIDs = slices.Delete(s.HistogramIDs, index, index+1)
 }

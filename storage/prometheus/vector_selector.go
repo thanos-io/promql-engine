@@ -52,6 +52,9 @@ type vectorSelector struct {
 	numShards int
 
 	selectTimestamp bool
+
+	opts              *query.Options
+	lastTrackedSamples int
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -79,6 +82,8 @@ func NewVectorSelector(
 		numShards: numShards,
 
 		selectTimestamp: selectTimestamp,
+
+		opts: queryOpts,
 	}
 
 	// For instant queries, set the step to a positive value
@@ -139,6 +144,7 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	}
 
 	var currStepSamples int
+	var totalSamplesInBatch int
 	// Reset the current timestamp.
 	ts = o.currentStep
 	fromSeries := o.currentSeries
@@ -167,9 +173,22 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 					buf[currStep].AppendSampleWithSizeHint(series.signature, v, expectedSamples)
 					currStepSamples++
 				}
+				totalSamplesInBatch += currStepSamples
 			}
 			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
+		}
+	}
+
+	if o.opts.SampleTracker != nil {
+		if totalSamplesInBatch > o.lastTrackedSamples {
+			o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+		} else if totalSamplesInBatch < o.lastTrackedSamples {
+			o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+		}
+		o.lastTrackedSamples = totalSamplesInBatch
+		if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+			return 0, err
 		}
 	}
 
