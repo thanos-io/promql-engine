@@ -21,8 +21,9 @@ type duplicateLabelCheckOperator struct {
 	once sync.Once
 	next model.VectorOperator
 
-	p []pair
-	c []uint64
+	p      []pair
+	c      []uint64
+	lastTs int64
 }
 
 func NewDuplicateLabelCheck(next model.VectorOperator, opts *query.Options) model.VectorOperator {
@@ -51,19 +52,18 @@ func (d *duplicateLabelCheckOperator) Next(ctx context.Context, buf []model.Step
 		return 0, nil
 	}
 
-	// TODO: currently there is a bug, we need to reset 'd.c's state
-	// if the current timestamp changes. With configured BatchSize we
-	// dont see all samples for a timestamp in the same batch, but this
-	// logic relies on that.
 	if len(d.p) > 0 {
-		for i := range d.p {
-			d.c[d.p[i].a] = 0
-			d.c[d.p[i].b] = 0
+		ts := buf[0].T
+		if ts != d.lastTs {
+			d.lastTs = ts
+			for i := range d.p {
+				d.c[d.p[i].a] = 0
+				d.c[d.p[i].b] = 0
+			}
 		}
 		for i := range n {
-			sv := &buf[i]
-			for _, sid := range sv.SampleIDs {
-				d.c[sid] |= 2 << i
+			for _, sid := range buf[i].SampleIDs {
+				d.c[sid] |= 1 << i
 			}
 		}
 		for i := range d.p {
@@ -105,7 +105,6 @@ func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 		}
 		m := make(map[uint64]int, len(series))
 		p := make([]pair, 0)
-		c := make([]uint64, len(series))
 		for i := range series {
 			h := series[i].Hash()
 			if j, ok := m[h]; ok {
@@ -115,7 +114,7 @@ func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 			}
 		}
 		d.p = p
-		d.c = c
+		d.c = make([]uint64, len(series))
 	})
 	return err
 }
