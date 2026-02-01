@@ -88,6 +88,60 @@ func TestSetBatchSize(t *testing.T) {
 			expr:     `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
 			expected: `histogram_quantile(scalar(max(quantile[batch=10])), http_requests_total)`,
 		},
+		// Range vector functions should allow batching to propagate
+		{
+			name:     "sum with rate",
+			expr:     `sum(rate(http_requests_total[5m]))`,
+			expected: `sum(rate(http_requests_total[batch=10][5m0s]))`,
+		},
+		{
+			name:     "avg with increase",
+			expr:     `avg(increase(http_requests_total[5m]))`,
+			expected: `avg(increase(http_requests_total[batch=10][5m0s]))`,
+		},
+		// Label-preserving functions should allow batching to propagate
+		{
+			name:     "sum with abs",
+			expr:     `sum(abs(metric))`,
+			expected: `sum(abs(metric[batch=10]))`,
+		},
+		{
+			name:     "avg with ceil",
+			expr:     `avg(ceil(metric))`,
+			expected: `avg(ceil(metric[batch=10]))`,
+		},
+		{
+			name:     "max with clamp_max",
+			expr:     `max(clamp_max(metric, 100))`,
+			expected: `max(clamp_max(metric[batch=10], 100))`,
+		},
+		{
+			name:     "nested math functions",
+			expr:     `sum(abs(floor(metric)))`,
+			expected: `sum(abs(floor(metric[batch=10])))`,
+		},
+		{
+			name: "aggregation with timestamp",
+			expr: `sum(timestamp(metric))`,
+			// timestamp() is pushed down into VectorSelector with SelectTimestamp=true
+			expected: `sum(metric[batch=10][timestamp])`,
+		},
+		// Label-modifying functions should disable batching
+		{
+			name:     "label_replace disables batching",
+			expr:     `sum(label_replace(metric, "dst", "$1", "src", "(.*)"))`,
+			expected: `sum(label_replace(metric[batch=10], "dst", "$1", "src", "(.*)"))`,
+		},
+		{
+			name:     "label_join disables batching",
+			expr:     `sum(label_join(metric, "dst", ",", "src"))`,
+			expected: `sum(label_join(metric[batch=10], "dst", ",", "src"))`,
+		},
+		{
+			name:     "histogram_fraction disables batching",
+			expr:     `sum(histogram_fraction(0, 0.5, metric))`,
+			expected: `sum(histogram_fraction(0, 0.5, metric))`,
+		},
 	}
 
 	optimizers := append([]Optimizer{SelectorBatchSize{Size: 10}}, DefaultOptimizers...)

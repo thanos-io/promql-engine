@@ -2387,6 +2387,43 @@ or
 	}
 }
 
+func TestDuplicateLabelCheckWithBatching(t *testing.T) {
+	t.Parallel()
+	// These two metrics will produce duplicate output labels after changes()
+	// drops __name__. With DecodingConcurrency=1 (single shard) and
+	// SelectorBatchSize=1, they will be returned in separate batches.
+	load := `load 30s
+		metric0{src="a",dst="b"} 0+1x40
+		metric1{src="a",dst="b"} 1+1x40`
+
+	storage := promqltest.LoadedStorage(t, load)
+	defer storage.Close()
+
+	opts := promql.EngineOpts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
+	}
+
+	newEngine := engine.New(engine.Opts{
+		EngineOpts:          opts,
+		LogicalOptimizers:   logicalplan.AllOptimizers,
+		SelectorBatchSize:   1,
+		DecodingConcurrency: 1,
+	})
+
+	ctx := context.Background()
+	queryStr := `sum(changes({__name__=~"metric0|metric1"}[1m]))`
+
+	q, err := newEngine.NewInstantQuery(ctx, storage, nil, queryStr, time.Unix(60, 0))
+	testutil.Ok(t, err)
+	defer q.Close()
+
+	result := q.Exec(ctx)
+	testutil.Assert(t, result.Err != nil, "expected duplicate label set error, got result: %v", result.Value)
+	testutil.Assert(t, strings.Contains(result.Err.Error(), "same labelset"),
+		"expected duplicate label set error, got: %v", result.Err)
+}
+
 // mergeWithSampleDedup merges samples from series with the same labels,
 // removing samples with identical timestamps.
 func mergeWithSampleDedup(series []*mockSeries) []storage.Series {
