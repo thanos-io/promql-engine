@@ -80,7 +80,7 @@ type matrixSelector struct {
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
 
-const maxSamplesCheckIntervalSeries = 100
+const maxSamplesCheckIntervalSeries = 1000
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
