@@ -27,10 +27,6 @@ func (st *SampleTracker) Remove(count int) {
 	st.current.Add(-int64(count))
 }
 
-func (st *SampleTracker) Current() int64 {
-	return st.current.Load()
-}
-
 func (st *SampleTracker) CheckLimit() error {
 	if st.limit <= 0 {
 		return nil
@@ -48,5 +44,5 @@ type ErrMaxSamplesExceeded struct {
 }
 
 func (e ErrMaxSamplesExceeded) Error() string {
-	return fmt.Sprintf("query exceeded maximum samples limit: current=%d, limit=%d", e.Current, e.Limit)
+	return fmt.Sprintf("query processing would load too many samples into memory: current=%d, limit=%d", e.Current, e.Limit)
 }

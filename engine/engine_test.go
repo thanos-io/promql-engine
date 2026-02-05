@@ -4794,6 +4794,156 @@ func TestQueryTimeout(t *testing.T) {
 	testutil.Equals(t, context.DeadlineExceeded, res.Err)
 }
 
+func TestMaxSamples(t *testing.T) {
+	t.Parallel()
+
+	t.Run("max_samples with rate function", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// Create 1000 series with samples every 15s for 5 minutes
+		for i := 0; i < 1000; i++ {
+			for ts := int64(0); ts <= 300; ts += 15 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// With 1000 series and a 2m window, rate() will keep ~8 samples per series in memory
+		// = ~8000 samples total
+		query := `rate(test_metric[2m])`
+		start := time.Unix(120, 0)
+		end := time.Unix(300, 0)
+		step := 30 * time.Second
+
+		t.Run("exceeds limit", func(t *testing.T) {
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 5000, // Lower than ~8000 expected
+				},
+			})
+			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+			require.NoError(t, err)
+			res := q.Exec(context.Background())
+			require.Error(t, res.Err, "expected max_samples error")
+			require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+		})
+
+		t.Run("within limit", func(t *testing.T) {
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 50000, // Higher than ~8000 expected
+				},
+			})
+			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+			require.NoError(t, err)
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
+		})
+	})
+
+	t.Run("max_samples with vector selector", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// 10000 series, each step will have 10000 samples in memory
+		for i := 0; i < 10000; i++ {
+			for ts := int64(0); ts <= 300; ts += 30 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		query := `test_metric`
+		start := time.Unix(0, 0)
+		end := time.Unix(60, 0)
+		step := 30 * time.Second
+
+		ng := engine.New(engine.Opts{
+			EngineOpts: promql.EngineOpts{
+				Timeout:    1 * time.Hour,
+				MaxSamples: 5000, // Lower than 10000 series per step
+			},
+		})
+		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+		require.NoError(t, err)
+		res := q.Exec(context.Background())
+		require.Error(t, res.Err)
+		require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+	})
+
+	t.Run("max_samples with subquery", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// 1000 series with subquery that accumulates samples
+		for i := 0; i < 1000; i++ {
+			for ts := int64(0); ts <= 600; ts += 15 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// Subquery with 2m range and 30s step = 5 steps per evaluation
+		// With 1000 series, that's ~5000 samples in ring buffer
+		query := `sum_over_time(test_metric[2m:30s])`
+		start := time.Unix(120, 0)
+		end := time.Unix(300, 0)
+		step := 60 * time.Second
+
+		ng := engine.New(engine.Opts{
+			EngineOpts: promql.EngineOpts{
+				Timeout:    1 * time.Hour,
+				MaxSamples: 3000, // Lower than expected
+			},
+		})
+		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+		require.NoError(t, err)
+		res := q.Exec(context.Background())
+		require.Error(t, res.Err)
+		require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+	})
+
+	t.Run("max_samples disabled by default", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		for i := 0; i < 100; i++ {
+			for ts := int64(0); ts < 300; ts += 30 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		query := `rate(test_metric[1m])`
+		start := time.Unix(0, 0)
+		end := time.Unix(300, 0)
+		step := 30 * time.Second
+
+		ng := engine.New(engine.Opts{
+			EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour},
+		})
+		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+		require.NoError(t, err)
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+	})
+}
+
 type hintRecordingQuerier struct {
 	storage.Querier
 	mux   sync.Mutex
