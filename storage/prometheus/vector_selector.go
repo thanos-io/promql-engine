@@ -180,12 +180,6 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 
 		if o.opts.SampleTracker != nil && (o.currentSeries+1-fromSeries)%maxSamplesCheckIntervalSeries == 0 {
-			if totalSamplesInBatch > o.lastTrackedSamples {
-				o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
-			} else if totalSamplesInBatch < o.lastTrackedSamples {
-				o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
-			}
-			o.lastTrackedSamples = totalSamplesInBatch
 			if err := o.opts.SampleTracker.CheckLimit(); err != nil {
 				return 0, err
 			}
@@ -193,10 +187,11 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	}
 
 	if o.opts.SampleTracker != nil {
-		if totalSamplesInBatch > o.lastTrackedSamples {
-			o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
-		} else if totalSamplesInBatch < o.lastTrackedSamples {
-			o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+		if o.lastTrackedSamples > 0 {
+			o.opts.SampleTracker.Remove(o.lastTrackedSamples)
+		}
+		if totalSamplesInBatch > 0 {
+			o.opts.SampleTracker.Add(totalSamplesInBatch)
 		}
 		o.lastTrackedSamples = totalSamplesInBatch
 		if err := o.opts.SampleTracker.CheckLimit(); err != nil {

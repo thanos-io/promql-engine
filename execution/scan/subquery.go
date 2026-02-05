@@ -56,7 +56,7 @@ type subqueryOperator struct {
 	lastTrackedSamples int
 }
 
-const maxSamplesCheckIntervalSteps = 10
+const maxSamplesCheckIntervalSteps = 100
 
 func NewSubqueryOperator(next, paramOp, paramOp2 model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(funcExpr.Func.Name)
