@@ -74,9 +74,13 @@ type matrixSelector struct {
 
 	nonCounterMetric string
 	hasFloats        bool
+
+	lastTrackedSamples int
 }
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
+
+const maxSamplesCheckIntervalSeries = 1000
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
@@ -217,7 +221,40 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			o.telemetry.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs)
 			seriesTs += o.step
 		}
+
+		if o.opts.SampleTracker != nil && (o.currentSeries+1-firstSeries)%maxSamplesCheckIntervalSeries == 0 {
+			totalSamplesInBatch := 0
+			for i := range o.scanners {
+				totalSamplesInBatch += o.scanners[i].buffer.SampleCount()
+			}
+			if totalSamplesInBatch > o.lastTrackedSamples {
+				o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+			} else if totalSamplesInBatch < o.lastTrackedSamples {
+				o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+			}
+			o.lastTrackedSamples = totalSamplesInBatch
+			if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+				return 0, err
+			}
+		}
 	}
+
+	if o.opts.SampleTracker != nil {
+		totalSamplesInBatch := 0
+		for i := range o.scanners {
+			totalSamplesInBatch += o.scanners[i].buffer.SampleCount()
+		}
+		if totalSamplesInBatch > o.lastTrackedSamples {
+			o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+		} else if totalSamplesInBatch < o.lastTrackedSamples {
+			o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+		}
+		o.lastTrackedSamples = totalSamplesInBatch
+		if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+			return 0, err
+		}
+	}
+
 	if o.currentSeries == int64(len(o.scanners)) {
 		o.currentStep += o.step * int64(n)
 		o.currentSeries = 0
@@ -311,6 +348,7 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
 	}
 	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call)
+
 }
 
 func (o *matrixSelector) String() string {

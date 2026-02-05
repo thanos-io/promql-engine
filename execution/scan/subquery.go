@@ -52,7 +52,11 @@ type subqueryOperator struct {
 	paramBuf  []model.StepVector
 	param2Buf []model.StepVector
 	tempBuf   []model.StepVector
+
+	lastTrackedSamples int
 }
+
+const maxSamplesCheckIntervalSteps = 100
 
 func NewSubqueryOperator(next, paramOp, paramOp2 model.VectorOperator, opts *query.Options, funcExpr *logicalplan.FunctionCall, subQuery *logicalplan.Subquery) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(funcExpr.Func.Name)
@@ -205,6 +209,38 @@ func (o *subqueryOperator) Next(ctx context.Context, buf []model.StepVector) (in
 		}
 		n++
 		o.currentStep += o.step
+
+		if o.opts.SampleTracker != nil && (i+1)%maxSamplesCheckIntervalSteps == 0 {
+			totalSamplesInBatch := 0
+			for _, b := range o.buffers {
+				totalSamplesInBatch += b.SampleCount()
+			}
+			if totalSamplesInBatch > o.lastTrackedSamples {
+				o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+			} else if totalSamplesInBatch < o.lastTrackedSamples {
+				o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+			}
+			o.lastTrackedSamples = totalSamplesInBatch
+			if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+				return 0, err
+			}
+		}
+	}
+
+	if o.opts.SampleTracker != nil {
+		totalSamplesInBatch := 0
+		for _, b := range o.buffers {
+			totalSamplesInBatch += b.SampleCount()
+		}
+		if totalSamplesInBatch > o.lastTrackedSamples {
+			o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+		} else if totalSamplesInBatch < o.lastTrackedSamples {
+			o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+		}
+		o.lastTrackedSamples = totalSamplesInBatch
+		if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+			return 0, err
+		}
 	}
 
 	return n, nil

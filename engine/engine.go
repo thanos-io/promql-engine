@@ -81,6 +81,10 @@ type Opts struct {
 	// This check can produce false positives when querying time-series data which does not conform to the Prometheus data model,
 	// and can be disabled if it leads to false positives.
 	DisableDuplicateLabelChecks bool
+
+	// MaxSamples limits the maximum number of samples that can be in memory during query execution.
+	// 0 means no limit.
+	MaxSamples int
 }
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
@@ -198,6 +202,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		},
 		decodingConcurrency: decodingConcurrency,
 		selectorBatchSize:   selectorBatchSize,
+		maxSamples:          opts.MaxSamples,
 	}
 }
 
@@ -227,6 +232,7 @@ type Engine struct {
 	selectorBatchSize        int64
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
+	maxSamples               int
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -445,6 +451,12 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
+
+	// Initialize SampleTracker if MaxSamples is set
+	if e.maxSamples > 0 {
+		res.SampleTracker = query.NewSampleTracker(e.maxSamples)
+	}
+
 	if opts == nil {
 		return res
 	}
