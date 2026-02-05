@@ -80,6 +80,8 @@ type matrixSelector struct {
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
 
+const maxSamplesCheckIntervalSeries = 100
+
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	selector SeriesSelector,
@@ -218,6 +220,22 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			}
 			o.telemetry.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs)
 			seriesTs += o.step
+		}
+
+		if o.opts.SampleTracker != nil && (o.currentSeries+1-firstSeries)%maxSamplesCheckIntervalSeries == 0 {
+			totalSamplesInBatch := 0
+			for i := range o.scanners {
+				totalSamplesInBatch += o.scanners[i].buffer.SampleCount()
+			}
+			if totalSamplesInBatch > o.lastTrackedSamples {
+				o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+			} else if totalSamplesInBatch < o.lastTrackedSamples {
+				o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+			}
+			o.lastTrackedSamples = totalSamplesInBatch
+			if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+				return 0, err
+			}
 		}
 	}
 
