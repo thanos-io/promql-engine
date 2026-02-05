@@ -178,6 +178,18 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
 		}
+
+		if o.opts.SampleTracker != nil && (o.currentSeries+1-fromSeries)%maxSamplesCheckIntervalSeries == 0 {
+			if totalSamplesInBatch > o.lastTrackedSamples {
+				o.opts.SampleTracker.Add(totalSamplesInBatch - o.lastTrackedSamples)
+			} else if totalSamplesInBatch < o.lastTrackedSamples {
+				o.opts.SampleTracker.Remove(o.lastTrackedSamples - totalSamplesInBatch)
+			}
+			o.lastTrackedSamples = totalSamplesInBatch
+			if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+				return 0, err
+			}
+		}
 	}
 
 	if o.opts.SampleTracker != nil {
