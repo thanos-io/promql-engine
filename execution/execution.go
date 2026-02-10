@@ -310,7 +310,7 @@ func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
+	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, e.Projection, opts)
 }
 
 func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {

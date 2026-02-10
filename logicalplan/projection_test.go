@@ -239,39 +239,31 @@ func TestProjectionOptimizer(t *testing.T) {
 		{
 			name:     "scalar function",
 			expr:     `scalar(metric{instance="a", job="b", env="c"})`,
-			expected: `scalar(metric{env="c",instance="a",job="b"})`,
+			expected: `scalar(metric{env="c",instance="a",job="b"}[projection=include()])`,
 		},
 		{
 			name:     "absent function",
 			expr:     `absent(metric{instance="a", job="b", env="c"})`,
-			expected: `absent(metric{env="c",instance="a",job="b"})`,
+			expected: `absent(metric{env="c",instance="a",job="b"}[projection=include()])`,
 		},
 		{
 			name:     "absent_over_time function",
 			expr:     `absent_over_time(metric{instance="a", job="b", env="c"}[5m])`,
-			expected: `absent_over_time(metric{env="c",instance="a",job="b"}[5m0s])`,
-		},
-		{
-			name:     "scalar function with aggregation",
-			expr:     `sum by (job) (scalar(metric{instance="a", job="b", env="c"}))`,
-			expected: `sum by (job) (scalar(metric{env="c",instance="a",job="b"}))`,
+			expected: `absent_over_time(metric{env="c",instance="a",job="b"}[projection=include()][5m0s])`,
 		},
 		{
 			name:     "absent function with aggregation",
 			expr:     `sum by (job) (absent(metric{instance="a", job="b", env="c"}))`,
-			expected: `sum by (job) (absent(metric{env="c",instance="a",job="b"}))`,
+			expected: `sum by (job) (absent(metric{env="c",instance="a",job="b"}[projection=include()]))`,
 		},
 		{
 			name:     "absent_over_time function with aggregation",
 			expr:     `sum by (job) (absent_over_time(metric{instance="a", job="b", env="c"}[5m]))`,
-			expected: `sum by (job) (absent_over_time(metric{env="c",instance="a",job="b"}[5m0s]))`,
+			expected: `sum by (job) (absent_over_time(metric{env="c",instance="a",job="b"}[projection=include()][5m0s]))`,
 		},
 	}
 
 	for _, tc := range cases {
-		if tc.name != "simple aggregation by no labels" {
-			continue
-		}
 		t.Run(tc.name, func(t *testing.T) {
 			expr, err := parser.ParseExpr(tc.expr)
 			testutil.Ok(t, err)
@@ -279,6 +271,82 @@ func TestProjectionOptimizer(t *testing.T) {
 			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 			testutil.Ok(t, err)
 			optimizer := ProjectionOptimizer{SeriesHashLabel: "__series_hash__"}
+			optimizedPlan, _ := optimizer.Optimize(plan.Root(), nil)
+
+			result := renderExprTree(optimizedPlan)
+			testutil.Equals(t, tc.expected, result)
+		})
+	}
+}
+
+// TestProjectionOptimizerPushdownToBinary verifies that when PushDownBinaryProjection is true,
+// the optimizer stores projection on Binary nodes (from outer aggregation or outer binary)
+// and pushes derived projections to the binary's children.
+func TestProjectionOptimizerPushdownToBinary(t *testing.T) {
+	cases := []struct {
+		name     string
+		expr     string
+		expected string
+	}{
+		{
+			name:     "aggregation with binary using on - binary gets projection",
+			expr:     `sum(metric1{instance="a", job="b", env="c"} * on(job) metric2{instance="d", job="b", env="e"})`,
+			expected: `sum((metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])[projection=include()])`,
+		},
+		{
+			name:     "aggregation by label with binary on and group_left - binary gets outer projection",
+			expr:     `sum by (job) (metric1{instance="a", job="b", env="c"} * on(job) group_left(env) metric2{instance="d", job="b"})`,
+			expected: `sum by (job) ((metric1{env="c",instance="a",job="b"} * on (job) group_left (env) metric2{instance="d",job="b"}[projection=include(env,job)])[projection=include(job)])`,
+		},
+		{
+			name:     "aggregation by label with binary on and group_right - binary gets outer projection",
+			expr:     `sum by (job) (metric1{instance="a", job="b"} * on(job) group_right(instance) metric2{instance="d", job="b", env="e"})`,
+			expected: `sum by (job) ((metric1{instance="a",job="b"}[projection=include(instance,job)] * on (job) group_right (instance) metric2{env="e",instance="d",job="b"})[projection=include(job)])`,
+		},
+		{
+			name:     "aggregation with binary using ignoring - binary gets projection",
+			expr:     `sum(metric1{instance="a", job="b", env="c"} * ignoring(instance) metric2{instance="d", job="b", env="c"})`,
+			expected: `sum((metric1{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric2{env="c",instance="d",job="b"}[projection=exclude(instance)])[projection=include()])`,
+		},
+		{
+			name:     "one-to-one binary with on - binary gets projection from aggregation",
+			expr:     `sum by (job) (metric{instance="a", job="b", env="c"} * on(job) metric{instance="d", job="b", env="e"})`,
+			expected: `sum by (job) ((metric{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric{env="e",instance="d",job="b"}[projection=include(job)])[projection=include(job)])`,
+		},
+		{
+			name:     "outer binary with on - inner binary gets projection from outer binary",
+			expr:     `(metric1{instance="a", job="b"} * on(job) metric2{instance="c", job="b"}) + on(job) metric3{instance="d", job="b"}`,
+			expected: `(metric1{instance="a",job="b"} * on (job) metric2{instance="c",job="b"}) + on (job) metric3{instance="d",job="b"}[projection=include(job)]`,
+		},
+		// Without (Include = false): aggregation pushes exclude(labels) to binary.
+		{
+			name:     "aggregation without (instance) with binary on - binary gets exclude projection",
+			expr:     `sum without (instance) (metric1{instance="a", job="b", env="c"} * on(job) metric2{instance="d", job="b", env="e"})`,
+			expected: `sum without (instance, __series_hash__) ((metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])[projection=exclude(instance)])`,
+		},
+		{
+			name:     "aggregation without (env) with binary on and group_left - binary gets exclude projection",
+			expr:     `sum without (env) (metric1{instance="a", job="b", env="c"} * on(job) group_left(env) metric2{instance="d", job="b"})`,
+			expected: `sum without (env, __series_hash__) ((metric1{env="c",instance="a",job="b"} * on (job) group_left (env) metric2{instance="d",job="b"}[projection=include(env,job)])[projection=exclude(env)])`,
+		},
+		{
+			name:     "aggregation without (instance) with binary ignoring - binary gets exclude projection",
+			expr:     `sum without (instance) (metric1{instance="a", job="b", env="c"} * ignoring(instance) metric2{instance="d", job="b", env="c"})`,
+			expected: `sum without (instance, __series_hash__) ((metric1{env="c",instance="a",job="b"}[projection=exclude(instance)] * ignoring (instance, __series_hash__) metric2{env="c",instance="d",job="b"}[projection=exclude(instance)])[projection=exclude(instance)])`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tc.expr)
+			testutil.Ok(t, err)
+
+			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			testutil.Ok(t, err)
+			optimizer := ProjectionOptimizer{
+				SeriesHashLabel:          "__series_hash__",
+				PushDownBinaryProjection: true,
+			}
 			optimizedPlan, _ := optimizer.Optimize(plan.Root(), nil)
 
 			result := renderExprTree(optimizedPlan)

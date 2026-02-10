@@ -15,6 +15,11 @@ import (
 
 type ProjectionOptimizer struct {
 	SeriesHashLabel string
+	// PushDownBinaryProjection enables pushing projection information to Binary nodes.
+	// When enabled, Binary nodes will store projection requirements from outer operations
+	// (aggregations, other binary operations, functions) to reduce memory usage during
+	// join table initialization by avoiding materialization of unnecessary labels.
+	PushDownBinaryProjection bool
 }
 
 func (p ProjectionOptimizer) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
@@ -58,6 +63,14 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) 
 		}
 
 	case *Binary:
+		// Store projection in Binary node if feature flag is enabled
+		if p.PushDownBinaryProjection && projection != nil {
+			n.Projection = &Projection{
+				Labels:  append([]string(nil), projection.Labels...),
+				Include: projection.Include,
+			}
+		}
+
 		var highCard, lowCard = n.LHS, n.RHS
 
 		if n.VectorMatching == nil || (!n.VectorMatching.On && len(n.VectorMatching.MatchingLabels) == 0) {

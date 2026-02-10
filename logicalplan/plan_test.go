@@ -64,6 +64,9 @@ func renderExprTree(expr Node) string {
 		return fmt.Sprintf("%s[%s]", vsStr, t.Range.String())
 	case *Binary:
 		var b strings.Builder
+		if t.Projection != nil {
+			b.WriteString("(")
+		}
 		b.WriteString(renderExprTree(t.LHS))
 		b.WriteString(" ")
 		b.WriteString(t.Op.String())
@@ -86,6 +89,17 @@ func renderExprTree(expr Node) string {
 			b.WriteString(" ")
 		}
 		b.WriteString(renderExprTree(t.RHS))
+		if t.Projection != nil {
+			b.WriteString(")")
+			lbls := make([]string, len(t.Projection.Labels))
+			copy(lbls, t.Projection.Labels)
+			sort.Strings(lbls)
+			if t.Projection.Include {
+				b.WriteString(fmt.Sprintf("[projection=include(%s)]", strings.Join(lbls, ",")))
+			} else if len(lbls) > 0 {
+				b.WriteString(fmt.Sprintf("[projection=exclude(%s)]", strings.Join(lbls, ",")))
+			}
+		}
 		return b.String()
 	case *FunctionCall:
 		var b strings.Builder
