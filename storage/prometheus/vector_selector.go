@@ -53,7 +53,7 @@ type vectorSelector struct {
 
 	selectTimestamp bool
 
-	opts              *query.Options
+	opts               *query.Options
 	lastTrackedSamples int
 }
 

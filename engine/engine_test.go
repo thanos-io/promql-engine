@@ -4804,7 +4804,7 @@ func TestMaxSamples(t *testing.T) {
 
 		app := storage.Appender(context.Background())
 		// Create 1000 series with samples every 15s for 5 minutes
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			for ts := int64(0); ts <= 300; ts += 15 {
 				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
 				require.NoError(t, err)
@@ -4854,7 +4854,7 @@ func TestMaxSamples(t *testing.T) {
 
 		app := storage.Appender(context.Background())
 		// 10000 series, each step will have 10000 samples in memory
-		for i := 0; i < 10000; i++ {
+		for i := range 10000 {
 			for ts := int64(0); ts <= 300; ts += 30 {
 				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
 				require.NoError(t, err)
@@ -4887,7 +4887,7 @@ func TestMaxSamples(t *testing.T) {
 
 		app := storage.Appender(context.Background())
 		// 1000 series with subquery that accumulates samples
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			for ts := int64(0); ts <= 600; ts += 15 {
 				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
 				require.NoError(t, err)
@@ -4921,7 +4921,7 @@ func TestMaxSamples(t *testing.T) {
 		defer storage.Close()
 
 		app := storage.Appender(context.Background())
-		for i := 0; i < 100; i++ {
+		for i := range 100 {
 			for ts := int64(0); ts < 300; ts += 30 {
 				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
 				require.NoError(t, err)
