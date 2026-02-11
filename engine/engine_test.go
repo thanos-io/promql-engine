@@ -4905,7 +4905,7 @@ func TestMaxSamples(t *testing.T) {
 		ng := engine.New(engine.Opts{
 			EngineOpts: promql.EngineOpts{
 				Timeout:    1 * time.Hour,
-				MaxSamples: 3000, // Lower than expected
+				MaxSamples: 1000, // Lower than expected
 			},
 		})
 		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)

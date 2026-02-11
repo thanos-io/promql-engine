@@ -144,7 +144,7 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	}
 
 	var currStepSamples int
-	var totalSamplesInBatch int
+	var totalSamples int
 	// Reset the current timestamp.
 	ts = o.currentStep
 	fromSeries := o.currentSeries
@@ -173,29 +173,16 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 					buf[currStep].AppendSampleWithSizeHint(series.signature, v, expectedSamples)
 					currStepSamples++
 				}
-				totalSamplesInBatch += currStepSamples
+				totalSamples += currStepSamples
 			}
 			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
 		}
 
-		if o.opts.SampleTracker != nil && (o.currentSeries+1-fromSeries)%maxSamplesCheckIntervalSeries == 0 {
-			if err := o.opts.SampleTracker.CheckLimit(); err != nil {
+		if o.shouldCheckSampleLimit(fromSeries) {
+			if err := o.updateSampleTracker(totalSamples); err != nil {
 				return 0, err
 			}
-		}
-	}
-
-	if o.opts.SampleTracker != nil {
-		if o.lastTrackedSamples > 0 {
-			o.opts.SampleTracker.Remove(o.lastTrackedSamples)
-		}
-		if totalSamplesInBatch > 0 {
-			o.opts.SampleTracker.Add(totalSamplesInBatch)
-		}
-		o.lastTrackedSamples = totalSamplesInBatch
-		if err := o.opts.SampleTracker.CheckLimit(); err != nil {
-			return 0, err
 		}
 	}
 
@@ -241,6 +228,34 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 		}
 	})
 	return err
+}
+
+func (o *vectorSelector) updateSampleTracker(totalSamples int) error {
+	if o.lastTrackedSamples > 0 {
+		o.opts.SampleTracker.Remove(o.lastTrackedSamples)
+	}
+	if totalSamples > 0 {
+		o.opts.SampleTracker.Add(totalSamples)
+	}
+	o.lastTrackedSamples = totalSamples
+	return o.opts.SampleTracker.CheckLimit()
+}
+
+func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
+	if o.opts.SampleTracker == nil {
+		return false
+	}
+
+	seriesProcessed := o.currentSeries + 1 - fromSeries
+
+	if seriesProcessed%sampleLimitCheckInterval == 0 {
+		return true
+	}
+
+	isEndOfBatch := seriesProcessed >= o.seriesBatchSize
+	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
+
+	return isEndOfBatch || isLastSeries
 }
 
 // TODO(fpetkovski): Add max samples limit.

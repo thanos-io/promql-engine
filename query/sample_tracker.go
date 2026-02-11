@@ -38,6 +38,10 @@ func (st *SampleTracker) CheckLimit() error {
 	return nil
 }
 
+func (st *SampleTracker) Limit() int64 {
+	return st.limit
+}
+
 type ErrMaxSamplesExceeded struct {
 	Current int64
 	Limit   int64
