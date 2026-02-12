@@ -198,6 +198,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		},
 		decodingConcurrency: decodingConcurrency,
 		selectorBatchSize:   selectorBatchSize,
+		maxSamplesPerQuery:  opts.MaxSamples,
 	}
 }
 
@@ -227,6 +228,7 @@ type Engine struct {
 	selectorBatchSize        int64
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
+	maxSamplesPerQuery       int
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -445,6 +447,11 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 	}
+
+	if e.maxSamplesPerQuery > 0 {
+		res.SampleTracker = query.NewSampleTracker(e.maxSamplesPerQuery)
+	}
+
 	if opts == nil {
 		return res
 	}

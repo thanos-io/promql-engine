@@ -18,6 +18,7 @@ type Options struct {
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
 	DecodingConcurrency      int
+	SampleTracker            *SampleTracker // Tracks current samples in memory
 }
 
 // TotalSteps returns the total number of steps in the query, regardless of batching.
