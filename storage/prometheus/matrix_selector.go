@@ -244,10 +244,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 func (o *matrixSelector) updateSampleTracker(delta int) error {
 	if delta > 0 {
 		o.opts.SampleTracker.Add(delta)
+		return o.opts.SampleTracker.CheckLimit()
 	} else if delta < 0 {
 		o.opts.SampleTracker.Remove(-delta)
 	}
-	return o.opts.SampleTracker.CheckLimit()
+	return nil
 }
 
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
