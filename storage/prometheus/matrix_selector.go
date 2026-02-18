@@ -304,10 +304,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 }
 
 func (o *matrixSelector) shouldCheckSampleLimit(firstSeries int64) bool {
-	if o.opts.SampleTracker == nil {
-		return false
-	}
-
 	seriesProcessed := o.currentSeries + 1 - firstSeries
 
 	if seriesProcessed%sampleLimitCheckInterval == 0 {

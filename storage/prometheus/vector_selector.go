@@ -242,10 +242,6 @@ func (o *vectorSelector) updateSampleTracker(totalSamples int) error {
 }
 
 func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
-	if o.opts.SampleTracker == nil {
-		return false
-	}
-
 	seriesProcessed := o.currentSeries + 1 - fromSeries
 
 	if seriesProcessed%sampleLimitCheckInterval == 0 {

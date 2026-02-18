@@ -446,10 +446,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
-	}
-
-	if e.maxSamplesPerQuery > 0 {
-		res.SampleTracker = query.NewSampleTracker(e.maxSamplesPerQuery)
+		SampleTracker:            query.NewSampleTracker(e.maxSamplesPerQuery),
 	}
 
 	if opts == nil {

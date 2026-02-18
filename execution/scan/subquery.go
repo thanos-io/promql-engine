@@ -192,17 +192,15 @@ func (o *subqueryOperator) Next(ctx context.Context, buf []model.StepVector) (in
 				o.collect(vector, mint)
 			}
 
-			if o.opts.SampleTracker != nil {
-				checkSampleLimitCounter++
-				if o.shouldCheckSampleLimit(checkSampleLimitCounter) {
-					if err := o.checkSampleLimit(); err != nil {
-						return 0, err
-					}
-					checkSampleLimitCounter = 0
+			checkSampleLimitCounter++
+			if o.shouldCheckSampleLimit(checkSampleLimitCounter) {
+				if err := o.checkSampleLimit(); err != nil {
+					return 0, err
 				}
+				checkSampleLimitCounter = 0
 			}
 		}
-		if o.opts.SampleTracker != nil && checkSampleLimitCounter > 0 {
+		if checkSampleLimitCounter > 0 {
 			if err := o.checkSampleLimit(); err != nil {
 				return 0, err
 			}
