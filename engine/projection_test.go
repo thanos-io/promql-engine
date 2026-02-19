@@ -442,25 +442,6 @@ func TestProjectionPushdownAggregationWithBinary(t *testing.T) {
 	}
 }
 
-// containsNonDeterministicOrdering returns true if the expression contains topk, bottomk,
-// limitk, or limit_ratio. These aggregations can produce different but valid results when
-// there are ties (e.g. topk(3, ...) with many series sharing the same value), so we skip
-// them to avoid flaky test comparisons.
-func containsNonDeterministicOrdering(expr parser.Expr) bool {
-	var found bool
-	parser.Inspect(expr, func(node parser.Node, _ []parser.Node) error {
-		if aggr, ok := node.(*parser.AggregateExpr); ok {
-			switch aggr.Op {
-			case parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
-				found = true
-				return errors.New("stop")
-			}
-		}
-		return nil
-	})
-	return found
-}
-
 // containsProjectionExprs checks if the expression contains any expressions that might benefit from projection pushdown.
 func containsProjectionExprs(expr parser.Expr) bool {
 	found := false
