@@ -63,8 +63,11 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) 
 		}
 
 	case *Binary:
-		// Store projection in Binary node if feature flag is enabled
-		if p.PushDownBinaryProjection && projection != nil {
+		// Store projection on Binary only when the binary has group_left or group_right.
+		// For one-to-one or vector-scalar, projecting the binary's output can collapse distinct
+		// series to the same label set and cause implicit many-to-one in a downstream binary.
+		if p.PushDownBinaryProjection && projection != nil && n.VectorMatching != nil &&
+			(n.VectorMatching.Card == parser.CardManyToOne || n.VectorMatching.Card == parser.CardOneToMany) {
 			n.Projection = &Projection{
 				Labels:  append([]string(nil), projection.Labels...),
 				Include: projection.Include,
