@@ -175,7 +175,9 @@ func (o *vectorOperator) init(ctx context.Context) error {
 		highCardSide, lowCardSide = lowCardSide, highCardSide
 	}
 
-	o.initJoinTables(highCardSide, lowCardSide)
+	if err := o.initJoinTables(highCardSide, lowCardSide); err != nil {
+		return err
+	}
 
 	// Pre-allocate buffers with appropriate inner slice capacities
 	// based on series counts from each side.
@@ -478,7 +480,7 @@ func (o *vectorOperator) outputSeriesID(hc, lc uint64) uint64 {
 	return o.outputMap[cantorPairing(hc, lc)]
 }
 
-func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Labels) {
+func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Labels) error {
 	var (
 		joinBucketsByHash     = make(map[uint64]*joinBucket)
 		lcJoinBuckets         = make([]*joinBucket, len(lowCardSide))
@@ -528,18 +530,22 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 			if lcs := lcHashToSeriesIDs[sig]; len(lcs) == 0 {
 				continue
 			}
-			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(h.append(highCardSide[i]))
+			n, _ := h.append(highCardSide[i])
+			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(n)
 		}
 	case parser.LOR:
 		for i := range highCardSide {
-			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(h.append(highCardSide[i]))
+			n, _ := h.append(highCardSide[i])
+			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(n)
 		}
 		for i := range lowCardSide {
-			outputMap[cantorPairing(0, uint64(i+1))] = uint64(h.append(lowCardSide[i]))
+			n, _ := h.append(lowCardSide[i])
+			outputMap[cantorPairing(0, uint64(i+1))] = uint64(n)
 		}
 	case parser.LUNLESS:
 		for i := range highCardSide {
-			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(h.append(highCardSide[i]))
+			n, _ := h.append(highCardSide[i])
+			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(n)
 		}
 	default:
 		b := labels.NewBuilder(labels.EmptyLabels())
@@ -550,7 +556,11 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 				continue
 			}
 			for _, lc := range lcs {
-				n := h.append(o.resultMetric(b, highCardSide[i], lowCardSide[lc]))
+				metric := o.resultMetric(b, highCardSide[i], lowCardSide[lc])
+				n, duplicate := h.append(metric)
+				if duplicate && o.matching.Card != parser.CardOneToOne {
+					return errors.New("multiple matches for labels: grouping labels must ensure unique matches")
+				}
 				outputMap[cantorPairing(uint64(i+1), uint64(lc+1))] = uint64(n)
 			}
 		}
@@ -559,6 +569,7 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 	o.outputMap = outputMap
 	o.lcJoinBuckets = lcJoinBuckets
 	o.hcJoinBuckets = hcJoinBuckets
+	return nil
 }
 
 type joinHelper struct {
@@ -571,16 +582,19 @@ func cantorPairing(hc, lc uint64) uint64 {
 	return (hc+lc)*(hc+lc+1)/2 + lc
 }
 
-func (h *joinHelper) append(ls labels.Labels) int {
+// append adds a label set to the join helper and returns its index.
+// If the label set was already seen (by hash), it returns the existing index
+// and true. Otherwise it appends a new entry and returns false.
+func (h *joinHelper) append(ls labels.Labels) (int, bool) {
 	hash := ls.Hash()
 	if n, ok := h.seen[hash]; ok {
-		return n
+		return n, true
 	}
 	h.ls = append(h.ls, ls)
 	h.seen[hash] = h.n
 	h.n++
 
-	return h.n - 1
+	return h.n - 1, false
 }
 
 func (o *vectorOperator) resultMetric(b *labels.Builder, highCard, lowCard labels.Labels) labels.Labels {
