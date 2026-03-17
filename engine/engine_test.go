@@ -6059,6 +6059,60 @@ func generateFloatHistogramSeries(app storage.Appender, numSeries int, withMixed
 	return nil
 }
 
+func TestXIncreaseBug(t *testing.T) {
+	storage := teststorage.New(t)
+	defer storage.Close()
+
+	lbls := labels.FromStrings(labels.MetricName, "http_requests_total")
+	app := storage.Appender(context.TODO())
+
+	// 2025-09-07T06:47:37Z
+	_, err := app.Append(0, lbls, 1757227657050, 1)
+	require.NoError(t, err)
+	// 2025-09-07T09:24:37Z
+	_, err = app.Append(0, lbls, 1757237077050, 1)
+	require.NoError(t, err)
+	if err := app.Commit(); err != nil {
+		require.NoError(t, err)
+	}
+
+	var (
+		opts = engine.Opts{
+			EngineOpts: promql.EngineOpts{
+				Timeout:              1 * time.Hour,
+				MaxSamples:           1e16,
+				EnableNegativeOffset: true,
+				EnableAtModifier:     true,
+				LookbackDelta:        time.Minute * 5,
+			},
+			EnableXFunctions: true,
+			ExtLookbackDelta: time.Hour,
+		}
+	)
+
+	execRangeQuery := func(ng promql.QueryEngine, query string, start, end time.Time) *promql.Result {
+		qry, err := ng.NewRangeQuery(context.TODO(), storage, nil, query, start, end, 15*time.Second)
+		require.NoError(t, err)
+		return qry.Exec(context.Background())
+	}
+	start, err := time.Parse(time.RFC3339, "2025-09-07T07:48:37Z")
+	require.NoError(t, err)
+	end, err := time.Parse(time.RFC3339, "2025-09-07T10:07:27Z")
+	require.NoError(t, err)
+
+	emptyResult := execRangeQuery(engine.New(opts), "xincrease(http_requests_total[1m]) > 0", start, end)
+	emptyMatrix, err := emptyResult.Matrix()
+	require.NoError(t, err)
+	require.True(t, emptyMatrix.TotalSamples() == 0)
+
+	// Demonstrate changing 1s in start time changes result.
+	result := execRangeQuery(engine.New(opts), "xincrease(http_requests_total[1m]) > 0", start.Add(time.Second), end)
+	matrix, err := result.Matrix()
+	require.NoError(t, err)
+	// 4 samples as step size is 15s
+	require.True(t, matrix.TotalSamples() == 4)
+}
+
 func TestMixedNativeHistogramTypes(t *testing.T) {
 	t.Parallel()
 	histograms := tsdbutil.GenerateTestHistograms(2)
