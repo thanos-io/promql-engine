@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,9 +14,14 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	promstorage "github.com/prometheus/prometheus/storage"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
+	"github.com/thanos-io/promql-engine/query"
+	engstorage "github.com/thanos-io/promql-engine/storage"
+	promscan "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 func TestAnchoredSmoothedModifiers(t *testing.T) {
@@ -286,6 +292,129 @@ func TestAnchoredSmoothedWhitelist(t *testing.T) {
 			q, err := newEngine.NewInstantQuery(ctx, storage, nil, query, time.Unix(50, 0))
 			testutil.Ok(t, err)
 			q.Close()
+		})
+	}
+}
+
+// hintsSpy wraps real scanners and records the SelectHints passed to NewMatrixSelector.
+type hintsSpy struct {
+	inner          engstorage.Scanners
+	mu             sync.Mutex
+	matrixHintsCap []promstorage.SelectHints
+}
+
+func (s *hintsSpy) Close() error { return s.inner.Close() }
+
+func (s *hintsSpy) NewVectorSelector(ctx context.Context, opts *query.Options, hints promstorage.SelectHints, selector logicalplan.VectorSelector) (model.VectorOperator, error) {
+	return s.inner.NewVectorSelector(ctx, opts, hints, selector)
+}
+
+func (s *hintsSpy) NewMatrixSelector(ctx context.Context, opts *query.Options, hints promstorage.SelectHints, selector logicalplan.MatrixSelector, call logicalplan.FunctionCall) (model.VectorOperator, error) {
+	s.mu.Lock()
+	s.matrixHintsCap = append(s.matrixHintsCap, hints)
+	s.mu.Unlock()
+	return s.inner.NewMatrixSelector(ctx, opts, hints, selector, call)
+}
+
+func (s *hintsSpy) capturedHints() []promstorage.SelectHints {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.matrixHintsCap
+}
+
+func TestAnchoredSmoothedSelectHints(t *testing.T) {
+	t.Parallel()
+	parser.EnableExtendedRangeSelectors = true
+
+	load := `load 10s
+		metric 0 10 20 30 40 50 60 70 80 90 100`
+	storage := promqltest.LoadedStorage(t, load)
+	defer storage.Close()
+
+	lookbackDelta := 5 * time.Minute // engine default
+
+	cases := []struct {
+		name          string
+		query         string
+		expectedRange int64 // hints.Range in ms — should always be original selector range
+	}{
+		{
+			name:          "standard rate — Range equals selector range",
+			query:         `rate(metric[30s])`,
+			expectedRange: 30000,
+		},
+		{
+			name:          "anchored rate — Range equals selector range, not widened",
+			query:         `rate(metric[30s] anchored)`,
+			expectedRange: 30000,
+		},
+		{
+			name:          "smoothed rate — Range equals selector range, not widened",
+			query:         `rate(metric[30s] smoothed)`,
+			expectedRange: 30000,
+		},
+		{
+			name:          "anchored increase — Range equals selector range",
+			query:         `increase(metric[1m] anchored)`,
+			expectedRange: 60000,
+		},
+		{
+			name:          "smoothed delta — Range equals selector range",
+			query:         `delta(metric[1m] smoothed)`,
+			expectedRange: 60000,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 1e10,
+				},
+				EnableExtendedRangeSelectors: true,
+			}
+			qOpts := &query.Options{
+				Start:            time.Unix(0, 0),
+				End:              time.Unix(100, 0),
+				Step:             10 * time.Second,
+				LookbackDelta:    lookbackDelta,
+				ExtLookbackDelta: 1 * time.Hour,
+			}
+
+			// Parse and build the logical plan to create real scanners.
+			parser.EnableExtendedRangeSelectors = true
+			expr, err := parser.NewParser(tc.query).ParseExpr()
+			testutil.Ok(t, err)
+
+			planOpts := logicalplan.PlanOptions{}
+			lplan, err := logicalplan.NewFromAST(expr, qOpts, planOpts)
+			testutil.Ok(t, err)
+			optimizedPlan, _ := lplan.Optimize(logicalplan.AllOptimizers)
+
+			realScanners, err := promscan.NewPrometheusScanners(storage, qOpts, optimizedPlan)
+			testutil.Ok(t, err)
+			defer realScanners.Close()
+
+			spy := &hintsSpy{inner: realScanners}
+
+			eng := engine.NewWithScanners(opts, spy)
+			q, err := eng.NewRangeQuery(context.Background(), storage, nil, tc.query, time.Unix(0, 0), time.Unix(100, 0), 10*time.Second)
+			testutil.Ok(t, err)
+			defer q.Close()
+
+			res := q.Exec(context.Background())
+			testutil.Ok(t, res.Err)
+
+			hints := spy.capturedHints()
+			if len(hints) == 0 {
+				t.Fatal("expected at least one NewMatrixSelector call, got none")
+			}
+			for i, h := range hints {
+				if h.Range != tc.expectedRange {
+					t.Errorf("hints[%d].Range = %d, want %d (original selector range)", i, h.Range, tc.expectedRange)
+				}
+			}
 		})
 	}
 }
