@@ -203,7 +203,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 				maxt += o.lookbackDelta
 			}
 
-			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.needsExtLookback); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.needsExtLookback, o.isAnchored || o.isSmoothed); err != nil {
 				return 0, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
@@ -354,7 +354,16 @@ func (m *matrixScanner) selectPoints(
 	mint, maxt, evalt int64,
 	fh *histogram.FloatHistogram,
 	isExtFunction bool,
+	recoverLastSample bool,
 ) error {
+	// For anchored/smoothed selectors: push lastSample back into the buffer
+	// before Reset so the ext lookback retention logic can decide whether to
+	// keep it as the boundary sample. lastSample always has the largest T,
+	// so append order is preserved.
+	if recoverLastSample && m.lastSample.T != math.MinInt64 && m.lastSample.T <= maxt {
+		m.buffer.Push(m.lastSample.T, m.lastSample.V)
+		m.lastSample.T = math.MinInt64
+	}
 	m.buffer.Reset(mint, evalt)
 	if m.lastSample.T > maxt {
 		return nil
