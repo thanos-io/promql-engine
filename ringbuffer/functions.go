@@ -656,54 +656,63 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 // from Prometheus proposal 0052. It computes boundary values at the range start and end,
 // either by picking real sample values (anchored) or interpolating (smoothed), then
 // computes the difference with counter-reset correction.
+//
+// This implementation mirrors prometheus/prometheus promql/functions.go extendedRate.
 func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selectRange, offset int64, smoothed bool) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 	if len(samples) == 0 {
 		return 0, nil, false, 0, nil
 	}
 
-	// Check for mixed float/histogram samples.
 	if samples[0].V.H != nil {
 		return 0, nil, false, 0, errors.New("native histograms are not supported with anchored/smoothed modifiers")
 	}
 
+	lastSampleIndex := len(samples) - 1
 	rangeEnd := stepTime - offset
 	rangeStart := rangeEnd - selectRange
 
-	// Find the index of the first sample after rangeStart (first interior sample).
-	firstInteriorIdx := sort.Search(len(samples), func(i int) bool {
+	// Find firstSampleIndex: the last sample at or before rangeStart, clamped to 0.
+	firstSampleIndex := sort.Search(lastSampleIndex, func(i int) bool {
 		return samples[i].T > rangeStart
-	})
-
-	// Find the index of the last sample at or before rangeEnd.
-	lastInteriorIdx := sort.Search(len(samples), func(i int) bool {
-		return samples[i].T > rangeEnd
 	}) - 1
-
-	// Left boundary value.
-	leftVal, leftOk := pickOrInterpolateLeft(samples, firstInteriorIdx, rangeStart, smoothed)
-	if !leftOk {
-		return 0, nil, false, 0, nil
+	if firstSampleIndex < 0 {
+		firstSampleIndex = 0
 	}
 
-	// Right boundary value.
-	rightVal, rightOk := pickOrInterpolateRight(samples, lastInteriorIdx, rangeEnd, smoothed)
-	if !rightOk {
-		return 0, nil, false, 0, nil
-	}
-
-	// Counter-reset correction: walk interior samples between the boundaries.
-	var counterCorrection float64
-	if isCounter {
-		prevVal := leftVal
-		for i := firstInteriorIdx; i <= lastInteriorIdx; i++ {
-			if samples[i].V.F < prevVal {
-				counterCorrection += prevVal
-			}
-			prevVal = samples[i].V.F
+	// For smoothed, extend lastSampleIndex to include the first sample at or after rangeEnd.
+	if smoothed {
+		lastSampleIndex = sort.Search(lastSampleIndex, func(i int) bool {
+			return samples[i].T >= rangeEnd
+		})
+		if lastSampleIndex >= len(samples) {
+			lastSampleIndex = len(samples) - 1
 		}
 	}
 
-	resultValue := rightVal - leftVal + counterCorrection
+	// If the last sample is at or before rangeStart, there's nothing in the range.
+	if samples[lastSampleIndex].T <= rangeStart {
+		return 0, nil, false, 0, nil
+	}
+
+	left := pickOrInterpolateLeft(samples, firstSampleIndex, rangeStart, smoothed, isCounter)
+	right := pickOrInterpolateRight(samples, lastSampleIndex, rangeEnd, smoothed, isCounter)
+
+	resultValue := right - left
+
+	if isCounter {
+		// Narrow to samples strictly within the range for counter-reset correction,
+		// since pickOrInterpolateLeft/Right already handle resets at boundaries.
+		corrFirst := firstSampleIndex
+		if samples[corrFirst].T <= rangeStart {
+			corrFirst++
+		}
+		corrLast := lastSampleIndex
+		if corrLast >= 0 && samples[corrLast].T >= rangeEnd {
+			corrLast--
+		}
+
+		resultValue += correctForCounterResets(left, right, samples[corrFirst:corrLast+1])
+	}
 
 	if isRate {
 		rangeDuration := float64(selectRange) / 1000.0
@@ -716,55 +725,65 @@ func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selec
 	return resultValue, nil, true, 0, nil
 }
 
-// pickOrInterpolateLeft returns the left boundary value at rangeStart.
+// pickOrInterpolateLeft returns the value at the left boundary of the range.
 // For anchored: uses the real sample value at/before rangeStart.
-// For smoothed: interpolates between the samples bracketing rangeStart.
-// If no sample exists before rangeStart, the first interior sample value is used.
-func pickOrInterpolateLeft(samples []Sample, firstInteriorIdx int, rangeStart int64, smoothed bool) (float64, bool) {
-	if firstInteriorIdx > 0 {
-		// There is a sample at/before rangeStart.
-		leftSample := samples[firstInteriorIdx-1]
-		if !smoothed || firstInteriorIdx >= len(samples) {
-			// Anchored: use the sample value directly.
-			return leftSample.V.F, true
-		}
-		// Smoothed: interpolate between the sample before and after rangeStart.
-		return interpolateAt(leftSample, samples[firstInteriorIdx], rangeStart), true
+// For smoothed: interpolates between the samples bracketing rangeStart, with
+// counter-reset awareness.
+// If no sample exists before rangeStart, the first sample value is used.
+func pickOrInterpolateLeft(samples []Sample, first int, rangeStart int64, smoothed, isCounter bool) float64 {
+	if smoothed && samples[first].T < rangeStart && first+1 < len(samples) {
+		return interpolateAt(samples[first], samples[first+1], rangeStart, isCounter, true)
 	}
-
-	// No sample before rangeStart: duplicate the first interior sample.
-	if firstInteriorIdx < len(samples) {
-		return samples[firstInteriorIdx].V.F, true
-	}
-
-	return 0, false
+	return samples[first].V.F
 }
 
-// pickOrInterpolateRight returns the right boundary value at rangeEnd.
+// pickOrInterpolateRight returns the value at the right boundary of the range.
 // For anchored: uses the last sample at/before rangeEnd.
-// For smoothed: interpolates between the samples bracketing rangeEnd.
-// If no sample exists after rangeEnd, the last interior sample value is used.
-func pickOrInterpolateRight(samples []Sample, lastInteriorIdx int, rangeEnd int64, smoothed bool) (float64, bool) {
-	if lastInteriorIdx < 0 {
-		return 0, false
+// For smoothed: interpolates between the samples bracketing rangeEnd, with
+// counter-reset awareness.
+// If no sample exists after rangeEnd, the last sample value is used.
+func pickOrInterpolateRight(samples []Sample, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
+	if smoothed && last > 0 && samples[last].T > rangeEnd {
+		return interpolateAt(samples[last-1], samples[last], rangeEnd, isCounter, false)
 	}
-
-	if !smoothed || lastInteriorIdx+1 >= len(samples) {
-		// Anchored or no sample after rangeEnd: use last interior sample directly.
-		return samples[lastInteriorIdx].V.F, true
-	}
-
-	// Smoothed: interpolate between the last sample before and first sample after rangeEnd.
-	return interpolateAt(samples[lastInteriorIdx], samples[lastInteriorIdx+1], rangeEnd), true
+	return samples[last].V.F
 }
 
-// interpolateAt linearly interpolates between two samples at the given timestamp.
-func interpolateAt(left, right Sample, timestamp int64) float64 {
-	if left.T == right.T {
-		return left.V.F
+// interpolateAt performs linear interpolation between two samples at the given timestamp.
+// If isCounter is true and there is a counter reset (right < left):
+//   - on the left edge, it sets the left value to 0
+//   - on the right edge, it adds the left value to the right value
+//
+// This matches Prometheus' interpolate function in promql/functions.go.
+func interpolateAt(left, right Sample, timestamp int64, isCounter, leftEdge bool) float64 {
+	y1 := left.V.F
+	y2 := right.V.F
+	if isCounter && y2 < y1 {
+		if leftEdge {
+			y1 = 0
+		} else {
+			y2 += y1
+		}
 	}
-	fraction := float64(timestamp-left.T) / float64(right.T-left.T)
-	return left.V.F + fraction*(right.V.F-left.V.F)
+	return y1 + (y2-y1)*float64(timestamp-left.T)/float64(right.T-left.T)
+}
+
+// correctForCounterResets calculates the correction for counter resets across
+// interior samples and the right boundary value. This matches Prometheus'
+// correctForCounterResets in promql/functions.go.
+func correctForCounterResets(left, right float64, points []Sample) float64 {
+	var correction float64
+	prev := left
+	for _, p := range points {
+		if p.V.F < prev {
+			correction += prev
+		}
+		prev = p.V.F
+	}
+	if right < prev {
+		correction += prev
+	}
+	return correction
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires

@@ -114,6 +114,20 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 				metric 1 1 2 2 3 3 4 4 5 5 6`,
 			query: `changes(metric[30s] anchored)`,
 		},
+		// Counter reset at range boundary (regression test: smoothed interpolation
+		// must handle counter resets to avoid negative increase values).
+		{
+			name: "smoothed increase counter reset at boundary",
+			load: `load 10s
+				counter_boundary 0 4 5 1 6 11`,
+			query: `increase(counter_boundary[10s] smoothed)`,
+		},
+		{
+			name: "smoothed rate counter reset at boundary",
+			load: `load 10s
+				counter_boundary 0 4 5 1 6 11`,
+			query: `rate(counter_boundary[10s] smoothed)`,
+		},
 		// Non-linear data.
 		{
 			name: "anchored rate on quadratic counter",
