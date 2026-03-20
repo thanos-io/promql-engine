@@ -708,6 +708,9 @@ func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selec
 			corrLast--
 		}
 
+		// Clamp to valid slice bounds. correctForCounterResets handles empty
+		// interior correctly — it still checks the right boundary value.
+		corrLast = max(corrLast, corrFirst-1)
 		resultValue += correctForCounterResets(left, right, samples[corrFirst:corrLast+1])
 	}
 

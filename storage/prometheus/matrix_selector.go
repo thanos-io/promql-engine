@@ -372,7 +372,6 @@ func (m *matrixScanner) selectPoints(
 	if bufMaxt := m.buffer.MaxT() + 1; bufMaxt > mint {
 		mint = bufMaxt
 	}
-	mint = max(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T > mint {
 		m.buffer.Push(m.lastSample.T, m.lastSample.V)
 		m.lastSample.T = math.MinInt64
