@@ -7,12 +7,12 @@ import (
 	"math"
 	"sort"
 
-	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/histogram"
-
 	"github.com/thanos-io/promql-engine/compute"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/warnings"
+
+	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/model/histogram"
 )
 
 type SamplesBuffer GenericRingBuffer
@@ -672,12 +672,9 @@ func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selec
 	rangeStart := rangeEnd - selectRange
 
 	// Find firstSampleIndex: the last sample at or before rangeStart, clamped to 0.
-	firstSampleIndex := sort.Search(lastSampleIndex, func(i int) bool {
+	firstSampleIndex := max(sort.Search(lastSampleIndex, func(i int) bool {
 		return samples[i].T > rangeStart
-	}) - 1
-	if firstSampleIndex < 0 {
-		firstSampleIndex = 0
-	}
+	})-1, 0)
 
 	// For smoothed, extend lastSampleIndex to include the first sample at or after rangeEnd.
 	if smoothed {
@@ -732,7 +729,7 @@ func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selec
 // If no sample exists before rangeStart, the first sample value is used.
 func pickOrInterpolateLeft(samples []Sample, first int, rangeStart int64, smoothed, isCounter bool) float64 {
 	if smoothed && samples[first].T < rangeStart && first+1 < len(samples) {
-		return interpolateAt(samples[first], samples[first+1], rangeStart, isCounter, true)
+		return interpolateAt(samples[first], samples[first+1], rangeStart, isCounter)
 	}
 	return samples[first].V.F
 }
@@ -744,26 +741,21 @@ func pickOrInterpolateLeft(samples []Sample, first int, rangeStart int64, smooth
 // If no sample exists after rangeEnd, the last sample value is used.
 func pickOrInterpolateRight(samples []Sample, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
 	if smoothed && last > 0 && samples[last].T > rangeEnd {
-		return interpolateAt(samples[last-1], samples[last], rangeEnd, isCounter, false)
+		return interpolateAt(samples[last-1], samples[last], rangeEnd, isCounter)
 	}
 	return samples[last].V.F
 }
 
 // interpolateAt performs linear interpolation between two samples at the given timestamp.
-// If isCounter is true and there is a counter reset (right < left):
-//   - on the left edge, it sets the left value to 0
-//   - on the right edge, it adds the left value to the right value
+// If isCounter is true and there is a counter reset (y2 < y1), it models the
+// counter as starting from 0 post-reset by setting y1 to 0.
 //
-// This matches Prometheus' interpolate function in promql/functions.go.
-func interpolateAt(left, right Sample, timestamp int64, isCounter, leftEdge bool) float64 {
+// This matches Prometheus v0.310.0's interpolate function in promql/functions.go.
+func interpolateAt(left, right Sample, timestamp int64, isCounter bool) float64 {
 	y1 := left.V.F
 	y2 := right.V.F
 	if isCounter && y2 < y1 {
-		if leftEdge {
-			y1 = 0
-		} else {
-			y2 += y1
-		}
+		y1 = 0
 	}
 	return y1 + (y2-y1)*float64(timestamp-left.T)/float64(right.T-left.T)
 }

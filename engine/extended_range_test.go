@@ -10,18 +10,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/efficientgo/core/testutil"
-	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/promqltest"
-	promstorage "github.com/prometheus/prometheus/storage"
-
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	engstorage "github.com/thanos-io/promql-engine/storage"
 	promscan "github.com/thanos-io/promql-engine/storage/prometheus"
+
+	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
+	promstorage "github.com/prometheus/prometheus/storage"
 )
 
 func TestAnchoredSmoothedModifiers(t *testing.T) {
@@ -47,77 +47,77 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 		{
 			name: "anchored rate on linear counter",
 			load: `load 10s
-				http_total 0 10 20 30 40 50 60 70 80 90 100`,
+			    http_total 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `rate(http_total[30s] anchored)`,
 		},
 		{
 			name: "anchored increase on linear counter",
 			load: `load 10s
-				http_total 0 10 20 30 40 50 60 70 80 90 100`,
+			    http_total 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `increase(http_total[30s] anchored)`,
 		},
 		{
 			name: "anchored delta on gauge",
 			load: `load 10s
-				temperature 20 22 21 23 25 24 26 28 27 29 30`,
+			    temperature 20 22 21 23 25 24 26 28 27 29 30`,
 			query: `delta(temperature[30s] anchored)`,
 		},
 		// Smoothed rate/increase/delta on a linear counter.
 		{
 			name: "smoothed rate on linear counter",
 			load: `load 10s
-				http_total 0 10 20 30 40 50 60 70 80 90 100`,
+			    http_total 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `rate(http_total[30s] smoothed)`,
 		},
 		{
 			name: "smoothed increase on linear counter",
 			load: `load 10s
-				http_total 0 10 20 30 40 50 60 70 80 90 100`,
+			    http_total 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `increase(http_total[30s] smoothed)`,
 		},
 		{
 			name: "smoothed delta on gauge",
 			load: `load 10s
-				temperature 20 22 21 23 25 24 26 28 27 29 30`,
+			    temperature 20 22 21 23 25 24 26 28 27 29 30`,
 			query: `delta(temperature[30s] smoothed)`,
 		},
 		// Anchored with counter resets.
 		{
 			name: "anchored increase with counter reset",
 			load: `load 10s
-				resets_total 0 10 20 5 15 25 10 20 30 40 50`,
+			    resets_total 0 10 20 5 15 25 10 20 30 40 50`,
 			query: `increase(resets_total[30s] anchored)`,
 		},
 		{
 			name: "anchored rate with counter reset",
 			load: `load 10s
-				resets_total 0 10 20 5 15 25 10 20 30 40 50`,
+			    resets_total 0 10 20 5 15 25 10 20 30 40 50`,
 			query: `rate(resets_total[30s] anchored)`,
 		},
 		// Smoothed with counter resets.
 		{
 			name: "smoothed increase with counter reset",
 			load: `load 10s
-				resets_total 0 10 20 5 15 25 10 20 30 40 50`,
+			    resets_total 0 10 20 5 15 25 10 20 30 40 50`,
 			query: `increase(resets_total[30s] smoothed)`,
 		},
 		{
 			name: "smoothed rate with counter reset",
 			load: `load 10s
-				resets_total 0 10 20 5 15 25 10 20 30 40 50`,
+			    resets_total 0 10 20 5 15 25 10 20 30 40 50`,
 			query: `rate(resets_total[30s] smoothed)`,
 		},
 		// Anchored resets and changes (only supported for anchored).
 		{
 			name: "anchored resets",
 			load: `load 10s
-				resets_total 0 10 20 5 15 25 10 20 30 40 50`,
+			    resets_total 0 10 20 5 15 25 10 20 30 40 50`,
 			query: `resets(resets_total[30s] anchored)`,
 		},
 		{
 			name: "anchored changes",
 			load: `load 10s
-				metric 1 1 2 2 3 3 4 4 5 5 6`,
+			    metric 1 1 2 2 3 3 4 4 5 5 6`,
 			query: `changes(metric[30s] anchored)`,
 		},
 		// Counter reset at range boundary (regression test: smoothed interpolation
@@ -125,41 +125,41 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 		{
 			name: "smoothed increase counter reset at boundary",
 			load: `load 10s
-				counter_boundary 0 4 5 1 6 11`,
+			    counter_boundary 0 4 5 1 6 11`,
 			query: `increase(counter_boundary[10s] smoothed)`,
 		},
 		{
 			name: "smoothed rate counter reset at boundary",
 			load: `load 10s
-				counter_boundary 0 4 5 1 6 11`,
+			    counter_boundary 0 4 5 1 6 11`,
 			query: `rate(counter_boundary[10s] smoothed)`,
 		},
 		// Non-linear data.
 		{
 			name: "anchored rate on quadratic counter",
 			load: `load 10s
-				quadratic 0 1 4 9 16 25 36 49 64 81 100`,
+			    quadratic 0 1 4 9 16 25 36 49 64 81 100`,
 			query: `rate(quadratic[30s] anchored)`,
 		},
 		{
 			name: "smoothed rate on quadratic counter",
 			load: `load 10s
-				quadratic 0 1 4 9 16 25 36 49 64 81 100`,
+			    quadratic 0 1 4 9 16 25 36 49 64 81 100`,
 			query: `rate(quadratic[30s] smoothed)`,
 		},
 		// Multiple series.
 		{
 			name: "anchored increase multiple series",
 			load: `load 10s
-				http_total{path="/foo"} 0 5 10 15 20 25 30 35 40 45 50
-				http_total{path="/bar"} 0 10 20 30 40 50 60 70 80 90 100`,
+			    http_total{path="/foo"} 0 5 10 15 20 25 30 35 40 45 50
+			    http_total{path="/bar"} 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `increase(http_total[30s] anchored)`,
 		},
 		{
 			name: "smoothed increase multiple series",
 			load: `load 10s
-				http_total{path="/foo"} 0 5 10 15 20 25 30 35 40 45 50
-				http_total{path="/bar"} 0 10 20 30 40 50 60 70 80 90 100`,
+			    http_total{path="/foo"} 0 5 10 15 20 25 30 35 40 45 50
+			    http_total{path="/bar"} 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `increase(http_total[30s] smoothed)`,
 		},
 	}

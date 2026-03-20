@@ -187,7 +187,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
-		disableDuplicateLabelChecks:   opts.DisableDuplicateLabelChecks,
+		disableDuplicateLabelChecks:  opts.DisableDuplicateLabelChecks,
 		enableExtendedRangeSelectors: opts.EnableExtendedRangeSelectors,
 
 		logger:             opts.Logger,
@@ -218,7 +218,7 @@ type Engine struct {
 	scanners           engstorage.Scanners
 	activeQueryTracker promql.QueryTracker
 
-	disableDuplicateLabelChecks     bool
+	disableDuplicateLabelChecks  bool
 	enableExtendedRangeSelectors bool
 
 	logger             *slog.Logger
