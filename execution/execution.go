@@ -195,14 +195,19 @@ func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t 
 	if parse.IsExtFunction(e.Func.Name) {
 		milliSecondRange += opts.ExtLookbackDelta.Milliseconds()
 	}
+
+	// For anchored/smoothed, widen the query window (Start/End) but keep
+	// hints.Range equal to the original selector range. Backends use Range for
+	// resolution selection and pushdown decisions and should see the true range.
+	queryRange := milliSecondRange
 	if vs.Anchored {
-		milliSecondRange += opts.LookbackDelta.Milliseconds()
+		queryRange += opts.LookbackDelta.Milliseconds()
 	}
 	if vs.Smoothed {
-		milliSecondRange += opts.LookbackDelta.Milliseconds()
+		queryRange += opts.LookbackDelta.Milliseconds()
 	}
 
-	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, milliSecondRange)
+	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, queryRange)
 	hints.Start = start
 	hints.End = end
 	if vs.Smoothed {
