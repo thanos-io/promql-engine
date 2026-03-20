@@ -244,6 +244,11 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
+	// NOTE: parser.EnableExtendedRangeSelectors is a process-global variable
+	// in the upstream Prometheus parser. Once set to true, it remains enabled
+	// for all subsequent parses in the process, matching how Prometheus handles
+	// it (set once at startup via --enable-feature). Two engine instances in
+	// the same process cannot independently control this flag.
 	if e.enableExtendedRangeSelectors {
 		parser.EnableExtendedRangeSelectors = true
 	}
@@ -345,6 +350,11 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
+	// NOTE: parser.EnableExtendedRangeSelectors is a process-global variable
+	// in the upstream Prometheus parser. Once set to true, it remains enabled
+	// for all subsequent parses in the process, matching how Prometheus handles
+	// it (set once at startup via --enable-feature). Two engine instances in
+	// the same process cannot independently control this flag.
 	if e.enableExtendedRangeSelectors {
 		parser.EnableExtendedRangeSelectors = true
 	}
