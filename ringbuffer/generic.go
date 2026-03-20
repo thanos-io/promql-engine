@@ -46,6 +46,9 @@ type GenericRingBuffer struct {
 	selectRange int64
 	extLookback int64
 	call        FunctionCall
+
+	anchored bool
+	smoothed bool
 }
 
 func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
@@ -61,6 +64,20 @@ func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extL
 		extLookback: extLookback,
 		call:        call,
 	}
+}
+
+// NewAnchored creates a ring buffer for anchored range selectors.
+func NewAnchored(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
+	buf := NewWithExtLookback(ctx, size, selectRange, offset, extLookback, call)
+	buf.anchored = true
+	return buf
+}
+
+// NewSmoothed creates a ring buffer for smoothed range selectors.
+func NewSmoothed(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
+	buf := NewWithExtLookback(ctx, size, selectRange, offset, extLookback, call)
+	buf.smoothed = true
+	return buf
 }
 
 func (r *GenericRingBuffer) SampleCount() int {
@@ -142,6 +159,8 @@ func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarA
 		ScalarPoint:      scalarArg,
 		ScalarPoint2:     scalarArg2, // only for double_exponential_smoothing
 		MetricAppearedTs: metricAppearedTs,
+		Anchored:         r.anchored,
+		Smoothed:         r.smoothed,
 	})
 }
 
