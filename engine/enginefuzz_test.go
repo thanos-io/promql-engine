@@ -90,6 +90,14 @@ func validateExpr(expr parser.Expr, testType testType) bool {
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
+		case *parser.AggregateExpr:
+			if n.Op == parser.COUNT_VALUES {
+				// count_values converts float values to string labels. Tiny floating point
+				// precision differences between engines (e.g. 61.24999999999997 vs 61.24999999999998)
+				// produce different label values, causing result mismatches.
+				valid = false
+				return errors.New("error")
+			}
 		case *parser.Call:
 			switch n.Func.Name {
 			case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
