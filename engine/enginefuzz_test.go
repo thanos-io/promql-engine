@@ -56,6 +56,15 @@ func shouldValidateSamples(expr parser.Expr) bool {
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if n.Timestamp != nil || n.StartOrEnd != 0 {
+				// The Thanos engine's step invariant operator caches the result of the
+				// first evaluation and replays it for subsequent steps without re-counting
+				// samples. This leads to fewer total samples compared to Prometheus which
+				// counts samples at every step.
+				valid = false
+				return errors.New("error")
+			}
 		case *parser.Call:
 			switch n.Func.Name {
 			case "scalar":
