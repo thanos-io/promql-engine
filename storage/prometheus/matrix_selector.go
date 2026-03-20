@@ -54,13 +54,17 @@ type matrixSelector struct {
 	fhReader     *histogram.FloatHistogram
 	opts         *query.Options
 
-	numSteps      int
-	mint          int64
-	maxt          int64
-	step          int64
-	selectRange   int64
-	offset        int64
-	isExtFunction bool
+	numSteps         int
+	mint             int64
+	maxt             int64
+	step             int64
+	selectRange      int64
+	offset           int64
+	isExtFunction    bool
+	isAnchored       bool
+	isSmoothed       bool
+	needsExtLookback bool
+	lookbackDelta    int64
 
 	currentStep     int64
 	currentSeries   int64
@@ -88,11 +92,13 @@ func NewMatrixSelector(
 	selectRange, offset time.Duration,
 	batchSize int64,
 	shard, numShard int,
+	anchored, smoothed bool,
 ) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(functionName)
 	if err != nil {
 		return nil, err
 	}
+	isExt := parse.IsExtFunction(functionName)
 	m := &matrixSelector{
 		storage:      selector,
 		call:         call,
@@ -106,7 +112,12 @@ func NewMatrixSelector(
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		step:          opts.Step.Milliseconds(),
-		isExtFunction: parse.IsExtFunction(functionName),
+		isExtFunction: isExt,
+		isAnchored:    anchored,
+		isSmoothed:    smoothed,
+
+		needsExtLookback: isExt || anchored || smoothed,
+		lookbackDelta:    opts.LookbackDelta.Milliseconds(),
 
 		selectRange:     selectRange.Milliseconds(),
 		offset:          offset.Milliseconds(),
@@ -188,8 +199,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
+			if o.isSmoothed {
+				maxt += o.lookbackDelta
+			}
 
-			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.isExtFunction); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.needsExtLookback); err != nil {
 				return 0, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
@@ -278,6 +292,12 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 }
 
 func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
+	if o.isAnchored {
+		return ringbuffer.NewAnchored(ctx, 8, o.selectRange, o.offset, o.lookbackDelta-1, o.call)
+	}
+	if o.isSmoothed {
+		return ringbuffer.NewSmoothed(ctx, 8, o.selectRange, o.offset, o.lookbackDelta-1, o.call)
+	}
 	if ringbuffer.UseStreamingRingBuffers(*o.opts, o.selectRange) {
 		switch o.functionName {
 		case "rate":

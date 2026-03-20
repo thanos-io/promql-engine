@@ -74,6 +74,10 @@ type Opts struct {
 	// This will default to false.
 	EnableXFunctions bool
 
+	// EnableExtendedRangeSelectors enables the anchored and smoothed modifiers
+	// for range vector selectors (Prometheus proposal 0052).
+	EnableExtendedRangeSelectors bool
+
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
 
@@ -183,7 +187,8 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
-		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
+		disableDuplicateLabelChecks:   opts.DisableDuplicateLabelChecks,
+		enableExtendedRangeSelectors: opts.EnableExtendedRangeSelectors,
 
 		logger:             opts.Logger,
 		lookbackDelta:      opts.LookbackDelta,
@@ -213,7 +218,8 @@ type Engine struct {
 	scanners           engstorage.Scanners
 	activeQueryTracker promql.QueryTracker
 
-	disableDuplicateLabelChecks bool
+	disableDuplicateLabelChecks     bool
+	enableExtendedRangeSelectors bool
 
 	logger             *slog.Logger
 	lookbackDelta      time.Duration
@@ -236,6 +242,9 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
+	if e.enableExtendedRangeSelectors {
+		parser.EnableExtendedRangeSelectors = true
+	}
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -334,6 +343,9 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
+	if e.enableExtendedRangeSelectors {
+		parser.EnableExtendedRangeSelectors = true
+	}
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err

@@ -7,12 +7,12 @@ import (
 	"math"
 	"sort"
 
+	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/model/histogram"
+
 	"github.com/thanos-io/promql-engine/compute"
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/warnings"
-
-	"github.com/efficientgo/core/errors"
-	"github.com/prometheus/prometheus/model/histogram"
 )
 
 type SamplesBuffer GenericRingBuffer
@@ -27,6 +27,10 @@ type FunctionArgs struct {
 	// quantile_over_time and predict_linear use one, so we only use one here.
 	ScalarPoint  float64
 	ScalarPoint2 float64 // only for double_exponential_smoothing (trend factor)
+
+	// Anchored/Smoothed modifiers for extended range selectors (proposal 0052).
+	Anchored bool
+	Smoothed bool
 }
 
 type FunctionCall func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error)
@@ -362,18 +366,27 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return v, fh, true, warn, nil
 	},
 	"rate": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset, f.Smoothed)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
 		return extrapolatedRate(f.Samples, len(f.Samples), true, true, f.StepTime, f.SelectRange, f.Offset)
 	},
 	"delta": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, f.Smoothed)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
 		return extrapolatedRate(f.Samples, len(f.Samples), false, false, f.StepTime, f.SelectRange, f.Offset)
 	},
 	"increase": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, f.Smoothed)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
@@ -637,6 +650,121 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 	}
 
 	return resultValue, nil
+}
+
+// extendedRangeRate implements the anchored and smoothed rate/increase/delta semantics
+// from Prometheus proposal 0052. It computes boundary values at the range start and end,
+// either by picking real sample values (anchored) or interpolating (smoothed), then
+// computes the difference with counter-reset correction.
+func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selectRange, offset int64, smoothed bool) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+	if len(samples) == 0 {
+		return 0, nil, false, 0, nil
+	}
+
+	// Check for mixed float/histogram samples.
+	if samples[0].V.H != nil {
+		return 0, nil, false, 0, errors.New("native histograms are not supported with anchored/smoothed modifiers")
+	}
+
+	rangeEnd := stepTime - offset
+	rangeStart := rangeEnd - selectRange
+
+	// Find the index of the first sample after rangeStart (first interior sample).
+	firstInteriorIdx := sort.Search(len(samples), func(i int) bool {
+		return samples[i].T > rangeStart
+	})
+
+	// Find the index of the last sample at or before rangeEnd.
+	lastInteriorIdx := sort.Search(len(samples), func(i int) bool {
+		return samples[i].T > rangeEnd
+	}) - 1
+
+	// Left boundary value.
+	leftVal, leftOk := pickOrInterpolateLeft(samples, firstInteriorIdx, rangeStart, smoothed)
+	if !leftOk {
+		return 0, nil, false, 0, nil
+	}
+
+	// Right boundary value.
+	rightVal, rightOk := pickOrInterpolateRight(samples, lastInteriorIdx, rangeEnd, smoothed)
+	if !rightOk {
+		return 0, nil, false, 0, nil
+	}
+
+	// Counter-reset correction: walk interior samples between the boundaries.
+	var counterCorrection float64
+	if isCounter {
+		prevVal := leftVal
+		for i := firstInteriorIdx; i <= lastInteriorIdx; i++ {
+			if samples[i].V.F < prevVal {
+				counterCorrection += prevVal
+			}
+			prevVal = samples[i].V.F
+		}
+	}
+
+	resultValue := rightVal - leftVal + counterCorrection
+
+	if isRate {
+		rangeDuration := float64(selectRange) / 1000.0
+		if rangeDuration == 0 {
+			return 0, nil, false, 0, nil
+		}
+		resultValue /= rangeDuration
+	}
+
+	return resultValue, nil, true, 0, nil
+}
+
+// pickOrInterpolateLeft returns the left boundary value at rangeStart.
+// For anchored: uses the real sample value at/before rangeStart.
+// For smoothed: interpolates between the samples bracketing rangeStart.
+// If no sample exists before rangeStart, the first interior sample value is used.
+func pickOrInterpolateLeft(samples []Sample, firstInteriorIdx int, rangeStart int64, smoothed bool) (float64, bool) {
+	if firstInteriorIdx > 0 {
+		// There is a sample at/before rangeStart.
+		leftSample := samples[firstInteriorIdx-1]
+		if !smoothed || firstInteriorIdx >= len(samples) {
+			// Anchored: use the sample value directly.
+			return leftSample.V.F, true
+		}
+		// Smoothed: interpolate between the sample before and after rangeStart.
+		return interpolateAt(leftSample, samples[firstInteriorIdx], rangeStart), true
+	}
+
+	// No sample before rangeStart: duplicate the first interior sample.
+	if firstInteriorIdx < len(samples) {
+		return samples[firstInteriorIdx].V.F, true
+	}
+
+	return 0, false
+}
+
+// pickOrInterpolateRight returns the right boundary value at rangeEnd.
+// For anchored: uses the last sample at/before rangeEnd.
+// For smoothed: interpolates between the samples bracketing rangeEnd.
+// If no sample exists after rangeEnd, the last interior sample value is used.
+func pickOrInterpolateRight(samples []Sample, lastInteriorIdx int, rangeEnd int64, smoothed bool) (float64, bool) {
+	if lastInteriorIdx < 0 {
+		return 0, false
+	}
+
+	if !smoothed || lastInteriorIdx+1 >= len(samples) {
+		// Anchored or no sample after rangeEnd: use last interior sample directly.
+		return samples[lastInteriorIdx].V.F, true
+	}
+
+	// Smoothed: interpolate between the last sample before and first sample after rangeEnd.
+	return interpolateAt(samples[lastInteriorIdx], samples[lastInteriorIdx+1], rangeEnd), true
+}
+
+// interpolateAt linearly interpolates between two samples at the given timestamp.
+func interpolateAt(left, right Sample, timestamp int64) float64 {
+	if left.T == right.T {
+		return left.V.F
+	}
+	fraction := float64(timestamp-left.T) / float64(right.T-left.T)
+	return left.V.F + fraction*(right.V.F-left.V.F)
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires

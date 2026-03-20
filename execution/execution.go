@@ -177,14 +177,37 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
+	vs := t.VectorSelector
+
+	// Validate function whitelist for anchored/smoothed modifiers.
+	if vs.Anchored {
+		if _, ok := parse.AnchoredSafeFunctions[e.Func.Name]; !ok {
+			return nil, errors.Newf("anchored modifier is not supported for %s, supported functions: %v", e.Func.Name, parse.AnchoredSafeFunctions)
+		}
+	}
+	if vs.Smoothed {
+		if _, ok := parse.SmoothedSafeFunctions[e.Func.Name]; !ok {
+			return nil, errors.Newf("smoothed modifier is not supported for %s, supported functions: %v", e.Func.Name, parse.SmoothedSafeFunctions)
+		}
+	}
+
 	milliSecondRange := t.Range.Milliseconds()
 	if parse.IsExtFunction(e.Func.Name) {
 		milliSecondRange += opts.ExtLookbackDelta.Milliseconds()
+	}
+	if vs.Anchored {
+		milliSecondRange += opts.LookbackDelta.Milliseconds()
+	}
+	if vs.Smoothed {
+		milliSecondRange += opts.LookbackDelta.Milliseconds()
 	}
 
 	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, milliSecondRange)
 	hints.Start = start
 	hints.End = end
+	if vs.Smoothed {
+		hints.End += opts.LookbackDelta.Milliseconds()
+	}
 	hints.Range = milliSecondRange
 	return scanners.NewMatrixSelector(ctx, opts, hints, *t, *e)
 }
