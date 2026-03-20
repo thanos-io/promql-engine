@@ -6,6 +6,7 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	promscan "github.com/thanos-io/promql-engine/storage/prometheus"
 
 	"github.com/efficientgo/core/testutil"
+	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
@@ -320,6 +322,108 @@ func (s *hintsSpy) capturedHints() []promstorage.SelectHints {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.matrixHintsCap
+}
+
+func FuzzAnchoredSmoothedModifiers(f *testing.F) {
+	f.Add(int64(0), uint32(30), uint32(300), uint32(10), 0.0, 10.0, 5.0, 20.0, uint8(0))
+
+	f.Fuzz(func(t *testing.T, seed int64, startTS, endTS, intervalSeconds uint32, initialVal1, inc1, initialVal2, inc2 float64, funcIdx uint8) {
+		if math.IsNaN(initialVal1) || math.IsNaN(initialVal2) || math.IsNaN(inc1) || math.IsNaN(inc2) {
+			return
+		}
+		if math.IsInf(initialVal1, 0) || math.IsInf(initialVal2, 0) || math.IsInf(inc1, 0) || math.IsInf(inc2, 0) {
+			return
+		}
+		if inc1 < 0 || inc2 < 0 || intervalSeconds == 0 || endTS <= startTS {
+			return
+		}
+		// Cap values to avoid overflow.
+		if initialVal1 > 1e12 || initialVal2 > 1e12 || inc1 > 1e8 || inc2 > 1e8 {
+			return
+		}
+		// Ensure query range falls within data range (41 samples at 10s = 400s).
+		// This avoids edge cases at data boundaries where Prometheus' extendFloats
+		// synthesis for changes/resets differs from the thanos engine approach.
+		const maxDataTS uint32 = 400
+		if endTS > maxDataTS {
+			endTS = maxDataTS
+		}
+		if startTS >= endTS {
+			return
+		}
+
+		parser.EnableExtendedRangeSelectors = true
+
+		type queryDef struct {
+			name  string
+			query string
+		}
+
+		// Queries covering all supported function+modifier combinations.
+		allQueries := []queryDef{
+			{"rate_anchored", `rate(http_requests_total[30s] anchored)`},
+			{"rate_smoothed", `rate(http_requests_total[30s] smoothed)`},
+			{"increase_anchored", `increase(http_requests_total[30s] anchored)`},
+			{"increase_smoothed", `increase(http_requests_total[30s] smoothed)`},
+			{"delta_anchored", `delta(http_requests_total[30s] anchored)`},
+			{"delta_smoothed", `delta(http_requests_total[30s] smoothed)`},
+			{"resets_anchored", `resets(http_requests_total[30s] anchored)`},
+			{"changes_anchored", `changes(http_requests_total[30s] anchored)`},
+			{"rate_anchored_1m", `rate(http_requests_total[1m] anchored)`},
+			{"rate_smoothed_1m", `rate(http_requests_total[1m] smoothed)`},
+			{"sum_rate_anchored", `sum(rate(http_requests_total[30s] anchored))`},
+			{"sum_rate_smoothed", `sum(rate(http_requests_total[30s] smoothed))`},
+		}
+
+		// Pick one query per fuzz iteration to keep it fast.
+		selected := allQueries[int(funcIdx)%len(allQueries)]
+
+		load := fmt.Sprintf(`load 10s
+			http_requests_total{pod="nginx-1"} %.2f+%.2fx40
+			http_requests_total{pod="nginx-2"} %.2f+%.2fx40`, initialVal1, inc1, initialVal2, inc2)
+
+		opts := promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+		}
+
+		storage := promqltest.LoadedStorage(t, load)
+		defer storage.Close()
+
+		start := time.Unix(int64(startTS), 0)
+		end := time.Unix(int64(endTS), 0)
+		interval := time.Duration(intervalSeconds) * time.Second
+
+		newEngine := engine.New(engine.Opts{
+			EngineOpts:                   opts,
+			EnableExtendedRangeSelectors: true,
+		})
+		oldEngine := promql.NewEngine(opts)
+
+		ctx := context.Background()
+
+		q1, err := newEngine.NewRangeQuery(ctx, storage, nil, selected.query, start, end, interval)
+		if err != nil {
+			return // Skip unsupported queries.
+		}
+		defer q1.Close()
+		newResult := q1.Exec(ctx)
+
+		q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, selected.query, start, end, interval)
+		if err != nil {
+			t.Fatalf("prometheus engine error for %s: %v", selected.name, err)
+		}
+		defer q2.Close()
+		oldResult := q2.Exec(ctx)
+
+		if !cmp.Equal(oldResult, newResult, comparer) {
+			t.Logf("load: %s", load)
+			t.Logf("query: %s (%s), start: %d, end: %d, interval: %v", selected.query, selected.name, start.UnixMilli(), end.UnixMilli(), interval)
+			t.Errorf("result mismatch.\nnew: %s\nold: %s", newResult.String(), oldResult.String())
+		}
+	})
 }
 
 func TestAnchoredSmoothedSelectHints(t *testing.T) {
