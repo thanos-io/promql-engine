@@ -75,7 +75,11 @@ func (s *skipTest) Run(name string, t func(*testing.T)) bool {
 func TestPromqlAcceptance(t *testing.T) {
 	// promql acceptance tests disable experimental functions again
 	// since we use them in our tests too we need to enable them afterwards again
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = true })
+	t.Cleanup(func() {
+		parser.EnableExperimentalFunctions = true
+		parser.EnableExtendedRangeSelectors = false
+	})
+	parser.EnableExtendedRangeSelectors = true
 
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
@@ -85,13 +89,14 @@ func TestPromqlAcceptance(t *testing.T) {
 			MaxSamples:               5e10,
 			Timeout:                  1 * time.Hour,
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
-		}})
+		},
+		EnableExtendedRangeSelectors: true,
+	})
 
 	st := &skipTest{
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/type_and_unit.test",       // feature unsupported
-			"testdata/extended_vectors.test",    // experimental anchored/smoothed modifiers unsupported
 			"testdata/info.test",                // info() function unsupported
 			"testdata/literals.test",            // string literal expressions as query results unsupported
 			"testdata/range_queries.test",       // matrix selector as instant query result unsupported

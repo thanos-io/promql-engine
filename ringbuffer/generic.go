@@ -140,6 +140,12 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	}
 	if r.extLookback > 0 && drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
 		drop--
+		// For anchored/smoothed, keep one additional lookback sample so that
+		// functions like changes/resets can compare against a sample before
+		// the range boundary (matching Prometheus pickFirstSampleIndex).
+		if (r.anchored || r.smoothed) && drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
+			drop--
+		}
 	}
 
 	keep := len(r.items) - drop

@@ -414,10 +414,15 @@ func (m *matrixScanner) selectPoints(
 				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil
 				return nil
 			}
-			if isExtFunction {
+			if isExtFunction || recoverLastSample {
 				if t > mint || !appendedPointBeforeMint {
 					m.buffer.Push(t, ringbuffer.Value{F: v})
 					appendedPointBeforeMint = true
+				} else if recoverLastSample {
+					// For anchored/smoothed, keep two samples at/before mint so
+					// that functions like changes/resets can compare against
+					// the sample preceding the range boundary.
+					m.buffer.Push(t, ringbuffer.Value{F: v})
 				} else {
 					m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
 						s.T, s.V.F, s.V.H = t, v, nil

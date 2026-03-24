@@ -28,7 +28,8 @@ type FunctionArgs struct {
 	ScalarPoint  float64
 	ScalarPoint2 float64 // only for double_exponential_smoothing (trend factor)
 
-	// Anchored/Smoothed modifiers for extended range selectors (proposal 0052).
+	// Anchored/Smoothed modifiers for extended range selectors.
+	// See https://github.com/prometheus/proposals/blob/main/proposals/0052-extended-range-selectors-semantics.md
 	Anchored bool
 	Smoothed bool
 }
@@ -330,13 +331,15 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
-		return changes(f.Samples), nil, true, 0, nil
+		start := pickFirstSampleIndex(f)
+		return changes(f.Samples[start:]), nil, true, 0, nil
 	},
 	"resets": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
-		return resets(f.Samples), nil, true, 0, nil
+		start := pickFirstSampleIndex(f)
+		return resets(f.Samples[start:]), nil, true, 0, nil
 	},
 	"deriv": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) < 2 {
@@ -1105,6 +1108,19 @@ func stdvarOverTime(points []Sample) (float64, bool, warnings.Warnings) {
 		return 0, false, warn
 	}
 	return ((aux + cAux) / count), true, warn
+}
+
+// pickFirstSampleIndex returns the index of the last sample at or before the
+// range start for anchored selectors. For non-anchored, returns 0.
+// This matches Prometheus's pickFirstSampleIndex in promql/functions.go.
+func pickFirstSampleIndex(f FunctionArgs) int {
+	if !f.Anchored || len(f.Samples) == 0 {
+		return 0
+	}
+	rangeStart := f.StepTime - f.Offset - f.SelectRange
+	return max(sort.Search(len(f.Samples)-1, func(i int) bool {
+		return f.Samples[i].T > rangeStart
+	})-1, 0)
 }
 
 func changes(points []Sample) float64 {
