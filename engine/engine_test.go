@@ -77,9 +77,7 @@ func TestPromqlAcceptance(t *testing.T) {
 	// since we use them in our tests too we need to enable them afterwards again
 	t.Cleanup(func() {
 		parser.EnableExperimentalFunctions = true
-		parser.EnableExtendedRangeSelectors = false
 	})
-	parser.EnableExtendedRangeSelectors = true
 
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{

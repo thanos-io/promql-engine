@@ -27,7 +27,6 @@ import (
 )
 
 func TestAnchoredSmoothedModifiers(t *testing.T) {
-	t.Parallel()
 	parser.EnableExtendedRangeSelectors = true
 
 	opts := promql.EngineOpts{
@@ -172,7 +171,6 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
 			storage := promqltest.LoadedStorage(t, tc.load)
 			defer storage.Close()
 
@@ -222,7 +220,6 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 }
 
 func TestAnchoredSmoothedWhitelist(t *testing.T) {
-	t.Parallel()
 	parser.EnableExtendedRangeSelectors = true
 
 	opts := promql.EngineOpts{
@@ -251,8 +248,11 @@ func TestAnchoredSmoothedWhitelist(t *testing.T) {
 	}
 	for _, query := range unsupportedAnchored {
 		t.Run("unsupported_anchored/"+query, func(t *testing.T) {
-			_, err := newEngine.NewInstantQuery(ctx, storage, nil, query, time.Unix(50, 0))
-			testutil.NotOk(t, err)
+			q, err := newEngine.NewInstantQuery(ctx, storage, nil, query, time.Unix(50, 0))
+			testutil.Ok(t, err)
+			defer q.Close()
+			res := q.Exec(ctx)
+			testutil.NotOk(t, res.Err)
 		})
 	}
 
@@ -263,8 +263,11 @@ func TestAnchoredSmoothedWhitelist(t *testing.T) {
 	}
 	for _, query := range unsupportedSmoothed {
 		t.Run("unsupported_smoothed/"+query, func(t *testing.T) {
-			_, err := newEngine.NewInstantQuery(ctx, storage, nil, query, time.Unix(50, 0))
-			testutil.NotOk(t, err)
+			q, err := newEngine.NewInstantQuery(ctx, storage, nil, query, time.Unix(50, 0))
+			testutil.Ok(t, err)
+			defer q.Close()
+			res := q.Exec(ctx)
+			testutil.NotOk(t, res.Err)
 		})
 	}
 
@@ -427,7 +430,6 @@ func FuzzAnchoredSmoothedModifiers(f *testing.F) {
 }
 
 func TestAnchoredSmoothedSelectHints(t *testing.T) {
-	t.Parallel()
 	parser.EnableExtendedRangeSelectors = true
 
 	load := `load 10s
@@ -487,7 +489,6 @@ func TestAnchoredSmoothedSelectHints(t *testing.T) {
 			}
 
 			// Parse and build the logical plan to create real scanners.
-			parser.EnableExtendedRangeSelectors = true
 			expr, err := parser.NewParser(tc.query).ParseExpr()
 			testutil.Ok(t, err)
 
