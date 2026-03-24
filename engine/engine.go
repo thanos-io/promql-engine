@@ -75,7 +75,8 @@ type Opts struct {
 	EnableXFunctions bool
 
 	// EnableExtendedRangeSelectors enables the anchored and smoothed modifiers
-	// for range vector selectors (Prometheus proposal 0052).
+	// for range vector selectors.
+	// See https://github.com/prometheus/proposals/blob/main/proposals/0052-extended-range-selectors-semantics.md
 	EnableExtendedRangeSelectors bool
 
 	// EnableAnalysis enables query analysis.

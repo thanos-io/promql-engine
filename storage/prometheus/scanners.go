@@ -75,6 +75,7 @@ func (p Scanners) NewVectorSelector(
 				logicalNode.SelectTimestamp,
 				i,
 				opts.DecodingConcurrency,
+				logicalNode.Smoothed,
 			), 2, opts)
 		operators = append(operators, operator)
 	}
