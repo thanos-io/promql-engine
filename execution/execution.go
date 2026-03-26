@@ -190,7 +190,7 @@ func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t 
 
 	// Validate function whitelist for anchored/smoothed modifiers.
 	// Return a deferred error operator so the error surfaces at Exec time,
-	// matching Prometheus behaviour expected by the test framework.
+	// matching Prometheus behavior expected by the test framework.
 	if vs.Anchored {
 		if _, ok := parse.AnchoredSafeFunctions[e.Func.Name]; !ok {
 			return newDeferredError(errors.Newf("anchored modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.AnchoredSafeFunctions)), ", "), e.Func.Name)), nil
@@ -442,7 +442,7 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 
 // deferredError is an operator that returns an error on first Next() call,
 // allowing validation errors to surface at evaluation time rather than
-// query creation time, matching Prometheus behaviour.
+// query creation time, matching Prometheus behavior.
 type deferredError struct {
 	model.VectorOperator
 	err error
