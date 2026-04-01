@@ -102,8 +102,16 @@ func (r RemoteExecution) ReturnType() parser.ValueType { return r.Query.ReturnTy
 
 // Deduplicate is a logical plan which deduplicates samples from multiple RemoteExecutions.
 type Deduplicate struct {
-	LeafNode
 	Expressions RemoteExecutions
+}
+
+func (r Deduplicate) Children() []*Node {
+	children := make([]*Node, len(r.Expressions))
+	for i := range r.Expressions {
+		var n Node = r.Expressions[i]
+		children[i] = &n
+	}
+	return children
 }
 
 func (r Deduplicate) Clone() Node {
