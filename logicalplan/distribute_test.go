@@ -4,7 +4,9 @@
 package logicalplan
 
 import (
+	"context"
 	"math"
+	"math/rand"
 	"regexp"
 	"testing"
 	"time"
@@ -12,9 +14,12 @@ import (
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
 
+	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 var replacements = map[string]*regexp.Regexp{
@@ -1082,4 +1087,303 @@ func newEngineMock(mint, maxt int64, labelSets []labels.Labels) *engineMock {
 
 func newEngineMockWithExplicitPartition(mint, maxt int64, labelSets, partitionLabelSets []labels.Labels) *engineMock {
 	return &engineMock{minT: mint, maxT: maxt, labelSets: labelSets, partitionLabelSets: partitionLabelSets}
+}
+
+func TestPreservesPartitionLabels(t *testing.T) {
+	partitionLabels := map[string]struct{}{"region": {}}
+
+	parse := func(t *testing.T, expr string) Node {
+		t.Helper()
+		parsed, err := parser.ParseExpr(expr)
+		testutil.Ok(t, err)
+		plan, err := NewFromAST(parsed, &query.Options{
+			Start: time.Unix(0, 0),
+			End:   time.Unix(0, 0),
+		}, PlanOptions{})
+		testutil.Ok(t, err)
+		return plan.Root()
+	}
+
+	cases := []struct {
+		name            string
+		expr            string
+		partitionLabels map[string]struct{}
+		expected        bool
+	}{
+		{
+			name:     "vector selector preserves",
+			expr:     `metric`,
+			expected: true,
+		},
+		{
+			name:     "number literal preserves",
+			expr:     `1`,
+			expected: true,
+		},
+		{
+			name:     "sum by partition label preserves",
+			expr:     `sum by (region) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "sum by non-partition label does not preserve",
+			expr:     `sum by (pod) (metric)`,
+			expected: false,
+		},
+		{
+			name:     "sum by both labels preserves",
+			expr:     `sum by (pod, region) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "sum without partition label does not preserve",
+			expr:     `sum without (region) (metric)`,
+			expected: false,
+		},
+		{
+			name:     "sum without non-partition label preserves",
+			expr:     `sum without (pod) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "sum with no grouping does not preserve",
+			expr:     `sum(metric)`,
+			expected: false,
+		},
+		{
+			name:     "binary with on(partition) preserves",
+			expr:     `metric_a + on (region) metric_b`,
+			expected: true,
+		},
+		{
+			name:     "binary with on(non-partition) does not preserve",
+			expr:     `metric_a + on (pod) metric_b`,
+			expected: false,
+		},
+		{
+			name:     "binary with ignoring(partition) does not preserve",
+			expr:     `metric_a + ignoring (region) metric_b`,
+			expected: false,
+		},
+		{
+			name:     "binary with ignoring(non-partition) preserves",
+			expr:     `metric_a + ignoring (pod) metric_b`,
+			expected: true,
+		},
+		{
+			name:     "binary with default matching preserves",
+			expr:     `metric_a + metric_b`,
+			expected: true,
+		},
+		{
+			name:     "binary with partition in group_left include preserves",
+			expr:     `metric_a * on (pod) group_left(region) metric_b`,
+			expected: true,
+		},
+		{
+			name:     "unary preserves",
+			expr:     `-metric`,
+			expected: true,
+		},
+		{
+			name:     "subquery preserves",
+			expr:     `max_over_time(metric[5m:1m])`,
+			expected: true,
+		},
+		{
+			name:     "label_replace targeting partition label does not preserve",
+			expr:     `label_replace(metric, "region", "$1", "pod", "(.*)")`,
+			expected: false,
+		},
+		{
+			name:     "label_replace targeting non-partition label preserves",
+			expr:     `label_replace(metric, "zone", "$1", "pod", "(.*)")`,
+			expected: true,
+		},
+		{
+			name:     "rate preserves",
+			expr:     `rate(metric[5m])`,
+			expected: true,
+		},
+		{
+			name:     "nested sum by(region)(sum by(pod)(X)) preserves at top level",
+			expr:     `sum by (region) (sum by (pod) (metric))`,
+			expected: true,
+		},
+		{
+			name:     "nested sum by(pod)(sum by(region)(X)) does not preserve",
+			expr:     `sum by (pod) (sum by (region) (metric))`,
+			expected: false,
+		},
+		{
+			name:     "binary with scalar preserves",
+			expr:     `metric / 1000`,
+			expected: true,
+		},
+		{
+			name:     "avg by partition label preserves",
+			expr:     `avg by (region) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "avg by non-partition label does not preserve",
+			expr:     `avg by (pod) (metric)`,
+			expected: false,
+		},
+		{
+			name:            "empty partition labels returns false",
+			expr:            `metric`,
+			partitionLabels: map[string]struct{}{},
+			expected:        false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pl := partitionLabels
+			if tc.partitionLabels != nil {
+				pl = tc.partitionLabels
+			}
+			result := preservesPartitionLabels(parse(t, tc.expr), pl)
+			testutil.Equals(t, tc.expected, result)
+		})
+	}
+}
+
+func FuzzDistributedExecutionPreservesPartitionLabels(f *testing.F) {
+	f.Add(int64(0))
+	f.Fuzz(func(t *testing.T, seed int64) {
+		rnd := rand.New(rand.NewSource(seed))
+
+		load := `load 30s
+			http_requests_total{pod="nginx-1", region="east"} 1+1x15
+			http_requests_total{pod="nginx-2", region="east"} 2+2x15
+			http_requests_total{pod="nginx-1", region="west"} 3+1x15
+			http_requests_total{pod="nginx-2", region="west"} 4+2x15`
+
+		testStorage := promqltest.LoadedStorage(t, load)
+		defer testStorage.Close()
+
+		engines := []api.RemoteEngine{
+			newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+			newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
+		}
+		optimizers := []Optimizer{
+			DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+		}
+
+		lbls := []labels.Labels{
+			labels.FromStrings("__name__", "http_requests_total", "pod", "nginx-1", "region", "east"),
+			labels.FromStrings("__name__", "http_requests_total", "pod", "nginx-2", "region", "west"),
+		}
+
+		// Exclude functions that produce unlabeled series by design.
+		enabledFunctions := make([]*parser.Function, 0, len(parser.Functions))
+		for _, f := range parser.Functions {
+			switch f.Name {
+			case "vector", "absent", "absent_over_time":
+				continue
+			}
+			enabledFunctions = append(enabledFunctions, f)
+		}
+
+		psOpts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(false),
+			promqlsmith.WithEnableAtModifier(false),
+			promqlsmith.WithEnabledAggrs([]parser.ItemType{
+				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP,
+				parser.COUNT, parser.QUANTILE, parser.STDDEV, parser.STDVAR,
+				parser.COUNT_VALUES, parser.TOPK, parser.BOTTOMK,
+			}),
+			promqlsmith.WithEnabledFunctions(enabledFunctions),
+			promqlsmith.WithEnableVectorMatching(true),
+		}
+		ps := promqlsmith.New(rnd, lbls, psOpts...)
+
+		ng := promql.NewEngine(promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+		})
+
+		start := time.Unix(60, 0)
+		end := time.Unix(120, 0)
+		step := 30 * time.Second
+
+		opts := &query.Options{
+			Start: start,
+			End:   end,
+			Step:  step,
+		}
+		for range testRuns {
+			expr := ps.WalkRangeQuery()
+			exprStr := expr.Pretty(0)
+
+			parsed, err := parser.ParseExpr(exprStr)
+			if err != nil {
+				continue
+			}
+
+			plan, err := NewFromAST(parsed, opts, PlanOptions{})
+			if err != nil {
+				continue
+			}
+
+			optimizedPlan, _ := plan.Optimize(optimizers)
+			root := optimizedPlan.Root()
+
+			// For each remote query in the optimized plan, execute it
+			// against the test storage and verify that all result series
+			// still have the partition label "region".
+			Traverse(&root, func(node *Node) {
+				remote, ok := (*node).(RemoteExecution)
+				if !ok {
+					return
+				}
+
+				// Skip remote queries that don't touch real series data
+				// (e.g. scalar parameters to aggregations like quantile).
+				hasSelector := false
+				var remoteNode Node = remote.Query
+				Traverse(&remoteNode, func(n *Node) {
+					switch (*n).(type) {
+					case *VectorSelector, *MatrixSelector:
+						hasSelector = true
+					}
+				})
+				if !hasSelector {
+					return
+				}
+
+				remoteQuery := remote.Query.String()
+				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, remoteQuery, start, end, step)
+				if err != nil {
+					return
+				}
+				result := qry.Exec(context.Background())
+				if result.Err != nil {
+					return
+				}
+
+				matrix, err := result.Matrix()
+				if err != nil {
+					return
+				}
+
+				for _, series := range matrix {
+					if !series.Metric.Has("region") {
+						t.Errorf(
+							"remote query result series missing partition label 'region'\n"+
+								"  original:     %s\n"+
+								"  optimized:    %s\n"+
+								"  remote query: %s\n"+
+								"  series:       %s",
+							exprStr, root.String(), remoteQuery, series.Metric.String(),
+						)
+					}
+				}
+			})
+		}
+	})
 }
