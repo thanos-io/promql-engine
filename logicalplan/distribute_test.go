@@ -357,6 +357,20 @@ label_replace(max by (location) (dedup(
 			expectWarn: true,
 		},
 		{
+			name: "label join targeting non-partition label distributes",
+			expr: `label_join(http_requests_total, "zone", ",", "pod")`,
+			expected: `
+dedup(
+  remote(label_join(http_requests_total, "zone", ",", "pod")),
+  remote(label_join(http_requests_total, "zone", ",", "pod")))`,
+		},
+		{
+			name:       "label join targeting partition label does not distribute",
+			expr:       `max by (location) (label_join(http_requests_total, "region", ",", "pod"))`,
+			expected:   `max by (location) (label_join(dedup(remote(http_requests_total), remote(http_requests_total)), "region", ",", "pod"))`,
+			expectWarn: true,
+		},
+		{
 			name: "binary operation in the operand path",
 			expr: `max by (pod) (metric_a / metric_b)`,
 			expected: `
@@ -1056,6 +1070,87 @@ sum by (pod) (dedup(
 	}
 }
 
+func TestDistributedExecutionMultiplePartitionLabels(t *testing.T) {
+	// Engines partitioned by both region and datacenter.
+	engines := []api.RemoteEngine{
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east", "datacenter", "dc1")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west", "datacenter", "dc2")}),
+	}
+	optimizers := []Optimizer{
+		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+	}
+
+	cases := []struct {
+		name     string
+		expr     string
+		expected string
+	}{
+		{
+			name: "on() must include all partition labels to distribute",
+			expr: `metric_a + on (region) metric_b`,
+			expected: `
+dedup(remote(metric_a), remote(metric_a))
++ on (region)
+dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name: "on() with all partition labels distributes the binary",
+			expr: `metric_a + on (region, datacenter) metric_b`,
+			expected: `
+dedup(
+  remote(metric_a + on (region, datacenter) metric_b),
+  remote(metric_a + on (region, datacenter) metric_b))`,
+		},
+		{
+			name: "ignoring() must not include any partition label to distribute",
+			expr: `metric_a + ignoring (region) metric_b`,
+			expected: `
+dedup(remote(metric_a), remote(metric_a))
++ ignoring (region)
+dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name: "ignoring() non-partition label distributes the binary",
+			expr: `metric_a + ignoring (pod) metric_b`,
+			expected: `
+dedup(
+  remote(metric_a + ignoring (pod) metric_b),
+  remote(metric_a + ignoring (pod) metric_b))`,
+		},
+		{
+			name: "sum must include all partition labels to preserve",
+			expr: `sum by (region) (metric_a)`,
+			expected: `
+sum by (region) (
+  dedup(
+    remote(sum by (datacenter, region) (metric_a)),
+    remote(sum by (datacenter, region) (metric_a))))`,
+		},
+		{
+			name: "sum by all partition labels preserves",
+			expr: `max(sum by (region, datacenter) (metric_a))`,
+			expected: `
+max(
+  dedup(
+    remote(max by (datacenter, region) (sum by (region, datacenter) (metric_a))),
+    remote(max by (datacenter, region) (sum by (region, datacenter) (metric_a)))))`,
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			testutil.Ok(t, err)
+			optimizedPlan, _ := plan.Optimize(optimizers)
+			expectedPlan := cleanUp(replacements, tcase.expected)
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
+		})
+	}
+}
+
 func TestDistributedExecutionClonesNodes(t *testing.T) {
 	var (
 		start    = time.Unix(0, 0)
@@ -1241,6 +1336,16 @@ func TestPreservesPartitionLabels(t *testing.T) {
 		{
 			name:     "label_replace targeting non-partition label preserves",
 			expr:     `label_replace(metric, "zone", "$1", "pod", "(.*)")`,
+			expected: true,
+		},
+		{
+			name:     "label_join targeting partition label does not preserve",
+			expr:     `label_join(metric, "region", ",", "pod")`,
+			expected: false,
+		},
+		{
+			name:     "label_join targeting non-partition label preserves",
+			expr:     `label_join(metric, "zone", ",", "pod")`,
 			expected: true,
 		},
 		{
