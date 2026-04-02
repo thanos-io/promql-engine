@@ -83,19 +83,13 @@ sum(
     remote(count by (pod, region) (metric_a)))))`,
 		},
 		{
-			name: "avg in binary expression with outer sum distributes avg independently",
+			name: "avg in binary expression with outer sum pushes entire expression",
 			expr: `sum(metric_a * avg by (region) (metric_b))`,
 			expected: `
 sum(
-  dedup(remote(metric_a), remote(metric_a))
-  *
-  sum by (region) (dedup(
-    remote(sum by (region) (metric_b)),
-    remote(sum by (region) (metric_b))))
-  / on (region)
-  sum by (region) (dedup(
-    remote(count by (region) (metric_b)),
-    remote(count by (region) (metric_b)))))`,
+  dedup(
+    remote(sum by (region) (metric_a * avg by (region) (metric_b))),
+    remote(sum by (region) (metric_a * avg by (region) (metric_b)))))`,
 		},
 		{
 			name:     "selector",
@@ -171,21 +165,12 @@ sum by (pod) (
 )`,
 		},
 		{
-			name: "avg with without-grouping",
+			name: "avg with without-grouping preserving partition labels",
 			expr: `avg without (pod) (http_requests_total)`,
 			expected: `
-sum without (pod) (
-  dedup(
-    remote(sum without (pod) (http_requests_total)),
-    remote(sum without (pod) (http_requests_total))
-  )
-) / ignoring (pod)
-sum without (pod) (
-  dedup(
-    remote(count without (pod) (http_requests_total)),
-    remote(count without (pod) (http_requests_total))
-  )
-)`,
+dedup(
+  remote(avg without (pod) (http_requests_total)),
+  remote(avg without (pod) (http_requests_total)))`,
 		},
 		{
 			name: "avg with prior aggregation",
@@ -217,6 +202,57 @@ sum by (pod) (
     remote(count by (pod, region) (metric_a / metric_b))
   )
 )`,
+		},
+		{
+			name: "avg by partition label pushes as-is",
+			expr: `avg by (region) (http_requests_total)`,
+			expected: `
+dedup(
+  remote(avg by (region) (http_requests_total)),
+  remote(avg by (region) (http_requests_total)))`,
+		},
+		{
+			name: "avg by partition label defers to distributive ancestor",
+			expr: `max(avg by (region) (http_requests_total))`,
+			expected: `
+max(
+  dedup(
+    remote(max by (region) (avg by (region) (http_requests_total))),
+    remote(max by (region) (avg by (region) (http_requests_total)))))`,
+		},
+		{
+			name: "avg over subquery with inner aggregations pushes entire expression",
+			expr: `avg by (region) (quantile_over_time(0.9, (sum by (region) (rate(metric_a[2m])) / sum by (region) (metric_b))[1h:1m]))`,
+			expected: `
+dedup(
+  remote(avg by (region) (quantile_over_time(0.9, (sum by (region) (rate(metric_a[2m])) / sum by (region) (metric_b))[1h:1m]))),
+  remote(avg by (region) (quantile_over_time(0.9, (sum by (region) (rate(metric_a[2m])) / sum by (region) (metric_b))[1h:1m]))))`,
+		},
+		{
+			name: "quantile by partition label pushes as-is",
+			expr: `quantile by (region) (0.9, http_requests_total)`,
+			expected: `
+dedup(
+  remote(quantile by (region) (0.9, http_requests_total)),
+  remote(quantile by (region) (0.9, http_requests_total)))`,
+		},
+		{
+			name:     "quantile by non-partition label is not distributed",
+			expr:     `quantile by (pod) (0.9, http_requests_total)`,
+			expected: `quantile by (pod) (0.9, dedup(remote(http_requests_total), remote(http_requests_total)))`,
+		},
+		{
+			name: "stddev by partition label pushes as-is",
+			expr: `stddev by (region) (http_requests_total)`,
+			expected: `
+dedup(
+  remote(stddev by (region) (http_requests_total)),
+  remote(stddev by (region) (http_requests_total)))`,
+		},
+		{
+			name:     "stddev by non-partition label is not distributed",
+			expr:     `stddev by (pod) (http_requests_total)`,
+			expected: `stddev by (pod) (dedup(remote(http_requests_total), remote(http_requests_total)))`,
 		},
 		{
 			name: "two-level aggregation",
@@ -518,14 +554,21 @@ count by (cluster) (
 		{
 			name:              "skip binary pushdown with nested aggregation",
 			expr:              `sum(metric_a * group by (region) (metric_b))`,
-			expected:          `sum(dedup(remote(metric_a), remote(metric_a)) * group by (region) (dedup(remote(group by (region) (metric_b)), remote(group by (region) (metric_b)))))`,
+			expected:          `sum(dedup(remote(metric_a), remote(metric_a)) * dedup(remote(group by (region) (metric_b)), remote(group by (region) (metric_b))))`,
 			skipBinopPushdown: true,
 		},
 		{
 			name:              "skip binary pushdown with outer aggregation",
 			expr:              `max(metric_a + sum by (region, pod) (metric_b))`,
-			expected:          `max(dedup(remote(metric_a), remote(metric_a)) + sum by (region, pod) (dedup(remote(sum by (pod, region) (metric_b)), remote(sum by (pod, region) (metric_b)))))`,
+			expected:          `max(dedup(remote(metric_a), remote(metric_a)) + dedup(remote(sum by (region, pod) (metric_b)), remote(sum by (region, pod) (metric_b))))`,
 			skipBinopPushdown: true,
+		},
+		{
+			// When the RHS of unless has an aggregation that drops the partition label,
+			// both sides should still be distributed independently.
+			name:     "unless with aggregation that drops partition label distributes both sides",
+			expr:     `group by (region, instance) (metric_a unless on (region, instance) max by (instance) (metric_b))`,
+			expected: `group by (region, instance) (dedup(remote(metric_a), remote(metric_a)) unless on (region, instance) max by (instance) (dedup(remote(max by (instance, region) (metric_b)), remote(max by (instance, region) (metric_b)))))`,
 		},
 		{
 			// group_left/group_right with partition label cannot be distributed because
