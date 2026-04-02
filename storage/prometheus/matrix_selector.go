@@ -6,6 +6,7 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"io"
 	"math"
 	"strings"
 	"sync"
@@ -24,7 +25,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
-	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -34,9 +34,14 @@ type matrixScanner struct {
 	signature  uint64
 
 	buffer           ringbuffer.Buffer
-	iterator         chunkenc.Iterator
+	iterator         *BatchIterator
 	lastSample       ringbuffer.Sample
 	metricAppearedTs int64
+
+	// Batch reading state
+	sampleBatch [16]ringbuffer.Sample
+	batchLen    int
+	batchPos    int
 }
 
 type matrixSelector struct {
@@ -248,7 +253,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				labels:           lbls,
 				metricName:       origLbls.Get(labels.MetricName),
 				signature:        s.Signature,
-				iterator:         s.Iterator(nil),
+				iterator:         NewBatchIterator(s.Iterator(nil)),
 				lastSample:       ringbuffer.Sample{T: math.MinInt64},
 				buffer:           o.newBuffer(ctx),
 				metricAppearedTs: math.MinInt64,
@@ -351,58 +356,71 @@ func (m *matrixScanner) selectPoints(
 	}
 
 	appendedPointBeforeMint := !ringbuffer.Empty(m.buffer)
-	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
-		switch valType {
-		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+	for {
+		if m.batchPos >= m.batchLen {
+			n, err := m.iterator.NextBatch(m.sampleBatch[:])
+			if err != nil && err != io.EOF {
+				return err
+			}
+			if n == 0 {
+				break
+			}
+			m.batchLen = n
+			m.batchPos = 0
+		}
+
+		s := &m.sampleBatch[m.batchPos]
+		m.batchPos++
+
+		if s.V.H != nil {
+			// Histogram path
 			if isExtFunction {
 				return ErrNativeHistogramsNotSupported
 			}
-			var t int64
-			t, fh = m.iterator.AtFloatHistogram(fh)
-			if value.IsStaleNaN(fh.Sum) || t < mint {
+			if value.IsStaleNaN(s.V.H.Sum) || s.T < mint {
 				continue
 			}
-			if t > maxt {
-				m.lastSample.T = t
+			if s.T > maxt {
+				m.lastSample.T = s.T
 				if m.lastSample.V.H == nil {
-					m.lastSample.V.H = fh.Copy()
+					m.lastSample.V.H = s.V.H.Copy()
 				} else {
-					fh.CopyTo(m.lastSample.V.H)
+					s.V.H.CopyTo(m.lastSample.V.H)
 				}
 				return nil
 			}
-			if t > mint {
-				m.buffer.Push(t, ringbuffer.Value{H: fh})
+			if s.T > mint {
+				m.buffer.Push(s.T, s.V)
 			}
-		case chunkenc.ValFloat:
-			t, v := m.iterator.At()
-			if value.IsStaleNaN(v) {
+		} else {
+			// Float path
+			if value.IsStaleNaN(s.V.F) {
 				continue
 			}
 			if m.metricAppearedTs == math.MinInt64 {
-				m.metricAppearedTs = t
+				m.metricAppearedTs = s.T
 			}
-			if t > maxt {
-				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil
+			if s.T > maxt {
+				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = s.T, s.V.F, nil
 				return nil
 			}
 			if isExtFunction {
-				if t > mint || !appendedPointBeforeMint {
-					m.buffer.Push(t, ringbuffer.Value{F: v})
+				if s.T > mint || !appendedPointBeforeMint {
+					m.buffer.Push(s.T, s.V)
 					appendedPointBeforeMint = true
 				} else {
-					m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
-						s.T, s.V.F, s.V.H = t, v, nil
+					m.buffer.ReadIntoLast(func(last *ringbuffer.Sample) {
+						last.T, last.V.F, last.V.H = s.T, s.V.F, nil
 					})
 				}
 			} else {
-				if t > mint {
-					m.buffer.Push(t, ringbuffer.Value{F: v})
+				if s.T > mint {
+					m.buffer.Push(s.T, s.V)
 				}
 			}
 		}
 	}
-	return m.iterator.Err()
+	return nil
 }
 
 // emitRingbufferWarnings converts warnings.Warnings flags to proper annotations with metric names.
