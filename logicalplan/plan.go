@@ -132,6 +132,14 @@ func getTimeRangesForSelector(qOpts *query.Options, n *parser.VectorSelector, pa
 		start -= int64(qOpts.ExtLookbackDelta.Milliseconds())
 	}
 
+	if n.Anchored {
+		start -= qOpts.LookbackDelta.Milliseconds()
+	}
+	if n.Smoothed {
+		start -= qOpts.LookbackDelta.Milliseconds()
+		end += qOpts.LookbackDelta.Milliseconds()
+	}
+
 	return start, end
 }
 
