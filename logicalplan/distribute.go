@@ -656,7 +656,7 @@ func preservesPartitionLabels(expr Node, partitionLabels map[string]struct{}) bo
 		return preservesPartitionLabels(e.LHS, partitionLabels) &&
 			preservesPartitionLabels(e.RHS, partitionLabels)
 	case *FunctionCall:
-		if e.Func.Name == "label_replace" {
+		if e.Func.Name == "label_replace" || e.Func.Name == "label_join" {
 			if _, ok := partitionLabels[UnsafeUnwrapString(e.Args[1])]; ok {
 				return false
 			}
@@ -705,10 +705,11 @@ func (m DistributedExecutionOptimizer) isDistributive(expr *Node, engineLabels m
 		// Mathematically distributive: can be split into local_agg(remote_agg(X))
 		// regardless of partition labels.
 		case parser.SUM, parser.MIN, parser.MAX, parser.GROUP, parser.COUNT,
-			parser.TOPK, parser.BOTTOMK, parser.LIMITK, parser.LIMIT_RATIO:
+			parser.TOPK, parser.BOTTOMK, parser.LIMITK:
 		// Non-distributive: can only be pushed as-is when they preserve
 		// partition labels (each engine computes over disjoint data).
-		case parser.AVG, parser.QUANTILE, parser.STDDEV, parser.STDVAR, parser.COUNT_VALUES:
+		case parser.AVG, parser.QUANTILE, parser.STDDEV, parser.STDVAR,
+			parser.COUNT_VALUES, parser.LIMIT_RATIO:
 			if !preservesPartitionLabels(e, engineLabels) {
 				return false
 			}
@@ -716,7 +717,7 @@ func (m DistributedExecutionOptimizer) isDistributive(expr *Node, engineLabels m
 			return false
 		}
 	case *FunctionCall:
-		if e.Func.Name == "label_replace" {
+		if e.Func.Name == "label_replace" || e.Func.Name == "label_join" {
 			targetLabel := UnsafeUnwrapString(e.Args[1])
 			if _, ok := engineLabels[targetLabel]; ok {
 				warns.Add(RewrittenExternalLabelWarning)
@@ -783,11 +784,10 @@ func isBinaryExpressionWithDistributableMatching(expr *Binary, engineLabels map[
 		// changes match cardinality semantics. Each partition only sees one value for
 		// that label, so what's many-to-many globally may become one-to-one per partition,
 		// producing results instead of errors (or vice versa).
-		return !inInclude && inMatching == expr.VectorMatching.On
+		if inInclude || inMatching != expr.VectorMatching.On {
+			return false
+		}
 	}
-	// At this point, partition labels are in the matching set (either via on() or
-	// by not being in ignoring()). This means or/unless can be safely distributed
-	// because the matching ensures series are paired by partition.
 	return true
 }
 
