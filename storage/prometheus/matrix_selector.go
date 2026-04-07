@@ -54,13 +54,17 @@ type matrixSelector struct {
 	fhReader     *histogram.FloatHistogram
 	opts         *query.Options
 
-	numSteps      int
-	mint          int64
-	maxt          int64
-	step          int64
-	selectRange   int64
-	offset        int64
-	isExtFunction bool
+	numSteps         int
+	mint             int64
+	maxt             int64
+	step             int64
+	selectRange      int64
+	offset           int64
+	isExtFunction    bool
+	isAnchored       bool
+	isSmoothed       bool
+	needsExtLookback bool
+	lookbackDelta    int64
 
 	currentStep     int64
 	currentSeries   int64
@@ -88,11 +92,13 @@ func NewMatrixSelector(
 	selectRange, offset time.Duration,
 	batchSize int64,
 	shard, numShard int,
+	anchored, smoothed bool,
 ) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(functionName)
 	if err != nil {
 		return nil, err
 	}
+	isExt := parse.IsExtFunction(functionName)
 	m := &matrixSelector{
 		storage:      selector,
 		call:         call,
@@ -106,7 +112,12 @@ func NewMatrixSelector(
 		mint:          opts.Start.UnixMilli(),
 		maxt:          opts.End.UnixMilli(),
 		step:          opts.Step.Milliseconds(),
-		isExtFunction: parse.IsExtFunction(functionName),
+		isExtFunction: isExt,
+		isAnchored:    anchored,
+		isSmoothed:    smoothed,
+
+		needsExtLookback: isExt || anchored || smoothed,
+		lookbackDelta:    opts.LookbackDelta.Milliseconds(),
 
 		selectRange:     selectRange.Milliseconds(),
 		offset:          offset.Milliseconds(),
@@ -188,8 +199,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
+			if o.isSmoothed {
+				maxt += o.lookbackDelta
+			}
 
-			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.isExtFunction); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, o.needsExtLookback, o.isAnchored || o.isSmoothed); err != nil {
 				return 0, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
@@ -278,6 +292,12 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 }
 
 func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
+	if o.isAnchored {
+		return ringbuffer.NewAnchored(ctx, 8, o.selectRange, o.offset, o.lookbackDelta-1, o.call)
+	}
+	if o.isSmoothed {
+		return ringbuffer.NewSmoothed(ctx, 8, o.selectRange, o.offset, o.lookbackDelta-1, o.call)
+	}
 	if ringbuffer.UseStreamingRingBuffers(*o.opts, o.selectRange) {
 		switch o.functionName {
 		case "rate":
@@ -334,7 +354,16 @@ func (m *matrixScanner) selectPoints(
 	mint, maxt, evalt int64,
 	fh *histogram.FloatHistogram,
 	isExtFunction bool,
+	recoverLastSample bool,
 ) error {
+	// For anchored/smoothed selectors: push lastSample back into the buffer
+	// before Reset so the ext lookback retention logic can decide whether to
+	// keep it as the boundary sample. lastSample always has the largest T,
+	// so append order is preserved.
+	if recoverLastSample && m.lastSample.T != math.MinInt64 && m.lastSample.T <= maxt {
+		m.buffer.Push(m.lastSample.T, m.lastSample.V)
+		m.lastSample.T = math.MinInt64
+	}
 	m.buffer.Reset(mint, evalt)
 	if m.lastSample.T > maxt {
 		return nil
@@ -343,7 +372,6 @@ func (m *matrixScanner) selectPoints(
 	if bufMaxt := m.buffer.MaxT() + 1; bufMaxt > mint {
 		mint = bufMaxt
 	}
-	mint = max(mint, m.buffer.MaxT()+1)
 	if m.lastSample.T > mint {
 		m.buffer.Push(m.lastSample.T, m.lastSample.V)
 		m.lastSample.T = math.MinInt64
@@ -386,10 +414,15 @@ func (m *matrixScanner) selectPoints(
 				m.lastSample.T, m.lastSample.V.F, m.lastSample.V.H = t, v, nil
 				return nil
 			}
-			if isExtFunction {
+			if isExtFunction || recoverLastSample {
 				if t > mint || !appendedPointBeforeMint {
 					m.buffer.Push(t, ringbuffer.Value{F: v})
 					appendedPointBeforeMint = true
+				} else if recoverLastSample {
+					// For anchored/smoothed, keep two samples at/before mint so
+					// that functions like changes/resets can compare against
+					// the sample preceding the range boundary.
+					m.buffer.Push(t, ringbuffer.Value{F: v})
 				} else {
 					m.buffer.ReadIntoLast(func(s *ringbuffer.Sample) {
 						s.T, s.V.F, s.V.H = t, v, nil

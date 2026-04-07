@@ -18,7 +18,10 @@ package execution
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
@@ -37,6 +40,7 @@ import (
 	"github.com/thanos-io/promql-engine/storage"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	promstorage "github.com/prometheus/prometheus/storage"
@@ -88,6 +92,11 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 
 func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
+	if e.Smoothed {
+		// Smoothed instant vectors need samples after the evaluation time
+		// for interpolation, so extend the end by lookbackDelta.
+		end += opts.LookbackDelta.Milliseconds()
+	}
 	hints.Start = start
 	hints.End = end
 	return scanners.NewVectorSelector(ctx, opts, hints, *e)
@@ -177,14 +186,44 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
+	vs := t.VectorSelector
+
+	// Validate function whitelist for anchored/smoothed modifiers.
+	// Return a deferred error operator so the error surfaces at Exec time,
+	// matching Prometheus behavior expected by the test framework.
+	if vs.Anchored {
+		if _, ok := parse.AnchoredSafeFunctions[e.Func.Name]; !ok {
+			return newDeferredError(errors.Newf("anchored modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.AnchoredSafeFunctions)), ", "), e.Func.Name)), nil
+		}
+	}
+	if vs.Smoothed {
+		if _, ok := parse.SmoothedSafeFunctions[e.Func.Name]; !ok {
+			return newDeferredError(errors.Newf("smoothed modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.SmoothedSafeFunctions)), ", "), e.Func.Name)), nil
+		}
+	}
+
 	milliSecondRange := t.Range.Milliseconds()
 	if parse.IsExtFunction(e.Func.Name) {
 		milliSecondRange += opts.ExtLookbackDelta.Milliseconds()
 	}
 
-	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, milliSecondRange)
+	// For anchored/smoothed, widen the query window (Start/End) but keep
+	// hints.Range equal to the original selector range. Backends use Range for
+	// resolution selection and pushdown decisions and should see the true range.
+	queryRange := milliSecondRange
+	if vs.Anchored {
+		queryRange += opts.LookbackDelta.Milliseconds()
+	}
+	if vs.Smoothed {
+		queryRange += opts.LookbackDelta.Milliseconds()
+	}
+
+	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, queryRange)
 	hints.Start = start
 	hints.End = end
+	if vs.Smoothed {
+		hints.End += opts.LookbackDelta.Milliseconds()
+	}
 	hints.Range = milliSecondRange
 	return scanners.NewMatrixSelector(ctx, opts, hints, *t, *e)
 }
@@ -399,6 +438,29 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 		return nil, err
 	}
 	return exchange.NewDuplicateLabelCheck(op, opts), nil
+}
+
+// deferredError is an operator that returns an error on first Next() call,
+// allowing validation errors to surface at evaluation time rather than
+// query creation time, matching Prometheus behavior.
+type deferredError struct {
+	model.VectorOperator
+	err error
+}
+
+func newDeferredError(err error) model.VectorOperator {
+	return &deferredError{
+		VectorOperator: noop.NewOperator(&query.Options{}),
+		err:            err,
+	}
+}
+
+func (d *deferredError) Next(context.Context, []model.StepVector) (int, error) {
+	return 0, d.err
+}
+
+func (d *deferredError) Series(context.Context) ([]labels.Labels, error) {
+	return nil, d.err
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.
