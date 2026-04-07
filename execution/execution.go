@@ -372,7 +372,7 @@ func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, scanners s
 		}
 		operators[i] = operator
 	}
-	coalesce := exchange.NewCoalesce(opts, 0, operators...)
+	coalesce := exchange.NewCoalesce(opts, operators...)
 	dedup := exchange.NewDedupOperator(coalesce, opts)
 	return exchange.NewConcurrent(dedup, 2, opts), nil
 }
