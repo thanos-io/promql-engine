@@ -65,7 +65,7 @@ func NewStepInvariantOperator(
 		u.cacheResult = false
 	}
 
-	return telemetry.NewOperator(telemetry.NewStepInvariantTelemetry(u, opts), u), nil
+	return telemetry.NewOperator(telemetry.NewStepInvariantTelemetry(u, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), u), nil
 }
 
 func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, error) {

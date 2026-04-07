@@ -69,7 +69,7 @@ func NewHashAggregate(
 		params:      make([]float64, opts.StepsBatch),
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(a, opts), a), nil
+	return telemetry.NewOperator(telemetry.NewTelemetry(a, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), a), nil
 }
 
 func (a *aggregate) String() string {
