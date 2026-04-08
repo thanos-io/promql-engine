@@ -56,6 +56,9 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m,
 		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
 		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
+		// TSDB background goroutines from promqltest.LoadedStorage
+		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*DB).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb/wlog.(*WL).run"),
 	)
 }
 

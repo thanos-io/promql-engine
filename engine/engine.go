@@ -33,6 +33,11 @@ import (
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 	"github.com/prometheus/prometheus/util/stats"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type QueryType int
@@ -529,6 +534,41 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 
 	ctx = warnings.NewContext(ctx)
 	warnings.MergeToContext(q.warns, ctx)
+
+	// Start a query-level OTel span.
+	var spanName string
+	if q.t == InstantQuery {
+		spanName = "instant_query_exec"
+	} else {
+		spanName = "range_query_exec"
+	}
+	ctx, span := otel.Tracer("").Start(ctx, spanName)
+	defer func() {
+		if ret != nil && ret.Err != nil {
+			span.RecordError(ret.Err)
+			span.SetStatus(codes.Error, ret.Err.Error())
+		}
+		span.End()
+	}()
+
+	span.SetAttributes(
+		attribute.String("query.expr", q.String()),
+		attribute.Int64("query.start", q.opts.Start.UnixMilli()),
+	)
+	if q.t == RangeQuery {
+		span.SetAttributes(
+			attribute.Int64("query.end", q.opts.End.UnixMilli()),
+			attribute.Float64("query.interval_seconds", q.opts.Step.Seconds()),
+			attribute.Float64("query.range_seconds", q.opts.End.Sub(q.opts.Start).Seconds()),
+		)
+	}
+
+	// Emit analysis_available event when operator-level detail is not enabled.
+	if !q.opts.ShouldEnableAnalysis(ctx) {
+		span.AddEvent("promql.analysis_available", trace.WithAttributes(
+			attribute.String("message", "Operator-level detail available by enabling analysis"),
+		))
+	}
 
 	// Handle case with strings early on as this does not need us to process samples.
 	switch e := q.plan.Root().(type) {

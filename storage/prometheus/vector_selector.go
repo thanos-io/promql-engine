@@ -20,6 +20,10 @@ import (
 	"github.com/prometheus/prometheus/model/value"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type vectorScanner struct {
@@ -196,11 +200,23 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {
+		ctx, span := otel.Tracer("").Start(ctx, "storage:select")
+		span.SetAttributes(
+			attribute.String("storage.matchers", fmt.Sprintf("%v", o.storage.Matchers())),
+			attribute.Int64("storage.mint", o.mint),
+			attribute.Int64("storage.maxt", o.maxt),
+		)
+		defer span.End()
+
 		series, loadErr := o.storage.GetSeries(ctx, o.shard, o.numShards)
 		if loadErr != nil {
+			span.RecordError(loadErr)
+			span.SetStatus(codes.Error, loadErr.Error())
 			err = loadErr
 			return
 		}
+
+		span.SetAttributes(attribute.Int("storage.series.count", len(series)))
 
 		b := labels.NewBuilder(labels.EmptyLabels())
 		o.scanners = make([]vectorScanner, len(series))
