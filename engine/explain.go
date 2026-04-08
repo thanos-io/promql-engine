@@ -8,7 +8,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/prometheus/prometheus/promql"
 )
@@ -64,10 +63,10 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 			childPeak := child.PeakSamples()
 			a.peakSamples = max(a.peakSamples, childPeak)
 
-			switch a.OperatorTelemetry.LogicalNode().(type) {
-			case *logicalplan.Subquery:
+			switch {
+			case a.OperatorTelemetry.IsSubquery():
 				// Skip aggregating samples for subquery
-			case *logicalplan.StepInvariantExpr:
+			case a.OperatorTelemetry.IsStepInvariant():
 				childSamples := child.TotalSamples()
 				for i := range a.totalSamplesPerStep {
 					a.totalSamples += childSamples

@@ -28,7 +28,7 @@ func NewUnaryNegation(next model.VectorOperator, opts *query.Options) (model.Vec
 	u := &unaryNegation{
 		next: next,
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(u, opts), u), nil
+	return telemetry.NewOperator(telemetry.NewTelemetry(u, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), u), nil
 }
 
 func (u *unaryNegation) Explain() (next []model.VectorOperator) {

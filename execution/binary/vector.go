@@ -70,7 +70,7 @@ func NewVectorOperator(
 		stepsBatch: opts.StepsBatch,
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
+	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), op), nil
 }
 
 func (o *vectorOperator) String() string {

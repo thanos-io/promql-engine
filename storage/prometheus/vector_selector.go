@@ -52,15 +52,12 @@ type vectorSelector struct {
 	numShards int
 
 	selectTimestamp bool
-
-	opts               *query.Options
-	lastTrackedSamples int
 }
 
 // NewVectorSelector creates operator which selects vector of series.
 func NewVectorSelector(
 	selector SeriesSelector,
-	queryOpts *query.Options,
+	opts *query.Options,
 	offset time.Duration,
 	batchSize int64,
 	selectTimestamp bool,
@@ -69,21 +66,19 @@ func NewVectorSelector(
 	o := &vectorSelector{
 		storage: selector,
 
-		mint:            queryOpts.Start.UnixMilli(),
-		maxt:            queryOpts.End.UnixMilli(),
-		step:            queryOpts.Step.Milliseconds(),
-		currentStep:     queryOpts.Start.UnixMilli(),
-		lookbackDelta:   queryOpts.LookbackDelta.Milliseconds(),
+		mint:            opts.Start.UnixMilli(),
+		maxt:            opts.End.UnixMilli(),
+		step:            opts.Step.Milliseconds(),
+		currentStep:     opts.Start.UnixMilli(),
+		lookbackDelta:   opts.LookbackDelta.Milliseconds(),
 		offset:          offset.Milliseconds(),
-		numSteps:        queryOpts.NumStepsPerBatch(),
+		numSteps:        opts.NumStepsPerBatch(),
 		seriesBatchSize: batchSize,
 
 		shard:     shard,
 		numShards: numShards,
 
 		selectTimestamp: selectTimestamp,
-
-		opts: queryOpts,
 	}
 
 	// For instant queries, set the step to a positive value
@@ -92,7 +87,7 @@ func NewVectorSelector(
 		o.step = 1
 	}
 
-	o.telemetry = telemetry.NewTelemetry(o, queryOpts)
+	o.telemetry = telemetry.NewTelemetry(o, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter)
 	return telemetry.NewOperator(o.telemetry, o)
 }
 
@@ -143,8 +138,6 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		ts += o.step
 	}
 
-	var currStepSamples int
-	var totalSamples int
 	// Reset the current timestamp.
 	ts = o.currentStep
 	fromSeries := o.currentSeries
@@ -155,7 +148,7 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs = ts
 		)
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
-			currStepSamples = 0
+			var currStepSamples int
 			t, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return 0, err
@@ -173,16 +166,11 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 					buf[currStep].AppendSampleWithSizeHint(series.signature, v, expectedSamples)
 					currStepSamples++
 				}
-				totalSamples += currStepSamples
 			}
-			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
-			seriesTs += o.step
-		}
-
-		if o.shouldCheckSampleLimit(fromSeries) {
-			if err := o.updateSampleTracker(totalSamples); err != nil {
+			if err := o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs); err != nil {
 				return 0, err
 			}
+			seriesTs += o.step
 		}
 	}
 
@@ -230,31 +218,6 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func (o *vectorSelector) updateSampleTracker(totalSamples int) error {
-	if o.lastTrackedSamples > 0 {
-		o.opts.SampleTracker.Remove(o.lastTrackedSamples)
-	}
-	if totalSamples > 0 {
-		o.opts.SampleTracker.Add(totalSamples)
-	}
-	o.lastTrackedSamples = totalSamples
-	return o.opts.SampleTracker.CheckLimit()
-}
-
-func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
-	seriesProcessed := o.currentSeries + 1 - fromSeries
-
-	if seriesProcessed%sampleLimitCheckInterval == 0 {
-		return true
-	}
-
-	isEndOfBatch := seriesProcessed >= o.seriesBatchSize
-	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
-
-	return isEndOfBatch || isLastSeries
-}
-
-// TODO(fpetkovski): Add max samples limit.
 func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
 	refTime := ts - offset
 	var t int64
