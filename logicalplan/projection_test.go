@@ -273,7 +273,7 @@ func TestProjectionOptimizer(t *testing.T) {
 			continue
 		}
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})

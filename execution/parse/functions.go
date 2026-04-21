@@ -10,6 +10,12 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+func init() {
+	for name, fn := range XFunctions {
+		parser.Functions[name] = fn
+	}
+}
+
 var XFunctions = map[string]*parser.Function{
 	"xdelta": {
 		Name:       "xdelta",
