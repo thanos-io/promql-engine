@@ -6,7 +6,6 @@ package engine
 import (
 	"context"
 	"log/slog"
-	"maps"
 	"math"
 	"runtime"
 	"slices"
@@ -142,12 +141,6 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		)
 	}
 
-	functions := make(map[string]*parser.Function, len(parser.Functions))
-	maps.Copy(functions, parser.Functions)
-	if opts.EnableXFunctions {
-		maps.Copy(functions, parse.XFunctions)
-	}
-
 	metrics := &engineMetrics{
 		currentQueries: promauto.With(opts.Reg).NewGauge(
 			prometheus.GaugeOpts{
@@ -179,7 +172,6 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 
 	return &Engine{
-		functions:          functions,
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
@@ -210,7 +202,6 @@ var (
 )
 
 type Engine struct {
-	functions          map[string]*parser.Function
 	scanners           engstorage.Scanners
 	activeQueryTracker promql.QueryTracker
 
@@ -238,7 +229,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
-	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
@@ -336,7 +327,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
-	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(qs)
 	if err != nil {
 		return nil, err
 	}

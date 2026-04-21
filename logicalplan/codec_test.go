@@ -47,7 +47,7 @@ sum(
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			ast, err := parser.ParseExpr(tcase.query)
+			ast, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.query)
 			testutil.Ok(t, err)
 			original, _ := NewFromAST(ast, &query.Options{}, PlanOptions{})
 			original, _ = original.Optimize(DefaultOptimizers)
@@ -64,7 +64,7 @@ sum(
 
 func TestUnmarshalMatchers(t *testing.T) {
 	expr := `metric{name=~"value"}`
-	ast, err := parser.ParseExpr(expr)
+	ast, err := parser.NewParser(parser.Options{}).ParseExpr(expr)
 	testutil.Ok(t, err)
 
 	original, _ := NewFromAST(ast, &query.Options{}, PlanOptions{})
