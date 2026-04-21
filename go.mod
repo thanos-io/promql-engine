@@ -116,3 +116,5 @@ exclude (
 	cloud.google.com/go v0.34.0
 	cloud.google.com/go v0.65.0
 )
+
+replace github.com/prometheus/prometheus => github.com/ringerc/thanos-prometheus-patches v0.0.0-20260421012840-fd0009e926e2
