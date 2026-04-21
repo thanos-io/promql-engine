@@ -38,7 +38,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -52,7 +51,6 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	parser.EnableExperimentalFunctions = true
 	goleak.VerifyTestMain(m,
 		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
 		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
@@ -73,10 +71,6 @@ func (s *skipTest) Run(name string, t func(*testing.T)) bool {
 }
 
 func TestPromqlAcceptance(t *testing.T) {
-	// promql acceptance tests disable experimental functions again
-	// since we use them in our tests too we need to enable them afterwards again
-	t.Cleanup(func() { parser.EnableExperimentalFunctions = true })
-
 	engine := engine.New(engine.Opts{
 		EngineOpts: promql.EngineOpts{
 			Logger:                   promslog.NewNopLogger(),

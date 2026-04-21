@@ -200,7 +200,7 @@ func TestDefaultOptimizers(t *testing.T) {
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -313,7 +313,7 @@ func TestMatcherPropagation(t *testing.T) {
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			t.Parallel()
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -365,7 +365,7 @@ func TestTrimSorts(t *testing.T) {
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
@@ -418,7 +418,7 @@ func TestReduceConstantExpressions(t *testing.T) {
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
