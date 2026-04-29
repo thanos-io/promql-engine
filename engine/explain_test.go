@@ -44,6 +44,9 @@ func TestQueryExplain(t *testing.T) {
 		})
 	}
 
+	fooID := uint64(9607318204070194689)
+	sumByJobFooID := uint64(17184185013747611877)
+
 	for _, tc := range []struct {
 		query    string
 		expected *engine.ExplainOutputNode
@@ -59,7 +62,7 @@ func TestQueryExplain(t *testing.T) {
 		},
 		{
 			query:    `foo`,
-			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", Children: concurrencyOperators},
+			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", OperatorID: &fooID, Children: concurrencyOperators},
 		},
 		{
 			query: `sum by (job) (foo)`,
@@ -72,6 +75,7 @@ func TestQueryExplain(t *testing.T) {
 								OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
 									{
 										OperatorName: "[coalesce]",
+										OperatorID:   &sumByJobFooID,
 										Children:     concurrencyOperators,
 									},
 								},
