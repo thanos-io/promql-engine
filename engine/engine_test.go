@@ -56,6 +56,9 @@ func TestMain(m *testing.M) {
 	goleak.VerifyTestMain(m,
 		// https://github.com/census-instrumentation/opencensus-go/blob/d7677d6af5953e0506ac4c08f349c62b917a443a/stats/view/worker.go#L34
 		goleak.IgnoreTopFunction("go.opencensus.io/stats/view.(*worker).start"),
+		// TSDB background goroutines from promqltest.LoadedStorage
+		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb.(*DB).run"),
+		goleak.IgnoreTopFunction("github.com/prometheus/prometheus/tsdb/wlog.(*WL).run"),
 	)
 }
 
@@ -112,6 +115,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	}
 
 	series := storage.MockSeries(
+		[]int64{240, 270, 300, 600, 630, 660},
 		[]int64{240, 270, 300, 600, 630, 660},
 		[]float64{1, 2, 3, 4, 5, 6},
 		[]string{labels.MetricName, "foo"},
@@ -5653,7 +5657,8 @@ func (m *mockIterator) AtFloatHistogram(_ *histogram.FloatHistogram) (int64, *hi
 	return 0, nil
 }
 
-func (m *mockIterator) AtT() int64 { return m.timestamps[m.i] }
+func (m *mockIterator) AtT() int64  { return m.timestamps[m.i] }
+func (m *mockIterator) AtST() int64 { return m.timestamps[m.i] }
 
 func (m *mockIterator) Err() error { return nil }
 
@@ -5676,7 +5681,7 @@ func (s *slowSeriesSet) Next() bool {
 }
 
 func (s slowSeriesSet) At() storage.Series {
-	return storage.MockSeries([]int64{0}, []float64{0}, nil)
+	return storage.MockSeries([]int64{0}, []int64{0}, []float64{0}, nil)
 }
 
 func (s slowSeriesSet) Err() error { return nil }
@@ -5745,7 +5750,8 @@ func (d *slowIterator) Seek(t int64) chunkenc.ValueType {
 	d.ts = t
 	return chunkenc.ValFloat
 }
-func (d *slowIterator) Err() error { return nil }
+func (d *slowIterator) AtST() int64 { return d.ts }
+func (d *slowIterator) Err() error  { return nil }
 
 type mockRuntimeErr struct{}
 
