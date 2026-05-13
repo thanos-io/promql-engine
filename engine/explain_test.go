@@ -44,9 +44,6 @@ func TestQueryExplain(t *testing.T) {
 		})
 	}
 
-	fooID := uint64(9607318204070194689)
-	sumByJobFooID := uint64(17184185013747611877)
-
 	for _, tc := range []struct {
 		query    string
 		expected *engine.ExplainOutputNode
@@ -62,7 +59,7 @@ func TestQueryExplain(t *testing.T) {
 		},
 		{
 			query:    `foo`,
-			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", OperatorID: &fooID, Children: concurrencyOperators},
+			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", Children: concurrencyOperators},
 		},
 		{
 			query: `sum by (job) (foo)`,
@@ -75,7 +72,6 @@ func TestQueryExplain(t *testing.T) {
 								OperatorName: "[aggregate] sum by ([job])", Children: []engine.ExplainOutputNode{
 									{
 										OperatorName: "[coalesce]",
-										OperatorID:   &sumByJobFooID,
 										Children:     concurrencyOperators,
 									},
 								},
@@ -109,6 +105,57 @@ func TestQueryExplain(t *testing.T) {
 				testutil.Equals(t, tc.expected, explainableQuery.Explain())
 			})
 		}
+	}
+}
+
+func TestQueryAnalyzeOperatorID(t *testing.T) {
+	t.Parallel()
+	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	series := storage.MockSeries(
+		[]int64{240, 270, 300, 600, 630, 660},
+		[]float64{1, 2, 3, 4, 5, 6},
+		[]string{`__name__`, "foo"},
+	)
+	start := time.Unix(0, 0)
+
+	for _, tc := range []struct {
+		query       string
+		expectedIDs []uint64
+	}{
+		{
+			query:       `foo`,
+			expectedIDs: []uint64{9607318204070194689},
+		},
+		{
+			query:       `sum by (job) (foo)`,
+			expectedIDs: []uint64{17184185013747611877},
+		},
+		{
+			query:       `time()`,
+			expectedIDs: nil,
+		},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+			ctx := context.Background()
+			query, err := ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
+			testutil.Ok(t, err)
+			testutil.Ok(t, query.Exec(ctx).Err)
+
+			var ids []uint64
+			level := []*engine.AnalyzeOutputNode{query.(engine.ExplainableQuery).Analyze()}
+			for len(level) > 0 {
+				var next []*engine.AnalyzeOutputNode
+				for _, node := range level {
+					if node.OperatorID != nil {
+						ids = append(ids, *node.OperatorID)
+					}
+					next = append(next, node.Children...)
+				}
+				level = next
+			}
+			testutil.Equals(t, tc.expectedIDs, ids)
+		})
 	}
 }
 
