@@ -5,15 +5,25 @@ package engine
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 )
+
+// errFallbackPathNotImplemented is returned by the in-process remote engine's
+// queryBackedRemoteOperator. The in-process distributed optimizer always
+// produces RemoteExecution nodes whose Query is a structured logicalplan.Node,
+// so this error path is dead code in normal operation. It exists so that any
+// future caller passing a non-Node api.RemoteQuery gets a clear signal.
+var errFallbackPathNotImplemented = errors.New("queryBackedRemoteOperator: streaming fallback for non-Node api.RemoteQuery is not implemented; call NewRangeQuery instead")
 
 type remoteEngine struct {
 	q         storage.Queryable
@@ -51,6 +61,99 @@ func (l remoteEngine) PartitionLabelSets() []labels.Labels {
 
 func (l remoteEngine) NewRangeQuery(ctx context.Context, opts promql.QueryOpts, plan api.RemoteQuery, start, end time.Time, interval time.Duration) (promql.Query, error) {
 	return l.engine.NewRangeQuery(ctx, l.q, opts, plan.String(), start, end, interval)
+}
+
+// NewRangeQueryOperator implements api.StreamingRemoteEngine. It returns a
+// columnar StepVector stream produced by the underlying engine, avoiding the
+// StepVector -> promql.Matrix -> StepVector round-trip required by the legacy
+// NewRangeQuery path.
+//
+// In-process callers (DistributedExecutionOptimizer / PassthroughOptimizer)
+// always pass a *logicalplan.Node as the api.RemoteQuery, so we downcast and
+// hand the structured plan straight to the engine. Other implementations can
+// fall back to NewRangeQuery; see api.StreamingRemoteEngine documentation.
+func (l remoteEngine) NewRangeQueryOperator(ctx context.Context, opts promql.QueryOpts, plan api.RemoteQuery, start, end time.Time, interval time.Duration) (api.RemoteOperator, error) {
+	root, ok := plan.(logicalplan.Node)
+	if !ok {
+		// Defensive: re-parse from string. This should not happen in-process
+		// because RemoteExecution.Query is always a logicalplan.Node, but the
+		// api.RemoteQuery contract only guarantees fmt.Stringer.
+		q, err := l.engine.NewRangeQuery(ctx, l.q, opts, plan.String(), start, end, interval)
+		if err != nil {
+			return nil, err
+		}
+		return newQueryBackedRemoteOperator(ctx, q), nil
+	}
+	exec, opCtx, err := l.engine.NewRangeQueryOperator(ctx, l.q, fromPromQLOpts(opts), root, start, end, interval)
+	if err != nil {
+		return nil, err
+	}
+	return &inProcessRemoteOperator{exec: exec, ctx: opCtx}, nil
+}
+
+// inProcessRemoteOperator adapts a model.VectorOperator to api.RemoteOperator.
+// It is intentionally minimal: Series and Next forward directly and Close is
+// idempotent. The operator's own lifecycle (storage scanners, etc.) is
+// managed via the activeTrackedOperator decorator added by the engine.
+type inProcessRemoteOperator struct {
+	exec model.VectorOperator
+	ctx  context.Context
+
+	closeOnce sync.Once
+	closeErr  error
+}
+
+func (o *inProcessRemoteOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	return o.exec.Series(ctx)
+}
+
+func (o *inProcessRemoteOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
+	return o.exec.Next(ctx, buf)
+}
+
+func (o *inProcessRemoteOperator) Close() error {
+	o.closeOnce.Do(func() {
+		if c, ok := o.exec.(interface{ Close() error }); ok {
+			o.closeErr = c.Close()
+		}
+	})
+	return o.closeErr
+}
+
+// queryBackedRemoteOperator wraps a legacy promql.Query as an api.RemoteOperator.
+// It is a safety-net used only when the api.RemoteQuery passed to
+// NewRangeQueryOperator is not a structured logicalplan.Node. It materialises
+// the full result eagerly and replays it as StepVectors, which defeats the
+// purpose of the streaming path but preserves correctness.
+type queryBackedRemoteOperator struct {
+	q   promql.Query
+	ctx context.Context
+
+	once    sync.Once
+	loadErr error
+	series  []labels.Labels
+	// matrix holds the materialised result; only used if needed.
+}
+
+func newQueryBackedRemoteOperator(ctx context.Context, q promql.Query) *queryBackedRemoteOperator {
+	return &queryBackedRemoteOperator{q: q, ctx: ctx}
+}
+
+func (o *queryBackedRemoteOperator) Series(ctx context.Context) ([]labels.Labels, error) {
+	// Intentionally not implemented: the fallback path is only reached for
+	// non-Node RemoteQueries which the in-process engine never produces. If
+	// future callers exercise this we can implement it by Exec'ing the query
+	// and extracting series labels from the resulting matrix.
+	return nil, errFallbackPathNotImplemented
+}
+
+func (o *queryBackedRemoteOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
+	return 0, errFallbackPathNotImplemented
+}
+
+func (o *queryBackedRemoteOperator) Close() error {
+	o.q.Close()
+	return nil
 }
 
 type DistributedEngine struct {

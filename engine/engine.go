@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution"
@@ -420,6 +421,97 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 		t:        RangeQuery,
 		scanners: scnrs,
 	}, nil
+}
+
+// NewRangeQueryOperator builds the physical plan for a range query (or a
+// single-step instant query, modelled as start == end) and returns the root
+// VectorOperator directly, without wrapping it in a compatibilityQuery.
+//
+// This is intended for in-process distributed execution: the parent plan
+// consumes the produced StepVectors as-is, avoiding the StepVector -> Matrix
+// transpose that compatibilityQuery.Exec would perform.
+//
+// The returned VectorOperator must be driven by the caller (Series + Next).
+// Warnings produced during optimisation are merged via the returned context;
+// runtime warnings flow through the standard warnings.FromContext mechanism.
+func (e *Engine) NewRangeQueryOperator(ctx context.Context, q storage.Queryable, opts *QueryOpts, root logicalplan.Node, start, end time.Time, step time.Duration) (model.VectorOperator, context.Context, error) {
+	idx, err := e.activeQueryTracker.Insert(ctx, root.String())
+	if err != nil {
+		return nil, ctx, err
+	}
+	// NOTE: we cannot defer Delete here because the query is long-lived; the
+	// caller will drive Next over time and we must keep the slot occupied
+	// until the operator is fully drained. We release it inside a wrapper.
+	releaseSlot := func() { e.activeQueryTracker.Delete(idx) }
+
+	qOpts := e.makeQueryOpts(start, end, step, opts)
+	if qOpts.StepsBatch > 64 {
+		releaseSlot()
+		return nil, ctx, ErrStepsBatchTooLarge
+	}
+	planOpts := logicalplan.PlanOptions{
+		DisableDuplicateLabelCheck: e.disableDuplicateLabelChecks,
+	}
+	lplan, warns := logicalplan.New(root, qOpts, planOpts).Optimize(e.getLogicalOptimizers(opts))
+
+	scnrs, err := e.storageScanners(q, qOpts, lplan)
+	if err != nil {
+		releaseSlot()
+		return nil, ctx, errors.Wrap(err, "creating storage scanners")
+	}
+
+	ctx = warnings.NewContext(ctx)
+	// Merge optimisation warnings into the context so callers see them via
+	// warnings.FromContext after consuming the operator.
+	warnings.MergeToContext(warns, ctx)
+
+	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
+	if err != nil {
+		releaseSlot()
+		return nil, ctx, err
+	}
+	e.metrics.totalQueries.Inc()
+
+	return &activeTrackedOperator{
+		VectorOperator: exec,
+		release:        releaseSlot,
+	}, ctx, nil
+}
+
+// activeTrackedOperator is a thin VectorOperator decorator that releases an
+// active-query-tracker slot exactly once when the operator is drained or
+// closed (whichever happens first).
+type activeTrackedOperator struct {
+	model.VectorOperator
+	release    func()
+	released   bool
+	releaseMtx sync.Mutex
+}
+
+func (a *activeTrackedOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
+	n, err := a.VectorOperator.Next(ctx, buf)
+	if n == 0 || err != nil {
+		a.releaseOnce()
+	}
+	return n, err
+}
+
+func (a *activeTrackedOperator) Close() error {
+	a.releaseOnce()
+	if c, ok := a.VectorOperator.(interface{ Close() error }); ok {
+		return c.Close()
+	}
+	return nil
+}
+
+func (a *activeTrackedOperator) releaseOnce() {
+	a.releaseMtx.Lock()
+	defer a.releaseMtx.Unlock()
+	if a.released {
+		return
+	}
+	a.released = true
+	a.release()
 }
 
 // PromQL compatibility constructors

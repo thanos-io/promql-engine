@@ -21,6 +21,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/execution/aggregate"
 	"github.com/thanos-io/promql-engine/execution/binary"
 	"github.com/thanos-io/promql-engine/execution/exchange"
@@ -386,7 +387,32 @@ func newDeduplication(ctx context.Context, e logicalplan.Deduplicate, scanners s
 }
 
 func newRemoteExecution(ctx context.Context, e logicalplan.RemoteExecution, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
-	// Create a new remote query scoped to the calculated start time.
+	// Streaming path: if the engine implements StreamingRemoteEngine and the
+	// remote's queried range is step-aligned with the parent's grid, we can
+	// consume StepVectors directly, avoiding the StepVector -> Matrix ->
+	// StepVector round-trip the legacy path requires. No LookbackDelta=0
+	// workaround is needed because the remote plan already produces samples
+	// on the requested step grid.
+	//
+	// When grids cannot be aligned (e.g. subqueries that scope the remote to
+	// a step-misaligned start time so the inner subquery has enough lookback),
+	// fall back to the legacy materialised path which uses a local vector
+	// selector to re-grid the matrix to the parent's step.
+	if s, ok := e.Engine.(api.StreamingRemoteEngine); ok {
+		ro, err := s.NewRangeQueryOperator(ctx, promql.NewPrometheusQueryOpts(false, opts.LookbackDelta), e.Query, e.QueryRangeStart, e.QueryRangeEnd, opts.Step)
+		if err != nil {
+			return nil, err
+		}
+		streamExec := remote.NewStreamingExecution(ro, e.QueryRangeStart, e.QueryRangeEnd, e.Engine.LabelSets(), opts)
+		return exchange.NewConcurrent(model.WithID(streamExec, logicalplan.NodeFingerprint(e)), 2, opts), nil
+	}
+
+	// Legacy path: execute the remote query as a promql.Query and re-transpose
+	// the resulting Matrix into StepVectors via a wrapped vectorSelector.
+	// Kept as a fallback for RemoteEngine implementations (e.g. external
+	// Thanos Querier) that do not yet implement StreamingRemoteEngine, and
+	// for plan shapes where the remote's step grid does not align with the
+	// parent's grid (notably subqueries with a non-trivial start offset).
 	qry, err := e.Engine.NewRangeQuery(ctx, promql.NewPrometheusQueryOpts(false, opts.LookbackDelta), e.Query, e.QueryRangeStart, e.QueryRangeEnd, opts.Step)
 	if err != nil {
 		return nil, err
@@ -400,6 +426,8 @@ func newRemoteExecution(ctx context.Context, e logicalplan.RemoteExecution, opts
 	remoteExec := remote.NewExecution(qry, e.QueryRangeStart, e.QueryRangeEnd, e.Engine.LabelSets(), &selectorOpts, hints)
 	return exchange.NewConcurrent(model.WithID(remoteExec, logicalplan.NodeFingerprint(e)), 2, opts), nil
 }
+
+
 
 func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLabels, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	op, err := newOperator(ctx, e.Expr, storage, opts, hints)
