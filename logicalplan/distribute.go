@@ -544,7 +544,15 @@ func getStartTimeForEngine(e api.RemoteEngine, opts *query.Options, offset time.
 		engineMinTime = calculateStepAlignedStart(opts, engineMinTime.Add(offset))
 	}
 
-	return calculateStepAlignedStart(opts, maxTime(engineMinTime, opts.Start)), true
+	start := calculateStepAlignedStart(opts, maxTime(engineMinTime, opts.Start))
+	// Step alignment can push the start time past the end of the query range,
+	// which would produce an invalid range (QueryRangeStart > QueryRangeEnd).
+	// In that case the engine has no data to contribute, so skip it.
+	if start.After(opts.End) {
+		return time.Time{}, false
+	}
+
+	return start, true
 }
 
 // calculateStepAlignedStart returns a start time for the query based on the
