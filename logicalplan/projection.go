@@ -80,7 +80,10 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection, 
 		// series to the same label set and cause implicit many-to-one in a downstream binary.
 		// When the binary is itself an operand of another binary (canStoreOnBinary is false),
 		// collapsing its output would corrupt the outer binary's vector matching, so we skip it.
+		// Only store an effective projection: an exclude-mode projection with no labels (e.g.
+		// `sum without ()`) is a no-op and would only add render/test noise without changing labels.
 		if p.PushDownBinaryProjection && canStoreOnBinary && projection != nil && n.VectorMatching != nil &&
+			(projection.Include || len(projection.Labels) > 0) &&
 			(n.VectorMatching.Card == parser.CardManyToOne || n.VectorMatching.Card == parser.CardOneToMany) {
 			n.Projection = &Projection{
 				Labels:  append([]string(nil), projection.Labels...),

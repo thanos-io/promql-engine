@@ -562,6 +562,7 @@ sum by (namespace, instance_type) (
 
 			qBaseline, err := engineBaseline.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, interval)
 			testutil.Ok(t, err)
+			defer qBaseline.Close()
 			resultBaseline := qBaseline.Exec(context.Background())
 			testutil.Ok(t, resultBaseline.Err)
 
@@ -578,6 +579,7 @@ sum by (namespace, instance_type) (
 
 			qOptimized, err := engineOptimized.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, interval)
 			testutil.Ok(t, err)
+			defer qOptimized.Close()
 			resultOptimized := qOptimized.Exec(context.Background())
 			testutil.Ok(t, resultOptimized.Err)
 
@@ -631,11 +633,13 @@ func TestBinaryProjectionPushdownWithPrometheus(t *testing.T) {
 		t.Run(string(rune('A'+i)), func(t *testing.T) {
 			qProm, err := promEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
 			testutil.Ok(t, err)
+			defer qProm.Close()
 			resultProm := qProm.Exec(context.Background())
 			testutil.Ok(t, resultProm.Err)
 
 			qThanos, err := thanosEngine.NewRangeQuery(context.Background(), storage, nil, query, start, end, interval)
 			testutil.Ok(t, err)
+			defer qThanos.Close()
 			resultThanos := qThanos.Exec(context.Background())
 			testutil.Ok(t, resultThanos.Err)
 

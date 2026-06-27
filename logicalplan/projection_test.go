@@ -289,7 +289,7 @@ func TestProjectionOptimizerPushdownToBinary(t *testing.T) {
 		expected string
 	}{
 		{
-			name:     "aggregation with binary using on - binary gets projection",
+			name:     "aggregation with binary using on - selectors get projections",
 			expr:     `sum(metric1{instance="a", job="b", env="c"} * on(job) metric2{instance="d", job="b", env="e"})`,
 			expected: `sum(metric1{env="c",instance="a",job="b"}[projection=include(job)] * on (job) metric2{env="e",instance="d",job="b"}[projection=include(job)])`,
 		},

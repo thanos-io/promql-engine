@@ -64,7 +64,11 @@ func renderExprTree(expr Node) string {
 		return fmt.Sprintf("%s[%s]", vsStr, t.Range.String())
 	case *Binary:
 		var b strings.Builder
-		if t.Projection != nil {
+		// Only render the projection wrapper when the projection is effective, i.e. it
+		// actually changes the output labels. An exclude-mode projection with no labels is
+		// a no-op, so wrapping it in parentheses/suffix would be misleading.
+		hasProjection := t.Projection != nil && (t.Projection.Include || len(t.Projection.Labels) > 0)
+		if hasProjection {
 			b.WriteString("(")
 		}
 		b.WriteString(renderExprTree(t.LHS))
@@ -89,7 +93,7 @@ func renderExprTree(expr Node) string {
 			b.WriteString(" ")
 		}
 		b.WriteString(renderExprTree(t.RHS))
-		if t.Projection != nil {
+		if hasProjection {
 			b.WriteString(")")
 			lbls := make([]string, len(t.Projection.Labels))
 			copy(lbls, t.Projection.Labels)

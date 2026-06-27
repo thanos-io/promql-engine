@@ -85,7 +85,8 @@ func BenchmarkBinaryProjectionPushdown(b *testing.B) {
 				opts,
 			)
 			testutil.Ok(b, err)
-			series, _ := op.Series(context.Background())
+			series, err := op.Series(context.Background())
+			testutil.Ok(b, err)
 			if i == 0 {
 				b.Logf("Result series count: %d", len(series))
 				if len(series) > 0 {
@@ -119,7 +120,8 @@ func BenchmarkBinaryProjectionPushdown(b *testing.B) {
 				opts,
 			)
 			testutil.Ok(b, err)
-			series, _ := op.Series(context.Background())
+			series, err := op.Series(context.Background())
+			testutil.Ok(b, err)
 			if i == 0 {
 				b.Logf("Result series count: %d", len(series))
 				if len(series) > 0 {
@@ -174,7 +176,8 @@ func BenchmarkBinaryProjectionPushdownOneToOne(b *testing.B) {
 				opts,
 			)
 			testutil.Ok(b, err)
-			_, _ = op.Series(context.Background())
+			_, err = op.Series(context.Background())
+			testutil.Ok(b, err)
 		}
 	})
 	b.Run("with_projection", func(b *testing.B) {
@@ -194,7 +197,8 @@ func BenchmarkBinaryProjectionPushdownOneToOne(b *testing.B) {
 				opts,
 			)
 			testutil.Ok(b, err)
-			_, _ = op.Series(context.Background())
+			_, err = op.Series(context.Background())
+			testutil.Ok(b, err)
 		}
 	})
 }
@@ -247,7 +251,8 @@ func BenchmarkBinaryProjectionPushdownOneToMany(b *testing.B) {
 				opts,
 			)
 			testutil.Ok(b, err)
-			_, _ = op.Series(context.Background())
+			_, err = op.Series(context.Background())
+			testutil.Ok(b, err)
 		}
 	})
 	b.Run("with_projection", func(b *testing.B) {
@@ -267,7 +272,8 @@ func BenchmarkBinaryProjectionPushdownOneToMany(b *testing.B) {
 				opts,
 			)
 			testutil.Ok(b, err)
-			_, _ = op.Series(context.Background())
+			_, err = op.Series(context.Background())
+			testutil.Ok(b, err)
 		}
 	})
 }
