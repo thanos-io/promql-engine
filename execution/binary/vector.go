@@ -6,6 +6,7 @@ package binary
 import (
 	"context"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -44,6 +45,12 @@ type vectorOperator struct {
 	lhsSampleIDs []labels.Labels
 	rhsSampleIDs []labels.Labels
 	outputMap    map[uint64]uint64
+	// lcToCombo maps each low-card series id to a dense combo id derived from a
+	// signature of its matching.Include label values. Many low-card series that
+	// share the same Include values collapse to the same combo, de-duplicating
+	// the join outputMap. Only populated for the arithmetic (default) branch;
+	// left nil for LAND/LOR/LUNLESS.
+	lcToCombo []uint64
 
 	lcJoinBuckets []*joinBucket
 	hcJoinBuckets []*joinBucket
@@ -403,16 +410,16 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 		case o.returnBool:
 			h = nil
 			if keep {
-				step.AppendSampleWithSizeHint(o.outputSeriesID(histogramID+1, jp.sid+1), 1.0, sampleHint)
+				step.AppendSampleWithSizeHint(o.outputSeriesID(histogramID+1, o.lcOutputKey(jp.sid)+1), 1.0, sampleHint)
 			} else {
-				step.AppendSampleWithSizeHint(o.outputSeriesID(histogramID+1, jp.sid+1), 0.0, sampleHint)
+				step.AppendSampleWithSizeHint(o.outputSeriesID(histogramID+1, o.lcOutputKey(jp.sid)+1), 0.0, sampleHint)
 			}
 		case !keep:
 			continue
 		}
 
 		if h != nil {
-			step.AppendHistogramWithSizeHint(o.outputSeriesID(histogramID+1, jp.sid+1), h, histogramHint)
+			step.AppendHistogramWithSizeHint(o.outputSeriesID(histogramID+1, o.lcOutputKey(jp.sid)+1), h, histogramHint)
 		}
 	}
 
@@ -445,7 +452,7 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 			if !keep {
 				continue
 			}
-			step.AppendHistogramWithSizeHint(o.outputSeriesID(sampleID+1, jp.sid+1), h, histogramHint)
+			step.AppendHistogramWithSizeHint(o.outputSeriesID(sampleID+1, o.lcOutputKey(jp.sid)+1), h, histogramHint)
 		} else {
 			val, _, keep, warn, err = o.computeBinaryPairing(hcs.Samples[i], jp.val, nil, nil)
 			if err != nil {
@@ -463,7 +470,7 @@ func (o *vectorOperator) execBinaryArithmetic(ctx context.Context, lhs, rhs mode
 			} else if !keep {
 				continue
 			}
-			step.AppendSampleWithSizeHint(o.outputSeriesID(sampleID+1, jp.sid+1), val, sampleHint)
+			step.AppendSampleWithSizeHint(o.outputSeriesID(sampleID+1, o.lcOutputKey(jp.sid)+1), val, sampleHint)
 		}
 	}
 	return nil
@@ -488,6 +495,16 @@ func (o *vectorOperator) outputSeriesID(hc, lc uint64) uint64 {
 	return o.outputMap[cantorPairing(hc, lc)]
 }
 
+// lcOutputKey maps a low-card sample id to the second component of its outputMap
+// key. When the join is de-duplicated by Include combo, this is the combo id;
+// otherwise (no duplicate low-card signatures) it is the raw low-card id.
+func (o *vectorOperator) lcOutputKey(sid uint64) uint64 {
+	if o.lcToCombo == nil {
+		return sid
+	}
+	return o.lcToCombo[sid]
+}
+
 func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Labels) {
 	var (
 		joinBucketsByHash     = make(map[uint64]*joinBucket)
@@ -499,6 +516,15 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 		hcSampleIdToSignature = make(map[int]uint64, len(highCardSide))
 
 		outputMap = make(map[uint64]uint64, len(highCardSide))
+
+		// lcToCombo is built only for the arithmetic (default) branch below, and
+		// only when de-duplication can help; it stays nil otherwise (LAND/LOR/
+		// LUNLESS, or when no low-card signature repeats).
+		lcToCombo []uint64
+		// lcHasDupSig is set when some low-card join signature has more than one
+		// series, which is the only situation where the combo de-duplication can
+		// collapse anything.
+		lcHasDupSig bool
 	)
 
 	// initialize join bucket mappings
@@ -506,6 +532,9 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 		sig := o.sigFunc(lowCardSide[i])
 		lcSampleIdToSignature[i] = sig
 		lcHashToSeriesIDs[sig] = append(lcHashToSeriesIDs[sig], uint64(i))
+		if len(lcHashToSeriesIDs[sig]) > 1 {
+			lcHasDupSig = true
+		}
 		if jb, ok := joinBucketsByHash[sig]; ok {
 			lcJoinBuckets[i] = jb
 		} else {
@@ -552,6 +581,38 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 			outputMap[cantorPairing(uint64(i+1), 0)] = uint64(h.append(highCardSide[i]))
 		}
 	default:
+		// De-duplicate the output map by the low-card side's matching.Include
+		// (group_left/group_right) label values. The output series identity
+		// depends on the low-card side solely through those Include values (see
+		// resultMetric), so low-card series that share the same Include values map
+		// to the same output series and can share one outputMap entry.
+		//
+		// Only build the combo mapping when it can help, i.e. when some low-card
+		// signature has more than one series (lcHasDupSig). Otherwise every
+		// pairing is already unique, so lcToCombo stays nil and outputSeriesID
+		// falls back to the raw low-card index, avoiding the hashing and
+		// allocations entirely. When Include is empty, duplicate low-card series
+		// sharing a signature collapse to combo 0.
+		if lcHasDupSig {
+			lcToCombo = make([]uint64, len(lowCardSide))
+			if len(o.matching.Include) > 0 {
+				// Sort a copy of Include for BytesWithLabels; do not mutate o.matching.Include.
+				includeSorted := append([]string(nil), o.matching.Include...)
+				sort.Strings(includeSorted)
+				comboByHash := make(map[uint64]uint64)
+				sigBuf := make([]byte, 256)
+				for i := range lowCardSide {
+					sig := xxhash.Sum64(lowCardSide[i].BytesWithLabels(sigBuf, includeSorted...))
+					id, ok := comboByHash[sig]
+					if !ok {
+						id = uint64(len(comboByHash))
+						comboByHash[sig] = id
+					}
+					lcToCombo[i] = id
+				}
+			}
+		}
+
 		b := labels.NewBuilder(labels.EmptyLabels())
 		for i := range highCardSide {
 			sig := hcSampleIdToSignature[i]
@@ -560,13 +621,22 @@ func (o *vectorOperator) initJoinTables(highCardSide, lowCardSide []labels.Label
 				continue
 			}
 			for _, lc := range lcs {
+				ck := uint64(lc)
+				if lcToCombo != nil {
+					ck = lcToCombo[lc]
+				}
+				key := cantorPairing(uint64(i+1), ck+1)
+				if _, ok := outputMap[key]; ok {
+					continue
+				}
 				n := h.append(o.resultMetric(b, highCardSide[i], lowCardSide[lc]))
-				outputMap[cantorPairing(uint64(i+1), uint64(lc+1))] = uint64(n)
+				outputMap[key] = uint64(n)
 			}
 		}
 	}
 	o.series = h.ls
 	o.outputMap = outputMap
+	o.lcToCombo = lcToCombo
 	o.lcJoinBuckets = lcJoinBuckets
 	o.hcJoinBuckets = hcJoinBuckets
 }
