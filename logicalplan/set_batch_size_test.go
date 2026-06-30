@@ -94,7 +94,7 @@ func TestSetBatchSize(t *testing.T) {
 	for _, tcase := range cases {
 		t.Run(tcase.expr, func(t *testing.T) {
 			t.Parallel()
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
