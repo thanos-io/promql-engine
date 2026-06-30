@@ -40,6 +40,9 @@ func renderExprTree(expr Node) string {
 		if t.BatchSize > 0 {
 			base += fmt.Sprintf("[batch=%d]", t.BatchSize)
 		}
+		if t.SelectTimestamp {
+			base += "[timestamp]"
+		}
 		if t.Projection != nil {
 			sort.Strings(t.Projection.Labels)
 			if t.Projection.Include {
