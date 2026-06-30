@@ -2334,6 +2334,21 @@ or
 			end:   time.UnixMilli(160000),
 			step:  time.Minute + 16*time.Second,
 		},
+		{
+			// The matching low-card series for the pod changes its included (ns)
+			// label across the query window. Each output label set must become
+			// its own series, matching Prometheus, rather than collapsing onto a
+			// single representative series.
+			name: "group_left with included label changing across the window",
+			load: `load 30s
+			    metric_a{pod="x"} 1 1 1 1 1
+			    metric_b{pod="x", ns="a"} 1 1 _ _ _
+			    metric_b{pod="x", ns="b"} _ _ 1 1 1`,
+			query: `metric_a * on (pod) group_left (ns) metric_b`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(120, 0),
+			step:  30 * time.Second,
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
