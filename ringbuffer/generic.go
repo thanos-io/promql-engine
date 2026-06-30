@@ -46,6 +46,9 @@ type GenericRingBuffer struct {
 	selectRange int64
 	extLookback int64
 	call        FunctionCall
+
+	anchored bool
+	smoothed bool
 }
 
 func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
@@ -61,6 +64,20 @@ func NewWithExtLookback(ctx context.Context, size int, selectRange, offset, extL
 		extLookback: extLookback,
 		call:        call,
 	}
+}
+
+// NewAnchored creates a ring buffer for anchored range selectors.
+func NewAnchored(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
+	buf := NewWithExtLookback(ctx, size, selectRange, offset, extLookback, call)
+	buf.anchored = true
+	return buf
+}
+
+// NewSmoothed creates a ring buffer for smoothed range selectors.
+func NewSmoothed(ctx context.Context, size int, selectRange, offset, extLookback int64, call FunctionCall) *GenericRingBuffer {
+	buf := NewWithExtLookback(ctx, size, selectRange, offset, extLookback, call)
+	buf.smoothed = true
+	return buf
 }
 
 func (r *GenericRingBuffer) SampleCount() int {
@@ -123,6 +140,12 @@ func (r *GenericRingBuffer) Reset(mint int64, evalt int64) {
 	}
 	if r.extLookback > 0 && drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
 		drop--
+		// For anchored/smoothed, keep one additional lookback sample so that
+		// functions like changes/resets can compare against a sample before
+		// the range boundary (matching Prometheus pickFirstSampleIndex).
+		if (r.anchored || r.smoothed) && drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
+			drop--
+		}
 	}
 
 	keep := len(r.items) - drop
@@ -142,6 +165,8 @@ func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarA
 		ScalarPoint:      scalarArg,
 		ScalarPoint2:     scalarArg2, // only for double_exponential_smoothing
 		MetricAppearedTs: metricAppearedTs,
+		Anchored:         r.anchored,
+		Smoothed:         r.smoothed,
 	})
 }
 

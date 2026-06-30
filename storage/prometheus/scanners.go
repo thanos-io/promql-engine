@@ -75,6 +75,7 @@ func (p Scanners) NewVectorSelector(
 				logicalNode.SelectTimestamp,
 				i,
 				opts.DecodingConcurrency,
+				logicalNode.Smoothed,
 			), 2, opts)
 		operators = append(operators, operator)
 	}
@@ -149,6 +150,8 @@ func (p Scanners) NewMatrixSelector(
 			vs.BatchSize,
 			i,
 			opts.DecodingConcurrency,
+			vs.Anchored,
+			vs.Smoothed,
 		)
 		if err != nil {
 			return nil, err
