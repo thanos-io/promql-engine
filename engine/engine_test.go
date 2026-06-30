@@ -2334,6 +2334,17 @@ or
 			end:   time.UnixMilli(160000),
 			step:  time.Minute + 16*time.Second,
 		},
+		{
+			name: "binary op group_right with missing matching labels",
+			load: `load 30s
+				num_cpus{pod="nginx-1"} 4+0x40
+				memory_usage_bytes{pod="nginx-1", type="buffers"} 100+10x40
+				memory_usage_bytes{pod="nginx-1", type="cached"} 200+20x40
+				memory_usage_bytes{pod="nginx-1", type="free"} 300+30x40
+				memory_usage_bytes{pod="nginx-1", type="used"} 400+40x40`,
+			query: `num_cpus * on(instance, job) group_right(type) memory_usage_bytes`,
+			end:   time.Unix(1200, 0),
+		},
 	}
 
 	disableOptimizerOpts := []bool{true, false}
