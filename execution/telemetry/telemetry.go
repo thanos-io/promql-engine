@@ -15,6 +15,12 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/util/stats"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type OperatorTelemetry interface {
@@ -31,6 +37,9 @@ type OperatorTelemetry interface {
 	Samples() *stats.QuerySamples
 	LogicalNode() logicalplan.Node
 	UpdatePeak(count int)
+	// AnalysisEnabled reports whether this telemetry instance is actively
+	// tracking execution statistics (i.e., it is a TrackedTelemetry).
+	AnalysisEnabled() bool
 }
 
 func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
@@ -93,6 +102,8 @@ func (tm *NoopTelemetry) LogicalNode() logicalplan.Node {
 }
 
 func (tm *NoopTelemetry) UpdatePeak(_ int) {}
+
+func (tm *NoopTelemetry) AnalysisEnabled() bool { return false }
 
 type TrackedTelemetry struct {
 	fmt.Stringer
@@ -164,6 +175,8 @@ func (ti *TrackedTelemetry) UpdatePeak(count int) {
 	ti.Samples().UpdatePeak(count)
 }
 
+func (ti *TrackedTelemetry) AnalysisEnabled() bool { return true }
+
 type ObservableVectorOperator interface {
 	model.VectorOperator
 	OperatorTelemetry
@@ -190,13 +203,39 @@ func NewOperator(telemetry OperatorTelemetry, inner model.VectorOperator) model.
 type Operator struct {
 	OperatorTelemetry
 	inner model.VectorOperator
+	span  trace.Span // operator-level OTel span; nil when not tracing this operator
+}
+
+// shouldTrace returns true when operator-level spans should be emitted.
+// The baggage key "promql.enable_analysis" is an authoritative override:
+// "true" forces tracing on, "false" forces it off, absent defers to the
+// telemetry layer (which reflects the global EnableAnalysis option).
+func (t *Operator) shouldTrace(ctx context.Context) bool {
+	if v := baggage.FromContext(ctx).Member("promql.enable_analysis").Value(); v != "" {
+		return v == "true"
+	}
+	return t.OperatorTelemetry.AnalysisEnabled()
 }
 
 func (t *Operator) Series(ctx context.Context) ([]labels.Labels, error) {
 	start := time.Now()
 	defer func() { t.OperatorTelemetry.AddSeriesExecutionTime(time.Since(start)) }()
+
+	// Start an operator-level OTel span when analysis is enabled (globally or via baggage).
+	if t.shouldTrace(ctx) {
+		_, span := otel.Tracer("").Start(ctx, t.inner.String())
+		span.SetAttributes(attribute.String("promql.operator.type", fmt.Sprintf("%T", t.inner)))
+		t.span = span
+	}
+
 	s, err := t.inner.Series(ctx)
 	if err != nil {
+		if t.span != nil {
+			t.span.RecordError(err)
+			t.span.SetStatus(codes.Error, err.Error())
+			t.span.End()
+			t.span = nil
+		}
 		return nil, err
 	}
 	t.OperatorTelemetry.SetMaxSeriesCount(len(s))
@@ -216,6 +255,12 @@ func (t *Operator) Next(ctx context.Context, buf []model.StepVector) (int, error
 	defer func() { t.OperatorTelemetry.AddNextExecutionTime(time.Since(start)) }()
 	n, err := t.inner.Next(ctx, buf)
 	if err != nil {
+		if t.span != nil {
+			t.span.RecordError(err)
+			t.span.SetStatus(codes.Error, err.Error())
+			t.span.End()
+			t.span = nil
+		}
 		return 0, err
 	}
 
@@ -228,6 +273,16 @@ func (t *Operator) Next(ctx context.Context, buf []model.StepVector) (int, error
 	}
 
 	t.OperatorTelemetry.UpdatePeak(int(totalSamplesAfter) - int(totalSamplesBeforeCount))
+
+	// When the operator is done producing results, finalize and end the span.
+	if n == 0 && t.span != nil {
+		t.span.SetAttributes(
+			attribute.Int64("promql.series.count", int64(t.OperatorTelemetry.MaxSeriesCount())),
+			attribute.Int64("promql.samples.total", totalSamplesAfter),
+		)
+		t.span.End()
+		t.span = nil
+	}
 
 	return n, err
 }
