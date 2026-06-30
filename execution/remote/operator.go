@@ -33,17 +33,17 @@ type Execution struct {
 }
 
 func NewExecution(query promql.Query, queryRangeStart, queryRangeEnd time.Time, engineLabels []labels.Labels, opts *query.Options, _ storage.SelectHints) model.VectorOperator {
-	storage := newStorageFromQuery(query, opts, engineLabels)
+	stor := newStorageFromQuery(query, opts, engineLabels)
 	oper := &Execution{
-		storage:         storage,
+		storage:         stor,
 		query:           query,
 		opts:            opts,
 		queryRangeStart: queryRangeStart,
 		queryRangeEnd:   queryRangeEnd,
-		vectorSelector:  promstorage.NewVectorSelector(storage, opts, 0, 0, false, 0, 1),
+		vectorSelector:  promstorage.NewVectorSelector(stor, opts, 0, 0, false, 0, 1),
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
+	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), oper)
 }
 
 func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {

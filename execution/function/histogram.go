@@ -92,7 +92,7 @@ func newHistogramOperator(
 	default:
 		panic("unsupported function passed")
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts), o)
+	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), o)
 }
 
 func (o *histogramOperator) String() string {

@@ -29,7 +29,7 @@ func NewDuplicateLabelCheck(next model.VectorOperator, opts *query.Options) mode
 	oper := &duplicateLabelCheckOperator{
 		next: next,
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
+	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), oper)
 }
 
 func (d *duplicateLabelCheckOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {

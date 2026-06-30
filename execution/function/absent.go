@@ -31,7 +31,7 @@ func newAbsentOperator(
 		funcExpr: funcExpr,
 		next:     next,
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
+	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), oper)
 }
 
 func (o *absentOperator) String() string {

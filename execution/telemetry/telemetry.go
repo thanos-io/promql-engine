@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/model"
-	"github.com/thanos-io/promql-engine/logicalplan"
-	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
@@ -27,39 +25,39 @@ type OperatorTelemetry interface {
 	SeriesExecutionTime() time.Duration
 	AddNextExecutionTime(time.Duration)
 	NextExecutionTime() time.Duration
-	IncrementSamplesAtTimestamp(samples int, t int64)
+	IncrementSamplesAtTimestamp(samples int, t int64) error
 	Samples() *stats.QuerySamples
-	LogicalNode() logicalplan.Node
+	IsSubquery() bool
+	IsStepInvariant() bool
 	UpdatePeak(count int)
 }
 
-func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
-	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, nil)
+func NewTelemetry(operator fmt.Stringer, enableAnalysis, enablePerStepStats bool, start, end int64, step time.Duration, limiter *SampleLimiter) OperatorTelemetry {
+	if enableAnalysis {
+		return newTrackedTelemetry(operator, enablePerStepStats, start, end, step, limiter, false, false)
 	}
-	return NewNoopTelemetry(operator)
+	return &NoopTelemetry{Stringer: operator, limiter: limiter}
 }
 
-func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
-	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, &logicalplan.Subquery{})
+func NewSubqueryTelemetry(operator fmt.Stringer, enableAnalysis, enablePerStepStats bool, start, end int64, step time.Duration, limiter *SampleLimiter) OperatorTelemetry {
+	if enableAnalysis {
+		return newTrackedTelemetry(operator, enablePerStepStats, start, end, step, limiter, true, false)
 	}
-	return NewNoopTelemetry(operator)
+	return &NoopTelemetry{Stringer: operator, limiter: limiter, isSubquery: true}
 }
 
-func NewStepInvariantTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
-	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, &logicalplan.StepInvariantExpr{})
+func NewStepInvariantTelemetry(operator fmt.Stringer, enableAnalysis, enablePerStepStats bool, start, end int64, step time.Duration, limiter *SampleLimiter) OperatorTelemetry {
+	if enableAnalysis {
+		return newTrackedTelemetry(operator, enablePerStepStats, start, end, step, limiter, false, true)
 	}
-	return NewNoopTelemetry(operator)
+	return &NoopTelemetry{Stringer: operator, limiter: limiter, isStepInvariant: true}
 }
 
 type NoopTelemetry struct {
 	fmt.Stringer
-}
-
-func NewNoopTelemetry(operator fmt.Stringer) *NoopTelemetry {
-	return &NoopTelemetry{Stringer: operator}
+	limiter         *SampleLimiter
+	isSubquery      bool
+	isStepInvariant bool
 }
 
 func (tm *NoopTelemetry) AddExecutionTimeTaken(t time.Duration) {}
@@ -80,7 +78,9 @@ func (tm *NoopTelemetry) NextExecutionTime() time.Duration {
 	return time.Duration(0)
 }
 
-func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(_ int, _ int64) {}
+func (tm *NoopTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) error {
+	return tm.limiter.Add(samples, t)
+}
 
 func (tm *NoopTelemetry) Samples() *stats.QuerySamples { return nil }
 
@@ -88,30 +88,34 @@ func (tm *NoopTelemetry) MaxSeriesCount() int { return 0 }
 
 func (tm *NoopTelemetry) SetMaxSeriesCount(_ int) {}
 
-func (tm *NoopTelemetry) LogicalNode() logicalplan.Node {
-	return nil
-}
+func (tm *NoopTelemetry) IsSubquery() bool { return tm.isSubquery }
+
+func (tm *NoopTelemetry) IsStepInvariant() bool { return tm.isStepInvariant }
 
 func (tm *NoopTelemetry) UpdatePeak(_ int) {}
 
 type TrackedTelemetry struct {
 	fmt.Stringer
 
-	Series        int
-	ExecutionTime time.Duration
-	SeriesTime    time.Duration
-	NextTime      time.Duration
-	LoadedSamples *stats.QuerySamples
-	logicalNode   logicalplan.Node
+	Series          int
+	ExecutionTime   time.Duration
+	SeriesTime      time.Duration
+	NextTime        time.Duration
+	LoadedSamples   *stats.QuerySamples
+	limiter         *SampleLimiter
+	isSubquery      bool
+	isStepInvariant bool
 }
 
-func NewTrackedTelemetry(operator fmt.Stringer, opts *query.Options, logicalPlanNode logicalplan.Node) *TrackedTelemetry {
-	ss := stats.NewQuerySamples(opts.EnablePerStepStats)
-	ss.InitStepTracking(opts.Start.UnixMilli(), opts.End.UnixMilli(), StepTrackingInterval(opts.Step))
+func newTrackedTelemetry(operator fmt.Stringer, enablePerStepStats bool, start, end int64, step time.Duration, limiter *SampleLimiter, isSubquery, isStepInvariant bool) *TrackedTelemetry {
+	ss := stats.NewQuerySamples(enablePerStepStats)
+	ss.InitStepTracking(start, end, StepTrackingInterval(step))
 	return &TrackedTelemetry{
-		Stringer:      operator,
-		LoadedSamples: ss,
-		logicalNode:   logicalPlanNode,
+		Stringer:        operator,
+		LoadedSamples:   ss,
+		limiter:         limiter,
+		isSubquery:      isSubquery,
+		isStepInvariant: isStepInvariant,
 	}
 }
 
@@ -146,13 +150,14 @@ func (ti *TrackedTelemetry) NextExecutionTime() time.Duration {
 	return ti.NextTime
 }
 
-func (ti *TrackedTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) {
+func (ti *TrackedTelemetry) IncrementSamplesAtTimestamp(samples int, t int64) error {
 	ti.LoadedSamples.IncrementSamplesAtTimestamp(t, int64(samples))
+	return ti.limiter.Add(samples, t)
 }
 
-func (ti *TrackedTelemetry) LogicalNode() logicalplan.Node {
-	return ti.logicalNode
-}
+func (ti *TrackedTelemetry) IsSubquery() bool { return ti.isSubquery }
+
+func (ti *TrackedTelemetry) IsStepInvariant() bool { return ti.isStepInvariant }
 
 func (ti *TrackedTelemetry) Samples() *stats.QuerySamples { return ti.LoadedSamples }
 

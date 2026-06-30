@@ -446,7 +446,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		EnableAnalysis:           e.enableAnalysis,
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
-		SampleTracker:            query.NewSampleTracker(e.maxSamplesPerQuery),
+		SampleLimiter:            telemetry.NewSampleLimiter(e.maxSamplesPerQuery, start.UnixMilli(), end.UnixMilli(), telemetry.StepTrackingInterval(step)),
 	}
 
 	if opts == nil {
@@ -459,7 +459,6 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 	if opts.EnablePerStepStats() {
 		res.EnablePerStepStats = opts.EnablePerStepStats()
 	}
-
 	if opts.DecodingConcurrency != 0 {
 		res.DecodingConcurrency = opts.DecodingConcurrency
 	}
