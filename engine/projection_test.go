@@ -214,7 +214,7 @@ func TestProjectionWithFuzz(t *testing.T) {
 	queryTime := time.Unix(600, 0)
 
 	t.Logf("Running %d fuzzy tests with seed %d", testRuns, seed)
-	for i := 0; i < testRuns; i++ {
+	for i := range testRuns {
 		var expr parser.Expr
 		var query string
 

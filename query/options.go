@@ -18,19 +18,7 @@ type Options struct {
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
 	DecodingConcurrency      int
-}
-
-func (o *Options) NumSteps() int {
-	// Instant evaluation is executed as a range evaluation with one step.
-	if o.Step.Milliseconds() == 0 {
-		return 1
-	}
-
-	totalSteps := (o.End.UnixMilli()-o.Start.UnixMilli())/o.Step.Milliseconds() + 1
-	if int64(o.StepsBatch) < totalSteps {
-		return o.StepsBatch
-	}
-	return int(totalSteps)
+	SampleTracker            SampleTracker // Tracks current samples in memory
 }
 
 // TotalSteps returns the total number of steps in the query, regardless of batching.
@@ -43,8 +31,16 @@ func (o *Options) TotalSteps() int {
 	return int((o.End.UnixMilli()-o.Start.UnixMilli())/o.Step.Milliseconds() + 1)
 }
 
+func (o *Options) NumStepsPerBatch() int {
+	totalSteps := o.TotalSteps()
+	if o.StepsBatch < totalSteps {
+		return o.StepsBatch
+	}
+	return totalSteps
+}
+
 func (o *Options) IsInstantQuery() bool {
-	return o.NumSteps() == 1
+	return o.TotalSteps() == 1
 }
 
 func (o *Options) WithEndTime(end time.Time) *Options {
@@ -62,6 +58,10 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		EnableAnalysis:           opts.EnableAnalysis,
 		DecodingConcurrency:      opts.DecodingConcurrency,
+		SampleTracker:            opts.SampleTracker,
+	}
+	if nOpts.SampleTracker == nil {
+		nOpts.SampleTracker = NewSampleTracker(0)
 	}
 	if step != 0 {
 		nOpts.Step = step

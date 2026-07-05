@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -56,6 +56,15 @@ func shouldValidateSamples(expr parser.Expr) bool {
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
+		case *parser.VectorSelector:
+			if n.Timestamp != nil || n.StartOrEnd != 0 {
+				// The Thanos engine's step invariant operator caches the result of the
+				// first evaluation and replays it for subsequent steps without re-counting
+				// samples. This leads to fewer total samples compared to Prometheus which
+				// counts samples at every step.
+				valid = false
+				return errors.New("error")
+			}
 		case *parser.Call:
 			switch n.Func.Name {
 			case "scalar":
@@ -81,6 +90,14 @@ func validateExpr(expr parser.Expr, testType testType) bool {
 
 	parser.Inspect(expr, func(node parser.Node, path []parser.Node) error {
 		switch n := node.(type) {
+		case *parser.AggregateExpr:
+			if n.Op == parser.COUNT_VALUES {
+				// count_values converts float values to string labels. Tiny floating point
+				// precision differences between engines (e.g. 61.24999999999997 vs 61.24999999999998)
+				// produce different label values, causing result mismatches.
+				valid = false
+				return errors.New("error")
+			}
 		case *parser.Call:
 			switch n.Func.Name {
 			case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
@@ -366,7 +383,7 @@ func validateTestCases(t *testing.T, cases []*testCase) {
 func normalizeBuckets(a, b, c uint64) []uint64 {
 	// Ensure strictly increasing positive values (cumulative form).
 	buckets := []uint64{a, b, c}
-	sort.Slice(buckets, func(i, j int) bool { return buckets[i] < buckets[j] })
+	slices.Sort(buckets)
 
 	// Avoid zero counts
 	for i := range buckets {

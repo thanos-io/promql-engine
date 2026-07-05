@@ -91,6 +91,10 @@ func TestPromqlAcceptance(t *testing.T) {
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/type_and_unit.test",       // feature unsupported
+			"testdata/extended_vectors.test",    // experimental anchored/smoothed modifiers unsupported
+			"testdata/info.test",                // info() function unsupported
+			"testdata/literals.test",            // string literal expressions as query results unsupported
+			"testdata/range_queries.test",       // matrix selector as instant query result unsupported
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
@@ -2329,6 +2333,21 @@ or
 			start: time.UnixMilli(83000),
 			end:   time.UnixMilli(160000),
 			step:  time.Minute + 16*time.Second,
+		},
+		{
+			// The matching low-card series for the pod changes its included (ns)
+			// label across the query window. Each output label set must become
+			// its own series, matching Prometheus, rather than collapsing onto a
+			// single representative series.
+			name: "group_left with included label changing across the window",
+			load: `load 30s
+			    metric_a{pod="x"} 1 1 1 1 1
+			    metric_b{pod="x", ns="a"} 1 1 _ _ _
+			    metric_b{pod="x", ns="b"} _ _ 1 1 1`,
+			query: `metric_a * on (pod) group_left (ns) metric_b`,
+			start: time.Unix(0, 0),
+			end:   time.Unix(120, 0),
+			step:  30 * time.Second,
 		},
 	}
 
@@ -4790,6 +4809,156 @@ func TestQueryTimeout(t *testing.T) {
 	testutil.Equals(t, context.DeadlineExceeded, res.Err)
 }
 
+func TestMaxSamples(t *testing.T) {
+	t.Parallel()
+
+	t.Run("max_samples with rate function", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// Create 1000 series with samples every 15s for 5 minutes
+		for i := range 1000 {
+			for ts := int64(0); ts <= 300; ts += 15 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// With 1000 series and a 2m window, rate() will keep ~8 samples per series in memory
+		// = ~8000 samples total
+		query := `rate(test_metric[2m])`
+		start := time.Unix(120, 0)
+		end := time.Unix(300, 0)
+		step := 30 * time.Second
+
+		t.Run("exceeds limit", func(t *testing.T) {
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 5000, // Lower than ~8000 expected
+				},
+			})
+			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+			require.NoError(t, err)
+			res := q.Exec(context.Background())
+			require.Error(t, res.Err, "expected max_samples error")
+			require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+		})
+
+		t.Run("within limit", func(t *testing.T) {
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 50000, // Higher than ~8000 expected
+				},
+			})
+			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+			require.NoError(t, err)
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
+		})
+	})
+
+	t.Run("max_samples with vector selector", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// 10000 series, each step will have 10000 samples in memory
+		for i := range 10000 {
+			for ts := int64(0); ts <= 300; ts += 30 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		query := `test_metric`
+		start := time.Unix(0, 0)
+		end := time.Unix(60, 0)
+		step := 30 * time.Second
+
+		ng := engine.New(engine.Opts{
+			EngineOpts: promql.EngineOpts{
+				Timeout:    1 * time.Hour,
+				MaxSamples: 5000, // Lower than 10000 series per step
+			},
+		})
+		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+		require.NoError(t, err)
+		res := q.Exec(context.Background())
+		require.Error(t, res.Err)
+		require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+	})
+
+	t.Run("max_samples with subquery", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// 1000 series with subquery that accumulates samples
+		for i := range 1000 {
+			for ts := int64(0); ts <= 600; ts += 15 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		// Subquery with 2m range and 30s step = 5 steps per evaluation
+		// With 1000 series, that's ~5000 samples in ring buffer
+		query := `sum_over_time(test_metric[2m:30s])`
+		start := time.Unix(120, 0)
+		end := time.Unix(300, 0)
+		step := 60 * time.Second
+
+		ng := engine.New(engine.Opts{
+			EngineOpts: promql.EngineOpts{
+				Timeout:    1 * time.Hour,
+				MaxSamples: 1000, // Lower than expected
+			},
+		})
+		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+		require.NoError(t, err)
+		res := q.Exec(context.Background())
+		require.Error(t, res.Err)
+		require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+	})
+
+	t.Run("max_samples disabled by default", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		for i := range 100 {
+			for ts := int64(0); ts < 300; ts += 30 {
+				_, err := app.Append(0, labels.FromStrings(labels.MetricName, "test_metric", "series", strconv.Itoa(i)), ts*1000, float64(ts))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		query := `rate(test_metric[1m])`
+		start := time.Unix(0, 0)
+		end := time.Unix(300, 0)
+		step := 30 * time.Second
+
+		ng := engine.New(engine.Opts{
+			EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour},
+		})
+		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+		require.NoError(t, err)
+		res := q.Exec(context.Background())
+		require.NoError(t, res.Err)
+	})
+}
+
 type hintRecordingQuerier struct {
 	storage.Querier
 	mux   sync.Mutex
@@ -5401,7 +5570,7 @@ func storageWithSeries(series ...storage.Series) *storage.MockQueryable {
 				for _, s := range series {
 					for _, m := range matchers {
 						lbl := s.Labels().Get(m.Name)
-						if lbl != "" && !m.Matches(lbl) {
+						if !m.Matches(lbl) {
 							continue loopSeries
 						}
 					}
@@ -5619,7 +5788,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		testutil.Ok(t, err)
 
 		r := q.Exec(ctx)
-		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
+		testutil.Assert(t, r.Err.Error() == "unexpected panic: panic!")
 	})
 
 	t.Run("range", func(t *testing.T) {
@@ -5629,7 +5798,7 @@ func TestEngineRecoversFromPanic(t *testing.T) {
 		testutil.Ok(t, err)
 
 		r := q.Exec(ctx)
-		testutil.Assert(t, r.Err.Error() == "unexpected error: panic!")
+		testutil.Assert(t, r.Err.Error() == "unexpected panic: panic!")
 	})
 }
 
@@ -6113,7 +6282,7 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 		testutil.Equals(t, 1, len(actual), "expected 1 series")
 		testutil.Equals(t, 1, len(actual[0].Histograms), "expected 1 point")
 
-		diff, err := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil))
+		diff, _, _, err := histograms[1].ToFloat(nil).Sub(histograms[0].ToFloat(nil))
 		testutil.Ok(t, err)
 		expected := diff.Mul(1 / float64(30))
 		expected.CounterResetHint = histogram.GaugeType

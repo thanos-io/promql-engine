@@ -4,7 +4,9 @@
 package logicalplan
 
 import (
+	"context"
 	"math"
+	"math/rand"
 	"regexp"
 	"testing"
 	"time"
@@ -12,9 +14,12 @@ import (
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/query"
 
+	"github.com/cortexproject/promqlsmith"
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 var replacements = map[string]*regexp.Regexp{
@@ -78,19 +83,13 @@ sum(
     remote(count by (pod, region) (metric_a)))))`,
 		},
 		{
-			name: "avg in binary expression with outer sum distributes avg independently",
+			name: "avg in binary expression with outer sum pushes entire expression",
 			expr: `sum(metric_a * avg by (region) (metric_b))`,
 			expected: `
 sum(
-  dedup(remote(metric_a), remote(metric_a))
-  *
-  sum by (region) (dedup(
-    remote(sum by (region) (metric_b)),
-    remote(sum by (region) (metric_b))))
-  / on (region)
-  sum by (region) (dedup(
-    remote(count by (region) (metric_b)),
-    remote(count by (region) (metric_b)))))`,
+  dedup(
+    remote(sum by (region) (metric_a * avg by (region) (metric_b))),
+    remote(sum by (region) (metric_a * avg by (region) (metric_b)))))`,
 		},
 		{
 			name:     "selector",
@@ -166,21 +165,12 @@ sum by (pod) (
 )`,
 		},
 		{
-			name: "avg with without-grouping",
+			name: "avg with without-grouping preserving partition labels",
 			expr: `avg without (pod) (http_requests_total)`,
 			expected: `
-sum without (pod) (
-  dedup(
-    remote(sum without (pod) (http_requests_total)),
-    remote(sum without (pod) (http_requests_total))
-  )
-) / ignoring (pod)
-sum without (pod) (
-  dedup(
-    remote(count without (pod) (http_requests_total)),
-    remote(count without (pod) (http_requests_total))
-  )
-)`,
+dedup(
+  remote(avg without (pod) (http_requests_total)),
+  remote(avg without (pod) (http_requests_total)))`,
 		},
 		{
 			name: "avg with prior aggregation",
@@ -212,6 +202,57 @@ sum by (pod) (
     remote(count by (pod, region) (metric_a / metric_b))
   )
 )`,
+		},
+		{
+			name: "avg by partition label pushes as-is",
+			expr: `avg by (region) (http_requests_total)`,
+			expected: `
+dedup(
+  remote(avg by (region) (http_requests_total)),
+  remote(avg by (region) (http_requests_total)))`,
+		},
+		{
+			name: "avg by partition label defers to distributive ancestor",
+			expr: `max(avg by (region) (http_requests_total))`,
+			expected: `
+max(
+  dedup(
+    remote(max by (region) (avg by (region) (http_requests_total))),
+    remote(max by (region) (avg by (region) (http_requests_total)))))`,
+		},
+		{
+			name: "avg over subquery with inner aggregations pushes entire expression",
+			expr: `avg by (region) (quantile_over_time(0.9, (sum by (region) (rate(metric_a[2m])) / sum by (region) (metric_b))[1h:1m]))`,
+			expected: `
+dedup(
+  remote(avg by (region) (quantile_over_time(0.9, (sum by (region) (rate(metric_a[2m])) / sum by (region) (metric_b))[1h:1m]))),
+  remote(avg by (region) (quantile_over_time(0.9, (sum by (region) (rate(metric_a[2m])) / sum by (region) (metric_b))[1h:1m]))))`,
+		},
+		{
+			name: "quantile by partition label pushes as-is",
+			expr: `quantile by (region) (0.9, http_requests_total)`,
+			expected: `
+dedup(
+  remote(quantile by (region) (0.9, http_requests_total)),
+  remote(quantile by (region) (0.9, http_requests_total)))`,
+		},
+		{
+			name:     "quantile by non-partition label is not distributed",
+			expr:     `quantile by (pod) (0.9, http_requests_total)`,
+			expected: `quantile by (pod) (0.9, dedup(remote(http_requests_total), remote(http_requests_total)))`,
+		},
+		{
+			name: "stddev by partition label pushes as-is",
+			expr: `stddev by (region) (http_requests_total)`,
+			expected: `
+dedup(
+  remote(stddev by (region) (http_requests_total)),
+  remote(stddev by (region) (http_requests_total)))`,
+		},
+		{
+			name:     "stddev by non-partition label is not distributed",
+			expr:     `stddev by (pod) (http_requests_total)`,
+			expected: `stddev by (pod) (dedup(remote(http_requests_total), remote(http_requests_total)))`,
 		},
 		{
 			name: "two-level aggregation",
@@ -313,6 +354,20 @@ label_replace(max by (location) (dedup(
   remote(max by (location, region) (http_requests_total)),
   remote(max by (location, region) (http_requests_total))
 )), "region", "$1", "location", "(.*)")`,
+			expectWarn: true,
+		},
+		{
+			name: "label join targeting non-partition label distributes",
+			expr: `label_join(http_requests_total, "zone", ",", "pod")`,
+			expected: `
+dedup(
+  remote(label_join(http_requests_total, "zone", ",", "pod")),
+  remote(label_join(http_requests_total, "zone", ",", "pod")))`,
+		},
+		{
+			name:       "label join targeting partition label does not distribute",
+			expr:       `max by (location) (label_join(http_requests_total, "region", ",", "pod"))`,
+			expected:   `max by (location) (label_join(dedup(remote(http_requests_total), remote(http_requests_total)), "region", ",", "pod"))`,
 			expectWarn: true,
 		},
 		{
@@ -513,14 +568,21 @@ count by (cluster) (
 		{
 			name:              "skip binary pushdown with nested aggregation",
 			expr:              `sum(metric_a * group by (region) (metric_b))`,
-			expected:          `sum(dedup(remote(metric_a), remote(metric_a)) * group by (region) (dedup(remote(group by (region) (metric_b)), remote(group by (region) (metric_b)))))`,
+			expected:          `sum(dedup(remote(metric_a), remote(metric_a)) * dedup(remote(group by (region) (metric_b)), remote(group by (region) (metric_b))))`,
 			skipBinopPushdown: true,
 		},
 		{
 			name:              "skip binary pushdown with outer aggregation",
 			expr:              `max(metric_a + sum by (region, pod) (metric_b))`,
-			expected:          `max(dedup(remote(metric_a), remote(metric_a)) + sum by (region, pod) (dedup(remote(sum by (pod, region) (metric_b)), remote(sum by (pod, region) (metric_b)))))`,
+			expected:          `max(dedup(remote(metric_a), remote(metric_a)) + dedup(remote(sum by (region, pod) (metric_b)), remote(sum by (region, pod) (metric_b))))`,
 			skipBinopPushdown: true,
+		},
+		{
+			// When the RHS of unless has an aggregation that drops the partition label,
+			// both sides should still be distributed independently.
+			name:     "unless with aggregation that drops partition label distributes both sides",
+			expr:     `group by (region, instance) (metric_a unless on (region, instance) max by (instance) (metric_b))`,
+			expected: `group by (region, instance) (dedup(remote(metric_a), remote(metric_a)) unless on (region, instance) max by (instance) (dedup(remote(max by (instance, region) (metric_b)), remote(max by (instance, region) (metric_b)))))`,
 		},
 		{
 			// group_left/group_right with partition label cannot be distributed because
@@ -1008,6 +1070,87 @@ sum by (pod) (dedup(
 	}
 }
 
+func TestDistributedExecutionMultiplePartitionLabels(t *testing.T) {
+	// Engines partitioned by both region and datacenter.
+	engines := []api.RemoteEngine{
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east", "datacenter", "dc1")}),
+		newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west", "datacenter", "dc2")}),
+	}
+	optimizers := []Optimizer{
+		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+	}
+
+	cases := []struct {
+		name     string
+		expr     string
+		expected string
+	}{
+		{
+			name: "on() must include all partition labels to distribute",
+			expr: `metric_a + on (region) metric_b`,
+			expected: `
+dedup(remote(metric_a), remote(metric_a))
++ on (region)
+dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name: "on() with all partition labels distributes the binary",
+			expr: `metric_a + on (region, datacenter) metric_b`,
+			expected: `
+dedup(
+  remote(metric_a + on (region, datacenter) metric_b),
+  remote(metric_a + on (region, datacenter) metric_b))`,
+		},
+		{
+			name: "ignoring() must not include any partition label to distribute",
+			expr: `metric_a + ignoring (region) metric_b`,
+			expected: `
+dedup(remote(metric_a), remote(metric_a))
++ ignoring (region)
+dedup(remote(metric_b), remote(metric_b))`,
+		},
+		{
+			name: "ignoring() non-partition label distributes the binary",
+			expr: `metric_a + ignoring (pod) metric_b`,
+			expected: `
+dedup(
+  remote(metric_a + ignoring (pod) metric_b),
+  remote(metric_a + ignoring (pod) metric_b))`,
+		},
+		{
+			name: "sum must include all partition labels to preserve",
+			expr: `sum by (region) (metric_a)`,
+			expected: `
+sum by (region) (
+  dedup(
+    remote(sum by (datacenter, region) (metric_a)),
+    remote(sum by (datacenter, region) (metric_a))))`,
+		},
+		{
+			name: "sum by all partition labels preserves",
+			expr: `max(sum by (region, datacenter) (metric_a))`,
+			expected: `
+max(
+  dedup(
+    remote(max by (datacenter, region) (sum by (region, datacenter) (metric_a))),
+    remote(max by (datacenter, region) (sum by (region, datacenter) (metric_a)))))`,
+		},
+	}
+
+	for _, tcase := range cases {
+		t.Run(tcase.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tcase.expr)
+			testutil.Ok(t, err)
+
+			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+			testutil.Ok(t, err)
+			optimizedPlan, _ := plan.Optimize(optimizers)
+			expectedPlan := cleanUp(replacements, tcase.expected)
+			testutil.Equals(t, expectedPlan, renderExprTree(optimizedPlan.Root()))
+		})
+	}
+}
+
 func TestDistributedExecutionClonesNodes(t *testing.T) {
 	var (
 		start    = time.Unix(0, 0)
@@ -1082,4 +1225,313 @@ func newEngineMock(mint, maxt int64, labelSets []labels.Labels) *engineMock {
 
 func newEngineMockWithExplicitPartition(mint, maxt int64, labelSets, partitionLabelSets []labels.Labels) *engineMock {
 	return &engineMock{minT: mint, maxT: maxt, labelSets: labelSets, partitionLabelSets: partitionLabelSets}
+}
+
+func TestPreservesPartitionLabels(t *testing.T) {
+	partitionLabels := map[string]struct{}{"region": {}}
+
+	parse := func(t *testing.T, expr string) Node {
+		t.Helper()
+		parsed, err := parser.ParseExpr(expr)
+		testutil.Ok(t, err)
+		plan, err := NewFromAST(parsed, &query.Options{
+			Start: time.Unix(0, 0),
+			End:   time.Unix(0, 0),
+		}, PlanOptions{})
+		testutil.Ok(t, err)
+		return plan.Root()
+	}
+
+	cases := []struct {
+		name            string
+		expr            string
+		partitionLabels map[string]struct{}
+		expected        bool
+	}{
+		{
+			name:     "vector selector preserves",
+			expr:     `metric`,
+			expected: true,
+		},
+		{
+			name:     "number literal preserves",
+			expr:     `1`,
+			expected: true,
+		},
+		{
+			name:     "sum by partition label preserves",
+			expr:     `sum by (region) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "sum by non-partition label does not preserve",
+			expr:     `sum by (pod) (metric)`,
+			expected: false,
+		},
+		{
+			name:     "sum by both labels preserves",
+			expr:     `sum by (pod, region) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "sum without partition label does not preserve",
+			expr:     `sum without (region) (metric)`,
+			expected: false,
+		},
+		{
+			name:     "sum without non-partition label preserves",
+			expr:     `sum without (pod) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "sum with no grouping does not preserve",
+			expr:     `sum(metric)`,
+			expected: false,
+		},
+		{
+			name:     "binary with on(partition) preserves",
+			expr:     `metric_a + on (region) metric_b`,
+			expected: true,
+		},
+		{
+			name:     "binary with on(non-partition) does not preserve",
+			expr:     `metric_a + on (pod) metric_b`,
+			expected: false,
+		},
+		{
+			name:     "binary with ignoring(partition) does not preserve",
+			expr:     `metric_a + ignoring (region) metric_b`,
+			expected: false,
+		},
+		{
+			name:     "binary with ignoring(non-partition) preserves",
+			expr:     `metric_a + ignoring (pod) metric_b`,
+			expected: true,
+		},
+		{
+			name:     "binary with default matching preserves",
+			expr:     `metric_a + metric_b`,
+			expected: true,
+		},
+		{
+			name:     "binary with partition in group_left include preserves",
+			expr:     `metric_a * on (pod) group_left(region) metric_b`,
+			expected: true,
+		},
+		{
+			name:     "unary preserves",
+			expr:     `-metric`,
+			expected: true,
+		},
+		{
+			name:     "subquery preserves",
+			expr:     `max_over_time(metric[5m:1m])`,
+			expected: true,
+		},
+		{
+			name:     "label_replace targeting partition label does not preserve",
+			expr:     `label_replace(metric, "region", "$1", "pod", "(.*)")`,
+			expected: false,
+		},
+		{
+			name:     "label_replace targeting non-partition label preserves",
+			expr:     `label_replace(metric, "zone", "$1", "pod", "(.*)")`,
+			expected: true,
+		},
+		{
+			name:     "label_join targeting partition label does not preserve",
+			expr:     `label_join(metric, "region", ",", "pod")`,
+			expected: false,
+		},
+		{
+			name:     "label_join targeting non-partition label preserves",
+			expr:     `label_join(metric, "zone", ",", "pod")`,
+			expected: true,
+		},
+		{
+			name:     "rate preserves",
+			expr:     `rate(metric[5m])`,
+			expected: true,
+		},
+		{
+			name:     "nested sum by(region)(sum by(pod)(X)) preserves at top level",
+			expr:     `sum by (region) (sum by (pod) (metric))`,
+			expected: true,
+		},
+		{
+			name:     "nested sum by(pod)(sum by(region)(X)) does not preserve",
+			expr:     `sum by (pod) (sum by (region) (metric))`,
+			expected: false,
+		},
+		{
+			name:     "binary with scalar preserves",
+			expr:     `metric / 1000`,
+			expected: true,
+		},
+		{
+			name:     "avg by partition label preserves",
+			expr:     `avg by (region) (metric)`,
+			expected: true,
+		},
+		{
+			name:     "avg by non-partition label does not preserve",
+			expr:     `avg by (pod) (metric)`,
+			expected: false,
+		},
+		{
+			name:            "empty partition labels returns false",
+			expr:            `metric`,
+			partitionLabels: map[string]struct{}{},
+			expected:        false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pl := partitionLabels
+			if tc.partitionLabels != nil {
+				pl = tc.partitionLabels
+			}
+			result := preservesPartitionLabels(parse(t, tc.expr), pl)
+			testutil.Equals(t, tc.expected, result)
+		})
+	}
+}
+
+func FuzzDistributedExecutionPreservesPartitionLabels(f *testing.F) {
+	f.Add(int64(0))
+	f.Fuzz(func(t *testing.T, seed int64) {
+		rnd := rand.New(rand.NewSource(seed))
+
+		load := `load 30s
+			http_requests_total{pod="nginx-1", region="east"} 1+1x15
+			http_requests_total{pod="nginx-2", region="east"} 2+2x15
+			http_requests_total{pod="nginx-1", region="west"} 3+1x15
+			http_requests_total{pod="nginx-2", region="west"} 4+2x15`
+
+		testStorage := promqltest.LoadedStorage(t, load)
+		defer testStorage.Close()
+
+		engines := []api.RemoteEngine{
+			newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+			newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
+		}
+		optimizers := []Optimizer{
+			DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
+		}
+
+		lbls := []labels.Labels{
+			labels.FromStrings("__name__", "http_requests_total", "pod", "nginx-1", "region", "east"),
+			labels.FromStrings("__name__", "http_requests_total", "pod", "nginx-2", "region", "west"),
+		}
+
+		// Exclude functions that produce unlabeled series by design.
+		enabledFunctions := make([]*parser.Function, 0, len(parser.Functions))
+		for _, f := range parser.Functions {
+			switch f.Name {
+			case "vector", "absent", "absent_over_time":
+				continue
+			}
+			enabledFunctions = append(enabledFunctions, f)
+		}
+
+		psOpts := []promqlsmith.Option{
+			promqlsmith.WithEnableOffset(false),
+			promqlsmith.WithEnableAtModifier(false),
+			promqlsmith.WithEnabledAggrs([]parser.ItemType{
+				parser.SUM, parser.MIN, parser.MAX, parser.AVG, parser.GROUP,
+				parser.COUNT, parser.QUANTILE, parser.STDDEV, parser.STDVAR,
+				parser.COUNT_VALUES, parser.TOPK, parser.BOTTOMK,
+			}),
+			promqlsmith.WithEnabledFunctions(enabledFunctions),
+			promqlsmith.WithEnableVectorMatching(true),
+		}
+		ps := promqlsmith.New(rnd, lbls, psOpts...)
+
+		ng := promql.NewEngine(promql.EngineOpts{
+			Timeout:              1 * time.Hour,
+			MaxSamples:           1e10,
+			EnableNegativeOffset: true,
+			EnableAtModifier:     true,
+		})
+
+		start := time.Unix(60, 0)
+		end := time.Unix(120, 0)
+		step := 30 * time.Second
+
+		opts := &query.Options{
+			Start: start,
+			End:   end,
+			Step:  step,
+		}
+		for range testRuns {
+			expr := ps.WalkRangeQuery()
+			exprStr := expr.Pretty(0)
+
+			parsed, err := parser.ParseExpr(exprStr)
+			if err != nil {
+				continue
+			}
+
+			plan, err := NewFromAST(parsed, opts, PlanOptions{})
+			if err != nil {
+				continue
+			}
+
+			optimizedPlan, _ := plan.Optimize(optimizers)
+			root := optimizedPlan.Root()
+
+			// For each remote query in the optimized plan, execute it
+			// against the test storage and verify that all result series
+			// still have the partition label "region".
+			Traverse(&root, func(node *Node) {
+				remote, ok := (*node).(RemoteExecution)
+				if !ok {
+					return
+				}
+
+				// Skip remote queries that don't touch real series data
+				// (e.g. scalar parameters to aggregations like quantile).
+				hasSelector := false
+				var remoteNode Node = remote.Query
+				Traverse(&remoteNode, func(n *Node) {
+					switch (*n).(type) {
+					case *VectorSelector, *MatrixSelector:
+						hasSelector = true
+					}
+				})
+				if !hasSelector {
+					return
+				}
+
+				remoteQuery := remote.Query.String()
+				qry, err := ng.NewRangeQuery(context.Background(), testStorage, nil, remoteQuery, start, end, step)
+				if err != nil {
+					return
+				}
+				result := qry.Exec(context.Background())
+				if result.Err != nil {
+					return
+				}
+
+				matrix, err := result.Matrix()
+				if err != nil {
+					return
+				}
+
+				for _, series := range matrix {
+					if !series.Metric.Has("region") {
+						t.Errorf(
+							"remote query result series missing partition label 'region'\n"+
+								"  original:     %s\n"+
+								"  optimized:    %s\n"+
+								"  remote query: %s\n"+
+								"  series:       %s",
+							exprStr, root.String(), remoteQuery, series.Metric.String(),
+						)
+					}
+				}
+			})
+		}
+	})
 }

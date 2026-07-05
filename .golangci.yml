@@ -46,6 +46,10 @@ linters-settings:
       - fmt.Fprint
   misspell:
     locale: US
+  staticcheck:
+    checks:
+      - "all"
+      - "-SA1019" # Ignore deprecated warnings (labels.MetricName, LabelName.IsValid, etc.)
   gci:
     sections:
       - standard

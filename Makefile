@@ -87,6 +87,7 @@ format:
 	@go run scripts/testvet/main.go -json -fix ./...
 	@echo ">> formatting imports"
 	@$(GCI) write $(shell find . -name "*.go") -s "standard" -s "prefix(github.com/thanos-io)" -s "default" -s "blank" -s "dot" --custom-order
+	@$(MODERNIZE) -fix ./...
 
 .PHONY:lint
 lint: format deps docs
@@ -103,7 +104,7 @@ github.com/stretchr/testify=github.com/efficientgo/core/testutil" $(GOMODULES)
 	@echo ">> ensuring Copyright headers"
 	@$(COPYRIGHT) $(shell find . -name "*.go")
 	@echo ">> ensuring modern go style"
-	@$(MODERNIZE) -test ./...t
+	@$(MODERNIZE) -test ./...
 	$(call require_clean_work_tree,'detected files without copyright, run make lint and commit changes')
 
 .PHONY: white-noise-cleanup

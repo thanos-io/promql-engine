@@ -190,6 +190,22 @@ func TestDistributedAggregations(t *testing.T) {
 			},
 			rangeEnd: time.Unix(180, 0),
 		},
+		{
+			// Single engine with two non-overlapping labelsets with same labels
+			name: "single engine with multiple labelsets",
+			seriesSets: []partition{{
+				extLset: []labels.Labels{
+					labels.FromStrings("zone", "east-1"),
+					labels.FromStrings("zone", "west-1"),
+				},
+				series: []*mockSeries{
+					newMockSeries(makeSeries("east-1", "nginx-1"), []int64{30, 60, 90, 120}, []float64{2, 3, 4, 5}),
+					newMockSeries(makeSeries("east-1", "nginx-2"), []int64{30, 60, 90, 120}, []float64{3, 4, 5, 6}),
+					newMockSeries(makeSeries("west-1", "nginx-1"), []int64{30, 60, 90, 120}, []float64{4, 5, 6, 7}),
+					newMockSeries(makeSeries("west-1", "nginx-2"), []int64{30, 60, 90, 120}, []float64{5, 6, 7, 8}),
+				},
+			}},
+		},
 	}
 
 	queries := []struct {
