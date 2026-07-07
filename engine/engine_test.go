@@ -6778,3 +6778,71 @@ func TestDoubleExponentialSmoothing(t *testing.T) {
 		})
 	}
 }
+
+func TestInstantQueryPerSeriesReleasePreventMaxSamplesFailure(t *testing.T) {
+	t.Parallel()
+
+	numSeries := 5000
+	maxSamples := 50000
+	queryTime := time.Unix(1800, 0)
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "sum_rate_30m",
+			query: `sum(rate(http_requests_total[30m]))`,
+		},
+		{
+			name:  "sum_increase_30m",
+			query: `sum(increase(http_requests_total[30m]))`,
+		},
+		{
+			name:  "sum_present_over_time_25m",
+			query: `sum(present_over_time(http_requests_total[25m]))`,
+		},
+		{
+			name:  "sum_by_namespace_rate_15m",
+			query: `sum by (namespace) (rate(http_requests_total[15m]))`,
+		},
+		{
+			name:  "increase_or_present_over_time",
+			query: `sum(increase(http_requests_total[30m]) or 0 * present_over_time(http_requests_total[25m]))`,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+
+			st := teststorage.New(t)
+			defer st.Close()
+			a := st.Appender(ctx)
+			for i := range numSeries {
+				for ts := int64(0); ts <= 1800; ts += 30 {
+					_, err := a.Append(0, labels.FromStrings(
+						labels.MetricName, "http_requests_total",
+						"pod", strconv.Itoa(i),
+						"namespace", "production",
+					), ts*1000, float64(ts*int64(i+1)))
+					require.NoError(t, err)
+				}
+			}
+			require.NoError(t, a.Commit())
+
+			// With maxSamples limit — should succeed due to per-series release
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: maxSamples,
+				},
+			})
+			q, err := ng.NewInstantQuery(ctx, st, nil, tc.query, queryTime)
+			require.NoError(t, err)
+			res := q.Exec(ctx)
+			require.NoError(t, res.Err, "query should succeed with per-series ring buffer reset: %s", tc.query)
+		})
+	}
+}

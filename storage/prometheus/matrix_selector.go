@@ -226,6 +226,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		sampleCountAfter := scanner.buffer.SampleCount()
 		batchSamplesDelta += sampleCountAfter - sampleCountBefore
 
+		if o.opts.IsInstantQuery() {
+			scanner.buffer.Reset(math.MaxInt64, 0)
+			batchSamplesDelta -= sampleCountAfter
+		}
+
 		if o.shouldCheckSampleLimit(firstSeries) {
 			if err := o.updateSampleTracker(batchSamplesDelta); err != nil {
 				return 0, err
