@@ -63,7 +63,7 @@ func NewCoalesce(opts *query.Options, batchSize int64, operators ...model.Vector
 		batchSize:     batchSize,
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
+	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), oper)
 }
 
 func (c *coalesce) Explain() (next []model.VectorOperator) {

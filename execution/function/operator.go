@@ -75,7 +75,7 @@ func newNoArgsFunctionOperator(funcExpr *logicalplan.FunctionCall, stepsBatch in
 		op.sampleIDs = []uint64{0}
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
+	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), op), nil
 }
 
 // functionOperator returns []model.StepVector after processing input with desired function.
@@ -122,7 +122,7 @@ func newInstantVectorFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOp
 	// Check selector type.
 	switch funcExpr.Args[f.vectorIndex].ReturnType() {
 	case parser.ValueTypeVector, parser.ValueTypeScalar:
-		return telemetry.NewOperator(telemetry.NewTelemetry(f, opts), f), nil
+		return telemetry.NewOperator(telemetry.NewTelemetry(f, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), f), nil
 	default:
 		return nil, errors.Wrapf(parse.ErrNotImplemented, "got %s:", funcExpr.String())
 	}

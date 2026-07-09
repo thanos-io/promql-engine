@@ -5,6 +5,8 @@ package query
 
 import (
 	"time"
+
+	"github.com/thanos-io/promql-engine/execution/telemetry"
 )
 
 type Options struct {
@@ -18,7 +20,7 @@ type Options struct {
 	NoStepSubqueryIntervalFn func(time.Duration) time.Duration
 	EnableAnalysis           bool
 	DecodingConcurrency      int
-	SampleTracker            SampleTracker // Tracks current samples in memory
+	SampleLimiter            *telemetry.SampleLimiter
 }
 
 // TotalSteps returns the total number of steps in the query, regardless of batching.
@@ -58,10 +60,6 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
 		EnableAnalysis:           opts.EnableAnalysis,
 		DecodingConcurrency:      opts.DecodingConcurrency,
-		SampleTracker:            opts.SampleTracker,
-	}
-	if nOpts.SampleTracker == nil {
-		nOpts.SampleTracker = NewSampleTracker(0)
 	}
 	if step != 0 {
 		nOpts.Step = step
@@ -71,6 +69,9 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 	nOpts.Start = time.UnixMilli(nOpts.Step.Milliseconds() * (opts.Start.Add(-offset-queryRange).UnixMilli() / nOpts.Step.Milliseconds()))
 	if nOpts.Start.Before(opts.Start.Add(-offset - queryRange)) {
 		nOpts.Start = nOpts.Start.Add(nOpts.Step)
+	}
+	if opts.SampleLimiter != nil {
+		nOpts.SampleLimiter = telemetry.NewSampleLimiter(opts.SampleLimiter.MaxSamples(), nOpts.Start.UnixMilli(), nOpts.End.UnixMilli(), telemetry.StepTrackingInterval(nOpts.Step))
 	}
 	return nOpts
 }

@@ -78,8 +78,6 @@ type matrixSelector struct {
 
 var ErrNativeHistogramsNotSupported = errors.New("native histograms are not supported in extended range functions")
 
-const sampleLimitCheckInterval = 500
-
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	selector SeriesSelector,
@@ -127,7 +125,7 @@ func NewMatrixSelector(
 		m.step = 1
 	}
 
-	m.telemetry = telemetry.NewTelemetry(m, opts)
+	m.telemetry = telemetry.NewTelemetry(m, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter)
 	return telemetry.NewOperator(m.telemetry, m), nil
 }
 
@@ -181,14 +179,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	// Reset the current timestamp.
 	ts = o.currentStep
 	firstSeries := o.currentSeries
-	batchSamplesDelta := 0
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
 			scanner  = &o.scanners[o.currentSeries]
 			seriesTs = ts
 		)
-
-		sampleCountBefore := scanner.buffer.SampleCount()
 
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
@@ -219,18 +214,10 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 					o.hasFloats = true
 				}
 			}
-			o.telemetry.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs)
-			seriesTs += o.step
-		}
-
-		sampleCountAfter := scanner.buffer.SampleCount()
-		batchSamplesDelta += sampleCountAfter - sampleCountBefore
-
-		if o.shouldCheckSampleLimit(firstSeries) {
-			if err := o.updateSampleTracker(batchSamplesDelta); err != nil {
+			if err := o.telemetry.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs); err != nil {
 				return 0, err
 			}
-			batchSamplesDelta = 0
+			seriesTs += o.step
 		}
 	}
 
@@ -239,16 +226,6 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		o.currentSeries = 0
 	}
 	return n, nil
-}
-
-func (o *matrixSelector) updateSampleTracker(delta int) error {
-	if delta > 0 {
-		o.opts.SampleTracker.Add(delta)
-		return o.opts.SampleTracker.CheckLimit()
-	} else if delta < 0 {
-		o.opts.SampleTracker.Remove(-delta)
-	}
-	return nil
 }
 
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
@@ -303,19 +280,6 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func (o *matrixSelector) shouldCheckSampleLimit(firstSeries int64) bool {
-	seriesProcessed := o.currentSeries + 1 - firstSeries
-
-	if seriesProcessed%sampleLimitCheckInterval == 0 {
-		return true
-	}
-
-	isEndOfBatch := seriesProcessed >= o.seriesBatchSize
-	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
-
-	return isEndOfBatch || isLastSeries
-}
-
 func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 	if ringbuffer.UseStreamingRingBuffers(*o.opts, o.selectRange) {
 		switch o.functionName {
@@ -350,7 +314,6 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 		return ringbuffer.NewWithExtLookback(ctx, 8, o.selectRange, o.offset, o.opts.ExtLookbackDelta.Milliseconds()-1, o.call)
 	}
 	return ringbuffer.New(ctx, 8, o.selectRange, o.offset, o.call)
-
 }
 
 func (o *matrixSelector) String() string {
@@ -369,7 +332,6 @@ func (o *matrixSelector) String() string {
 // values). Any such points falling before mint are discarded; points that fall
 // into the [mint, maxt] range are retained; only points with later timestamps
 // are populated from the iterator.
-// TODO(fpetkovski): Add max samples limit.
 func (m *matrixScanner) selectPoints(
 	mint, maxt, evalt int64,
 	fh *histogram.FloatHistogram,

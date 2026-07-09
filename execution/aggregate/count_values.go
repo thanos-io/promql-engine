@@ -49,7 +49,7 @@ func NewCountValues(next model.VectorOperator, param string, by bool, grouping [
 		by:         by,
 		grouping:   grouping,
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op)
+	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), op)
 }
 
 func (c *countValuesOperator) Explain() []model.VectorOperator {

@@ -38,7 +38,7 @@ func NewNumberLiteralSelector(opts *query.Options, val float64) model.VectorOper
 		val:         val,
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
+	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts.EnableAnalysis, opts.EnablePerStepStats, opts.Start.UnixMilli(), opts.End.UnixMilli(), opts.Step, opts.SampleLimiter), oper)
 }
 
 func (o *numberLiteralSelector) Explain() (next []model.VectorOperator) {
