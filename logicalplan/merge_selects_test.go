@@ -46,7 +46,7 @@ func TestMergeSelects(t *testing.T) {
 	optimizers := []Optimizer{MergeSelectsOptimizer{}}
 	for _, tcase := range cases {
 		t.Run(tcase.expr, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})

@@ -68,7 +68,7 @@ func TestScannersMinMaxTime(t *testing.T) {
 		},
 	} {
 		t.Run(tcase.expr, func(t *testing.T) {
-			p, err := parser.ParseExpr(tcase.expr)
+			p, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			require.NoError(t, err)
 
 			qOpts := &query.Options{

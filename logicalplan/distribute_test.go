@@ -736,7 +736,7 @@ count by (cluster) (
 				},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -931,7 +931,7 @@ sum(dedup(
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
@@ -998,7 +998,7 @@ sum(
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
@@ -1058,7 +1058,7 @@ sum by (pod) (dedup(
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -1139,7 +1139,7 @@ max(
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -1162,7 +1162,7 @@ sum(dedup(
   remote(sum by (region) (metric{region="east"}))
 ))`
 	)
-	expr, err := parser.ParseExpr(`sum(metric{region="east"})`)
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(`sum(metric{region="east"})`)
 	testutil.Ok(t, err)
 
 	engines := []api.RemoteEngine{
@@ -1232,7 +1232,7 @@ func TestPreservesPartitionLabels(t *testing.T) {
 
 	parse := func(t *testing.T, expr string) Node {
 		t.Helper()
-		parsed, err := parser.ParseExpr(expr)
+		parsed, err := parser.NewParser(parser.Options{}).ParseExpr(expr)
 		testutil.Ok(t, err)
 		plan, err := NewFromAST(parsed, &query.Options{
 			Start: time.Unix(0, 0),
@@ -1468,7 +1468,7 @@ func FuzzDistributedExecutionPreservesPartitionLabels(f *testing.F) {
 			expr := ps.WalkRangeQuery()
 			exprStr := expr.Pretty(0)
 
-			parsed, err := parser.ParseExpr(exprStr)
+			parsed, err := parser.NewParser(parser.Options{}).ParseExpr(exprStr)
 			if err != nil {
 				continue
 			}
