@@ -79,7 +79,7 @@ func (p Scanners) NewVectorSelector(
 		operators = append(operators, operator)
 	}
 
-	return exchange.NewCoalesce(opts, logicalNode.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+	return exchange.NewCoalesce(opts, operators...), nil
 }
 
 func (p Scanners) NewMatrixSelector(
@@ -156,7 +156,7 @@ func (p Scanners) NewMatrixSelector(
 		operators = append(operators, exchange.NewConcurrent(operator, 2, opts))
 	}
 
-	return exchange.NewCoalesce(opts, vs.BatchSize*int64(opts.DecodingConcurrency), operators...), nil
+	return exchange.NewCoalesce(opts, operators...), nil
 }
 
 type histogramStatsSelector struct {
