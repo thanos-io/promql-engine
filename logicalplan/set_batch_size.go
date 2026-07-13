@@ -10,6 +10,15 @@ import (
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
+// aggregationLikeFuncs contains functions that modify the labelset or series count.
+var aggregationLikeFuncs = map[string]struct{}{
+	"scalar":             {},
+	"absent":             {},
+	"absent_over_time":   {},
+	"histogram_quantile": {},
+	"histogram_fraction": {},
+}
+
 // SelectorBatchSize configures the batch size of selector based on
 // aggregates present in the plan.
 type SelectorBatchSize struct {
@@ -25,10 +34,9 @@ func (m SelectorBatchSize) Optimize(plan Node, _ *query.Options) (Node, annotati
 	Traverse(&plan, func(current *Node) {
 		switch e := (*current).(type) {
 		case *FunctionCall:
-			//TODO: calls can reduce the labelset of the input; think histogram_quantile reducing
-			// multiple "le" labels into one output. We cannot handle this in batching. Revisit
-			// what is safe here.
-			canBatch = false
+			if _, aggregationLike := aggregationLikeFuncs[e.Func.Name]; aggregationLike {
+				canBatch = false
+			}
 		case *Binary:
 			canBatch = false
 		case *Aggregation:
