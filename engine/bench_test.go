@@ -736,7 +736,8 @@ func BenchmarkInstantQuery(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second},
+					EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+					SelectorBatchSize: 256,
 				})
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -777,7 +778,8 @@ func BenchmarkInstantQuery(b *testing.B) {
 			})
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second},
+					EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+					SelectorBatchSize: 256,
 				})
 				b.ResetTimer()
 				b.ReportAllocs()

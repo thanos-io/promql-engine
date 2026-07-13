@@ -46,7 +46,7 @@ func TestSetBatchSize(t *testing.T) {
 		{
 			name:     "aggregation of binary expression",
 			expr:     `max by (pod) (metric_a / metric_b)`,
-			expected: `max by (pod) (metric_a / metric_b)`,
+			expected: `max by (pod) (metric_a[batch=10] / metric_b[batch=10])`,
 		},
 		{
 			name:     "binary operation of aggregations",
@@ -87,6 +87,46 @@ func TestSetBatchSize(t *testing.T) {
 			name:     "histogram quantile with aggregation",
 			expr:     `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
 			expected: `histogram_quantile(scalar(max(quantile[batch=10])), http_requests_total)`,
+		},
+		{
+			name:     "aggregation of range vector function (rate)",
+			expr:     `sum(rate(http_requests_total[5m]))`,
+			expected: `sum(rate(http_requests_total[batch=10][5m0s]))`,
+		},
+		{
+			name:     "aggregation of range vector function (increase)",
+			expr:     `sum(increase(http_requests_total[5m]))`,
+			expected: `sum(increase(http_requests_total[batch=10][5m0s]))`,
+		},
+		{
+			name:     "aggregation of range vector function (present_over_time)",
+			expr:     `sum(present_over_time(http_requests_total[1h]))`,
+			expected: `sum(present_over_time(http_requests_total[batch=10][1h0m0s]))`,
+		},
+		{
+			name:     "nested aggregation with range vector function",
+			expr:     `max by (pod) (sum by (pod) (rate(http_requests_total[5m])))`,
+			expected: `max by (pod) (sum by (pod) (rate(http_requests_total[batch=10][5m0s])))`,
+		},
+		{
+			name:     "histogram_quantile does not allow batching",
+			expr:     `sum(histogram_quantile(0.9, rate(http_requests_total[5m])))`,
+			expected: `sum(histogram_quantile(0.9, rate(http_requests_total[5m0s])))`,
+		},
+		{
+			name:     "or operator allows batching",
+			expr:     `sum(increase(http_requests_total[5m]) or present_over_time(http_requests_total[1h]))`,
+			expected: `sum(increase(http_requests_total[batch=10][5m0s]) or present_over_time(http_requests_total[batch=10][1h0m0s]))`,
+		},
+		{
+			name:     "and operator allows batching",
+			expr:     `sum(rate(http_requests_total[5m])) and sum(rate(http_requests_total[5m]))`,
+			expected: `sum(rate(http_requests_total[batch=10][5m0s])) and sum(rate(http_requests_total[batch=10][5m0s]))`,
+		},
+		{
+			name:     "group_left disables batching",
+			expr:     `max by (pod) (metric_a * on (pod) group_left (namespace) metric_b)`,
+			expected: `max by (pod) (metric_a * on (pod) group_left (namespace) metric_b)`,
 		},
 	}
 

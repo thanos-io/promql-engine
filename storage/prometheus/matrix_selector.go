@@ -34,6 +34,7 @@ type matrixScanner struct {
 
 	buffer     ringbuffer.Buffer
 	iterator   chunkenc.Iterator
+	rawSeries  SignedSeries
 	lastSample ringbuffer.Sample
 }
 
@@ -171,6 +172,17 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	ts = o.currentStep
 	firstSeries := o.currentSeries
 	batchSamplesDelta := 0
+
+	lastInBatch := min(firstSeries+o.seriesBatchSize, int64(len(o.scanners)))
+	// Initialize iterators lazily per-batch.
+	// TODO: reuse the iterator created for the previous scanner.
+	for i := firstSeries; i < lastInBatch; i++ {
+		if o.scanners[i].iterator == nil {
+			o.scanners[i].iterator = o.scanners[i].rawSeries.Iterator(nil)
+			o.scanners[i].buffer = o.newBuffer(ctx)
+		}
+	}
+
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
 			scanner  = &o.scanners[o.currentSeries]
@@ -217,6 +229,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 
 		if o.opts.IsInstantQuery() {
 			scanner.buffer.Reset(math.MaxInt64, 0)
+			scanner.iterator = nil
 			batchSamplesDelta -= sampleCountAfter
 		}
 
@@ -268,9 +281,8 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 				labels:     lbls,
 				metricName: origLbls.Get(labels.MetricName),
 				signature:  s.Signature,
-				iterator:   s.Iterator(nil),
+				rawSeries:  s,
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
-				buffer:     o.newBuffer(ctx),
 			}
 			o.series[i] = lbls
 		}

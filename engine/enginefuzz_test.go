@@ -177,7 +177,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		}
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, SelectorBatchSize: 256})
 		oldEngine := promql.NewEngine(opts)
 
 		var (
@@ -263,6 +263,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			EngineOpts:        opts,
 			LogicalOptimizers: logicalplan.AllOptimizers,
 			EnableAnalysis:    true,
+			SelectorBatchSize: 256,
 		})
 		oldEngine := promql.NewEngine(opts)
 
@@ -481,7 +482,7 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 
 		rnd := rand.New(rand.NewSource(seed))
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, SelectorBatchSize: 256})
 		oldEngine := promql.NewEngine(opts)
 
 		instantCases := make([]*testCase, 0, testRuns/2)
@@ -696,7 +697,7 @@ func FuzzDistributedEngineQuery(f *testing.F) {
 		end := time.Unix(int64(endTS), 0)
 		interval := time.Duration(intervalSeconds) * time.Second
 
-		engineOpts := engine.Opts{EngineOpts: opts}
+		engineOpts := engine.Opts{EngineOpts: opts, SelectorBatchSize: 256}
 
 		// Create remote engines for each partition
 		remoteEngine1 := engine.NewRemoteEngine(
