@@ -34,6 +34,16 @@ func IsExtFunction(functionName string) bool {
 	return ok
 }
 
+// AnchoredSafeFunctions lists functions that support the anchored modifier.
+var AnchoredSafeFunctions = map[string]struct{}{
+	"resets": {}, "changes": {}, "rate": {}, "increase": {}, "delta": {},
+}
+
+// SmoothedSafeFunctions lists functions that support the smoothed modifier.
+var SmoothedSafeFunctions = map[string]struct{}{
+	"rate": {}, "increase": {}, "delta": {},
+}
+
 func UnknownFunctionError(name string) error {
 	msg := fmt.Sprintf("unknown function: %s", name)
 	if _, ok := parser.Functions[name]; ok {

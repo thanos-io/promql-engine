@@ -26,6 +26,7 @@ func NewOperator(opts *query.Options) model.VectorOperator {
 		false, // selectTimestamp
 		0,     // shard
 		1,     // numShards
+		false, // smoothed
 	)
 	return &operator{VectorOperator: scanner}
 }

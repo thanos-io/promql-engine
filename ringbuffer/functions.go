@@ -27,6 +27,11 @@ type FunctionArgs struct {
 	// quantile_over_time and predict_linear use one, so we only use one here.
 	ScalarPoint  float64
 	ScalarPoint2 float64 // only for double_exponential_smoothing (trend factor)
+
+	// Anchored/Smoothed modifiers for extended range selectors.
+	// See https://github.com/prometheus/proposals/blob/main/proposals/0052-extended-range-selectors-semantics.md
+	Anchored bool
+	Smoothed bool
 }
 
 type FunctionCall func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error)
@@ -326,13 +331,15 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
-		return changes(f.Samples), nil, true, 0, nil
+		start := pickFirstSampleIndex(f)
+		return changes(f.Samples[start:]), nil, true, 0, nil
 	},
 	"resets": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
-		return resets(f.Samples), nil, true, 0, nil
+		start := pickFirstSampleIndex(f)
+		return resets(f.Samples[start:]), nil, true, 0, nil
 	},
 	"deriv": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) < 2 {
@@ -362,18 +369,27 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return v, fh, true, warn, nil
 	},
 	"rate": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f.Samples, true, true, f.StepTime, f.SelectRange, f.Offset, f.Smoothed)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
 		return extrapolatedRate(f.Samples, len(f.Samples), true, true, f.StepTime, f.SelectRange, f.Offset)
 	},
 	"delta": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f.Samples, false, false, f.StepTime, f.SelectRange, f.Offset, f.Smoothed)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
 		return extrapolatedRate(f.Samples, len(f.Samples), false, false, f.StepTime, f.SelectRange, f.Offset)
 	},
 	"increase": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f.Samples, true, false, f.StepTime, f.SelectRange, f.Offset, f.Smoothed)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
@@ -637,6 +653,135 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 	}
 
 	return resultValue, nil
+}
+
+// extendedRangeRate implements the anchored and smoothed rate/increase/delta semantics
+// from Prometheus proposal 0052. It computes boundary values at the range start and end,
+// either by picking real sample values (anchored) or interpolating (smoothed), then
+// computes the difference with counter-reset correction.
+//
+// This implementation mirrors prometheus/prometheus promql/functions.go extendedRate.
+func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selectRange, offset int64, smoothed bool) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+	if len(samples) == 0 {
+		return 0, nil, false, 0, nil
+	}
+
+	if samples[0].V.H != nil {
+		return 0, nil, false, 0, errors.New("native histograms are not supported with anchored/smoothed modifiers")
+	}
+
+	lastSampleIndex := len(samples) - 1
+	rangeEnd := stepTime - offset
+	rangeStart := rangeEnd - selectRange
+
+	// Find firstSampleIndex: the last sample at or before rangeStart, clamped to 0.
+	firstSampleIndex := max(sort.Search(lastSampleIndex, func(i int) bool {
+		return samples[i].T > rangeStart
+	})-1, 0)
+
+	// For smoothed, extend lastSampleIndex to include the first sample at or after rangeEnd.
+	if smoothed {
+		lastSampleIndex = sort.Search(lastSampleIndex, func(i int) bool {
+			return samples[i].T >= rangeEnd
+		})
+		if lastSampleIndex >= len(samples) {
+			lastSampleIndex = len(samples) - 1
+		}
+	}
+
+	// If the last sample is at or before rangeStart, there's nothing in the range.
+	if samples[lastSampleIndex].T <= rangeStart {
+		return 0, nil, false, 0, nil
+	}
+
+	left := pickOrInterpolateLeft(samples, firstSampleIndex, rangeStart, smoothed, isCounter)
+	right := pickOrInterpolateRight(samples, lastSampleIndex, rangeEnd, smoothed, isCounter)
+
+	resultValue := right - left
+
+	if isCounter {
+		// Narrow to samples strictly within the range for counter-reset correction,
+		// since pickOrInterpolateLeft/Right already handle resets at boundaries.
+		corrFirst := firstSampleIndex
+		if samples[corrFirst].T <= rangeStart {
+			corrFirst++
+		}
+		corrLast := lastSampleIndex
+		if corrLast >= 0 && samples[corrLast].T >= rangeEnd {
+			corrLast--
+		}
+
+		// Clamp to valid slice bounds. correctForCounterResets handles empty
+		// interior correctly — it still checks the right boundary value.
+		corrLast = max(corrLast, corrFirst-1)
+		resultValue += correctForCounterResets(left, right, samples[corrFirst:corrLast+1])
+	}
+
+	if isRate {
+		rangeDuration := float64(selectRange) / 1000.0
+		if rangeDuration == 0 {
+			return 0, nil, false, 0, nil
+		}
+		resultValue /= rangeDuration
+	}
+
+	return resultValue, nil, true, 0, nil
+}
+
+// pickOrInterpolateLeft returns the value at the left boundary of the range.
+// For anchored: uses the real sample value at/before rangeStart.
+// For smoothed: interpolates between the samples bracketing rangeStart, with
+// counter-reset awareness.
+// If no sample exists before rangeStart, the first sample value is used.
+func pickOrInterpolateLeft(samples []Sample, first int, rangeStart int64, smoothed, isCounter bool) float64 {
+	if smoothed && samples[first].T < rangeStart && first+1 < len(samples) {
+		return interpolateAt(samples[first], samples[first+1], rangeStart, isCounter)
+	}
+	return samples[first].V.F
+}
+
+// pickOrInterpolateRight returns the value at the right boundary of the range.
+// For anchored: uses the last sample at/before rangeEnd.
+// For smoothed: interpolates between the samples bracketing rangeEnd, with
+// counter-reset awareness.
+// If no sample exists after rangeEnd, the last sample value is used.
+func pickOrInterpolateRight(samples []Sample, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
+	if smoothed && last > 0 && samples[last].T > rangeEnd {
+		return interpolateAt(samples[last-1], samples[last], rangeEnd, isCounter)
+	}
+	return samples[last].V.F
+}
+
+// interpolateAt performs linear interpolation between two samples at the given timestamp.
+// If isCounter is true and there is a counter reset (y2 < y1), it models the
+// counter as starting from 0 post-reset by setting y1 to 0.
+//
+// This matches Prometheus v0.310.0's interpolate function in promql/functions.go.
+func interpolateAt(left, right Sample, timestamp int64, isCounter bool) float64 {
+	y1 := left.V.F
+	y2 := right.V.F
+	if isCounter && y2 < y1 {
+		y1 = 0
+	}
+	return y1 + (y2-y1)*float64(timestamp-left.T)/float64(right.T-left.T)
+}
+
+// correctForCounterResets calculates the correction for counter resets across
+// interior samples and the right boundary value. This matches Prometheus'
+// correctForCounterResets in promql/functions.go.
+func correctForCounterResets(left, right float64, points []Sample) float64 {
+	var correction float64
+	prev := left
+	for _, p := range points {
+		if p.V.F < prev {
+			correction += prev
+		}
+		prev = p.V.F
+	}
+	if right < prev {
+		correction += prev
+	}
+	return correction
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
@@ -963,6 +1108,19 @@ func stdvarOverTime(points []Sample) (float64, bool, warnings.Warnings) {
 		return 0, false, warn
 	}
 	return ((aux + cAux) / count), true, warn
+}
+
+// pickFirstSampleIndex returns the index of the last sample at or before the
+// range start for anchored selectors. For non-anchored, returns 0.
+// This matches Prometheus's pickFirstSampleIndex in promql/functions.go.
+func pickFirstSampleIndex(f FunctionArgs) int {
+	if !f.Anchored || len(f.Samples) == 0 {
+		return 0
+	}
+	rangeStart := f.StepTime - f.Offset - f.SelectRange
+	return max(sort.Search(len(f.Samples)-1, func(i int) bool {
+		return f.Samples[i].T > rangeStart
+	})-1, 0)
 }
 
 func changes(points []Sample) float64 {
