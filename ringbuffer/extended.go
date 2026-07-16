@@ -14,7 +14,7 @@ import (
 
 // ExtendedRingBuffer retains the newest sample at or before the range start as
 // a baseline for xrate, xincrease, and xdelta. Samples are normally offered to
-// Add in timestamp order, but baseline insertion also preserves ordering when a
+// Push in timestamp order, but baseline insertion also preserves ordering when a
 // prefetched sample arrives after an in-window sample.
 type ExtendedRingBuffer struct {
 	*GenericRingBuffer

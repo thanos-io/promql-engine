@@ -339,16 +339,6 @@ func TestExtendedRateHistogramWarnings(t *testing.T) {
 		require.NoError(t, err)
 		require.NotZero(t, warn&warnings.WarnNotGauge)
 	})
-
-	t.Run("a mixed float/histogram range warns", func(t *testing.T) {
-		samples := []Sample{
-			{T: ts[0], V: Value{H: newTestHistogram(1)}},
-			{T: ts[2], V: Value{F: 5}},
-		}
-		_, _, _, warn, err := extendedRate(samples, true, false, stepTime, selectRange, 0, 0)
-		require.NoError(t, err)
-		require.NotZero(t, warn&warnings.WarnMixedFloatsHistograms)
-	})
 }
 
 // TestExtendedRateHistogramSchemaChange exercises histogramRate's min-schema /

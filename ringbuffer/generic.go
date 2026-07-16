@@ -79,7 +79,7 @@ func (r *GenericRingBuffer) MaxT() int64 {
 	return r.items[len(r.items)-1].T
 }
 
-// Add considers a sample for the current range.
+// Push considers a sample for the current range.
 func (r *GenericRingBuffer) Push(t int64, v Value) {
 	if t <= r.currentRangeStart {
 		return

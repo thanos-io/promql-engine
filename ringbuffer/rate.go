@@ -96,7 +96,6 @@ func (r *RateBuffer) Push(t int64, v Value) {
 	if t <= r.currentMint {
 		return
 	}
-
 	// Detect resets and store the current and previous sample so that
 	// the rate is properly adjusted.
 	if r.lastSample.T > r.currentMint && v.H != nil && r.lastSample.V.H != nil {

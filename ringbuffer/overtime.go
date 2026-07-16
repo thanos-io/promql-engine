@@ -133,7 +133,6 @@ func (r *OverTimeBuffer) Push(t int64, v Value) {
 	if t <= r.stepRanges[0].mint {
 		return
 	}
-
 	// Set the lastSample sample for the current evaluation step.
 	r.lastTimestamp = t
 
