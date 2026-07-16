@@ -2992,7 +2992,7 @@ func TestXIncreaseStaleBaselineBeyondExtLookback(t *testing.T) {
 }
 
 // TestXIncreaseNativeHistogramStaleBaselineBeyondExtLookback is the histogram
-// analogue of the stale-baseline guard: two pre-range histogram samples older
+// analog of the stale-baseline guard: two pre-range histogram samples older
 // than the lookback must both be rejected as baseline (one via the lastSample
 // guard, one via the iterator skip), leaving a single in-window sample whose
 // xincrease is undefined, so no point is emitted (not a stale 500-200=300).
@@ -3093,7 +3093,7 @@ func TestXIncreaseNativeHistogramPreRangeBaseline(t *testing.T) {
 	require.InEpsilon(t, 40.0, vec[0].F, 1e-9)
 }
 
-// TestXFunctionsFloatToHistogramTransition pins the behaviour of a range that
+// TestXFunctionsFloatToHistogramTransition pins the behavior of a range that
 // spans a float->native-histogram migration: xincrease/xrate/xdelta must agree
 // with their non-extended counterparts and emit no bogus float sample for a
 // mixed range.

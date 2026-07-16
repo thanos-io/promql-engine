@@ -6,10 +6,10 @@ package ringbuffer
 import (
 	"testing"
 
+	"github.com/thanos-io/promql-engine/warnings"
+
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/stretchr/testify/require"
-
-	"github.com/thanos-io/promql-engine/warnings"
 )
 
 // newTestHistogram returns a well-formed FloatHistogram whose fields all scale
@@ -285,7 +285,7 @@ func TestExtendedRateHistogramCases(t *testing.T) {
 			expectHist:  false,
 		},
 		{
-			name:        "xincrease honours a non-zero offset",
+			name:        "xincrease honors a non-zero offset",
 			samples:     histogramSamples([]int64{0, 150000, 300000}, []float64{1, 2, 3}),
 			isCounter:   true,
 			isRate:      false,
@@ -405,7 +405,7 @@ func TestExtendedRateHistogramZeroInjectionWarns(t *testing.T) {
 }
 
 // TestExtendedRateHistogramSingleSampleUndefined pins finding #3's intentional
-// behaviour: unlike the float path (which emits 0), a single-sample histogram
+// behavior: unlike the float path (which emits 0), a single-sample histogram
 // xrate/xdelta and a single-sample xincrease past the injection window emit
 // nothing rather than a zero-shaped histogram.
 func TestExtendedRateHistogramSingleSampleUndefined(t *testing.T) {

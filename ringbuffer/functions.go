@@ -18,10 +18,12 @@ import (
 type SamplesBuffer GenericRingBuffer
 
 type FunctionArgs struct {
-	Samples          []Sample
-	StepTime         int64
-	SelectRange      int64
-	Offset           int64
+	Samples     []Sample
+	StepTime    int64
+	SelectRange int64
+	Offset      int64
+	// MetricAppearedTs is the earliest sample timestamp observed for an
+	// extended range function. xincrease uses it to limit initial-zero injection.
 	MetricAppearedTs int64
 
 	// quantile_over_time and predict_linear use one, so we only use one here.
@@ -738,7 +740,7 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 }
 
 // sameHistogramValues reports whether every sample in the range is a histogram
-// equal to the first one. It is the histogram analogue of the float path's
+// equal to the first one. It is the histogram analog of the float path's
 // sameVals check and gates xincrease's "zero" injection for a newly-appeared
 // series.
 func sameHistogramValues(samples []Sample) bool {
