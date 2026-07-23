@@ -391,7 +391,7 @@ func (m *matrixScanner) selectPoints(
 	// discard them
 	//
 	// We don't seek for ext functions because they need a baseline sample <= mint
-	if !isExtFunction && m.lastSample.T < mint {
+	if !isExtFunction && m.lastSample.T != math.MinInt64 && m.lastSample.T < mint {
 		m.lastSample.T = math.MinInt64
 		valType = m.iterator.Seek(mint)
 	} else {
