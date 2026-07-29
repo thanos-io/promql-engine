@@ -369,9 +369,8 @@ func TestAnalyzeNoop(t *testing.T) {
 		},
 		EnableAnalysis: true,
 	})
-	ctx := context.Background()
 	qry, err := ng.NewInstantQuery(
-		ctx,
+		t.Context(),
 		storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
 			return storage.NoopQuerier(), nil
 		}),
@@ -382,7 +381,7 @@ func TestAnalyzeNoop(t *testing.T) {
 	require.NoError(t, err)
 	defer qry.Close()
 
-	result := qry.Exec(ctx)
+	result := qry.Exec(t.Context())
 	require.NoError(t, result.Err)
 	require.Empty(t, result.Value)
 
