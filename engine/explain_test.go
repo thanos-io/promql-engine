@@ -11,7 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
@@ -354,6 +356,40 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 |   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
 `
 	require.EqualValues(t, expected, result)
+}
+
+func TestAnalyzeNoop(t *testing.T) {
+	ng := engine.New(engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			MaxSamples: 1000,
+			Timeout:    time.Minute,
+		},
+		LogicalOptimizers: []logicalplan.Optimizer{
+			logicalplan.DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(nil)},
+		},
+		EnableAnalysis: true,
+	})
+	qry, err := ng.NewInstantQuery(
+		t.Context(),
+		storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
+			return storage.NoopQuerier(), nil
+		}),
+		promql.NewPrometheusQueryOpts(false, 0),
+		"up",
+		time.Unix(0, 0),
+	)
+	require.NoError(t, err)
+	defer qry.Close()
+
+	result := qry.Exec(t.Context())
+	require.NoError(t, result.Err)
+	require.Empty(t, result.Value)
+
+	analysis := qry.(engine.ExplainableQuery).Analyze()
+	require.NotNil(t, analysis)
+	require.Equal(t, "[noop]", analysis.OperatorTelemetry.String())
+	require.Zero(t, analysis.TotalSamples())
+	require.Zero(t, analysis.PeakSamples())
 }
 
 func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
