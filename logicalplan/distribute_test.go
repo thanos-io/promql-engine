@@ -950,6 +950,29 @@ sum(dedup(
 	}
 }
 
+func TestDistributedExecutionUsesConsistentEngineMetadata(t *testing.T) {
+	queryTime := time.Unix(0, 0).Add(6 * time.Hour)
+	engine := &changingMinTEngine{
+		engineMock: engineMock{
+			maxT:               math.MaxInt64,
+			labelSets:          []labels.Labels{{}},
+			partitionLabelSets: []labels.Labels{{}},
+		},
+		mint: queryTime.Add(-2 * time.Hour).UnixMilli(),
+	}
+
+	expr, err := parser.ParseExpr(`sum_over_time(metric[1w])`)
+	testutil.Ok(t, err)
+
+	plan, _ := NewFromAST(expr, &query.Options{Start: queryTime, End: queryTime}, PlanOptions{})
+	optimizedPlan, _ := plan.Optimize([]Optimizer{
+		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints([]api.RemoteEngine{engine})},
+	})
+
+	testutil.Equals(t, `dedup(remote(sum_over_time(metric[1w])) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 06:00:00 +0000 UTC])`, optimizedPlan.Root().String())
+	testutil.Equals(t, 1, engine.mintCalls)
+}
+
 func TestDistributedExecutionPruningByTime(t *testing.T) {
 	firstEngineOpts := engineOpts{
 		minTime: time.Unix(0, 0),
@@ -1209,6 +1232,18 @@ type engineMock struct {
 	maxT               int64
 	labelSets          []labels.Labels
 	partitionLabelSets []labels.Labels
+}
+
+type changingMinTEngine struct {
+	engineMock
+	mint      int64
+	mintCalls int
+}
+
+func (e *changingMinTEngine) MinT() int64 {
+	mint := e.mint + int64(e.mintCalls)
+	e.mintCalls++
+	return mint
 }
 
 func (e engineMock) MaxT() int64 {
