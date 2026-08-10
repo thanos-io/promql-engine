@@ -966,7 +966,7 @@ func TestDistributedExecutionUsesConsistentEngineMetadata(t *testing.T) {
 
 	plan, _ := NewFromAST(expr, &query.Options{Start: queryTime, End: queryTime}, PlanOptions{})
 	optimizedPlan, _ := plan.Optimize([]Optimizer{
-		DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints([]api.RemoteEngine{engine})},
+		DistributedExecutionOptimizer{Endpoints: api.NewMemoizedEndpoints(api.NewStaticEndpoints([]api.RemoteEngine{engine}))},
 	})
 
 	testutil.Equals(t, `dedup(remote(sum_over_time(metric[1w])) [1970-01-01 06:00:00 +0000 UTC, 1970-01-01 06:00:00 +0000 UTC])`, optimizedPlan.Root().String())

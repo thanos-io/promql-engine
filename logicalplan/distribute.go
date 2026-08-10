@@ -157,47 +157,8 @@ type DistributedExecutionOptimizer struct {
 	SkipDedup          bool
 }
 
-// memoizedRemoteEngine provides a stable metadata snapshot while a query plan is optimized.
-type memoizedRemoteEngine struct {
-	api.RemoteEngine
-	mint               int64
-	maxt               int64
-	labelSets          []labels.Labels
-	partitionLabelSets []labels.Labels
-}
-
-func memoizeRemoteEngines(remoteEngines []api.RemoteEngine) []api.RemoteEngine {
-	engines := make([]api.RemoteEngine, 0, len(remoteEngines))
-	for _, engine := range remoteEngines {
-		engines = append(engines, memoizedRemoteEngine{
-			RemoteEngine:       engine,
-			mint:               engine.MinT(),
-			maxt:               engine.MaxT(),
-			labelSets:          slices.Clone(engine.LabelSets()),
-			partitionLabelSets: slices.Clone(engine.PartitionLabelSets()),
-		})
-	}
-	return engines
-}
-
-func (e memoizedRemoteEngine) MinT() int64 {
-	return e.mint
-}
-
-func (e memoizedRemoteEngine) MaxT() int64 {
-	return e.maxt
-}
-
-func (e memoizedRemoteEngine) LabelSets() []labels.Labels {
-	return e.labelSets
-}
-
-func (e memoizedRemoteEngine) PartitionLabelSets() []labels.Labels {
-	return e.partitionLabelSets
-}
-
 func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
-	engines := memoizeRemoteEngines(m.Endpoints.Engines(MinMaxTime(plan, opts)))
+	engines := m.Endpoints.Engines(MinMaxTime(plan, opts))
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
 	})
