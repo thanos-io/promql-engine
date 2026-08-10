@@ -22,6 +22,37 @@ func TestCachedEndpoints(t *testing.T) {
 	testutil.Equals(t, 1, len(es))
 }
 
+func TestMemoizedRemoteEngine(t *testing.T) {
+	originalLabels := []labels.Labels{labels.FromStrings("region", "east")}
+	engine := newEngineMock(10, 20, originalLabels)
+	memoized := NewMemoizedRemoteEngine(engine)
+
+	engine.minT = 30
+	engine.maxT = 40
+	engine.labelSets = []labels.Labels{labels.FromStrings("region", "west")}
+	engine.partitionLabelSets = engine.labelSets
+
+	testutil.Equals(t, int64(10), memoized.MinT())
+	testutil.Equals(t, int64(20), memoized.MaxT())
+	testutil.Equals(t, originalLabels, memoized.LabelSets())
+	testutil.Equals(t, originalLabels, memoized.PartitionLabelSets())
+}
+
+func TestMemoizedEndpointsRefreshesSnapshots(t *testing.T) {
+	engine := newEngineMock(10, 20, nil)
+	endpoints := NewMemoizedEndpoints(NewStaticEndpoints([]RemoteEngine{engine}))
+
+	first := endpoints.Engines(0, 100)
+	engine.minT = 30
+	engine.maxT = 40
+	second := endpoints.Engines(0, 100)
+
+	testutil.Equals(t, int64(10), first[0].MinT())
+	testutil.Equals(t, int64(20), first[0].MaxT())
+	testutil.Equals(t, int64(30), second[0].MinT())
+	testutil.Equals(t, int64(40), second[0].MaxT())
+}
+
 func TestCachedEndpointsCachesEngines(t *testing.T) {
 	var calls int
 	engines := remoteEndpointsFunc(func(mint, maxt int64) []RemoteEngine {
