@@ -7,12 +7,12 @@ import (
 	"context"
 	"testing"
 
+	"github.com/thanos-io/promql-engine/logicalplan"
+	storage "github.com/thanos-io/promql-engine/storage/prometheus"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/stretchr/testify/require"
-
-	"github.com/thanos-io/promql-engine/logicalplan"
-	storage "github.com/thanos-io/promql-engine/storage/prometheus"
 )
 
 func TestProjectedSelector_IncludeMode(t *testing.T) {

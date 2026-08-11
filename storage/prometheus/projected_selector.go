@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/thanos-io/promql-engine/logicalplan"
+
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-
-	"github.com/thanos-io/promql-engine/logicalplan"
 )
 
 // projectedSelector wraps a SeriesSelector and applies label projection
