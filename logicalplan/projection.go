@@ -60,6 +60,14 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) 
 	case *Binary:
 		var highCard, lowCard = n.LHS, n.RHS
 
+		// "or" passes series from both sides through with their label sets
+		// unchanged, so trimming either side would corrupt the output.
+		if n.Op == parser.LOR {
+			p.pushProjection(&highCard, nil)
+			p.pushProjection(&lowCard, nil)
+			return
+		}
+
 		if n.VectorMatching == nil || (!n.VectorMatching.On && len(n.VectorMatching.MatchingLabels) == 0) {
 			if IsConstantExpr(lowCard) {
 				p.pushProjection(&highCard, projection)

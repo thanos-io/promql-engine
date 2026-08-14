@@ -49,3 +49,27 @@ type VectorOperator interface {
 
 	fmt.Stringer
 }
+
+// OriginHashesProvider is an optional interface for operators whose output
+// series map one-to-one onto storage series with a known original label set.
+type OriginHashesProvider interface {
+	// OriginHashes returns one hash per Series() entry, holding the hash of
+	// the series' original label set before a projection trimmed it.
+	// A nil slice or a zero hash means the origin of the series is unknown.
+	OriginHashes(ctx context.Context) ([]uint64, error)
+}
+
+// OriginHashes returns the origin hashes of the operator's output series,
+// or nil when the operator cannot provide them.
+func OriginHashes(ctx context.Context, op VectorOperator) ([]uint64, error) {
+	for {
+		if p, ok := op.(OriginHashesProvider); ok {
+			return p.OriginHashes(ctx)
+		}
+		u, ok := op.(Unwrapper)
+		if !ok {
+			return nil, nil
+		}
+		op = u.Unwrap()
+	}
+}

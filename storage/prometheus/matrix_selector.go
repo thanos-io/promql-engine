@@ -41,12 +41,13 @@ type matrixScanner struct {
 type matrixSelector struct {
 	telemetry telemetry.OperatorTelemetry
 
-	storage    SeriesSelector
-	scalarArg  float64
-	scalarArg2 float64
-	scanners   []matrixScanner
-	series     []labels.Labels
-	once       sync.Once
+	storage      SeriesSelector
+	scalarArg    float64
+	scalarArg2   float64
+	scanners     []matrixScanner
+	series       []labels.Labels
+	originHashes []uint64
+	once         sync.Once
 
 	functionName string
 	call         ringbuffer.FunctionCall
@@ -130,6 +131,13 @@ func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 		return nil, err
 	}
 	return o.series, nil
+}
+
+func (o *matrixSelector) OriginHashes(ctx context.Context) ([]uint64, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+	return o.originHashes, nil
 }
 
 func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int, error) {
@@ -269,6 +277,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 
 		o.scanners = make([]matrixScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
+		o.originHashes = originHashes(series)
 		var b labels.ScratchBuilder
 
 		for i, s := range series {
@@ -280,7 +289,7 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = matrixScanner{
 				labels:     lbls,
 				metricName: origLbls.Get(labels.MetricName),
-				signature:  s.Signature,
+				signature:  uint64(i),
 				rawSeries:  s,
 				lastSample: ringbuffer.Sample{T: math.MinInt64},
 			}

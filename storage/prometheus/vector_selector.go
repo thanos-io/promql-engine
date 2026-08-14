@@ -31,9 +31,10 @@ type vectorScanner struct {
 type vectorSelector struct {
 	telemetry telemetry.OperatorTelemetry
 
-	storage  SeriesSelector
-	scanners []vectorScanner
-	series   []labels.Labels
+	storage      SeriesSelector
+	scanners     []vectorScanner
+	series       []labels.Labels
+	originHashes []uint64
 
 	once sync.Once
 
@@ -109,6 +110,13 @@ func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 		return nil, err
 	}
 	return o.series, nil
+}
+
+func (o *vectorSelector) OriginHashes(ctx context.Context) ([]uint64, error) {
+	if err := o.loadSeries(ctx); err != nil {
+		return nil, err
+	}
+	return o.originHashes, nil
 }
 
 func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int, error) {
@@ -205,10 +213,11 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 		b := labels.NewBuilder(labels.EmptyLabels())
 		o.scanners = make([]vectorScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
+		o.originHashes = originHashes(series)
 		for i, s := range series {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
-				signature: s.Signature,
+				signature: uint64(i),
 				samples:   storage.NewMemoizedIterator(s.Iterator(nil), o.lookbackDelta),
 			}
 			b.Reset(s.Labels())

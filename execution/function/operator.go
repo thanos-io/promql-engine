@@ -143,6 +143,14 @@ func (o *functionOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 	return o.series, nil
 }
 
+func (o *functionOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	// The output of vector() does not map onto the input series.
+	if o.funcExpr.Func.Name == "vector" {
+		return nil, nil
+	}
+	return model.OriginHashes(ctx, o.nextOps[o.vectorIndex])
+}
+
 func (o *functionOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
 	select {
 	case <-ctx.Done():

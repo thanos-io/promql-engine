@@ -44,6 +44,10 @@ func (o *timestampOperator) String() string {
 	return "[timestamp]"
 }
 
+func (o *timestampOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, o.next)
+}
+
 func (o *timestampOperator) loadSeries(ctx context.Context) error {
 	var err error
 	o.once.Do(func() {

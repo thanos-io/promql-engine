@@ -45,15 +45,13 @@ func (f *filteredSelector) loadSeries(ctx context.Context) error {
 		return err
 	}
 
-	var i uint64
 	f.series = make([]SignedSeries, 0, len(series))
 	for _, s := range series {
 		if f.filter.Matches(s) {
 			f.series = append(f.series, SignedSeries{
-				Series:    s.Series,
-				Signature: i,
+				Series:     s.Series,
+				OriginHash: s.OriginHash,
 			})
-			i++
 		}
 	}
 

@@ -293,6 +293,10 @@ func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 	return o.series, nil
 }
 
+func (o *subqueryOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, o.next)
+}
+
 func (o *subqueryOperator) initSeries(ctx context.Context) error {
 	var err error
 	o.onceSeries.Do(func() {

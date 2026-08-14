@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/cortexproject/promqlsmith"
@@ -30,11 +31,25 @@ import (
 
 type projectionQuerier struct {
 	storage.Querier
+	useAtHash bool
 }
 
 type projectionSeriesSet struct {
 	storage.SeriesSet
 	hints *storage.SelectHints
+	// useAtHash exposes the original series identity via AtHash instead of
+	// attaching the __series_hash__ label.
+	useAtHash bool
+}
+
+// hashedSeriesSet additionally exposes the hash of each series' original
+// label set via AtHash.
+type hashedSeriesSet struct {
+	projectionSeriesSet
+}
+
+func (m hashedSeriesSet) AtHash() uint64 {
+	return m.SeriesSet.At().Labels().Hash()
 }
 
 func (m projectionSeriesSet) Next() bool { return m.SeriesSet.Next() }
@@ -64,7 +79,9 @@ func (m projectionSeriesSet) At() storage.Series {
 				builder.Set(l.Name, l.Value)
 			}
 		})
-		builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
+		if !m.useAtHash {
+			builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
+		}
 		projectedLabels = builder.Labels()
 	} else {
 		// Exclude mode: keep all labels except those in the projection labels
@@ -79,7 +96,9 @@ func (m projectionSeriesSet) At() storage.Series {
 				builder.Set(l.Name, l.Value)
 			}
 		})
-		builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
+		if !m.useAtHash {
+			builder.Set("__series_hash__", strconv.FormatUint(originalLabels.Hash(), 10))
+		}
 		projectedLabels = builder.Labels()
 	}
 
@@ -109,10 +128,15 @@ func (m projectionSeriesSet) Warnings() annotations.Annotations { return m.Serie
 
 // Implement the Querier interface methods.
 func (m *projectionQuerier) Select(ctx context.Context, sortSeries bool, hints *storage.SelectHints, matchers ...*labels.Matcher) storage.SeriesSet {
-	return projectionSeriesSet{
+	set := projectionSeriesSet{
 		SeriesSet: m.Querier.Select(ctx, sortSeries, hints, matchers...),
 		hints:     hints,
+		useAtHash: m.useAtHash,
 	}
+	if m.useAtHash {
+		return hashedSeriesSet{set}
+	}
+	return set
 }
 func (m *projectionQuerier) LabelValues(ctx context.Context, name string, _ *storage.LabelHints, matchers ...*labels.Matcher) ([]string, annotations.Annotations, error) {
 	return nil, nil, nil
@@ -125,6 +149,7 @@ func (m *projectionQuerier) Close() error { return nil }
 // projectionQueryable is a storage.Queryable that applies projection to the querier.
 type projectionQueryable struct {
 	storage.Queryable
+	useAtHash bool
 }
 
 func (q *projectionQueryable) Querier(mint, maxt int64) (storage.Querier, error) {
@@ -133,7 +158,8 @@ func (q *projectionQueryable) Querier(mint, maxt int64) (storage.Querier, error)
 		return nil, err
 	}
 	return &projectionQuerier{
-		Querier: querier,
+		Querier:   querier,
+		useAtHash: q.useAtHash,
 	}, nil
 }
 
@@ -264,6 +290,134 @@ func TestProjectionWithFuzz(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestProjectionWithAtHash exercises stores that trim labels and expose the
+// original series identity via AtHash() instead of a __series_hash__ label.
+// Distinct series then reach the engine with identical label sets and must
+// not fail the duplicate labelset check.
+func TestProjectionWithAtHash(t *testing.T) {
+	t.Parallel()
+
+	load := `load 30s
+		http_requests_total{pod="nginx-1", job="app", env="prod", instance="1"} 1+1x40
+		http_requests_total{pod="nginx-2", job="app", env="dev", instance="2"} 2+2x40
+		http_requests_total{pod="nginx-3", job="api", env="prod", instance="3"} 3+3x40
+		http_requests_total{pod="nginx-4", job="api", env="dev", instance="4"} 4+4x40
+		errors_total{pod="nginx-1", job="app", env="prod", instance="1", cluster="us-west-2"} 0.5+0.5x40
+		errors_total{pod="nginx-2", job="app", env="dev", instance="2", cluster="us-west-2"} 1+1x40
+		errors_total{pod="nginx-3", job="api", env="prod", instance="3", cluster="us-east-2"} 1.5+1.5x40
+		errors_total{pod="nginx-4", job="api", env="dev", instance="4", cluster="us-east-1"} 2+2x40`
+
+	storage := promqltest.LoadedStorage(t, load)
+	defer storage.Close()
+
+	engineOpts := promql.EngineOpts{
+		Timeout:          1 * time.Minute,
+		MaxSamples:       1e10,
+		EnableAtModifier: true,
+	}
+	normalEngine := engine.New(engine.Opts{
+		EngineOpts:        engineOpts,
+		LogicalOptimizers: logicalplan.AllOptimizers,
+	})
+	projectionEngine := engine.New(engine.Opts{
+		EngineOpts: engineOpts,
+		LogicalOptimizers: []logicalplan.Optimizer{
+			logicalplan.SortMatchers{},
+			logicalplan.ProjectionOptimizer{},
+			logicalplan.DetectHistogramStatsOptimizer{},
+			logicalplan.MergeSelectsOptimizer{},
+		},
+	})
+
+	projectionStorage := &projectionQueryable{Queryable: storage, useAtHash: true}
+
+	ctx := context.Background()
+	queryTime := time.Unix(600, 0)
+	queries := []string{
+		`sum by (env) (http_requests_total)`,
+		`sum by (env) (rate(http_requests_total[1m]))`,
+		`sum by (env) (2 * rate(http_requests_total[1m]))`,
+		`sum by (env) (-rate(http_requests_total[1m]))`,
+		`sum by (env) (abs(rate(http_requests_total[1m])))`,
+		`sum without (pod, instance, job) (rate(http_requests_total[1m]))`,
+		`sum by (env) (label_replace(http_requests_total, "foo", "$1", "job", "(.*)"))`,
+		`sum by (env) (label_join(http_requests_total, "foo", "-", "job"))`,
+		`sum by (env) (timestamp(abs(http_requests_total)))`,
+		`sum by (env) (max_over_time(http_requests_total[5m:1m]))`,
+		`sum by (env) (abs(http_requests_total @ 600.000))`,
+		`http_requests_total * on(instance) errors_total`,
+		`http_requests_total * ignoring(cluster) errors_total`,
+		`errors_total * on(env) group_left() sum by (env) (http_requests_total)`,
+		`sum by (env) (errors_total * on(instance) group_left(cluster) http_requests_total)`,
+		`http_requests_total and on(env) errors_total`,
+		`http_requests_total unless on(cluster) errors_total`,
+		`http_requests_total or on(cluster) errors_total`,
+		`http_requests_total or ignoring(pod, instance) errors_total`,
+		`sum by (env) (http_requests_total or on(cluster) errors_total)`,
+		`sum by (env) (http_requests_total or vector(1))`,
+	}
+	for _, query := range queries {
+		t.Run(query, func(t *testing.T) {
+			normalQuery, err := normalEngine.NewInstantQuery(ctx, storage, &engine.QueryOpts{}, query, queryTime)
+			testutil.Ok(t, err)
+			defer normalQuery.Close()
+			normalResult := normalQuery.Exec(ctx)
+			testutil.Ok(t, normalResult.Err, "query: %s", query)
+
+			projectionQuery, err := projectionEngine.MakeInstantQuery(ctx, projectionStorage, &engine.QueryOpts{}, query, queryTime)
+			testutil.Ok(t, err)
+			defer projectionQuery.Close()
+			projectionResult := projectionQuery.Exec(ctx)
+			testutil.Ok(t, projectionResult.Err, "query: %s", query)
+
+			if diff := cmp.Diff(normalResult, projectionResult, comparer); diff != "" {
+				t.Errorf("Results differ for query %s: %s", query, diff)
+			}
+		})
+	}
+}
+
+// TestAtHashWithoutProjection ensures that origin hashes from stores which
+// implement AtHash are ignored when no projection was requested, so genuine
+// duplicate label sets are still detected.
+func TestAtHashWithoutProjection(t *testing.T) {
+	t.Parallel()
+
+	load := `load 5m
+		testmetric1{src="a",dst="b"} 0
+		testmetric2{src="a",dst="b"} 1`
+
+	storage := promqltest.LoadedStorage(t, load)
+	defer storage.Close()
+
+	projectionEngine := engine.New(engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			Timeout:    1 * time.Minute,
+			MaxSamples: 1e10,
+		},
+		LogicalOptimizers: []logicalplan.Optimizer{
+			logicalplan.SortMatchers{},
+			logicalplan.ProjectionOptimizer{},
+			logicalplan.DetectHistogramStatsOptimizer{},
+			logicalplan.MergeSelectsOptimizer{},
+		},
+	})
+	hashStorage := &projectionQueryable{Queryable: storage, useAtHash: true}
+
+	// topk does not push a projection down to the selector and merges the
+	// duplicate series away from the final output, so only the duplicate
+	// label check operator can catch the error.
+	query := `topk(1, changes({__name__=~"testmetric1|testmetric2"}[5m]))`
+
+	ctx := context.Background()
+	q, err := projectionEngine.MakeInstantQuery(ctx, hashStorage, &engine.QueryOpts{}, query, time.Unix(0, 0))
+	testutil.Ok(t, err)
+	defer q.Close()
+	result := q.Exec(ctx)
+	testutil.NotOk(t, result.Err)
+	testutil.Equals(t, extlabels.ErrDuplicateLabelSet.Error(), result.Err.Error())
 }
 
 // containsProjectionExprs checks if the expression contains any expressions that might benefit from projection pushdown.

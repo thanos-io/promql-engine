@@ -46,6 +46,10 @@ func (u *unaryNegation) Series(ctx context.Context) ([]labels.Labels, error) {
 	return u.series, nil
 }
 
+func (u *unaryNegation) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, u.next)
+}
+
 func (u *unaryNegation) loadSeries(ctx context.Context) error {
 	var err error
 	u.once.Do(func() {

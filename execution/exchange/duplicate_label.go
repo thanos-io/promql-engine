@@ -95,6 +95,10 @@ func (d *duplicateLabelCheckOperator) String() string {
 	return "[duplicateLabelCheck]"
 }
 
+func (d *duplicateLabelCheckOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, d.next)
+}
+
 func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 	var err error
 	d.once.Do(func() {
@@ -103,11 +107,27 @@ func (d *duplicateLabelCheckOperator) init(ctx context.Context) error {
 			err = seriesErr
 			return
 		}
+		origins, originsErr := model.OriginHashes(ctx, d.next)
+		if originsErr != nil {
+			err = originsErr
+			return
+		}
+		if len(origins) != len(series) {
+			origins = nil
+		}
 		m := make(map[uint64]int, len(series))
 		p := make([]pair, 0)
 		c := make([]uint64, len(series))
 		for i := range series {
-			h := series[i].Hash()
+			// Series with a known origin are identified by it instead of their
+			// label set, since a projection may have trimmed distinct series
+			// down to identical label sets.
+			var h uint64
+			if origins != nil && origins[i] != 0 {
+				h = origins[i]
+			} else {
+				h = series[i].Hash()
+			}
 			if j, ok := m[h]; ok {
 				p = append(p, pair{a: i, b: j})
 			} else {
