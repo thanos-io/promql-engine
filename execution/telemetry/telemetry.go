@@ -232,6 +232,10 @@ func (t *Operator) Next(ctx context.Context, buf []model.StepVector) (int, error
 	return n, err
 }
 
+func (t *Operator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, t.inner)
+}
+
 func (t *Operator) Explain() []model.VectorOperator {
 	return t.inner.Explain()
 }

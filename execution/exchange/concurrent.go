@@ -76,6 +76,10 @@ func (c *concurrencyOperator) Series(ctx context.Context) ([]labels.Labels, erro
 	return series, nil
 }
 
+func (c *concurrencyOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, c.next)
+}
+
 func (c *concurrencyOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
 	select {
 	case <-ctx.Done():

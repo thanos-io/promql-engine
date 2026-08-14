@@ -79,6 +79,10 @@ func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, er
 	return u.series, nil
 }
 
+func (u *stepInvariantOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, u.next)
+}
+
 func (u *stepInvariantOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
 	select {
 	case <-ctx.Done():

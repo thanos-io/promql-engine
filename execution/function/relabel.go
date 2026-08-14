@@ -52,6 +52,10 @@ func (o *relabelOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	return o.series, err
 }
 
+func (o *relabelOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, o.next)
+}
+
 func (o *relabelOperator) Next(ctx context.Context, buf []model.StepVector) (int, error) {
 	return o.next.Next(ctx, buf)
 }

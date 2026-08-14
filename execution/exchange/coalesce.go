@@ -83,6 +83,26 @@ func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
 	return c.series, nil
 }
 
+func (c *coalesce) OriginHashes(ctx context.Context) ([]uint64, error) {
+	var err error
+	c.once.Do(func() { err = c.loadSeries(ctx) })
+	if err != nil {
+		return nil, err
+	}
+	hashes := make([]uint64, 0, len(c.series))
+	for i, op := range c.operators {
+		opHashes, err := model.OriginHashes(ctx, op)
+		if err != nil {
+			return nil, err
+		}
+		if len(opHashes) != c.seriesCounts[i] {
+			return nil, nil
+		}
+		hashes = append(hashes, opHashes...)
+	}
+	return hashes, nil
+}
+
 func (c *coalesce) Next(ctx context.Context, buf []model.StepVector) (int, error) {
 	select {
 	case <-ctx.Done():

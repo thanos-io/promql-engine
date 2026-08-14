@@ -20,7 +20,11 @@ type SeriesSelector interface {
 
 type SignedSeries struct {
 	storage.Series
-	Signature uint64
+	// OriginHash is the hash of the series' original label set, before a
+	// projection trimmed it. It is zero when the selection did not request a
+	// projection or the series set returned by the storage does not implement
+	// AtHash() uint64.
+	OriginHash uint64
 }
 
 type seriesSelector struct {
@@ -56,20 +60,47 @@ func (o *seriesSelector) GetSeries(ctx context.Context, shard int, numShards int
 
 func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	seriesSet := o.storage.Select(ctx, false, &o.hints, o.matchers...)
-	i := 0
+	// Origin hashes are only needed to disambiguate series when a projection
+	// could have trimmed distinct label sets down to identical ones. Without a
+	// projection, series must keep being identified by their label sets so
+	// that genuine duplicates are still detected.
+	projected := o.hints.ProjectionInclude || len(o.hints.ProjectionLabels) > 0
+	hashSet, hasHashes := seriesSet.(interface{ AtHash() uint64 })
+	hasHashes = hasHashes && projected
 	for seriesSet.Next() {
-		s := seriesSet.At()
-		o.series = append(o.series, SignedSeries{
-			Series:    s,
-			Signature: uint64(i),
-		})
-		i++
+		s := SignedSeries{
+			Series: seriesSet.At(),
+		}
+		if hasHashes {
+			s.OriginHash = hashSet.AtHash()
+		}
+		o.series = append(o.series, s)
 	}
 
 	for _, w := range seriesSet.Warnings() {
 		warnings.AddToContext(w, ctx)
 	}
 	return seriesSet.Err()
+}
+
+// originHashes returns the origin hashes of the given series, or nil when the
+// storage did not provide any.
+func originHashes(series []SignedSeries) []uint64 {
+	var found bool
+	for i := range series {
+		if series[i].OriginHash != 0 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil
+	}
+	hashes := make([]uint64, len(series))
+	for i, s := range series {
+		hashes[i] = s.OriginHash
+	}
+	return hashes
 }
 
 func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries {
@@ -80,8 +111,5 @@ func seriesShard(series []SignedSeries, index int, numShards int) []SignedSeries
 	shard := make([]SignedSeries, len(slice))
 	copy(shard, slice)
 
-	for i := range shard {
-		shard[i].Signature = uint64(i)
-	}
 	return shard
 }

@@ -124,8 +124,7 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 		s.series = make([]promstorage.SignedSeries, len(val))
 		for i, series := range val {
 			s.series[i] = promstorage.SignedSeries{
-				Signature: uint64(i),
-				Series:    promql.NewStorageSeries(series),
+				Series: promql.NewStorageSeries(series),
 			}
 		}
 	case promql.Vector:
@@ -138,8 +137,7 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 				series.Histograms = []promql.HPoint{{T: sample.T, H: sample.H}}
 			}
 			s.series[i] = promstorage.SignedSeries{
-				Signature: uint64(i),
-				Series:    promql.NewStorageSeries(series),
+				Series: promql.NewStorageSeries(series),
 			}
 		}
 	}

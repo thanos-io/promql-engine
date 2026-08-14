@@ -72,6 +72,14 @@ func (o *scalarOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	return o.series, nil
 }
 
+func (o *scalarOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	vectorSide := o.lhs
+	if o.lhsType == parser.ValueTypeScalar {
+		vectorSide = o.rhs
+	}
+	return model.OriginHashes(ctx, vectorSide)
+}
+
 func (o *scalarOperator) String() string {
 	return fmt.Sprintf("[vectorScalarBinary] %s", parser.ItemTypeStr[o.opType])
 }
