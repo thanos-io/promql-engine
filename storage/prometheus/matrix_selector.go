@@ -71,7 +71,7 @@ type matrixSelector struct {
 	hasFloats        bool
 }
 
-const sampleLimitCheckInterval = 500
+const sampleLimitCheckInterval = 1
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
