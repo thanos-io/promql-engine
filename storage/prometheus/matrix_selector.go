@@ -38,6 +38,14 @@ type matrixScanner struct {
 	lastSample ringbuffer.Sample
 }
 
+type BufferCarrier struct {
+	chunkenc.Iterator
+	Buf any
+}
+
+func (b *BufferCarrier) GetBuf() any  { return b.Buf }
+func (b *BufferCarrier) SetBuf(v any) { b.Buf = v }
+
 type matrixSelector struct {
 	telemetry telemetry.OperatorTelemetry
 
@@ -69,6 +77,8 @@ type matrixSelector struct {
 
 	nonCounterMetric string
 	hasFloats        bool
+
+	bufCarrier *BufferCarrier
 }
 
 const sampleLimitCheckInterval = 1
@@ -109,6 +119,8 @@ func NewMatrixSelector(
 
 		shard:     shard,
 		numShards: numShard,
+
+		bufCarrier: &BufferCarrier{},
 	}
 
 	// For instant queries, set the step to a positive value
@@ -178,7 +190,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	// TODO: reuse the iterator created for the previous scanner.
 	for i := firstSeries; i < lastInBatch; i++ {
 		if o.scanners[i].iterator == nil {
-			o.scanners[i].iterator = o.scanners[i].rawSeries.Iterator(nil)
+			o.scanners[i].iterator = o.scanners[i].rawSeries.Iterator(o.bufCarrier)
 			o.scanners[i].buffer = o.newBuffer(ctx)
 		}
 	}
