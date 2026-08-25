@@ -12,6 +12,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/errors"
@@ -53,6 +54,7 @@ type vectorSelector struct {
 	numShards int
 
 	selectTimestamp bool
+	projection      *logicalplan.Projection
 
 	opts               *query.Options
 	lastTrackedSamples int
@@ -66,6 +68,7 @@ func NewVectorSelector(
 	batchSize int64,
 	selectTimestamp bool,
 	shard, numShards int,
+	projection *logicalplan.Projection,
 ) model.VectorOperator {
 	o := &vectorSelector{
 		storage: selector,
@@ -83,6 +86,7 @@ func NewVectorSelector(
 		numShards: numShards,
 
 		selectTimestamp: selectTimestamp,
+		projection:      projection,
 
 		opts: queryOpts,
 	}
@@ -98,7 +102,10 @@ func NewVectorSelector(
 }
 
 func (o *vectorSelector) String() string {
-	return fmt.Sprintf("[vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards)
+	if o.projection == nil {
+		return fmt.Sprintf("[vectorSelector] {%v} %v mod %v", o.storage.Matchers(), o.shard, o.numShards)
+	}
+	return fmt.Sprintf("[vectorSelector] {%v} %v mod %v %s", o.storage.Matchers(), o.shard, o.numShards, o.projection)
 }
 
 func (o *vectorSelector) Explain() (next []model.VectorOperator) {

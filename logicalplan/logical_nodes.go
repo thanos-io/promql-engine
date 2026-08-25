@@ -66,6 +66,10 @@ type Projection struct {
 	Include bool
 }
 
+func (p *Projection) String() string {
+	return fmt.Sprintf("projection={%s} include=%v", strings.Join(p.Labels, ","), p.Include)
+}
+
 // VectorSelector is vector selector with additional configuration set by optimizers.
 type VectorSelector struct {
 	*parser.VectorSelector

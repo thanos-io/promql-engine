@@ -293,6 +293,8 @@ func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) 
 	return o.series, nil
 }
 
+// OriginHashes forwards the origin hashes of the input series: a subquery
+// evaluates one output series per input series.
 func (o *subqueryOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
 	return model.OriginHashes(ctx, o.next)
 }

@@ -40,6 +40,12 @@ func (o *timestampOperator) Series(ctx context.Context) ([]labels.Labels, error)
 	return o.series, nil
 }
 
+// OriginHashes forwards the origin hashes of the input series: timestamp only
+// rewrites sample values, keeping the one-to-one mapping onto storage series.
+func (o *timestampOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
+	return model.OriginHashes(ctx, o.next)
+}
+
 func (o *timestampOperator) String() string {
 	return "[timestamp]"
 }

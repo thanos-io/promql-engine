@@ -79,6 +79,8 @@ func (u *stepInvariantOperator) Series(ctx context.Context) ([]labels.Labels, er
 	return u.series, nil
 }
 
+// OriginHashes forwards the origin hashes of the input series: repeating a
+// vector across steps keeps the one-to-one mapping onto storage series.
 func (u *stepInvariantOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
 	return model.OriginHashes(ctx, u.next)
 }

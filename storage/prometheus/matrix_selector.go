@@ -15,6 +15,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
 	"github.com/thanos-io/promql-engine/warnings"
@@ -70,6 +71,8 @@ type matrixSelector struct {
 
 	nonCounterMetric string
 	hasFloats        bool
+
+	projection *logicalplan.Projection
 }
 
 const sampleLimitCheckInterval = 500
@@ -84,6 +87,7 @@ func NewMatrixSelector(
 	selectRange, offset time.Duration,
 	batchSize int64,
 	shard, numShard int,
+	projection *logicalplan.Projection,
 ) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(functionName)
 	if err != nil {
@@ -110,6 +114,8 @@ func NewMatrixSelector(
 
 		shard:     shard,
 		numShards: numShard,
+
+		projection: projection,
 	}
 
 	// For instant queries, set the step to a positive value
@@ -370,9 +376,15 @@ func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
 func (o *matrixSelector) String() string {
 	r := time.Duration(o.selectRange) * time.Millisecond
 	if o.call != nil {
-		return fmt.Sprintf("[matrixSelector] %v({%v}[%s] %v mod %v)", o.functionName, o.storage.Matchers(), r, o.shard, o.numShards)
+		if o.projection == nil {
+			return fmt.Sprintf("[matrixSelector] %v({%v}[%s] %v mod %v)", o.functionName, o.storage.Matchers(), r, o.shard, o.numShards)
+		}
+		return fmt.Sprintf("[matrixSelector] %v({%v}[%s] %v mod %v) %s", o.functionName, o.storage.Matchers(), r, o.shard, o.numShards, o.projection)
 	}
-	return fmt.Sprintf("[matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards)
+	if o.projection == nil {
+		return fmt.Sprintf("[matrixSelector] {%v}[%s] %v mod %v", o.storage.Matchers(), r, o.shard, o.numShards)
+	}
+	return fmt.Sprintf("[matrixSelector] {%v}[%s] %v mod %v %s", o.storage.Matchers(), r, o.shard, o.numShards, o.projection)
 }
 
 // selectPoints advances one series' buffer to the requested range and offers

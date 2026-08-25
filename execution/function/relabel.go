@@ -52,6 +52,9 @@ func (o *relabelOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	return o.series, err
 }
 
+// OriginHashes forwards the origin hashes of the input series: relabeling
+// rewrites label sets but keeps the one-to-one mapping onto storage series,
+// which stays their identity when a projection trimmed them.
 func (o *relabelOperator) OriginHashes(ctx context.Context) ([]uint64, error) {
 	return model.OriginHashes(ctx, o.next)
 }
