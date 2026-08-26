@@ -49,7 +49,10 @@ type coalesce struct {
 	// seriesCounts holds the number of series per operator for pre-allocation.
 	seriesCounts []int
 	// tempBufs are reusable buffers for reading from operators
-	tempBufs [][]model.StepVector
+	tempBufs     [][]model.StepVector
+	originOnce   sync.Once
+	originHashes []uint64
+	originErr    error
 }
 
 func NewCoalesce(opts *query.Options, batchSize int64, operators ...model.VectorOperator) model.VectorOperator {
@@ -89,6 +92,12 @@ func (c *coalesce) OriginHashes(ctx context.Context) ([]uint64, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Memoized: every wrapping operator asks again during its own init.
+	c.originOnce.Do(func() { c.originHashes, c.originErr = c.collectOriginHashes(ctx) })
+	return c.originHashes, c.originErr
+}
+
+func (c *coalesce) collectOriginHashes(ctx context.Context) ([]uint64, error) {
 	hashes := make([]uint64, 0, len(c.series))
 	for i, op := range c.operators {
 		opHashes, err := model.OriginHashes(ctx, op)
@@ -96,6 +105,13 @@ func (c *coalesce) OriginHashes(ctx context.Context) ([]uint64, error) {
 			return nil, err
 		}
 		if len(opHashes) != c.seriesCounts[i] {
+			// An operator that cannot provide hashes only leaves its own series
+			// unidentified: a zero hash already means "origin unknown", so the
+			// other operators keep theirs.
+			if len(opHashes) == 0 {
+				hashes = append(hashes, make([]uint64, c.seriesCounts[i])...)
+				continue
+			}
 			return nil, nil
 		}
 		hashes = append(hashes, opHashes...)

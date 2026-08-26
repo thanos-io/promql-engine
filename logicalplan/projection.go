@@ -4,7 +4,6 @@
 package logicalplan
 
 import (
-	"maps"
 	"slices"
 
 	"github.com/thanos-io/promql-engine/query"
@@ -26,12 +25,25 @@ func (p ProjectionOptimizer) Optimize(plan Node, _ *query.Options) (Node, annota
 func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) {
 	switch n := (*node).(type) {
 	case *VectorSelector:
+		proj := &Projection{}
 		if projection != nil {
-			n.Projection = projection
-		} else {
-			// Set dummy projection.
-			n.Projection = &Projection{}
+			// Copy: the same projection is handed to sibling selectors.
+			proj = &Projection{Labels: slices.Clone(projection.Labels), Include: projection.Include}
 		}
+		// MergeSelectsOptimizer may have replaced the matchers with a less
+		// selective superset plus compensating filters, which are matched
+		// against the series the storage returns, so the labels they read must
+		// survive the projection.
+		for _, f := range n.Filters {
+			if proj.Include {
+				if !slices.Contains(proj.Labels, f.Name) {
+					proj.Labels = append(proj.Labels, f.Name)
+				}
+			} else {
+				proj.Labels = slices.DeleteFunc(proj.Labels, func(s string) bool { return s == f.Name })
+			}
+		}
+		n.Projection = proj
 
 	case *Aggregation:
 		// Special handling for aggregation functions that need all labels
@@ -69,13 +81,19 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) 
 		}
 
 		if n.VectorMatching == nil || (!n.VectorMatching.On && len(n.VectorMatching.MatchingLabels) == 0) {
-			if IsConstantExpr(lowCard) {
+			// A scalar operand takes part in no label matching, so the vector
+			// side can keep the outer projection. With two vector operands and
+			// default matching the signature is the whole label set, so
+			// trimming either side would change which series match: constant
+			// but vector-valued operands such as vector() or day_of_week()
+			// match on their empty label set.
+			if lowCard.ReturnType() == parser.ValueTypeScalar {
 				p.pushProjection(&highCard, projection)
 			} else {
 				p.pushProjection(&highCard, nil)
 			}
 
-			if IsConstantExpr(highCard) {
+			if highCard.ReturnType() == parser.ValueTypeScalar {
 				p.pushProjection(&lowCard, projection)
 			} else {
 				p.pushProjection(&lowCard, nil)
@@ -242,28 +260,25 @@ func getFunctionLabelRequirements(funcName string, args []Node, projection *Proj
 	return result
 }
 
-// union returns the union of two string slices.
+// union returns the sorted union of two string slices.
 func union(l1 []string, l2 []string) []string {
-	m := make(map[string]struct{})
-	for _, s := range l1 {
-		m[s] = struct{}{}
-	}
-	for _, s := range l2 {
-		m[s] = struct{}{}
-	}
-	return slices.Collect(maps.Keys(m))
+	res := make([]string, 0, len(l1)+len(l2))
+	res = append(res, l1...)
+	res = append(res, l2...)
+	slices.Sort(res)
+	return slices.Compact(res)
 }
 
-// subtract returns the intersection of two string slices.
+// subtract returns l1 minus l2, sorted.
 func subtract(l1 []string, l2 []string) []string {
-	m := make(map[string]struct{})
+	res := make([]string, 0, len(l1))
 	for _, s := range l1 {
-		m[s] = struct{}{}
+		if !slices.Contains(l2, s) {
+			res = append(res, s)
+		}
 	}
-	for _, s := range l2 {
-		delete(m, s)
-	}
-	return slices.Collect(maps.Keys(m))
+	slices.Sort(res)
+	return slices.Compact(res)
 }
 
 func intersect(l1 []string, l2 []string) []string {
