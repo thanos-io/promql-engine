@@ -45,8 +45,9 @@ type vectorSelector struct {
 	offset          int64
 	seriesBatchSize int64
 
-	currentSeries int64
-	currentStep   int64
+	currentSeries    int64
+	currentStep      int64
+	seriesBatchStart int64
 
 	shard     int
 	numShards int
@@ -120,6 +121,10 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	if o.currentStep > o.maxt {
 		return 0, nil
 	}
+	// All series batches exhausted in series-first mode.
+	if len(o.scanners) > 0 && o.seriesBatchStart >= int64(len(o.scanners)) {
+		return 0, nil
+	}
 
 	if err := o.loadSeries(ctx); err != nil {
 		return 0, err
@@ -186,11 +191,27 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 	}
 
-	if o.currentSeries == int64(len(o.scanners)) {
+	if o.currentSeries == int64(len(o.scanners)) && o.seriesBatchStart == 0 {
 		o.currentStep += o.step * int64(n)
 		o.currentSeries = 0
+	} else if o.currentSeries-o.seriesBatchStart >= o.seriesBatchSize || o.currentSeries == int64(len(o.scanners)) {
+		o.currentStep += o.step * int64(n)
+
+		if o.currentStep > o.maxt {
+			o.releaseCurrentBatch()
+			o.seriesBatchStart = o.currentSeries
+			o.currentStep = o.mint
+		} else {
+			o.currentSeries = o.seriesBatchStart
+		}
 	}
 	return n, nil
+}
+
+func (o *vectorSelector) releaseCurrentBatch() {
+	for i := o.seriesBatchStart; i < o.currentSeries; i++ {
+		o.scanners[i].samples = nil
+	}
 }
 
 func (o *vectorSelector) loadSeries(ctx context.Context) error {

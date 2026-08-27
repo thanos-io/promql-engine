@@ -24,7 +24,7 @@ type SelectorBatchSize struct {
 // arithmetic). Batching is disabled by nodes that require cross-series
 // visibility (group_left/group_right, histogram_quantile, topk, etc.).
 func (m SelectorBatchSize) Optimize(plan Node, _ *query.Options) (Node, annotations.Annotations) {
-	m.setBatchSize(&plan, false)
+	m.setBatchSize(&plan, true)
 	return plan, nil
 }
 
@@ -33,18 +33,12 @@ func (m SelectorBatchSize) setBatchSize(node *Node, canBatch bool) {
 	case *Aggregation:
 		if e.Op == parser.QUANTILE || e.Op == parser.TOPK || e.Op == parser.BOTTOMK || e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
 			canBatch = false
-		} else {
-			canBatch = true
 		}
 	case *FunctionCall:
-		// Range vector functions (rate, increase, present_over_time, etc.) are safe for
-		// batching because each output series depends only on that series' own range data.
-		// The function receives a single series' samples over the [range] window and produces
-		// one output value — no cross-series state is needed.
-		//
-		// Instant vector functions (e.g., histogram_quantile) may reduce or combine series
-		// (e.g., merging multiple "le" labels into one output), requiring full series visibility.
-		// We disable batching for those.
+		// Range vector functions (rate, increase, etc.) are safe — each output
+		// series depends only on that series' own range data.
+		// Instant vector functions (e.g., histogram_quantile) may combine series,
+		// requiring full series visibility. Disable batching for those.
 		if !isRangeVectorFunction(e) {
 			canBatch = false
 		}

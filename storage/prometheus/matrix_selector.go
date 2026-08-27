@@ -60,9 +60,10 @@ type matrixSelector struct {
 	selectRange int64
 	offset      int64
 
-	currentStep     int64
-	currentSeries   int64
-	seriesBatchSize int64
+	currentStep      int64
+	currentSeries    int64
+	seriesBatchSize  int64
+	seriesBatchStart int64 // start index of the current series batch (for series-first mode)
 
 	shard     int
 	numShards int
@@ -144,6 +145,10 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
 		}
 
+		return 0, nil
+	}
+	// All series batches exhausted in series-first mode.
+	if len(o.scanners) > 0 && o.seriesBatchStart >= int64(len(o.scanners)) {
 		return 0, nil
 	}
 	if err := o.loadSeries(ctx); err != nil {
@@ -241,11 +246,28 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 	}
 
-	if o.currentSeries == int64(len(o.scanners)) {
+	if o.currentSeries == int64(len(o.scanners)) && o.seriesBatchStart == 0 {
 		o.currentStep += o.step * int64(n)
 		o.currentSeries = 0
+	} else if o.currentSeries-o.seriesBatchStart >= o.seriesBatchSize || o.currentSeries == int64(len(o.scanners)) {
+		o.currentStep += o.step * int64(n)
+
+		if o.currentStep > o.maxt {
+			o.releaseCurrentBatch()
+			o.seriesBatchStart = o.currentSeries
+			o.currentStep = o.mint
+		} else {
+			o.currentSeries = o.seriesBatchStart
+		}
 	}
 	return n, nil
+}
+
+func (o *matrixSelector) releaseCurrentBatch() {
+	for i := o.seriesBatchStart; i < o.currentSeries; i++ {
+		o.scanners[i].buffer.Reset(math.MaxInt64, 0)
+		o.scanners[i].iterator = nil
+	}
 }
 
 func (o *matrixSelector) updateSampleTracker(delta int) error {

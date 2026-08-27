@@ -21,12 +21,12 @@ func TestSetBatchSize(t *testing.T) {
 		{
 			name:     "selector",
 			expr:     `http_requests_total`,
-			expected: `http_requests_total`,
+			expected: `http_requests_total[batch=10]`,
 		},
 		{
 			name:     "rate",
 			expr:     `rate(http_requests_total[5m])`,
-			expected: `rate(http_requests_total[5m0s])`,
+			expected: `rate(http_requests_total[batch=10][5m0s])`,
 		},
 		{
 			name:     "sum",
@@ -71,7 +71,7 @@ func TestSetBatchSize(t *testing.T) {
 		{
 			name:     "binary expression with single aggregation",
 			expr:     `metric_a - max by (foo) (bar)`,
-			expected: `metric_a - max by (foo) (bar[batch=10])`,
+			expected: `metric_a[batch=10] - max by (foo) (bar[batch=10])`,
 		},
 		{
 			name:     "number literal",
@@ -86,7 +86,7 @@ func TestSetBatchSize(t *testing.T) {
 		{
 			name:     "histogram quantile with aggregation",
 			expr:     `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
-			expected: `histogram_quantile(scalar(max(quantile[batch=10])), http_requests_total)`,
+			expected: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
 		},
 		{
 			name:     "aggregation of range vector function (rate)",
