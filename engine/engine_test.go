@@ -5181,6 +5181,62 @@ func TestMaxSamples(t *testing.T) {
 		res := q.Exec(context.Background())
 		require.NoError(t, res.Err)
 	})
+
+	t.Run("max_samples with native histogram accumulation in engine", func(t *testing.T) {
+		t.Parallel()
+		storage := teststorage.New(t)
+		defer storage.Close()
+
+		app := storage.Appender(context.Background())
+		// Create 100 series of native histograms with samples every 15s for 5 minutes.
+		// Each histogram has 2 positive buckets → CalculateHistogramSampleCount ≈ 12 per sample.
+		// Total: 100 series × 20 steps × 12 = ~24000 sample equivalents.
+		for i := range 100 {
+			for ts := int64(0); ts <= 300; ts += 15 {
+				_, err := app.AppendHistogram(0,
+					labels.FromStrings(labels.MetricName, "nh_metric", "series", strconv.Itoa(i)),
+					ts*1000, nil, newXTestHistogram(float64(ts+1)))
+				require.NoError(t, err)
+			}
+		}
+		require.NoError(t, app.Commit())
+
+		query := `nh_metric`
+		start := time.Unix(0, 0)
+		end := time.Unix(300, 0)
+		step := 15 * time.Second
+
+		t.Run("exceeds limit at engine accumulation", func(t *testing.T) {
+			// Each Next() call produces ~100 series × 12 sample equivalents × 10 steps = ~12000.
+			// Set limit between one batch (12000) and total (24000) so only the engine
+			// accumulation check catches it, not the vector selector.
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 15000,
+				},
+			})
+			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+			require.NoError(t, err)
+			res := q.Exec(context.Background())
+			require.Error(t, res.Err, "expected max_samples error")
+			require.Contains(t, res.Err.Error(), "query processing would load too many samples into memory")
+			require.Contains(t, res.Err.Error(), "limit=15000")
+		})
+
+		t.Run("within limit", func(t *testing.T) {
+			ng := engine.New(engine.Opts{
+				EngineOpts: promql.EngineOpts{
+					Timeout:    1 * time.Hour,
+					MaxSamples: 500000, // Higher than ~24000 expected
+				},
+			})
+			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
+			require.NoError(t, err)
+			res := q.Exec(context.Background())
+			require.NoError(t, res.Err)
+		})
+	})
 }
 
 type hintRecordingQuerier struct {
