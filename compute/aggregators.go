@@ -5,6 +5,7 @@ package compute
 
 import (
 	"math"
+	"simd/archsimd"
 	"sort"
 
 	"github.com/thanos-io/promql-engine/warnings"
@@ -202,6 +203,68 @@ type MaxAcc struct {
 	value    float64
 	hasValue bool
 	warn     warnings.Warnings
+}
+
+func maxLikeAddFloatSIMD(vs []float64) float64 {
+	m := vs[0]
+	if len(vs) == 1 {
+		return m
+	}
+
+	// Float64x8 needs AVX-512. Use scalar fallback otherwise.
+	if !archsimd.X86.AVX512() {
+		for _, v := range vs[1:] {
+			if m < v || math.IsNaN(m) {
+				m = v
+			}
+		}
+		return m
+	}
+
+	vmax := archsimd.BroadcastFloat64x8(m)
+
+	i := 1
+	for ; i+8 <= len(vs); i += 8 {
+		v := archsimd.LoadFloat64x8Slice(vs[i:])
+
+		// replace if (v > vmax) OR (vmax is NaN)
+		replace := v.Greater(vmax).Or(vmax.IsNaN())
+
+		// Merge semantics are inverted (mask=false picks 2nd arg),
+		// so to pick v when replace=true:
+		vmax = v.Merge(vmax, replace)
+	}
+
+	// reduce lanes back to scalar with the same rule
+	var lanes [8]float64
+	vmax.Store(&lanes)
+	for _, v := range lanes {
+		if m < v || math.IsNaN(m) {
+			m = v
+		}
+	}
+
+	// tail
+	for ; i < len(vs); i++ {
+		v := vs[i]
+		if m < v || math.IsNaN(m) {
+			m = v
+		}
+	}
+
+	return m
+}
+
+func (c *MaxAcc) AddVectorSIMD(vs []float64, hs []*histogram.FloatHistogram) error {
+	if len(hs) > 0 {
+		c.warn |= warnings.WarnHistogramIgnoredInAggregation
+	}
+	if len(vs) == 0 {
+		return nil
+	}
+
+	c.addFloat(maxLikeAddFloatSIMD(vs))
+	return nil
 }
 
 func (c *MaxAcc) AddVector(vs []float64, hs []*histogram.FloatHistogram) error {
