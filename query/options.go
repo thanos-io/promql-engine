@@ -4,7 +4,10 @@
 package query
 
 import (
+	"context"
 	"time"
+
+	"go.opentelemetry.io/otel/baggage"
 )
 
 type Options struct {
@@ -47,6 +50,17 @@ func (o *Options) WithEndTime(end time.Time) *Options {
 	result := *o
 	result.End = end
 	return &result
+}
+
+// ShouldEnableAnalysis returns true if analysis should be enabled for this
+// query. The baggage key "promql.enable_analysis" acts as a per-query
+// override: "true" forces analysis on, "false" forces it off, and any other
+// value (including absent) defers to o.EnableAnalysis.
+func (o *Options) ShouldEnableAnalysis(ctx context.Context) bool {
+	if v := baggage.FromContext(ctx).Member("promql.enable_analysis").Value(); v != "" {
+		return v == "true"
+	}
+	return o.EnableAnalysis
 }
 
 func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Duration) *Options {
