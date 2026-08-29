@@ -195,7 +195,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
 
-			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader); err != nil {
+			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader, parse.IsExtFunction(o.functionName)); err != nil {
 				return 0, err
 			}
 			// TODO(saswatamcode): Handle multi-arg functions for matrixSelectors.
@@ -377,18 +377,31 @@ func (o *matrixSelector) String() string {
 func (m *matrixScanner) selectPoints(
 	mint, maxt, evalt int64,
 	fh *histogram.FloatHistogram,
+	isExtFunction bool,
 ) error {
 	m.buffer.Reset(mint, evalt)
 	if m.lastSample.T > maxt {
 		return nil
 	}
 
-	if m.lastSample.T != math.MinInt64 {
-		m.buffer.Push(m.lastSample.T, m.lastSample.V)
+	var valType chunkenc.ValueType
+
+	// Seeking directly to mint is an optimization to skip decoding samples below mint only to
+	// discard them
+	//
+	// We don't seek for ext functions because they need a baseline sample <= mint
+	if !isExtFunction && m.lastSample.T != math.MinInt64 && m.lastSample.T < mint {
 		m.lastSample.T = math.MinInt64
+		valType = m.iterator.Seek(mint)
+	} else {
+		if m.lastSample.T != math.MinInt64 {
+			m.buffer.Push(m.lastSample.T, m.lastSample.V)
+			m.lastSample.T = math.MinInt64
+		}
+		valType = m.iterator.Next()
 	}
 
-	for valType := m.iterator.Next(); valType != chunkenc.ValNone; valType = m.iterator.Next() {
+	for ; valType != chunkenc.ValNone; valType = m.iterator.Next() {
 		switch valType {
 		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
 			var t int64
