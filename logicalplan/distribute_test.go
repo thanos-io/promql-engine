@@ -20,12 +20,89 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
+	"github.com/prometheus/prometheus/util/annotations"
 )
 
 var replacements = map[string]*regexp.Regexp{
 	" ": spaces,
 	"(": openParenthesis,
 	")": closedParenthesis,
+}
+
+func TestComputeDistributionPoints(t *testing.T) {
+	type point struct {
+		expr     string
+		strategy distributionStrategy
+	}
+
+	partitionLabels := map[string]struct{}{"region": {}}
+	cases := []struct {
+		name     string
+		expr     string
+		expected []point
+	}{
+		{
+			name:     "distributive chain",
+			expr:     `rate(metric_a[5m])`,
+			expected: []point{{`rate(metric_a[5m])`, distributeAsIs}},
+		},
+		{
+			name: "non-distributive function argument",
+			expr: `clamp_max(metric_a, -scalar(metric_b))`,
+			expected: []point{
+				{`metric_a`, distributeAsIs},
+				{`metric_b`, distributeAsIs},
+			},
+		},
+		{
+			name:     "aggregation rewrite",
+			expr:     `sum(rate(metric_a[5m]))`,
+			expected: []point{{`sum(rate(metric_a[5m]))`, rewriteAggregation}},
+		},
+		{
+			name:     "average rewrite",
+			expr:     `avg(metric_a)`,
+			expected: []point{{`avg(metric_a)`, rewriteAvg}},
+		},
+		{
+			name:     "absent rewrite",
+			expr:     `absent(metric_a)`,
+			expected: []point{{`absent(metric_a)`, rewriteAbsent}},
+		},
+		{
+			name:     "nested aggregation rewrite",
+			expr:     `max(sum by (instance) (metric_a))`,
+			expected: []point{{`sum by (instance) (metric_a)`, rewriteAggregation}},
+		},
+		{
+			name:     "partition-preserving nested aggregation",
+			expr:     `max(sum by (region, instance) (metric_a))`,
+			expected: []point{{`max(sum by (region, instance) (metric_a))`, rewriteAggregation}},
+		},
+		{
+			name:     "non-distributive aggregation",
+			expr:     `quantile(0.5, metric_a)`,
+			expected: []point{{`metric_a`, distributeAsIs}},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			expr, err := parser.ParseExpr(tc.expr)
+			testutil.Ok(t, err)
+			plan, err := NewFromAST(expr, &query.Options{}, PlanOptions{})
+			testutil.Ok(t, err)
+			root := plan.Root()
+			points := (DistributedExecutionOptimizer{}).computeDistributionPoints(&root, partitionLabels, annotations.New())
+			actual := make([]point, 0, len(points))
+			Traverse(&root, func(node *Node) {
+				if strategy, ok := points[node]; ok {
+					actual = append(actual, point{(*node).String(), strategy})
+				}
+			})
+			testutil.Equals(t, tc.expected, actual)
+		})
+	}
 }
 
 func TestDistributedExecution(t *testing.T) {
