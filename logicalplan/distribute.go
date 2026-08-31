@@ -278,6 +278,18 @@ func (m DistributedExecutionOptimizer) computeDistributionPoints(plan *Node, par
 				}
 			}
 			marks[current] = struct{}{}
+			return
+		}
+
+		parent := parents[current]
+		if parent == nil || IsConstantExpr(*current) {
+			return
+		}
+		if _, parentMarked := marks[parent]; parentMarked {
+			return
+		}
+		if !m.isDistributive(parent, engineLabels, warns) && m.isDistributive(current, engineLabels, warns) {
+			marks[current] = struct{}{}
 		}
 	})
 

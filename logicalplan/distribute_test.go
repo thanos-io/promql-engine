@@ -107,6 +107,22 @@ sum(
 			expected: `scalar(dedup(remote(redis::shard_price_per_month), remote(redis::shard_price_per_month)))`,
 		},
 		{
+			// metric_a cannot defer to clamp_max after scalar() splits the other leg.
+			name:     "function with a scalar arg distributes the sibling selector",
+			expr:     `clamp_max(metric_a, -scalar(metric_b))`,
+			expected: `clamp_max(dedup(remote(metric_a), remote(metric_a)), -scalar(dedup(remote(metric_b), remote(metric_b))))`,
+		},
+		{
+			name:     "round with a scalar arg distributes the vector arg",
+			expr:     `round(metric_a, scalar(metric_b))`,
+			expected: `round(dedup(remote(metric_a), remote(metric_a)), scalar(dedup(remote(metric_b), remote(metric_b))))`,
+		},
+		{
+			name:     "predict_linear with a scalar arg distributes the matrix arg",
+			expr:     `predict_linear(metric_a[5m], scalar(metric_b))`,
+			expected: `predict_linear(dedup(remote(metric_a[5m]), remote(metric_a[5m])), scalar(dedup(remote(metric_b), remote(metric_b))))`,
+		},
+		{
 			name:     "rate",
 			expr:     `rate(http_requests_total[5m])`,
 			expected: `dedup(remote(rate(http_requests_total[5m])), remote(rate(http_requests_total[5m])))`,
