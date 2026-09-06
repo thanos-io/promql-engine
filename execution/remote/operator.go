@@ -20,6 +20,10 @@ import (
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/stats"
+
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 type Execution struct {
@@ -111,11 +115,21 @@ func (s *storageAdapter) GetSeries(ctx context.Context, _, _ int) ([]promstorage
 }
 
 func (s *storageAdapter) executeQuery(ctx context.Context) {
+	ctx, span := otel.Tracer("").Start(ctx, "remote_query_exec")
+	span.SetAttributes(
+		attribute.String("query.expr", s.query.String()),
+		attribute.Int64("query.start", s.opts.Start.UnixMilli()),
+		attribute.Int64("query.end", s.opts.End.UnixMilli()),
+	)
+	defer span.End()
+
 	result := s.query.Exec(ctx)
 	for _, w := range result.Warnings {
 		warnings.AddToContext(w, ctx)
 	}
 	if result.Err != nil {
+		span.RecordError(result.Err)
+		span.SetStatus(codes.Error, result.Err.Error())
 		s.err = errors.Wrapf(result.Err, "remote exec error [%s]", s.lbls)
 		return
 	}
