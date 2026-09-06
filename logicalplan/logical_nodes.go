@@ -376,6 +376,10 @@ type Binary struct {
 	ReturnBool bool
 
 	ValueType parser.ValueType
+
+	// Projection has information on which labels should be kept in the binary operation result.
+	// This is populated by the ProjectionOptimizer when PushDownBinaryProjection is enabled.
+	Projection *Projection
 }
 
 func (b *Binary) Clone() Node {
@@ -385,6 +389,11 @@ func (b *Binary) Clone() Node {
 	if b.VectorMatching != nil {
 		vm := *b.VectorMatching
 		clone.VectorMatching = &vm
+	}
+	if b.Projection != nil {
+		proj := *b.Projection
+		proj.Labels = append([]string(nil), b.Projection.Labels...)
+		clone.Projection = &proj
 	}
 	return &clone
 }
@@ -436,6 +445,7 @@ type binary struct {
 	VectorMatching *parser.VectorMatching
 	ReturnBool     bool
 	ValueType      parser.ValueType
+	Projection     *Projection
 }
 
 func (b *Binary) MarshalJSON() ([]byte, error) {
@@ -444,6 +454,7 @@ func (b *Binary) MarshalJSON() ([]byte, error) {
 		VectorMatching: b.VectorMatching,
 		ReturnBool:     b.ReturnBool,
 		ValueType:      b.ValueType,
+		Projection:     b.Projection,
 	})
 }
 
@@ -459,6 +470,7 @@ func (b *Binary) UnmarshalJSON(data []byte) error {
 	b.VectorMatching = a.VectorMatching
 	b.ReturnBool = a.ReturnBool
 	b.ValueType = a.ValueType
+	b.Projection = a.Projection
 
 	return nil
 }
