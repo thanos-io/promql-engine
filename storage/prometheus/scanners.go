@@ -25,14 +25,26 @@ import (
 type Scanners struct {
 	selectors *SelectorPool
 
-	querier storage.Querier
+	querier         storage.Querier
+	seriesHashLabel string
 }
 
 func (s *Scanners) Close() error {
 	return s.querier.Close()
 }
 
-func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (*Scanners, error) {
+// ScannersOption is a functional option for configuring Scanners.
+type ScannersOption func(*Scanners)
+
+// WithSeriesHashLabel sets the label name used to store the original series hash
+// when projection is applied. This preserves series identity after label projection.
+func WithSeriesHashLabel(label string) ScannersOption {
+	return func(s *Scanners) {
+		s.seriesHashLabel = label
+	}
+}
+
+func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan, opts ...ScannersOption) (*Scanners, error) {
 	var min, max int64
 	if lplan != nil {
 		min, max = logicalplan.MinMaxTime(lplan.Root(), qOpts)
@@ -44,7 +56,11 @@ func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lp
 	if err != nil {
 		return nil, errors.Wrap(err, "create querier")
 	}
-	return &Scanners{querier: querier, selectors: NewSelectorPool(querier)}, nil
+	s := &Scanners{querier: querier, selectors: NewSelectorPool(querier)}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s, nil
 }
 
 func (p Scanners) NewVectorSelector(
@@ -62,6 +78,9 @@ func (p Scanners) NewVectorSelector(
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), logicalNode.VectorSelector.LabelMatchers, logicalNode.Filters, hints)
 	if logicalNode.DecodeNativeHistogramStats {
 		selector = newHistogramStatsSelector(selector)
+	}
+	if logicalNode.Projection != nil {
+		selector = NewProjectedSelector(selector, logicalNode.Projection, p.seriesHashLabel)
 	}
 
 	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
@@ -134,6 +153,9 @@ func (p Scanners) NewMatrixSelector(
 	selector := p.selectors.GetFilteredSelector(hints.Start, hints.End, opts.Step.Milliseconds(), vs.LabelMatchers, vs.Filters, hints)
 	if logicalNode.VectorSelector.DecodeNativeHistogramStats {
 		selector = newHistogramStatsSelector(selector)
+	}
+	if vs.Projection != nil {
+		selector = NewProjectedSelector(selector, vs.Projection, p.seriesHashLabel)
 	}
 
 	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
