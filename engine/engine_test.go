@@ -454,6 +454,16 @@ or
 			query: `abs(http_requests_total)`,
 		},
 		{
+			name: "absent_over_time",
+			load: `load 30s
+					http_requests_total{pod="nginx-1"} 1+1x15
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18
+					http_requests_total{pod="nginx-2"} 1+2x18`,
+			query: "absent_over_time(http_requests_total[30s])",
+		},
+		{
 			name: "ceil",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} -5.5+1x15
