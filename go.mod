@@ -18,6 +18,7 @@ require (
 	golang.org/x/exp v0.0.0-20250808145144-a408d31f581a
 	golang.org/x/tools v0.37.0
 	gonum.org/v1/gonum v0.16.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -93,7 +94,6 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20251002232023-7c0ddcbb5797 // indirect
 	google.golang.org/grpc v1.76.0 // indirect
 	google.golang.org/protobuf v1.36.10 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	k8s.io/apimachinery v0.34.1 // indirect
 	k8s.io/client-go v0.34.1 // indirect
 	k8s.io/klog/v2 v2.130.1 // indirect
