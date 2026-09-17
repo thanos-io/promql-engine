@@ -118,6 +118,10 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	default:
 	}
 	if o.currentStep > o.maxt {
+		// Release all iterators — no more steps to evaluate.
+		for i := range o.scanners {
+			o.scanners[i].samples = nil
+		}
 		return 0, nil
 	}
 
@@ -177,6 +181,10 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			}
 			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
+		}
+
+		if o.opts.IsInstantQuery() {
+			o.scanners[o.currentSeries].samples = nil
 		}
 
 		if o.shouldCheckSampleLimit(fromSeries) {

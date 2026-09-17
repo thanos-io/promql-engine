@@ -81,6 +81,10 @@ type Opts struct {
 	// This check can produce false positives when querying time-series data which does not conform to the Prometheus data model,
 	// and can be disabled if it leads to false positives.
 	DisableDuplicateLabelChecks bool
+
+	// EnableMaterialization buffers nested binary op results so that
+	// only one join's iterators are alive at any time.
+	EnableMaterialization bool
 }
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
@@ -196,9 +200,10 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		noStepSubqueryIntervalFn: func(d time.Duration) time.Duration {
 			return time.Duration(opts.NoStepSubqueryIntervalFn(d.Milliseconds()) * 1000000)
 		},
-		decodingConcurrency: decodingConcurrency,
-		selectorBatchSize:   selectorBatchSize,
-		maxSamplesPerQuery:  opts.MaxSamples,
+		decodingConcurrency:   decodingConcurrency,
+		selectorBatchSize:     selectorBatchSize,
+		maxSamplesPerQuery:    opts.MaxSamples,
+		enableMaterialization: opts.EnableMaterialization,
 	}
 }
 
@@ -229,6 +234,7 @@ type Engine struct {
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 	maxSamplesPerQuery       int
+	enableMaterialization    bool
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -447,6 +453,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 		SampleTracker:            query.NewSampleTracker(e.maxSamplesPerQuery),
+		EnableMaterialization:    e.enableMaterialization,
 	}
 
 	if opts == nil {

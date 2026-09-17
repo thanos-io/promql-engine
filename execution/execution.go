@@ -318,7 +318,41 @@ func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
+
+	// When materialization is enabled, wrap children that contain nested
+	// binary ops so each join runs to completion in isolation — only one
+	// join's iterators are alive at any time.
+	lhsHasBinary := containsBinaryOp(e.LHS)
+	rhsHasBinary := containsBinaryOp(e.RHS)
+
+	if opts.EnableMaterialization {
+		if lhsHasBinary {
+			leftOperator = exchange.NewMaterialize(leftOperator, opts.StepsBatch, opts)
+		}
+		if rhsHasBinary {
+			rightOperator = exchange.NewMaterialize(rightOperator, opts.StepsBatch, opts)
+		}
+	}
+
+	// Only use sequential evaluation when at least one side is materialized.
+	// Simple binary ops (A+B) with no nesting keep their concurrent execution.
+	sequential := opts.EnableMaterialization && (lhsHasBinary || rhsHasBinary)
+	rhsMaterialized := opts.EnableMaterialization && rhsHasBinary
+	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, sequential, rhsMaterialized, opts)
+}
+
+// containsBinaryOp returns true if the subtree rooted at node contains
+// a Binary operator at any depth.
+func containsBinaryOp(node logicalplan.Node) bool {
+	if _, ok := node.(*logicalplan.Binary); ok {
+		return true
+	}
+	for _, child := range node.Children() {
+		if containsBinaryOp(*child) {
+			return true
+		}
+	}
+	return false
 }
 
 func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {

@@ -469,6 +469,105 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 }
 
+func BenchmarkJoinQueries(b *testing.B) {
+	samplesPerHour := 60 * 2
+	sixHourDataset := setupStorage(b, 1000, 3, 6*samplesPerHour)
+	defer sixHourDataset.Close()
+
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+	instantTime := start.Add(6 * time.Hour)
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		// Vector selector joins (no aggregation, no range function)
+		{name: "vs two-way", query: `http_requests_total * http_responses_total`},
+		{name: "vs three-way chain", query: `http_requests_total * http_responses_total * http_requests_total`},
+		{name: "vs four-way chain", query: `http_requests_total * http_responses_total * http_requests_total * http_responses_total`},
+
+		// Matrix selector / rate joins
+		{name: "ms two-way rate", query: `sum(rate(http_requests_total[5m])) / sum(rate(http_responses_total[5m]))`},
+		{name: "ms three-way rate chain", query: `
+  sum(rate(http_requests_total[5m])) / sum(rate(http_responses_total[5m]))
++
+  sum(rate(http_requests_total[5m]))`},
+		{name: "ms four-way rate balanced", query: `
+  (sum(rate(http_requests_total[5m])) + sum(rate(http_responses_total[5m])))
+/
+  (sum(rate(http_requests_total[5m])) - sum(rate(http_responses_total[5m])))`},
+
+		// Aggregation joins
+		{name: "agg two-way sum/sum", query: `sum(http_requests_total) / sum(http_responses_total)`},
+		{name: "agg three-way chain", query: `sum(http_requests_total) / sum(http_responses_total) + sum(http_requests_total)`},
+		{name: "agg four-way balanced", query: `
+  (sum by (pod) (http_requests_total) + sum by (pod) (http_responses_total))
+/
+  (sum by (pod) (http_requests_total) - sum by (pod) (http_responses_total))`},
+
+		// Set operations
+		{name: "unless", query: `http_requests_total unless on (pod) http_responses_total`},
+	}
+
+	baseOpts := engine.Opts{
+		EngineOpts: promql.EngineOpts{
+			Logger:               nil,
+			Reg:                  nil,
+			MaxSamples:           50000000,
+			Timeout:              100 * time.Second,
+			EnableAtModifier:     true,
+			EnableNegativeOffset: true,
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			// Range query benchmarks
+			b.Run("range/default", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					newResult := executeRangeQuery(b, tc.query, sixHourDataset, start, end, step, baseOpts)
+					testutil.Ok(b, newResult.Err)
+				}
+			})
+			b.Run("range/materialized", func(b *testing.B) {
+				matOpts := baseOpts
+				matOpts.EnableMaterialization = true
+				b.ReportAllocs()
+				for b.Loop() {
+					newResult := executeRangeQuery(b, tc.query, sixHourDataset, start, end, step, matOpts)
+					testutil.Ok(b, newResult.Err)
+				}
+			})
+			// Instant query benchmarks
+			b.Run("instant/default", func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					ng := engine.New(baseOpts)
+					qry, err := ng.NewInstantQuery(context.Background(), sixHourDataset, nil, tc.query, instantTime)
+					testutil.Ok(b, err)
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+			b.Run("instant/materialized", func(b *testing.B) {
+				matOpts := baseOpts
+				matOpts.EnableMaterialization = true
+				b.ReportAllocs()
+				for b.Loop() {
+					ng := engine.New(matOpts)
+					qry, err := ng.NewInstantQuery(context.Background(), sixHourDataset, nil, tc.query, instantTime)
+					testutil.Ok(b, err)
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+		})
+	}
+}
+
 func BenchmarkNativeHistograms(b *testing.B) {
 	storage := teststorage.New(b)
 	defer storage.Close()

@@ -38,6 +38,12 @@ type vectorOperator struct {
 	returnBool bool
 	stepsBatch int
 	sigFunc    func(labels.Labels) uint64
+	// sequential disables concurrent lhs/rhs evaluation so that
+	// materialized children complete before the other side starts.
+	sequential bool
+	// rhsMaterialized is true when rhs is wrapped in a materialize
+	// operator. When set, rhs is evaluated first.
+	rhsMaterialized bool
 
 	once         sync.Once
 	series       []labels.Labels
@@ -64,16 +70,20 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	opType parser.ItemType,
 	returnBool bool,
+	sequential bool,
+	rhsMaterialized bool,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
 	op := &vectorOperator{
-		lhs:        lhs,
-		rhs:        rhs,
-		matching:   matching,
-		opType:     opType,
-		returnBool: returnBool,
-		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
-		stepsBatch: opts.StepsBatch,
+		lhs:             lhs,
+		rhs:             rhs,
+		matching:        matching,
+		opType:          opType,
+		returnBool:      returnBool,
+		sigFunc:         signatureFunc(matching.On, matching.MatchingLabels...),
+		stepsBatch:      opts.StepsBatch,
+		sequential:      sequential,
+		rhsMaterialized: rhsMaterialized,
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
@@ -109,29 +119,55 @@ func (o *vectorOperator) Next(ctx context.Context, buf []model.StepVector) (int,
 		return 0, err
 	}
 
-	var lhsN int
-	var lerrChan = make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				lerrChan <- errors.Newf("unexpected panic: %v", r)
-			}
-			close(lerrChan)
-		}()
-		var err error
-		lhsN, err = o.lhs.Next(ctx, o.lhsBuf)
-		if err != nil {
-			lerrChan <- err
-		}
-	}()
+	var lhsN, rhsN int
+	var lerr, rerr error
 
-	rhsN, rerr := o.rhs.Next(ctx, o.rhsBuf)
-	lerr := <-lerrChan
-	if rerr != nil {
-		return 0, rerr
-	}
-	if lerr != nil {
-		return 0, lerr
+	if o.sequential {
+		// Evaluate the materialized side first. If rhs is materialized,
+		// evaluate rhs before lhs.
+		if o.rhsMaterialized {
+			rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+			if rerr != nil {
+				return 0, rerr
+			}
+			lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+			if lerr != nil {
+				return 0, lerr
+			}
+		} else {
+			lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+			if lerr != nil {
+				return 0, lerr
+			}
+			rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+			if rerr != nil {
+				return 0, rerr
+			}
+		}
+	} else {
+		// Concurrent mode: evaluate lhs and rhs in parallel (default).
+		var lerrChan = make(chan error, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					lerrChan <- errors.Newf("unexpected panic: %v", r)
+				}
+				close(lerrChan)
+			}()
+			lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+			if lerr != nil {
+				lerrChan <- lerr
+			}
+		}()
+
+		rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+		lerr = <-lerrChan
+		if rerr != nil {
+			return 0, rerr
+		}
+		if lerr != nil {
+			return 0, lerr
+		}
 	}
 
 	// TODO(fpetkovski): When one operator becomes empty,
@@ -161,29 +197,58 @@ func (o *vectorOperator) initOnce(ctx context.Context) error {
 }
 
 func (o *vectorOperator) init(ctx context.Context) error {
-	var highCardSide []labels.Labels
-	var errChan = make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errChan <- errors.Newf("unexpected panic: %v", r)
-			}
-			close(errChan)
-		}()
-		var err error
-		highCardSide, err = o.lhs.Series(ctx)
-		if err != nil {
-			errChan <- err
-		}
-	}()
+	var highCardSide, lowCardSide []labels.Labels
 
-	lowCardSide, err := o.rhs.Series(ctx)
-	if err != nil {
-		return err
+	if o.sequential {
+		// Sequential: evaluate the materialized side first so its label
+		// loading completes before the streaming side.
+		var err error
+		if o.rhsMaterialized {
+			lowCardSide, err = o.rhs.Series(ctx)
+			if err != nil {
+				return err
+			}
+			highCardSide, err = o.lhs.Series(ctx)
+			if err != nil {
+				return err
+			}
+		} else {
+			highCardSide, err = o.lhs.Series(ctx)
+			if err != nil {
+				return err
+			}
+			lowCardSide, err = o.rhs.Series(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	} else {
+		// Concurrent: evaluate both sides in parallel (default).
+		var errChan = make(chan error, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					errChan <- errors.Newf("unexpected panic: %v", r)
+				}
+				close(errChan)
+			}()
+			var err error
+			highCardSide, err = o.lhs.Series(ctx)
+			if err != nil {
+				errChan <- err
+			}
+		}()
+
+		var err error
+		lowCardSide, err = o.rhs.Series(ctx)
+		if err != nil {
+			return err
+		}
+		if err := <-errChan; err != nil {
+			return err
+		}
 	}
-	if err := <-errChan; err != nil {
-		return err
-	}
+
 	o.lhsSampleIDs = highCardSide
 	o.rhsSampleIDs = lowCardSide
 

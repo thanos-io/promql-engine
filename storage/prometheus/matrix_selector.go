@@ -71,7 +71,7 @@ type matrixSelector struct {
 	hasFloats        bool
 }
 
-const sampleLimitCheckInterval = 1
+const sampleLimitCheckInterval = 100
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
@@ -144,6 +144,12 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
 		}
 
+		// Release all iterators and ring buffers — no more steps to evaluate.
+		for i := range o.scanners {
+			o.scanners[i].iterator = nil
+			o.scanners[i].buffer = nil
+		}
+
 		return 0, nil
 	}
 	if err := o.loadSeries(ctx); err != nil {
@@ -173,21 +179,18 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	firstSeries := o.currentSeries
 	batchSamplesDelta := 0
 
-	lastInBatch := min(firstSeries+o.seriesBatchSize, int64(len(o.scanners)))
-	// Initialize iterators lazily per-batch.
-	// TODO: reuse the iterator created for the previous scanner.
-	for i := firstSeries; i < lastInBatch; i++ {
-		if o.scanners[i].iterator == nil {
-			o.scanners[i].iterator = o.scanners[i].rawSeries.Iterator(nil)
-			o.scanners[i].buffer = o.newBuffer(ctx)
-		}
-	}
-
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
 			scanner  = &o.scanners[o.currentSeries]
 			seriesTs = ts
 		)
+
+		if scanner.iterator == nil {
+			// Initialize iterator lazily per-series.
+			// TODO: reuse the iterator created for the previous scanner.
+			scanner.iterator = scanner.rawSeries.Iterator(nil)
+			scanner.buffer = o.newBuffer(ctx)
+		}
 
 		sampleCountBefore := scanner.buffer.SampleCount()
 
@@ -228,7 +231,8 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		batchSamplesDelta += sampleCountAfter - sampleCountBefore
 
 		if o.opts.IsInstantQuery() {
-			scanner.buffer.Reset(math.MaxInt64, 0)
+			// TODO: reuse the buffer for the next series instead of allocating a new one.
+			scanner.buffer = nil
 			scanner.iterator = nil
 			batchSamplesDelta -= sampleCountAfter
 		}
