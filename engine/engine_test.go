@@ -2504,7 +2504,7 @@ type scannersWithWarns struct {
 func newScannersWithWarns(warn error, qOpts *query.Options, lplan logicalplan.Plan) (*scannersWithWarns, error) {
 	scanners, err := prometheus.NewPrometheusScanners(&storage.MockQueryable{
 		MockQuerier: storage.NoopQuerier(),
-	}, qOpts, lplan)
+	}, qOpts, lplan, nil)
 	if err != nil {
 		return nil, err
 	}

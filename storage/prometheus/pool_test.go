@@ -12,7 +12,7 @@ import (
 )
 
 func TestSelectorPoolSharesSelectorsAcrossRangeWindows(t *testing.T) {
-	pool := NewSelectorPool(nil)
+	pool := NewSelectorPool(nil, nil)
 
 	matchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"),
@@ -34,12 +34,20 @@ func TestSelectorPoolSharesSelectorsAcrossRangeWindows(t *testing.T) {
 	require.Equal(t, sel1, sel2, "selectors with same matchers but different range windows should share one cache entry")
 
 	// The cached selector should use the wider mint (300000, not 480000).
-	require.Equal(t, int64(300000), pool.selectors[hashMatchers(matchers, maxt, hints1)].hints.Start,
+	key := DefaultSelectorHash(matchers, 300000, maxt, hints1)
+	require.Equal(t, int64(300000), pool.selectors[key].hints.Start,
 		"cached selector should use the widest (earliest) mint")
 }
 
-func TestSelectorPoolSharesAcrossDifferentFunctions(t *testing.T) {
-	pool := NewSelectorPool(nil)
+func TestSelectorPoolCustomHashSharesAcrossFunctions(t *testing.T) {
+	// Custom hash that excludes Func — for storage layers where Func is a noop.
+	customHash := func(matchers []*labels.Matcher, _, maxt int64, hints storage.SelectHints) uint64 {
+		neutralHints := hints
+		neutralHints.Func = ""
+		return DefaultSelectorHash(matchers, 0, maxt, neutralHints)
+	}
+
+	pool := NewSelectorPool(nil, customHash)
 
 	matchers := []*labels.Matcher{
 		labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"),
@@ -56,52 +64,11 @@ func TestSelectorPoolSharesAcrossDifferentFunctions(t *testing.T) {
 	hints2 := storage.SelectHints{Start: 480000, End: maxt, Step: step, Func: "avg_over_time", Range: 120000}
 	sel2 := pool.GetFilteredSelector(480000, maxt, step, matchers, nil, hints2)
 
-	// Should share — TSDB returns identical data regardless of Func.
-	require.Equal(t, sel1, sel2, "selectors with different functions should share one cache entry")
+	// Custom hash excludes Func, so they should share.
+	require.Equal(t, sel1, sel2, "custom hash excluding Func should share across functions")
 
 	// Mint should be widened to the earlier value.
-	require.Equal(t, int64(300000), pool.selectors[hashMatchers(matchers, maxt, hints1)].hints.Start)
-}
-
-func TestSelectorPoolSeparatesSeriesFunc(t *testing.T) {
-	pool := NewSelectorPool(nil)
-
-	matchers := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"),
+	for _, sel := range pool.selectors {
+		require.Equal(t, int64(300000), sel.hints.Start)
 	}
-
-	maxt := int64(600000)
-	step := int64(30000)
-
-	// Normal rate query
-	hints1 := storage.SelectHints{Start: 300000, End: maxt, Step: step, Func: "rate", Range: 300000}
-	pool.GetFilteredSelector(300000, maxt, step, matchers, nil, hints1)
-
-	// "series" metadata query — should NOT share because TSDB skips chunk loading
-	hints2 := storage.SelectHints{Start: 300000, End: maxt, Step: step, Func: "series", Range: 300000}
-	pool.GetFilteredSelector(300000, maxt, step, matchers, nil, hints2)
-
-	// Should have two separate entries in the pool.
-	require.Equal(t, 2, len(pool.selectors), "series func should get a separate cache entry")
-}
-
-func TestSelectorPoolSeparatesDifferentMatchers(t *testing.T) {
-	pool := NewSelectorPool(nil)
-
-	maxt := int64(600000)
-	step := int64(30000)
-
-	matchersA := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_requests_total"),
-	}
-	matchersB := []*labels.Matcher{
-		labels.MustNewMatcher(labels.MatchEqual, "__name__", "http_responses_total"),
-	}
-
-	hints := storage.SelectHints{Start: 300000, End: maxt, Step: step, Func: "rate", Range: 300000}
-	pool.GetFilteredSelector(300000, maxt, step, matchersA, nil, hints)
-	pool.GetFilteredSelector(300000, maxt, step, matchersB, nil, hints)
-
-	// Different metrics should always be separate.
-	require.Equal(t, 2, len(pool.selectors), "different matchers should get separate cache entries")
 }

@@ -32,7 +32,7 @@ func (s *Scanners) Close() error {
 	return s.querier.Close()
 }
 
-func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (*Scanners, error) {
+func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan, hashFunc SelectorHashFunc) (*Scanners, error) {
 	var min, max int64
 	if lplan != nil {
 		min, max = logicalplan.MinMaxTime(lplan.Root(), qOpts)
@@ -44,7 +44,7 @@ func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lp
 	if err != nil {
 		return nil, errors.Wrap(err, "create querier")
 	}
-	return &Scanners{querier: querier, selectors: NewSelectorPool(querier)}, nil
+	return &Scanners{querier: querier, selectors: NewSelectorPool(querier, hashFunc)}, nil
 }
 
 func (p Scanners) NewVectorSelector(
