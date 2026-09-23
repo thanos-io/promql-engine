@@ -70,7 +70,6 @@ type matrixSelector struct {
 	nonCounterMetric string
 	hasFloats        bool
 
-	untrackedSamples          int
 	sampleLimitCheckThreshold int
 }
 
@@ -174,6 +173,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	// Reset the current timestamp.
 	ts = o.currentStep
 	firstSeries := o.currentSeries
+	var untrackedSamples int
 
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
@@ -228,8 +228,12 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 
 		if !o.opts.IsInstantQuery() {
-			if err := o.addUntrackedSamples(sampleCount - sampleCountBefore); err != nil {
-				return 0, err
+			untrackedSamples += sampleCount - sampleCountBefore
+			if untrackedSamples >= o.sampleLimitCheckThreshold {
+				if err := o.updateSampleTracker(untrackedSamples); err != nil {
+					return 0, err
+				}
+				untrackedSamples = 0
 			}
 		} else {
 			scanner.buffer = nil
@@ -237,8 +241,10 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 	}
 
-	if err := o.flushUntrackedSamples(); err != nil {
-		return 0, err
+	if untrackedSamples > 0 {
+		if err := o.updateSampleTracker(untrackedSamples); err != nil {
+			return 0, err
+		}
 	}
 
 	if o.currentSeries == int64(len(o.scanners)) {
@@ -256,26 +262,6 @@ func (o *matrixSelector) updateSampleTracker(delta int) error {
 		o.opts.SampleTracker.Remove(-delta)
 	}
 	return nil
-}
-
-func (o *matrixSelector) addUntrackedSamples(delta int) error {
-	o.untrackedSamples += delta
-	if o.untrackedSamples >= o.sampleLimitCheckThreshold {
-		if err := o.updateSampleTracker(o.untrackedSamples); err != nil {
-			return err
-		}
-		o.untrackedSamples = 0
-	}
-	return nil
-}
-
-func (o *matrixSelector) flushUntrackedSamples() error {
-	if o.untrackedSamples == 0 {
-		return nil
-	}
-	err := o.updateSampleTracker(o.untrackedSamples)
-	o.untrackedSamples = 0
-	return err
 }
 
 func (o *matrixSelector) loadSeries(ctx context.Context) error {
