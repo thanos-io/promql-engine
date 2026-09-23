@@ -20,8 +20,6 @@ import (
 	"github.com/prometheus/prometheus/schema"
 )
 
-const sampleLimitCheckPercentage = 0.05
-
 type subqueryOperator struct {
 	next      model.VectorOperator
 	paramOp   model.VectorOperator
@@ -334,7 +332,7 @@ func (o *subqueryOperator) shouldCheckSampleLimit(checkSampleLimitCounter int) b
 	}
 
 	limit := o.opts.SampleTracker.Limit()
-	targetSamplesPerCheck := int(float64(limit) * sampleLimitCheckPercentage)
+	targetSamplesPerCheck := int(float64(limit) * query.SampleLimitOvershoot)
 
 	maxSamplesPerCall := len(o.series) * o.stepsBatch
 	if maxSamplesPerCall == 0 {
