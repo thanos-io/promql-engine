@@ -26,6 +26,7 @@ type vectorScanner struct {
 	labels    labels.Labels
 	signature uint64
 	samples   *storage.MemoizedSeriesIterator
+	rawSeries SignedSeries
 }
 
 type vectorSelector struct {
@@ -151,9 +152,12 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 
 	for ; o.currentSeries-fromSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
-			series   = o.scanners[o.currentSeries]
+			series   = &o.scanners[o.currentSeries]
 			seriesTs = ts
 		)
+		if series.samples == nil {
+			series.samples = storage.NewMemoizedIterator(series.rawSeries.Iterator(nil), o.lookbackDelta)
+		}
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
 			currStepSamples = 0
 			t, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
@@ -184,6 +188,10 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 				return 0, err
 			}
 		}
+
+		if o.opts.IsInstantQuery() {
+			series.samples = nil
+		}
 	}
 
 	if o.currentSeries == int64(len(o.scanners)) {
@@ -209,7 +217,7 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
 				signature: s.Signature,
-				samples:   storage.NewMemoizedIterator(s.Iterator(nil), o.lookbackDelta),
+				rawSeries: s,
 			}
 			b.Reset(s.Labels())
 			// if we have pushed down a timestamp function into the scan we need to drop
