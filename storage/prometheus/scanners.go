@@ -138,7 +138,7 @@ func (p Scanners) NewMatrixSelector(
 
 	operators := make([]model.VectorOperator, 0, opts.DecodingConcurrency)
 	for i := range opts.DecodingConcurrency {
-		operator, err := NewMatrixSelector(
+		operator, err := newMatrixSelector(
 			selector,
 			call.Func.Name,
 			arg,
@@ -146,6 +146,7 @@ func (p Scanners) NewMatrixSelector(
 			opts,
 			logicalNode.Range,
 			vs.Offset,
+			vs.Timestamp != nil,
 			vs.BatchSize,
 			i,
 			opts.DecodingConcurrency,

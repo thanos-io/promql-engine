@@ -59,6 +59,9 @@ type matrixSelector struct {
 	step        int64
 	selectRange int64
 	offset      int64
+	// pinned is set if the selector has the @ modifier. Its window is then the one of the first step at every step,
+	// since its offset is set relative to the first step, while the function is still evaluated at the step.
+	pinned bool
 
 	currentStep     int64
 	currentSeries   int64
@@ -84,6 +87,20 @@ func NewMatrixSelector(
 	batchSize int64,
 	shard, numShard int,
 ) (model.VectorOperator, error) {
+	return newMatrixSelector(selector, functionName, arg, arg2, opts, selectRange, offset, false, batchSize, shard, numShard)
+}
+
+func newMatrixSelector(
+	selector SeriesSelector,
+	functionName string,
+	arg float64,
+	arg2 float64,
+	opts *query.Options,
+	selectRange, offset time.Duration,
+	pinned bool,
+	batchSize int64,
+	shard, numShard int,
+) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(functionName)
 	if err != nil {
 		return nil, err
@@ -104,6 +121,7 @@ func NewMatrixSelector(
 
 		selectRange:     selectRange.Milliseconds(),
 		offset:          offset.Milliseconds(),
+		pinned:          pinned,
 		currentStep:     opts.Start.UnixMilli(),
 		seriesBatchSize: batchSize,
 
@@ -193,6 +211,9 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
+			if o.pinned {
+				maxt = o.mint - o.offset
+			}
 			mint := maxt - o.selectRange
 
 			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader); err != nil {
