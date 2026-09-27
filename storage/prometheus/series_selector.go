@@ -58,6 +58,11 @@ func (o *seriesSelector) loadSeries(ctx context.Context) error {
 	seriesSet := o.storage.Select(ctx, false, &o.hints, o.matchers...)
 	i := 0
 	for seriesSet.Next() {
+		if i%ctxCheckInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+		}
 		s := seriesSet.At()
 		o.series = append(o.series, SignedSeries{
 			Series:    s,

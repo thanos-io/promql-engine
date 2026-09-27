@@ -73,6 +73,10 @@ type matrixSelector struct {
 
 const sampleLimitCheckInterval = 1
 
+// ctxCheckInterval is the number of series processed between checks
+// for query cancellation in selector loops.
+const ctxCheckInterval = 128
+
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	selector SeriesSelector,
@@ -177,6 +181,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	// Initialize iterators lazily per-batch.
 	// TODO: reuse the iterator created for the previous scanner.
 	for i := firstSeries; i < lastInBatch; i++ {
+		if (i-firstSeries)%ctxCheckInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 		if o.scanners[i].iterator == nil {
 			o.scanners[i].iterator = o.scanners[i].rawSeries.Iterator(nil)
 			o.scanners[i].buffer = o.newBuffer(ctx)
@@ -184,6 +193,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	}
 
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
+		if (o.currentSeries-firstSeries)%ctxCheckInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 		var (
 			scanner  = &o.scanners[o.currentSeries]
 			seriesTs = ts

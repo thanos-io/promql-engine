@@ -56,6 +56,8 @@ type vectorOperator struct {
 
 	lhsBuf []model.StepVector
 	rhsBuf []model.StepVector
+
+	opts *query.Options
 }
 
 func NewVectorOperator(
@@ -74,6 +76,7 @@ func NewVectorOperator(
 		returnBool: returnBool,
 		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
 		stepsBatch: opts.StepsBatch,
+		opts:       opts,
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
@@ -163,7 +166,9 @@ func (o *vectorOperator) initOnce(ctx context.Context) error {
 func (o *vectorOperator) init(ctx context.Context) error {
 	var highCardSide []labels.Labels
 	var errChan = make(chan error, 1)
-	go func() {
+	// This goroutine is not waited for if the rhs fails, so it is tracked
+	// in the query's workers to prevent it from outliving the query.
+	o.opts.Go(func() {
 		defer func() {
 			if r := recover(); r != nil {
 				errChan <- errors.Newf("unexpected panic: %v", r)
@@ -175,7 +180,7 @@ func (o *vectorOperator) init(ctx context.Context) error {
 		if err != nil {
 			errChan <- err
 		}
-	}()
+	})
 
 	lowCardSide, err := o.rhs.Series(ctx)
 	if err != nil {

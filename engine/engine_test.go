@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -7127,6 +7128,99 @@ func TestInstantQueryPerSeriesReleasePreventMaxSamplesFailure(t *testing.T) {
 			require.NoError(t, err)
 			res := q.Exec(ctx)
 			require.NoError(t, res.Err, "query should succeed with per-series ring buffer reset: %s", tc.query)
+		})
+	}
+}
+
+// storageUseTracker records reads from storage and whether any of them
+// happen after the query has finished executing.
+type storageUseTracker struct {
+	inFlight      atomic.Int64
+	execDone      atomic.Bool
+	usedAfterExec atomic.Bool
+}
+
+func (s *storageUseTracker) use(fn func()) {
+	s.inFlight.Add(1)
+	defer s.inFlight.Add(-1)
+	if s.execDone.Load() {
+		s.usedAfterExec.Store(true)
+	}
+	fn()
+}
+
+type useTrackingIterator struct {
+	slowIterator
+	tracker *storageUseTracker
+}
+
+func (it *useTrackingIterator) Next() (v chunkenc.ValueType) {
+	it.tracker.use(func() { v = it.slowIterator.Next() })
+	return v
+}
+
+func (it *useTrackingIterator) Seek(t int64) (v chunkenc.ValueType) {
+	it.tracker.use(func() { v = it.slowIterator.Seek(t) })
+	return v
+}
+
+type errIterator struct{ chunkenc.Iterator }
+
+func (errIterator) Next() chunkenc.ValueType      { return chunkenc.ValNone }
+func (errIterator) Seek(int64) chunkenc.ValueType { return chunkenc.ValNone }
+func (errIterator) Err() error                    { return errors.New("boom") }
+
+func TestExecWaitsForOperatorGoroutines(t *testing.T) {
+	t.Parallel()
+
+	for _, tcase := range []struct {
+		name  string
+		query string
+		// failSelect makes selecting bar fail instead of reading its samples.
+		failSelect bool
+	}{
+		{name: "aggregations", query: "sum(foo) + sum(bar)"},
+		{name: "subquery", query: "max_over_time(sum(foo)[5m:30s]) + sum(bar)"},
+		{name: "binary operation series", query: "foo + bar", failSelect: true},
+		{name: "count_values series", query: `count_values("v", foo) + bar`, failSelect: true},
+	} {
+		t.Run(tcase.name, func(t *testing.T) {
+			t.Parallel()
+
+			var tracker storageUseTracker
+			querier := &storage.MockQuerier{
+				SelectMockFunction: func(_ bool, _ *storage.SelectHints, ms ...*labels.Matcher) storage.SeriesSet {
+					if ms[0].Value == "bar" {
+						if tcase.failSelect {
+							return storage.ErrSeriesSet(errors.New("boom"))
+						}
+						return newTestSeriesSet(&storage.SeriesEntry{
+							Lset:             labels.FromStrings(labels.MetricName, "bar"),
+							SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator { return errIterator{} },
+						})
+					}
+					tracker.use(func() { time.Sleep(50 * time.Millisecond) })
+					return newTestSeriesSet(&storage.SeriesEntry{
+						Lset:             labels.FromStrings(labels.MetricName, "foo"),
+						SampleIteratorFn: func(chunkenc.Iterator) chunkenc.Iterator { return &useTrackingIterator{tracker: &tracker} },
+					})
+				},
+			}
+			queryable := storage.QueryableFunc(func(int64, int64) (storage.Querier, error) { return querier, nil })
+
+			ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: time.Hour}, EnableAnalysis: true})
+			q, err := ng.NewRangeQuery(context.Background(), queryable, nil, tcase.query, time.Unix(0, 0), time.Unix(3600, 0), 30*time.Second)
+			testutil.Ok(t, err)
+			defer q.Close()
+
+			testutil.NotOk(t, q.Exec(context.Background()).Err)
+			tracker.execDone.Store(true)
+			testutil.Equals(t, int64(0), tracker.inFlight.Load(), "storage is still being read after Exec returned")
+
+			// Stats reads telemetry written by operators and must not race with them.
+			_ = q.Stats()
+			time.Sleep(50 * time.Millisecond)
+			testutil.Assert(t, !tracker.usedAfterExec.Load(), "storage was read after Exec returned")
 		})
 	}
 }

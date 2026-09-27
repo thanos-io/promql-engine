@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution"
@@ -447,6 +448,7 @@ func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duratio
 		NoStepSubqueryIntervalFn: e.noStepSubqueryIntervalFn,
 		DecodingConcurrency:      e.decodingConcurrency,
 		SampleTracker:            query.NewSampleTracker(e.maxSamplesPerQuery),
+		Workers:                  &sync.WaitGroup{},
 	}
 
 	if opts == nil {
@@ -541,6 +543,10 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 	defer q.engine.metrics.currentQueries.Dec()
 
 	ctx, cancel := context.WithTimeout(ctx, q.engine.timeout)
+	// Operators can still be reading from storage when Exec returns early,
+	// for example when one operand of a binary operation fails. Cancel them
+	// and wait for them to exit so that they do not outlive the query.
+	defer q.opts.Workers.Wait()
 	defer cancel()
 	q.cancel = cancel
 

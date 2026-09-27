@@ -92,7 +92,7 @@ func (c *concurrencyOperator) Next(ctx context.Context, buf []model.StepVector) 
 	})
 
 	c.once.Do(func() {
-		go c.pull(ctx)
+		c.opts.Go(func() { c.pull(ctx) })
 		go c.drainBufferOnCancel(ctx)
 	})
 

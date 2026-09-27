@@ -4,6 +4,7 @@
 package query
 
 import (
+	"sync"
 	"time"
 )
 
@@ -19,6 +20,23 @@ type Options struct {
 	EnableAnalysis           bool
 	DecodingConcurrency      int
 	SampleTracker            SampleTracker // Tracks current samples in memory
+	// Workers tracks goroutines started by operators of the query, so that
+	// Exec can wait for them before returning and storage is not closed
+	// while they still read from it.
+	Workers *sync.WaitGroup
+}
+
+// Go runs fn in a new goroutine that is tracked by Workers, if set.
+func (o *Options) Go(fn func()) {
+	if o.Workers == nil {
+		go fn()
+		return
+	}
+	o.Workers.Add(1)
+	go func() {
+		defer o.Workers.Done()
+		fn()
+	}()
 }
 
 // TotalSteps returns the total number of steps in the query, regardless of batching.
@@ -59,6 +77,7 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 		EnableAnalysis:           opts.EnableAnalysis,
 		DecodingConcurrency:      opts.DecodingConcurrency,
 		SampleTracker:            opts.SampleTracker,
+		Workers:                  opts.Workers,
 	}
 	if nOpts.SampleTracker == nil {
 		nOpts.SampleTracker = NewSampleTracker(0)

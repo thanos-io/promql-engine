@@ -150,6 +150,11 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	fromSeries := o.currentSeries
 
 	for ; o.currentSeries-fromSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
+		if (o.currentSeries-fromSeries)%ctxCheckInterval == 0 {
+			if err := ctx.Err(); err != nil {
+				return 0, err
+			}
+		}
 		var (
 			series   = o.scanners[o.currentSeries]
 			seriesTs = ts
@@ -206,6 +211,13 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 		o.scanners = make([]vectorScanner, len(series))
 		o.series = make([]labels.Labels, len(series))
 		for i, s := range series {
+			// Creating a memoized iterator reads the first sample of the series.
+			if i%ctxCheckInterval == 0 {
+				if err = ctx.Err(); err != nil {
+					o.scanners, o.series = nil, nil
+					return
+				}
+			}
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
 				signature: s.Signature,
