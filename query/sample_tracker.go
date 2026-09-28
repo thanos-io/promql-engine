@@ -16,6 +16,9 @@ type SampleTracker interface {
 	Limit() int64
 }
 
+// SampleLimitOvershoot is the fraction of maxSamples allowed as overshoot before enforcement.
+const SampleLimitOvershoot = 0.05
+
 type sampleTracker struct {
 	current atomic.Int64
 	limit   int64
@@ -64,4 +67,22 @@ type ErrMaxSamplesExceeded struct {
 
 func (e ErrMaxSamplesExceeded) Error() string {
 	return fmt.Sprintf("query processing would load too many samples into memory: current=%d, limit=%d", e.Current, e.Limit)
+}
+
+// ComputeSampleLimitCheckThreshold returns the per-shard sample count before
+// checking the global limit: floor(limit * SampleLimitOvershoot / decodingConcurrency).
+func ComputeSampleLimitCheckThreshold(opts *Options) int {
+	limit := opts.SampleTracker.Limit()
+	if limit <= 0 || limit == math.MaxInt64 {
+		return math.MaxInt64
+	}
+	concurrency := opts.DecodingConcurrency
+	if concurrency <= 0 {
+		concurrency = 1
+	}
+	threshold := int(math.Floor(float64(limit) * SampleLimitOvershoot / float64(concurrency)))
+	if threshold <= 0 {
+		threshold = 1
+	}
+	return threshold
 }

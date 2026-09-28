@@ -53,8 +53,9 @@ type vectorSelector struct {
 
 	selectTimestamp bool
 
-	opts               *query.Options
-	lastTrackedSamples int
+	opts                      *query.Options
+	lastTrackedSamples        int
+	sampleLimitCheckThreshold int
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -84,6 +85,8 @@ func NewVectorSelector(
 		selectTimestamp: selectTimestamp,
 
 		opts: queryOpts,
+
+		sampleLimitCheckThreshold: query.ComputeSampleLimitCheckThreshold(queryOpts),
 	}
 
 	// For instant queries, set the step to a positive value
@@ -179,10 +182,16 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs += o.step
 		}
 
-		if o.shouldCheckSampleLimit(fromSeries) {
+		if totalSamples-o.lastTrackedSamples >= o.sampleLimitCheckThreshold {
 			if err := o.updateSampleTracker(totalSamples); err != nil {
 				return 0, err
 			}
+		}
+	}
+
+	if totalSamples != o.lastTrackedSamples {
+		if err := o.updateSampleTracker(totalSamples); err != nil {
+			return 0, err
 		}
 	}
 
@@ -241,19 +250,6 @@ func (o *vectorSelector) updateSampleTracker(totalSamples int) error {
 	}
 	o.lastTrackedSamples = totalSamples
 	return nil
-}
-
-func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
-	seriesProcessed := o.currentSeries + 1 - fromSeries
-
-	if seriesProcessed%sampleLimitCheckInterval == 0 {
-		return true
-	}
-
-	isEndOfBatch := seriesProcessed >= o.seriesBatchSize
-	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
-
-	return isEndOfBatch || isLastSeries
 }
 
 // TODO(fpetkovski): Add max samples limit.
