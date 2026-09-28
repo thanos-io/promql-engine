@@ -444,9 +444,17 @@ func NewRangeVectorFunc(name string) (FunctionCall, error) {
 // extrapolates if the first/last sample is close to the boundary, and returns
 // the result as either per-second (if isRate is true) or overall.
 func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, stepTime int64, selectRange int64, offset int64) (f float64, h *histogram.FloatHistogram, ok bool, warn warnings.Warnings, err error) {
+	var counterCorrection float64
+	if isCounter && samples[0].V.H == nil {
+		var lastValue float64
+		for _, sample := range samples {
+			if sample.V.F < lastValue {
+				counterCorrection += lastValue
+			}
+			lastValue = sample.V.F
+		}
+	}
 	var (
-		rangeStart      = stepTime - (selectRange + offset)
-		rangeEnd        = stepTime - offset
 		resultValue     float64
 		resultHistogram *histogram.FloatHistogram
 	)
@@ -466,24 +474,30 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 		if err != nil {
 			return 0, nil, false, warn, err
 		}
+		if resultHistogram == nil {
+			return 0, nil, false, warn, nil
+		}
 	} else {
 		resultValue = samples[len(samples)-1].V.F - samples[0].V.F
 		if isCounter {
-			var lastValue float64
-			for _, sample := range samples {
-				if sample.V.F < lastValue {
-					resultValue += lastValue
-				}
-				lastValue = sample.V.F
-			}
+			resultValue += counterCorrection
 		}
 	}
+	f, h = extrapolateRate(samples[0], samples[len(samples)-1], numSamples, resultValue, resultHistogram, isCounter, isRate, stepTime, selectRange, offset)
+	return f, h, true, warn, nil
+}
+
+// extrapolateRate scales an already computed increase or delta to the evaluation
+// window. Callers account for counter resets before calling it.
+func extrapolateRate(first, last Sample, numSamples int, resultValue float64, resultHistogram *histogram.FloatHistogram, isCounter, isRate bool, stepTime, selectRange, offset int64) (float64, *histogram.FloatHistogram) {
+	rangeStart := stepTime - (selectRange + offset)
+	rangeEnd := stepTime - offset
 
 	// Duration between first/last Samples and boundary of range.
-	durationToStart := float64(samples[0].T-rangeStart) / 1000
-	durationToEnd := float64(rangeEnd-samples[len(samples)-1].T) / 1000
+	durationToStart := float64(first.T-rangeStart) / 1000
+	durationToEnd := float64(rangeEnd-last.T) / 1000
 
-	sampledInterval := float64(samples[len(samples)-1].T-samples[0].T) / 1000
+	sampledInterval := float64(last.T-first.T) / 1000
 	averageDurationBetweenSamples := sampledInterval / float64(numSamples-1)
 
 	// If samples are close enough to the (lower or upper) boundary of the
@@ -513,15 +527,12 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 		// values.
 		durationToZero := durationToStart
 
-		if resultValue > 0 &&
-			len(samples) > 0 &&
-			samples[0].V.F >= 0 {
-			durationToZero = sampledInterval * (samples[0].V.F / resultValue)
+		if resultValue > 0 && first.V.F >= 0 {
+			durationToZero = sampledInterval * (first.V.F / resultValue)
 		} else if resultHistogram != nil &&
 			resultHistogram.Count > 0 &&
-			len(samples) > 0 &&
-			samples[0].V.H.Count >= 0 {
-			durationToZero = sampledInterval * (samples[0].V.H.Count / resultHistogram.Count)
+			first.V.H.Count >= 0 {
+			durationToZero = sampledInterval * (first.V.H.Count / resultHistogram.Count)
 		}
 		if durationToZero < durationToStart {
 			durationToStart = durationToZero
@@ -542,12 +553,7 @@ func extrapolatedRate(samples []Sample, numSamples int, isCounter, isRate bool, 
 		resultHistogram.Mul(factor)
 	}
 
-	if samples[0].V.H != nil && resultHistogram == nil {
-		// to prevent appending sample with 0
-		return 0, nil, false, warn, nil
-	}
-
-	return resultValue, resultHistogram, true, warn, nil
+	return resultValue, resultHistogram
 }
 
 // extendedRate is a utility function for xrate/xincrease/xdelta.

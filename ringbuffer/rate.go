@@ -6,7 +6,6 @@ package ringbuffer
 import (
 	"context"
 	"math"
-	"slices"
 
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/query"
@@ -20,15 +19,9 @@ import (
 // step where the sample is used.
 type RateBuffer struct {
 	ctx context.Context
-	// stepRanges contain the bounds and number of samples for each evaluation step.
-	stepRanges []stepRange
-	// firstSamples contains the first sample for each evaluation step.
-	firstSamples []Sample
-	// resets contains all samples which are detected as a counter reset.
-	resets []Sample
-	// rateBuffer is the buffer passed to the rate function. This is a scratch buffer
-	// used to avoid allocating a new slice each time we need to calculate the rate.
-	rateBuffer []Sample
+	// stepRanges contain the bounds, sample counts, and first sample for each
+	// evaluation step.
+	stepRanges []rateStepRange
 	// lastSample is the lastSample sample in the current evaluation step.
 	lastSample Sample
 
@@ -49,6 +42,14 @@ type stepRange struct {
 	sampleCount int
 }
 
+type rateStepRange struct {
+	stepRange
+	firstSample       Sample
+	counterCorrection float64
+	histogramState    *histogramRateState
+	mixedSamples      bool
+}
+
 // NewRateBuffer creates a new RateBuffer.
 func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bool, selectRange, offset int64) *RateBuffer {
 	var (
@@ -58,31 +59,31 @@ func NewRateBuffer(ctx context.Context, opts query.Options, isCounter, isRate bo
 			querySteps(opts),
 		)
 
-		current      = opts.Start.UnixMilli()
-		firstSamples = make([]Sample, 0, numSteps)
-		stepRanges   = make([]stepRange, 0, numSteps)
+		current    = opts.Start.UnixMilli()
+		stepRanges = make([]rateStepRange, 0, numSteps)
 	)
 	for range int(numSteps) {
 		var (
 			maxt = current - offset
 			mint = maxt - selectRange
 		)
-		stepRanges = append(stepRanges, stepRange{mint: mint, maxt: maxt})
-		firstSamples = append(firstSamples, Sample{T: math.MaxInt64})
+		stepRanges = append(stepRanges, rateStepRange{
+			stepRange:   stepRange{mint: mint, maxt: maxt},
+			firstSample: Sample{T: math.MaxInt64},
+		})
 		current += step
 	}
 
 	return &RateBuffer{
-		ctx:          ctx,
-		isCounter:    isCounter,
-		isRate:       isRate,
-		selectRange:  selectRange,
-		step:         step,
-		offset:       offset,
-		stepRanges:   stepRanges,
-		firstSamples: firstSamples,
-		lastSample:   Sample{T: math.MinInt64},
-		currentMint:  math.MaxInt64,
+		ctx:         ctx,
+		isCounter:   isCounter,
+		isRate:      isRate,
+		selectRange: selectRange,
+		step:        step,
+		offset:      offset,
+		stepRanges:  stepRanges,
+		lastSample:  Sample{T: math.MinInt64},
+		currentMint: math.MaxInt64,
 	}
 }
 
@@ -96,59 +97,46 @@ func (r *RateBuffer) Push(t int64, v Value) {
 	if t <= r.currentMint {
 		return
 	}
-	// Detect resets and store the current and previous sample so that
-	// the rate is properly adjusted.
-	if r.lastSample.T > r.currentMint && v.H != nil && r.lastSample.V.H != nil {
-		if v.H.DetectReset(r.lastSample.V.H) {
-			r.resets = append(r.resets, Sample{
-				T: r.lastSample.T,
-				V: Value{H: r.lastSample.V.H.Copy()},
-			})
-			r.resets = append(r.resets, Sample{
-				T: t,
-				V: Value{H: v.H.Copy()},
-			})
-		}
-	} else if r.lastSample.T > r.currentMint && r.lastSample.V.F > v.F {
-		r.resets = append(r.resets, Sample{T: r.lastSample.T, V: Value{F: r.lastSample.V.F}})
-		r.resets = append(r.resets, Sample{T: t, V: Value{F: v.F}})
-	}
+	previousSample := r.lastSample
+	floatReset := r.isCounter &&
+		previousSample.T > r.currentMint &&
+		previousSample.V.H == nil && v.H == nil &&
+		previousSample.V.F > v.F
 
-	// Set the lastSample sample for the current evaluation step.
-	r.lastSample.T, r.lastSample.V.F = t, v.F
+	histogramReset := r.isCounter &&
+		previousSample.T > r.currentMint &&
+		previousSample.V.H != nil && v.H != nil &&
+		v.H.DetectReset(previousSample.V.H)
+	sampleCount := 1
 	if v.H != nil {
-		if r.lastSample.V.H == nil {
-			r.lastSample.V.H = v.H.Copy()
-		} else {
-			v.H.CopyTo(r.lastSample.V.H)
-		}
-	} else {
-		r.lastSample.V.H = nil
+		sampleCount = telemetry.CalculateHistogramSampleCount(v.H)
 	}
 
-	// Set the first sample for each evaluation step where the currently read sample is used.
+	// Accumulate each window's correction before overwriting the previous
+	// histogram, whose storage is reused by lastSample.
 	for i := 0; i < len(r.stepRanges) && t > r.stepRanges[i].mint && t <= r.stepRanges[i].maxt; i++ {
-		r.stepRanges[i].numSamples++
-		if v.H != nil {
-			r.stepRanges[i].sampleCount += telemetry.CalculateHistogramSampleCount(v.H)
-		} else {
-			r.stepRanges[i].sampleCount++
-		}
-		sample := &r.firstSamples[i]
-		if t >= sample.T {
-			continue
-		}
-		sample.T, sample.V.F = t, v.F
-		if v.H != nil {
-			if sample.V.H == nil {
-				sample.V.H = v.H.Copy()
-			} else {
-				v.H.CopyTo(sample.V.H)
+		step := &r.stepRanges[i]
+		if step.numSamples == 0 {
+			setSample(&step.firstSample, t, v)
+			if r.isCounter && v.H != nil {
+				if step.histogramState == nil {
+					step.histogramState = &histogramRateState{}
+				}
+				step.histogramState.reset(v.H)
 			}
 		} else {
-			sample.V.H = nil
+			step.mixedSamples = step.mixedSamples || (step.firstSample.V.H == nil) != (v.H == nil)
+			if r.isCounter && v.H != nil && !step.mixedSamples {
+				step.histogramState.push(previousSample.V.H, v.H, histogramReset && previousSample.T > step.mint, step.numSamples == 1)
+			}
 		}
+		if floatReset && previousSample.T > step.mint {
+			step.counterCorrection += previousSample.V.F
+		}
+		step.numSamples++
+		step.sampleCount += sampleCount
 	}
+	setSample(&r.lastSample, t, v)
 }
 
 func (r *RateBuffer) Reset(mint int64, evalt int64) {
@@ -156,11 +144,6 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 	if r.stepRanges[0].mint == mint {
 		return
 	}
-	dropResets := 0
-	for ; dropResets < len(r.resets) && r.resets[dropResets].T <= mint; dropResets++ {
-	}
-	r.resets = r.resets[dropResets:]
-
 	lastSample := len(r.stepRanges) - 1
 	var (
 		nextMint = r.stepRanges[lastSample].mint + r.step
@@ -174,26 +157,42 @@ func (r *RateBuffer) Reset(mint int64, evalt int64) {
 	r.stepRanges[lastSample].maxt = nextMaxt
 	r.stepRanges[lastSample].sampleCount = 0
 	r.stepRanges[lastSample].numSamples = 0
+	r.stepRanges[lastSample].counterCorrection = 0
+	r.stepRanges[lastSample].mixedSamples = false
 
-	nextSample := r.firstSamples[0]
-	copy(r.firstSamples, r.firstSamples[1:])
-	r.firstSamples[lastSample] = nextSample
-	r.firstSamples[lastSample].T = math.MaxInt64
+	r.stepRanges[lastSample].firstSample.T = math.MaxInt64
 }
 
 func (r *RateBuffer) Eval(ctx context.Context, _, _ float64) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
-	if r.firstSamples[0].T == math.MaxInt64 || r.firstSamples[0].T == r.lastSample.T {
+	step := &r.stepRanges[0]
+	firstSample := step.firstSample
+	if firstSample.T == math.MaxInt64 || firstSample.T == r.lastSample.T {
 		return 0, nil, false, 0, nil
 	}
 
-	r.rateBuffer = append(append(
-		append(r.rateBuffer[:0], r.firstSamples[0]),
-		r.resets...),
-		r.lastSample,
+	if step.mixedSamples {
+		return 0, nil, false, warnings.WarnMixedFloatsHistograms, nil
+	}
+	var (
+		f    float64
+		h    *histogram.FloatHistogram
+		warn warnings.Warnings
+		err  error
 	)
-	r.rateBuffer = slices.CompactFunc(r.rateBuffer, func(s1 Sample, s2 Sample) bool { return s1.T == s2.T })
-	numSamples := r.stepRanges[0].numSamples
-	return extrapolatedRate(r.rateBuffer, numSamples, r.isCounter, r.isRate, r.evalTs, r.selectRange, r.offset)
+	if firstSample.V.H != nil {
+		if r.isCounter {
+			h, warn, err = step.histogramState.eval(firstSample.V.H, r.lastSample.V.H)
+		} else {
+			h, warn, err = histogramRate([]Sample{firstSample, r.lastSample}, false)
+		}
+		if err != nil || h == nil {
+			return 0, nil, false, warn, err
+		}
+	} else {
+		f = r.lastSample.V.F - firstSample.V.F + step.counterCorrection
+	}
+	f, h = extrapolateRate(firstSample, r.lastSample, step.numSamples, f, h, r.isCounter, r.isRate, r.evalTs, r.selectRange, r.offset)
+	return f, h, true, warn, nil
 }
 
 func querySteps(o query.Options) int64 {
