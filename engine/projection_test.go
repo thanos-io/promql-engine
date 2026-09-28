@@ -287,3 +287,33 @@ func containsProjectionExprs(expr parser.Expr) bool {
 	})
 	return found
 }
+
+func TestProjectionKeepsDuplicateLabelErrors(t *testing.T) {
+	t.Parallel()
+
+	storage := promqltest.LoadedStorage(t, `load 30s
+		requests_total{job="api", instance="1"} 1+1x10
+		requests_total{job="api", instance="2"} 2+2x10
+		errors_total{job="api", instance="1"} 3+3x10`)
+	defer storage.Close()
+
+	ng := engine.New(engine.Opts{
+		EngineOpts: promql.EngineOpts{Timeout: time.Minute, MaxSamples: 1e6},
+		LogicalOptimizers: []logicalplan.Optimizer{
+			logicalplan.ProjectionOptimizer{SeriesHashLabel: "__series_hash__"},
+		},
+	})
+	ctx := context.Background()
+	for _, query := range []string{
+		`sum by (job) (label_replace(requests_total, "instance", "x", "", ""))`,
+		`sum by (job) (label_join(requests_total, "instance", ",", "job"))`,
+		`sum by (job) (rate({__name__=~"requests_total|errors_total", instance="1"}[1m]))`,
+	} {
+		t.Run(query, func(t *testing.T) {
+			q, err := ng.NewInstantQuery(ctx, &projectionQueryable{Queryable: storage}, nil, query, time.Unix(300, 0))
+			testutil.Ok(t, err)
+			defer q.Close()
+			testutil.NotOk(t, q.Exec(ctx).Err)
+		})
+	}
+}
