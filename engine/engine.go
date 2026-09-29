@@ -271,6 +271,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 
 	exec, err := execution.New(ctx, optimizedPlan.Root(), scanners, qOpts)
 	if err != nil {
+		e.closeScanners(scanners)
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
@@ -312,6 +313,7 @@ func (e *Engine) MakeInstantQueryFromPlan(ctx context.Context, q storage.Queryab
 
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
 	if err != nil {
+		e.closeScanners(scnrs)
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
@@ -369,6 +371,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 
 	exec, err := execution.New(ctx, optimizedPlan.Root(), scnrs, qOpts)
 	if err != nil {
+		e.closeScanners(scnrs)
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
@@ -408,6 +411,7 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 	defer func() { warns.Merge(warnings.FromContext(ctx)) }()
 	exec, err := execution.New(ctx, lplan.Root(), scnrs, qOpts)
 	if err != nil {
+		e.closeScanners(scnrs)
 		return nil, err
 	}
 	e.metrics.totalQueries.Inc()
@@ -486,6 +490,12 @@ func (e *Engine) storageScanners(queryable storage.Queryable, qOpts *query.Optio
 		return promstorage.NewPrometheusScanners(queryable, qOpts, lplan)
 	}
 	return e.scanners, nil
+}
+
+func (e *Engine) closeScanners(scanners engstorage.Scanners) {
+	if err := scanners.Close(); err != nil {
+		e.logger.Warn("error closing storage scanners, some memory might have leaked", "err", err)
+	}
 }
 
 type Query struct {
@@ -709,9 +719,7 @@ func (q *compatibilityQuery) Stats() *stats.Statistics {
 }
 
 func (q *compatibilityQuery) Close() {
-	if err := q.scanners.Close(); err != nil {
-		q.engine.logger.Warn("error closing storage scanners, some memory might have leaked", "err", err)
-	}
+	q.engine.closeScanners(q.scanners)
 }
 
 func (q *compatibilityQuery) String() string { return q.plan.Root().String() }
