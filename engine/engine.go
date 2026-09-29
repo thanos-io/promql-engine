@@ -744,5 +744,7 @@ func recoverEngine(logger *slog.Logger, plan logicalplan.Plan, errp *error) {
 
 		logger.Error("runtime panic in engine", "expr", plan.Root().String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
+	default:
+		*errp = errors.Newf("unexpected panic: %v", e)
 	}
 }
