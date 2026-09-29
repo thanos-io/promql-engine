@@ -14,42 +14,52 @@ import (
 
 var sep = []byte{'\xff'}
 
+// SelectorHashFunc computes a cache key for label matchers and select hints.
+type SelectorHashFunc func(matchers []*labels.Matcher, mint, maxt int64, hints storage.SelectHints) uint64
+
 type SelectorPool struct {
 	selectors map[uint64]*seriesSelector
-
-	querier storage.Querier
+	querier   storage.Querier
+	hashFunc  SelectorHashFunc
 }
 
-func NewSelectorPool(querier storage.Querier) *SelectorPool {
+func NewSelectorPool(querier storage.Querier, hashFunc SelectorHashFunc) *SelectorPool {
+	if hashFunc == nil {
+		hashFunc = DefaultSelectorHash
+	}
 	return &SelectorPool{
 		selectors: make(map[uint64]*seriesSelector),
 		querier:   querier,
+		hashFunc:  hashFunc,
 	}
 }
 
 func (p *SelectorPool) GetSelector(mint, maxt, step int64, matchers []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
-	key := hashMatchers(matchers, mint, maxt, hints)
-	if _, ok := p.selectors[key]; !ok {
-		p.selectors[key] = newSeriesSelector(p.querier, matchers, hints)
+	key := p.hashFunc(matchers, mint, maxt, hints)
+	if existing, ok := p.selectors[key]; ok {
+		existing.hints.Start = min(existing.hints.Start, mint)
+		return existing
 	}
+	p.selectors[key] = newSeriesSelector(p.querier, matchers, hints)
 	return p.selectors[key]
 }
 
 func (p *SelectorPool) GetFilteredSelector(mint, maxt, step int64, matchers, filters []*labels.Matcher, hints storage.SelectHints) SeriesSelector {
-	key := hashMatchers(matchers, mint, maxt, hints)
-	if _, ok := p.selectors[key]; !ok {
-		p.selectors[key] = newSeriesSelector(p.querier, matchers, hints)
+	key := p.hashFunc(matchers, mint, maxt, hints)
+	if existing, ok := p.selectors[key]; ok {
+		existing.hints.Start = min(existing.hints.Start, mint)
+		return NewFilteredSelector(existing, NewFilter(filters))
 	}
-
+	p.selectors[key] = newSeriesSelector(p.querier, matchers, hints)
 	return NewFilteredSelector(p.selectors[key], NewFilter(filters))
 }
 
-func hashMatchers(matchers []*labels.Matcher, mint, maxt int64, hints storage.SelectHints) uint64 {
+// DefaultSelectorHash excludes mint so different range windows within a query share one Select().
+func DefaultSelectorHash(matchers []*labels.Matcher, _, maxt int64, hints storage.SelectHints) uint64 {
 	sb := xxhash.New()
 	for _, m := range matchers {
 		writeMatcher(sb, m)
 	}
-	writeInt64(sb, mint)
 	writeInt64(sb, maxt)
 	writeInt64(sb, hints.Step)
 	writeString(sb, hints.Func)
