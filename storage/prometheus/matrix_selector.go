@@ -53,12 +53,15 @@ type matrixSelector struct {
 	fhReader     *histogram.FloatHistogram
 	opts         *query.Options
 
-	numSteps    int
-	mint        int64
-	maxt        int64
-	step        int64
-	selectRange int64
-	offset      int64
+	numSteps      int
+	mint          int64
+	maxt          int64
+	step          int64
+	selectRange   int64
+	offset        int64
+	anchored      bool
+	smoothed      bool
+	lookbackDelta int64
 
 	currentStep     int64
 	currentSeries   int64
@@ -83,6 +86,7 @@ func NewMatrixSelector(
 	selectRange, offset time.Duration,
 	batchSize int64,
 	shard, numShard int,
+	anchored, smoothed bool,
 ) (model.VectorOperator, error) {
 	call, err := ringbuffer.NewRangeVectorFunc(functionName)
 	if err != nil {
@@ -101,6 +105,10 @@ func NewMatrixSelector(
 		mint:     opts.Start.UnixMilli(),
 		maxt:     opts.End.UnixMilli(),
 		step:     opts.Step.Milliseconds(),
+
+		anchored:      anchored,
+		smoothed:      smoothed,
+		lookbackDelta: opts.LookbackDelta.Milliseconds(),
 
 		selectRange:     selectRange.Milliseconds(),
 		offset:          offset.Milliseconds(),
@@ -194,6 +202,11 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
+			if o.smoothed {
+				// Smoothed selectors interpolate the right boundary, so they also
+				// need the first sample after the range end, within the lookback delta.
+				maxt += o.lookbackDelta
+			}
 
 			if err := scanner.selectPoints(mint, maxt, seriesTs, o.fhReader); err != nil {
 				return 0, err
@@ -321,6 +334,12 @@ func (o *matrixSelector) shouldCheckSampleLimit(firstSeries int64) bool {
 }
 
 func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {
+	if o.anchored {
+		return ringbuffer.NewAnchored(ctx, 8, o.selectRange, o.offset, o.lookbackDelta-1, o.call)
+	}
+	if o.smoothed {
+		return ringbuffer.NewSmoothed(ctx, 8, o.selectRange, o.offset, o.lookbackDelta-1, o.call)
+	}
 	if ringbuffer.UseStreamingRingBuffers(*o.opts, o.selectRange) {
 		switch o.functionName {
 		case "rate":

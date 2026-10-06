@@ -47,6 +47,9 @@ type GenericRingBuffer struct {
 	offset            int64
 	selectRange       int64
 	call              FunctionCall
+
+	anchored bool
+	smoothed bool
 }
 
 func New(ctx context.Context, size int, selectRange, offset int64, call FunctionCall) *GenericRingBuffer {
@@ -152,6 +155,8 @@ func (r *GenericRingBuffer) eval(scalarArg float64, scalarArg2 float64, metricAp
 		ScalarPoint:      scalarArg,
 		ScalarPoint2:     scalarArg2, // only for double_exponential_smoothing
 		MetricAppearedTs: metricAppearedTs,
+		Anchored:         r.anchored,
+		Smoothed:         r.smoothed,
 	})
 }
 
