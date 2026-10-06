@@ -11,6 +11,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
+	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
@@ -38,6 +39,7 @@ type vectorOperator struct {
 	returnBool bool
 	stepsBatch int
 	sigFunc    func(labels.Labels) uint64
+	projection *logicalplan.Projection
 
 	once         sync.Once
 	series       []labels.Labels
@@ -64,6 +66,7 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	opType parser.ItemType,
 	returnBool bool,
+	projection *logicalplan.Projection,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
 	op := &vectorOperator{
@@ -72,6 +75,7 @@ func NewVectorOperator(
 		matching:   matching,
 		opType:     opType,
 		returnBool: returnBool,
+		projection: projection,
 		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
 		stepsBatch: opts.StepsBatch,
 	}
@@ -653,6 +657,16 @@ func (o *vectorOperator) resultMetric(b *labels.Builder, highCard, lowCard label
 		b.Del(extlabels.MetricType)
 		b.Del(extlabels.MetricUnit)
 	}
+
+	// Apply projection to limit labels in the result
+	if o.projection != nil {
+		if o.projection.Include {
+			b.Keep(o.projection.Labels...)
+		} else {
+			b.Del(o.projection.Labels...)
+		}
+	}
+
 	return b.Labels()
 }
 
