@@ -40,7 +40,7 @@ func NewExecution(query promql.Query, queryRangeStart, queryRangeEnd time.Time, 
 		opts:            opts,
 		queryRangeStart: queryRangeStart,
 		queryRangeEnd:   queryRangeEnd,
-		vectorSelector:  promstorage.NewVectorSelector(storage, opts, 0, 0, false, 0, 1),
+		vectorSelector:  promstorage.NewVectorSelector(storage, opts, 0, 0, false, 0, 1, false),
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)

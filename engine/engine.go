@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution"
@@ -73,6 +74,17 @@ type Opts struct {
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
+
+	// EnableExtendedRangeSelectors enables the anchored and smoothed modifiers
+	// for range vector selectors.
+	// See https://github.com/prometheus/proposals/blob/main/proposals/0052-extended-range-selectors-semantics.md
+	//
+	// The upstream parser only exposes this as the process-global
+	// parser.EnableExtendedRangeSelectors, which the first engine created with
+	// this option sets. Create such engines at startup, before any goroutine
+	// parses PromQL, as Prometheus does. Once set, the modifiers are accepted by
+	// every parser in the process.
+	EnableExtendedRangeSelectors bool
 
 	// EnableAnalysis enables query analysis.
 	EnableAnalysis bool
@@ -173,6 +185,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 	selectorBatchSize := opts.SelectorBatchSize
 
+	if opts.EnableExtendedRangeSelectors {
+		// parser.EnableExtendedRangeSelectors is process-global in the upstream
+		// parser, which Prometheus sets once at startup. Set it once here rather
+		// than per query so concurrent parses never race with a write. Once
+		// enabled it stays enabled for every engine in the process.
+		enableExtendedRangeSelectors.Do(func() { parser.EnableExtendedRangeSelectors = true })
+	}
+
 	var queryTracker promql.QueryTracker = nopQueryTracker{}
 	if opts.ActiveQueryTracker != nil {
 		queryTracker = opts.ActiveQueryTracker
@@ -207,6 +227,8 @@ var (
 	// As long as we use this method we need to have batches that are smaller
 	// then 64 steps.
 	ErrStepsBatchTooLarge = errors.New("'StepsBatch' must be less than 64")
+
+	enableExtendedRangeSelectors sync.Once
 )
 
 type Engine struct {
