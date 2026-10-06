@@ -6,6 +6,7 @@ package prometheus
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
+	"github.com/thanos-io/promql-engine/ringbuffer"
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/histogram"
@@ -26,6 +28,7 @@ type vectorScanner struct {
 	labels    labels.Labels
 	signature uint64
 	samples   *storage.MemoizedSeriesIterator
+	smoothed  *smoothedIterator
 }
 
 type vectorSelector struct {
@@ -167,7 +170,7 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 				err error
 			)
 			if o.smoothed {
-				t, v, ok, err = selectPointSmoothed(series.samples, seriesTs, o.lookbackDelta, o.offset)
+				t, v, ok, err = series.smoothed.selectPoint(seriesTs, o.lookbackDelta, o.offset)
 			} else {
 				t, v, h, ok, err = selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			}
@@ -223,7 +226,11 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 			o.scanners[i] = vectorScanner{
 				labels:    s.Labels(),
 				signature: s.Signature,
-				samples:   storage.NewMemoizedIterator(s.Iterator(nil), o.lookbackDelta),
+			}
+			if o.smoothed {
+				o.scanners[i].smoothed = newSmoothedIterator(s.Iterator(nil))
+			} else {
+				o.scanners[i].samples = storage.NewMemoizedIterator(s.Iterator(nil), o.lookbackDelta)
 			}
 			b.Reset(s.Labels())
 			// if we have pushed down a timestamp function into the scan we need to drop
@@ -270,52 +277,128 @@ func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
 	return isEndOfBatch || isLastSeries
 }
 
-// selectPointSmoothed returns an interpolated value at the given timestamp by
-// looking at samples in [ts-lookbackDelta, ts+lookbackDelta]. When a sample
-// exists exactly at ts it is returned as-is. When samples exist on both sides,
-// linear interpolation is performed. When only a previous sample exists, its
-// value is carried forward.
-func selectPointSmoothed(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, bool, error) {
-	refTime := ts - offset
+// smoothedIterator selects values for smoothed instant vector selectors. Like
+// Prometheus' smoothSeries, it considers the float samples in
+// (ts-lookbackDelta, ts+lookbackDelta], ignores stale markers, and fails if the
+// window contains a native histogram. Evaluation timestamps must not decrease.
+type smoothedIterator struct {
+	it chunkenc.Iterator
+	fh *histogram.FloatHistogram
 
-	valueType := it.Seek(refTime)
-	switch valueType {
-	case chunkenc.ValNone:
-		if it.Err() != nil {
-			return 0, 0, false, it.Err()
-		}
-	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
-		// Histograms not supported for smoothed instant vectors.
-		return 0, 0, false, nil
-	case chunkenc.ValFloat:
-		seekT, seekV := it.At()
-		if value.IsStaleNaN(seekV) {
-			return 0, 0, false, nil
-		}
-		if seekT == refTime {
-			// Exact match.
-			return ts, seekV, true, nil
-		}
-		// seekT > refTime: we have the "next" sample. Check for a previous one.
-		if seekT <= refTime+lookbackDelta {
-			prevT, prevV, _, prevOK := it.PeekPrev()
-			if prevOK && !value.IsStaleNaN(prevV) && prevT > refTime-lookbackDelta {
-				// Interpolate between prev and next.
-				v := prevV + (seekV-prevV)*float64(refTime-prevT)/float64(seekT-prevT)
-				return ts, v, true, nil
+	// prev is the newest float sample before the last reference time.
+	prevT int64
+	prevV float64
+	// ahead holds the float samples read at or after the last reference time,
+	// up to the end of its window, in timestamp order.
+	ahead []fPoint
+	// lastHistT is the newest native histogram read from the iterator.
+	lastHistT int64
+
+	// pending is the next non-stale sample read from the iterator but beyond
+	// the window of the last reference time.
+	pending     fPoint
+	pendingHist bool
+	hasPending  bool
+	exhausted   bool
+}
+
+type fPoint struct {
+	t int64
+	v float64
+}
+
+func newSmoothedIterator(it chunkenc.Iterator) *smoothedIterator {
+	return &smoothedIterator{
+		it:        it,
+		prevT:     math.MinInt64,
+		lastHistT: math.MinInt64,
+	}
+}
+
+// selectPoint returns the value at ts: the sample at the reference time if
+// there is one, otherwise the linear interpolation between the surrounding
+// samples, otherwise the previous sample carried forward.
+func (s *smoothedIterator) selectPoint(ts, lookbackDelta, offset int64) (int64, float64, bool, error) {
+	refTime := ts - offset
+	windowEnd := refTime + lookbackDelta
+
+	// Samples read for an earlier reference time may now precede this one.
+	n := 0
+	for ; n < len(s.ahead) && s.ahead[n].t < refTime; n++ {
+		s.prevT, s.prevV = s.ahead[n].t, s.ahead[n].v
+	}
+	if n > 0 {
+		s.ahead = append(s.ahead[:0], s.ahead[n:]...)
+	}
+
+	// Read the rest of the window so that a histogram anywhere in it is seen.
+	for {
+		if !s.hasPending {
+			if err := s.readNext(); err != nil {
+				return 0, 0, false, err
+			}
+			if !s.hasPending {
+				break
 			}
 		}
-	default:
-		panic(errors.Newf("unknown value type %v", valueType))
+		if s.pending.t > windowEnd {
+			break
+		}
+		switch {
+		case s.pendingHist:
+			s.lastHistT = s.pending.t
+		case s.pending.t < refTime:
+			s.prevT, s.prevV = s.pending.t, s.pending.v
+		default:
+			s.ahead = append(s.ahead, s.pending)
+		}
+		s.hasPending = false
 	}
 
-	// No sample at or after refTime (or next sample is beyond lookback).
-	// Fall back to previous sample (carry forward).
-	prevT, prevV, _, prevOK := it.PeekPrev()
-	if !prevOK || prevT <= refTime-lookbackDelta || value.IsStaleNaN(prevV) {
+	if s.lastHistT > refTime-lookbackDelta {
+		return 0, 0, false, ringbuffer.ErrExtendedRangeHistograms
+	}
+
+	hasNext := len(s.ahead) > 0
+	if hasNext && s.ahead[0].t == refTime {
+		return ts, s.ahead[0].v, true, nil
+	}
+	if s.prevT <= refTime-lookbackDelta {
 		return 0, 0, false, nil
 	}
-	return ts, prevV, true, nil
+	if hasNext {
+		next := s.ahead[0]
+		v := s.prevV + (next.v-s.prevV)*float64(refTime-s.prevT)/float64(next.t-s.prevT)
+		return ts, v, true, nil
+	}
+	return ts, s.prevV, true, nil
+}
+
+// readNext reads the next non-stale sample into pending.
+func (s *smoothedIterator) readNext() error {
+	for !s.exhausted {
+		switch s.it.Next() {
+		case chunkenc.ValNone:
+			s.exhausted = true
+			return s.it.Err()
+		case chunkenc.ValFloat:
+			t, v := s.it.At()
+			if value.IsStaleNaN(v) {
+				continue
+			}
+			s.pending, s.pendingHist, s.hasPending = fPoint{t: t, v: v}, false, true
+			return nil
+		case chunkenc.ValHistogram, chunkenc.ValFloatHistogram:
+			var t int64
+			t, s.fh = s.it.AtFloatHistogram(s.fh)
+			if value.IsStaleNaN(s.fh.Sum) {
+				continue
+			}
+			s.pending, s.pendingHist, s.hasPending = fPoint{t: t}, true, true
+			return nil
+		}
+	}
+	return nil
 }
 
 // TODO(fpetkovski): Add max samples limit.

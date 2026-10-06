@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution"
@@ -77,6 +78,12 @@ type Opts struct {
 	// EnableExtendedRangeSelectors enables the anchored and smoothed modifiers
 	// for range vector selectors.
 	// See https://github.com/prometheus/proposals/blob/main/proposals/0052-extended-range-selectors-semantics.md
+	//
+	// The upstream parser only exposes this as the process-global
+	// parser.EnableExtendedRangeSelectors, which the first engine created with
+	// this option sets. Create such engines at startup, before any goroutine
+	// parses PromQL, as Prometheus does. Once set, the modifiers are accepted by
+	// every parser in the process.
 	EnableExtendedRangeSelectors bool
 
 	// EnableAnalysis enables query analysis.
@@ -178,6 +185,14 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 	selectorBatchSize := opts.SelectorBatchSize
 
+	if opts.EnableExtendedRangeSelectors {
+		// parser.EnableExtendedRangeSelectors is process-global in the upstream
+		// parser, which Prometheus sets once at startup. Set it once here rather
+		// than per query so concurrent parses never race with a write. Once
+		// enabled it stays enabled for every engine in the process.
+		enableExtendedRangeSelectors.Do(func() { parser.EnableExtendedRangeSelectors = true })
+	}
+
 	var queryTracker promql.QueryTracker = nopQueryTracker{}
 	if opts.ActiveQueryTracker != nil {
 		queryTracker = opts.ActiveQueryTracker
@@ -188,8 +203,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
-		disableDuplicateLabelChecks:  opts.DisableDuplicateLabelChecks,
-		enableExtendedRangeSelectors: opts.EnableExtendedRangeSelectors,
+		disableDuplicateLabelChecks: opts.DisableDuplicateLabelChecks,
 
 		logger:             opts.Logger,
 		lookbackDelta:      opts.LookbackDelta,
@@ -213,6 +227,8 @@ var (
 	// As long as we use this method we need to have batches that are smaller
 	// then 64 steps.
 	ErrStepsBatchTooLarge = errors.New("'StepsBatch' must be less than 64")
+
+	enableExtendedRangeSelectors sync.Once
 )
 
 type Engine struct {
@@ -220,8 +236,7 @@ type Engine struct {
 	scanners           engstorage.Scanners
 	activeQueryTracker promql.QueryTracker
 
-	disableDuplicateLabelChecks  bool
-	enableExtendedRangeSelectors bool
+	disableDuplicateLabelChecks bool
 
 	logger             *slog.Logger
 	lookbackDelta      time.Duration
@@ -245,14 +260,6 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
-	// NOTE: parser.EnableExtendedRangeSelectors is a process-global variable
-	// in the upstream Prometheus parser. Once set to true, it remains enabled
-	// for all subsequent parses in the process, matching how Prometheus handles
-	// it (set once at startup via --enable-feature). Two engine instances in
-	// the same process cannot independently control this flag.
-	if e.enableExtendedRangeSelectors {
-		parser.EnableExtendedRangeSelectors = true
-	}
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err
@@ -351,14 +358,6 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
-	// NOTE: parser.EnableExtendedRangeSelectors is a process-global variable
-	// in the upstream Prometheus parser. Once set to true, it remains enabled
-	// for all subsequent parses in the process, matching how Prometheus handles
-	// it (set once at startup via --enable-feature). Two engine instances in
-	// the same process cannot independently control this flag.
-	if e.enableExtendedRangeSelectors {
-		parser.EnableExtendedRangeSelectors = true
-	}
 	expr, err := parser.NewParser(qs, parser.WithFunctions(e.functions)).ParseExpr()
 	if err != nil {
 		return nil, err

@@ -18,6 +18,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"maps"
 	"slices"
 	"sort"
@@ -92,7 +93,7 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 
 func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
-	if e.Smoothed {
+	if e.Smoothed && !e.SelectTimestamp {
 		// Smoothed instant vectors need samples after the evaluation time
 		// for interpolation, so extend the end by lookbackDelta.
 		end += opts.LookbackDelta.Milliseconds()
@@ -165,6 +166,10 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *logicalplan.MatrixSelector:
+		// Validate against absent_over_time before it is rewritten to last_over_time.
+		if err := checkRangeModifiers(call.Func.Name, arg.VectorSelector); err != nil {
+			return newDeferredError(err), nil
+		}
 		matrixCall := &logicalplan.FunctionCall{
 			Func: parser.Function{Name: "last_over_time"},
 			Args: call.Args,
@@ -191,19 +196,8 @@ func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t 
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	vs := t.VectorSelector
-
-	// Validate function whitelist for anchored/smoothed modifiers.
-	// Return a deferred error operator so the error surfaces at Exec time,
-	// matching Prometheus behavior expected by the test framework.
-	if vs.Anchored {
-		if _, ok := parse.AnchoredSafeFunctions[e.Func.Name]; !ok {
-			return newDeferredError(errors.Newf("anchored modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.AnchoredSafeFunctions)), ", "), e.Func.Name)), nil
-		}
-	}
-	if vs.Smoothed {
-		if _, ok := parse.SmoothedSafeFunctions[e.Func.Name]; !ok {
-			return newDeferredError(errors.Newf("smoothed modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.SmoothedSafeFunctions)), ", "), e.Func.Name)), nil
-		}
+	if err := checkRangeModifiers(e.Func.Name, vs); err != nil {
+		return newDeferredError(err), nil
 	}
 
 	milliSecondRange := t.Range.Milliseconds()
@@ -450,6 +444,22 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 	return exchange.NewDuplicateLabelCheck(op, opts), nil
 }
 
+// checkRangeModifiers returns Prometheus' error when the anchored or smoothed
+// modifier is used with a function that does not support it.
+func checkRangeModifiers(funcName string, vs *logicalplan.VectorSelector) error {
+	if vs.Anchored {
+		if _, ok := parse.AnchoredSafeFunctions[funcName]; !ok {
+			return errors.Newf("anchored modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.AnchoredSafeFunctions)), ", "), funcName)
+		}
+	}
+	if vs.Smoothed {
+		if _, ok := parse.SmoothedSafeFunctions[funcName]; !ok {
+			return errors.Newf("smoothed modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.SmoothedSafeFunctions)), ", "), funcName)
+		}
+	}
+	return nil
+}
+
 // deferredError is an operator that returns an error on first Next() call,
 // allowing validation errors to surface at evaluation time rather than
 // query creation time, matching Prometheus behavior.
@@ -471,6 +481,14 @@ func (d *deferredError) Next(context.Context, []model.StepVector) (int, error) {
 
 func (d *deferredError) Series(context.Context) ([]labels.Labels, error) {
 	return nil, d.err
+}
+
+func (d *deferredError) Explain() []model.VectorOperator {
+	return nil
+}
+
+func (d *deferredError) String() string {
+	return fmt.Sprintf("[deferredError] %v", d.err)
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.

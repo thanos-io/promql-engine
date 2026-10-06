@@ -163,6 +163,66 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 			    http_total{path="/bar"} 0 10 20 30 40 50 60 70 80 90 100`,
 			query: `increase(http_total[30s] smoothed)`,
 		},
+		// Stale markers are skipped, not treated as gaps.
+		{
+			name: "smoothed instant vector across stale marker",
+			load: `load 10s
+			    metric 1 2 stale 4 5 stale stale 8`,
+			query: `metric smoothed`,
+			step:  5 * time.Second,
+		},
+		{
+			name: "smoothed instant vector ending with stale marker",
+			load: `load 10s
+			    metric 1 2 stale`,
+			query: `metric smoothed`,
+			step:  5 * time.Second,
+		},
+		{
+			name: "smoothed rate across stale marker",
+			load: `load 10s
+			    http_total 0 10 stale 30 40 stale 60 70`,
+			query: `rate(http_total[20s] smoothed)`,
+		},
+		{
+			name: "anchored changes across stale marker",
+			load: `load 10s
+			    metric 1 2 stale 2 3 stale 3 4`,
+			query: `changes(metric[20s] anchored)`,
+		},
+		// timestamp() ignores the smoothed modifier.
+		{
+			name: "timestamp of smoothed instant vector",
+			load: `load 10s
+			    metric 1 2 3 _ 5`,
+			query: `timestamp(metric smoothed)`,
+			step:  5 * time.Second,
+		},
+		// Native histograms are rejected wherever they appear in the window.
+		{
+			name: "anchored rate over float then histogram",
+			load: `load 10s
+			    metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:6 count:5 buckets:[1 2 2]}}`,
+			query: `rate(metric[30s] anchored)`,
+		},
+		{
+			name: "smoothed increase over float then histogram",
+			load: `load 10s
+			    metric 1 2 3 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:6 count:5 buckets:[1 2 2]}}`,
+			query: `increase(metric[30s] smoothed)`,
+		},
+		{
+			name: "anchored changes over histograms",
+			load: `load 10s
+			    metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:6 count:5 buckets:[1 2 2]}}`,
+			query: `changes(metric[30s] anchored)`,
+		},
+		{
+			name: "smoothed instant vector over histograms",
+			load: `load 10s
+			    metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 2 3`,
+			query: `metric smoothed`,
+		},
 	}
 
 	start := time.Unix(0, 0)
@@ -522,4 +582,138 @@ func TestAnchoredSmoothedSelectHints(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSmoothedCounterResetAfterRangeEnd pins the right-edge interpolation
+// across a counter reset. It follows Prometheus v0.310.0 and later, which model
+// the post-reset counter as starting from zero on both edges. v0.308.0 instead
+// adds the pre-reset value on the right edge and would return ~103.33 here.
+func TestSmoothedCounterResetAfterRangeEnd(t *testing.T) {
+	parser.EnableExtendedRangeSelectors = true
+
+	storage := promqltest.LoadedStorage(t, `load 30s
+		c_total 100 10 20`)
+	defer storage.Close()
+
+	ng := engine.New(engine.Opts{
+		EngineOpts:                   promql.EngineOpts{Timeout: time.Hour, MaxSamples: 1e10},
+		EnableExtendedRangeSelectors: true,
+	})
+	ctx := context.Background()
+
+	// The range (10s, 20s] has no sample; both edges interpolate between
+	// 100@0s and 10@30s, which is a reset: left = 10*10/30, right = 10*20/30.
+	q, err := ng.NewInstantQuery(ctx, storage, nil, `increase(c_total[10s] smoothed)`, time.Unix(20, 0))
+	testutil.Ok(t, err)
+	defer q.Close()
+	res := q.Exec(ctx)
+	testutil.Ok(t, res.Err)
+	vec, err := res.Vector()
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(vec))
+	testutil.Assert(t, math.Abs(vec[0].F-10.0/3) < 1e-9, "got %v", vec[0].F)
+}
+
+func TestAnchoredSmoothedErrorMessages(t *testing.T) {
+	parser.EnableExtendedRangeSelectors = true
+
+	storage := promqltest.LoadedStorage(t, `load 10s
+		metric 1 2 3 4 5 6
+		hist 1 2 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:6 count:5 buckets:[1 2 2]}}
+		late 1 2 3 4 5 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}`)
+	defer storage.Close()
+
+	opts := promql.EngineOpts{Timeout: time.Hour, MaxSamples: 1e10}
+	ng := engine.New(engine.Opts{EngineOpts: opts, EnableExtendedRangeSelectors: true})
+	prom := promql.NewEngine(opts)
+	ctx := context.Background()
+
+	for _, query := range []string{
+		`absent_over_time(metric[30s] anchored)`,
+		`absent_over_time(metric[30s] smoothed)`,
+		`sum_over_time(metric[30s] anchored)`,
+		`changes(metric[30s] smoothed)`,
+		`rate(hist[30s] anchored)`,
+		`increase(hist[30s] smoothed)`,
+		`changes(hist[30s] anchored)`,
+		`hist smoothed`,
+		// A float at the evaluation time, then a histogram later in the window.
+		`late smoothed`,
+	} {
+		t.Run(query, func(t *testing.T) {
+			q1, err := ng.NewInstantQuery(ctx, storage, nil, query, time.Unix(40, 0))
+			testutil.Ok(t, err)
+			defer q1.Close()
+			q2, err := prom.NewInstantQuery(ctx, storage, nil, query, time.Unix(40, 0))
+			testutil.Ok(t, err)
+			defer q2.Close()
+
+			want := q2.Exec(ctx).Err
+			testutil.NotOk(t, want)
+			got := q1.Exec(ctx).Err
+			testutil.NotOk(t, got)
+			testutil.Equals(t, want.Error(), got.Error())
+		})
+	}
+}
+
+// TestSmoothedOffsetTimestamps pins output timestamps for smoothed selectors
+// with an offset. Prometheus v0.308.0 stamps them with the data time rather
+// than the evaluation time, which later versions fix, so this is not compared
+// against the vendored engine.
+func TestSmoothedOffsetTimestamps(t *testing.T) {
+	parser.EnableExtendedRangeSelectors = true
+
+	storage := promqltest.LoadedStorage(t, `load 10s
+		metric 1 2 stale 4 5`)
+	defer storage.Close()
+
+	ng := engine.New(engine.Opts{
+		EngineOpts:                   promql.EngineOpts{Timeout: time.Hour, MaxSamples: 1e10},
+		EnableExtendedRangeSelectors: true,
+	})
+	ctx := context.Background()
+
+	q, err := ng.NewRangeQuery(ctx, storage, nil, `metric smoothed offset 5s`, time.Unix(20, 0), time.Unix(30, 0), 5*time.Second)
+	testutil.Ok(t, err)
+	defer q.Close()
+	res := q.Exec(ctx)
+	testutil.Ok(t, res.Err)
+	m, err := res.Matrix()
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, len(m))
+	// Data at 15s, 20s and 25s, interpolated across the stale marker at 20s.
+	testutil.Equals(t, []promql.FPoint{{T: 20000, F: 2.5}, {T: 25000, F: 3}, {T: 30000, F: 3.5}}, m[0].Floats)
+}
+
+// TestExtendedRangeSelectorsConcurrentQueries guards against writing the
+// process-global parser flag on every query while other queries parse.
+func TestExtendedRangeSelectorsConcurrentQueries(t *testing.T) {
+	storage := promqltest.LoadedStorage(t, `load 10s
+		http_total 0 10 20 30 40 50`)
+	defer storage.Close()
+
+	ng := engine.New(engine.Opts{
+		EngineOpts:                   promql.EngineOpts{Timeout: time.Hour, MaxSamples: 1e10},
+		EnableExtendedRangeSelectors: true,
+	})
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			q, err := ng.NewInstantQuery(ctx, storage, nil, `rate(http_total[30s] anchored)`, time.Unix(50, 0))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			defer q.Close()
+			if res := q.Exec(ctx); res.Err != nil {
+				t.Error(res.Err)
+			}
+		}()
+	}
+	wg.Wait()
 }

@@ -75,7 +75,9 @@ func (p Scanners) NewVectorSelector(
 				logicalNode.SelectTimestamp,
 				i,
 				opts.DecodingConcurrency,
-				logicalNode.Smoothed,
+				// Like Prometheus, timestamp() returns raw sample timestamps
+				// and ignores the smoothed modifier.
+				logicalNode.Smoothed && !logicalNode.SelectTimestamp,
 			), 2, opts)
 		operators = append(operators, operator)
 	}
