@@ -19,6 +19,7 @@ type Options struct {
 	EnableAnalysis           bool
 	DecodingConcurrency      int
 	SampleTracker            SampleTracker // Tracks current samples in memory
+	EnableMaterialization    bool          // When true, binary operators materialize aggregated children to reduce peak memory in join queries
 }
 
 // TotalSteps returns the total number of steps in the query, regardless of batching.
@@ -59,6 +60,7 @@ func NestedOptionsForSubquery(opts *Options, step, queryRange, offset time.Durat
 		EnableAnalysis:           opts.EnableAnalysis,
 		DecodingConcurrency:      opts.DecodingConcurrency,
 		SampleTracker:            opts.SampleTracker,
+		EnableMaterialization:    opts.EnableMaterialization,
 	}
 	if nOpts.SampleTracker == nil {
 		nOpts.SampleTracker = NewSampleTracker(0)

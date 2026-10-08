@@ -14,6 +14,24 @@ type SampleTracker interface {
 	Remove(count int)
 	CheckLimit() error
 	Limit() int64
+	Current() int64
+}
+
+const SampleLimitOvershoot = 0.05
+
+func ComputeSampleLimitCheckThreshold(opts *Options, accumulators int) int {
+	limit := opts.SampleTracker.Limit()
+	if limit <= 0 || limit == math.MaxInt64 {
+		return math.MaxInt64
+	}
+	if accumulators <= 0 {
+		accumulators = 1
+	}
+	threshold := int(math.Floor(float64(limit) * SampleLimitOvershoot / float64(accumulators)))
+	if threshold <= 0 {
+		threshold = 1
+	}
+	return threshold
 }
 
 type sampleTracker struct {
@@ -50,12 +68,17 @@ func (st *sampleTracker) Limit() int64 {
 	return st.limit
 }
 
+func (st *sampleTracker) Current() int64 {
+	return st.current.Load()
+}
+
 type nopSampleTracker struct{}
 
 func (nopSampleTracker) Add(int)           {}
 func (nopSampleTracker) Remove(int)        {}
 func (nopSampleTracker) CheckLimit() error { return nil }
 func (nopSampleTracker) Limit() int64      { return math.MaxInt64 }
+func (nopSampleTracker) Current() int64    { return 0 }
 
 type ErrMaxSamplesExceeded struct {
 	Current int64
