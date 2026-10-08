@@ -144,6 +144,12 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
 		}
 
+		// Release iterators and buffers; the operator stays reachable for stats.
+		for i := range o.scanners {
+			o.scanners[i].iterator = nil
+			o.scanners[i].buffer = nil
+		}
+
 		return 0, nil
 	}
 	if err := o.loadSeries(ctx); err != nil {

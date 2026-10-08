@@ -118,6 +118,11 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	default:
 	}
 	if o.currentStep > o.maxt {
+		// Release iterators; the operator stays reachable for stats.
+		for i := range o.scanners {
+			o.scanners[i].samples = nil
+		}
+
 		return 0, nil
 	}
 
