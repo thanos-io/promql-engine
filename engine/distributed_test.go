@@ -389,7 +389,7 @@ func TestDistributedAggregations(t *testing.T) {
 									testutil.Ok(t, err)
 
 									distResult := distQry.Exec(ctx)
-									promEngine := promql.NewEngine(opts.EngineOpts)
+									promEngine := newPromEngine(opts.EngineOpts)
 									promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
 									testutil.Ok(t, err)
 									promResult := promQry.Exec(ctx)
@@ -410,7 +410,7 @@ func TestDistributedAggregations(t *testing.T) {
 								testutil.Ok(t, err)
 
 								distResult := distQry.Exec(ctx)
-								promEngine := promql.NewEngine(opts.EngineOpts)
+								promEngine := newPromEngine(opts.EngineOpts)
 								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(ctx)

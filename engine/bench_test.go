@@ -444,7 +444,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 			b.ReportAllocs()
 			b.Run("old_engine", func(b *testing.B) {
 
-				promEngine := promql.NewEngine(opts.EngineOpts)
+				promEngine := newPromEngine(opts.EngineOpts)
 
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -564,7 +564,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				testStep = tc.step
 			}
 			b.Run("old_engine", func(b *testing.B) {
-				engine := promql.NewEngine(opts)
+				engine := newPromEngine(opts)
 
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -764,7 +764,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 					EnableAtModifier:     true,
 					EnableNegativeOffset: true,
 				}
-				engine := promql.NewEngine(opts)
+				engine := newPromEngine(opts)
 
 				b.ResetTimer()
 				b.ReportAllocs()

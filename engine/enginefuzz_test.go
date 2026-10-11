@@ -178,7 +178,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
 		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, SelectorBatchSize: 256})
-		oldEngine := promql.NewEngine(opts)
+		oldEngine := newPromEngine(opts)
 
 		var (
 			q1              promql.Query
@@ -265,7 +265,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			EnableAnalysis:    true,
 			SelectorBatchSize: 256,
 		})
-		oldEngine := promql.NewEngine(opts)
+		oldEngine := newPromEngine(opts)
 
 		seriesSet, err := getSeries(context.Background(), storage, "http_requests_total")
 		require.NoError(t, err)
@@ -483,7 +483,7 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 		rnd := rand.New(rand.NewSource(seed))
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, SelectorBatchSize: 256})
-		oldEngine := promql.NewEngine(opts)
+		oldEngine := newPromEngine(opts)
 
 		instantCases := make([]*testCase, 0, testRuns/2)
 		rangeCases := make([]*testCase, 0, testRuns/2)
@@ -731,7 +731,7 @@ func FuzzDistributedEngineQuery(f *testing.F) {
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
 		distEngine := engine.NewDistributedEngine(engineOpts)
-		promEngine := promql.NewEngine(opts)
+		promEngine := newPromEngine(opts)
 
 		cases := make([]*testCase, 0, testRuns)
 

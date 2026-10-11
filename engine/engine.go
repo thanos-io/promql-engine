@@ -5,6 +5,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"math"
 	"runtime"
@@ -141,6 +142,16 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		)
 	}
 
+	p := opts.Parser
+	if p == nil {
+		// The engine implements the experimental functions and duration
+		// expressions, so enable them unless the caller supplies a parser.
+		p = parser.NewParser(parser.Options{
+			EnableExperimentalFunctions: true,
+			ExperimentalDurationExpr:    true,
+		})
+	}
+
 	metrics := &engineMetrics{
 		currentQueries: promauto.With(opts.Reg).NewGauge(
 			prometheus.GaugeOpts{
@@ -172,6 +183,8 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 
 	return &Engine{
+		parser:             p,
+		xFunctionsEnabled:  opts.EnableXFunctions,
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
@@ -202,6 +215,8 @@ var (
 )
 
 type Engine struct {
+	parser             parser.Parser
+	xFunctionsEnabled  bool
 	scanners           engstorage.Scanners
 	activeQueryTracker promql.QueryTracker
 
@@ -222,6 +237,29 @@ type Engine struct {
 	maxSamplesPerQuery       int
 }
 
+// parseExpr parses qs and rejects the x* functions unless they are enabled.
+// They are registered in the global parser function table, so the parser
+// itself cannot be told to leave them out.
+func (e *Engine) parseExpr(qs string) (parser.Expr, error) {
+	expr, err := e.parser.ParseExpr(qs)
+	if err != nil || e.xFunctionsEnabled {
+		return expr, err
+	}
+	var xErr error
+	parser.Inspect(expr, func(n parser.Node, _ []parser.Node) error {
+		if c, ok := n.(*parser.Call); ok && parse.IsExtFunction(c.Func.Name) {
+			xErr = parser.ParseErrors{{
+				PositionRange: c.PositionRange(),
+				Err:           fmt.Errorf("unknown function with name %q", c.Func.Name),
+				Query:         qs,
+			}}
+			return xErr
+		}
+		return nil
+	})
+	return expr, xErr
+}
+
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
 	idx, err := e.activeQueryTracker.Insert(ctx, qs)
 	if err != nil {
@@ -229,7 +267,7 @@ func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
-	expr, err := parser.NewParser(parser.Options{}).ParseExpr(qs)
+	expr, err := e.parseExpr(qs)
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +365,7 @@ func (e *Engine) MakeRangeQuery(ctx context.Context, q storage.Queryable, opts *
 	}
 	defer e.activeQueryTracker.Delete(idx)
 
-	expr, err := parser.NewParser(parser.Options{}).ParseExpr(qs)
+	expr, err := e.parseExpr(qs)
 	if err != nil {
 		return nil, err
 	}

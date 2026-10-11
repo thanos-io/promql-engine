@@ -38,6 +38,7 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/timestamp"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
@@ -79,6 +80,7 @@ func TestPromqlAcceptance(t *testing.T) {
 			MaxSamples:               5e10,
 			Timeout:                  1 * time.Hour,
 			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
+			Parser:                   parser.NewParser(parser.Options{EnableExperimentalFunctions: true, ExperimentalDurationExpr: true}),
 		}})
 
 	st := &skipTest{
@@ -89,6 +91,7 @@ func TestPromqlAcceptance(t *testing.T) {
 			"testdata/info.test",                // info() function unsupported
 			"testdata/literals.test",            // string literal expressions as query results unsupported
 			"testdata/range_queries.test",       // matrix selector as instant query result unsupported
+			"testdata/fill-modifier.test",       // binop fill modifiers unsupported
 		}, // TODO(sungjin1212): change to test whole cases
 		TBRun: t,
 	}
@@ -125,7 +128,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	newResult := q1.Exec(ctx)
 	testutil.Ok(t, newResult.Err)
 
-	oldEngine := promql.NewEngine(opts)
+	oldEngine := newPromEngine(opts)
 	q2, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(series), nil, query, start, end, 30*time.Second)
 	testutil.Ok(t, err)
 	defer q2.Close()
@@ -2383,7 +2386,7 @@ or
 						defer q1.Close()
 						newResult := q1.Exec(ctx)
 
-						oldEngine := promql.NewEngine(opts)
+						oldEngine := newPromEngine(opts)
 						q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
 						testutil.Ok(t, err)
 						defer q2.Close()
@@ -2599,7 +2602,7 @@ func TestEdgeCases(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			oldEngine := promql.NewEngine(opts)
+			oldEngine := newPromEngine(opts)
 			q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
 			testutil.Ok(t, err)
 
@@ -4894,7 +4897,7 @@ min without () (
 
 						newResult := q1.Exec(ctx)
 
-						oldEngine := promql.NewEngine(opts)
+						oldEngine := newPromEngine(opts)
 						q2, err := oldEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
 						testutil.Ok(t, err)
 						defer q2.Close()
@@ -5786,7 +5789,7 @@ quantile without (pod) (
 
 			ctx := context.Background()
 
-			oldEngine := promql.NewEngine(opts)
+			oldEngine := newPromEngine(opts)
 			newEngine := engine.New(engine.Opts{EnableAnalysis: true, EngineOpts: opts})
 
 			// Instant query
@@ -6125,7 +6128,7 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 		return qry.Exec(context.Background())
 	}
 
-	promResult := execQuery(promql.NewEngine(opts.EngineOpts))
+	promResult := execQuery(newPromEngine(opts.EngineOpts))
 	newResult := execQuery(engine.New(opts))
 	testutil.WithGoCmp(comparer).Equals(t, promResult, newResult)
 }
@@ -6374,7 +6377,7 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					testutil.Ok(t, err)
 					testutil.Ok(t, app.Commit())
 
-					promEngine := promql.NewEngine(opts)
+					promEngine := newPromEngine(opts)
 					thanosEngine := engine.New(engine.Opts{
 						EngineOpts:        opts,
 						LogicalOptimizers: logicalplan.AllOptimizers,
@@ -7045,7 +7048,7 @@ func TestDoubleExponentialSmoothing(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			oldEngine := promql.NewEngine(opts)
+			oldEngine := newPromEngine(opts)
 			q1, err := oldEngine.NewRangeQuery(ctx, storage, nil, tcase.query, start, end, step)
 			testutil.Ok(t, errors.Wrap(err, "create old engine range query"))
 			oldResult := q1.Exec(ctx)
@@ -7126,4 +7129,13 @@ func TestInstantQueryPerSeriesReleasePreventMaxSamplesFailure(t *testing.T) {
 			require.NoError(t, res.Err, "query should succeed with per-series ring buffer reset: %s", tc.query)
 		})
 	}
+}
+
+// newPromEngine creates a Prometheus engine that accepts the experimental
+// functions and duration expressions the tests exercise.
+func newPromEngine(opts promql.EngineOpts) *promql.Engine {
+	if opts.Parser == nil {
+		opts.Parser = parser.NewParser(parser.Options{EnableExperimentalFunctions: true, ExperimentalDurationExpr: true})
+	}
+	return promql.NewEngine(opts)
 }
