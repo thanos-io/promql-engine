@@ -57,7 +57,7 @@ func TestDetectHistogramStatsOptimizer(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{}, PlanOptions{})

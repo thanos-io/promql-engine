@@ -88,7 +88,7 @@ func TestComputeDistributionPoints(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 			plan, err := NewFromAST(expr, &query.Options{}, PlanOptions{})
 			testutil.Ok(t, err)
@@ -823,7 +823,7 @@ count by (cluster) (
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			runTest := func(optimizers []Optimizer) {
-				expr, err := parser.ParseExpr(tcase.expr)
+				expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 				testutil.Ok(t, err)
 
 				plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -1054,7 +1054,7 @@ func TestDistributedExecutionUsesConsistentEngineMetadata(t *testing.T) {
 		mint: queryTime.Add(-2 * time.Hour).UnixMilli(),
 	}
 
-	expr, err := parser.ParseExpr(`sum_over_time(metric[1w])`)
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(`sum_over_time(metric[1w])`)
 	testutil.Ok(t, err)
 
 	plan, _ := NewFromAST(expr, &query.Options{Start: queryTime, End: queryTime}, PlanOptions{})
