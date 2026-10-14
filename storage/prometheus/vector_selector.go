@@ -160,8 +160,9 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs        = ts
 			seriesExhausted = series.exhausted
 		)
-		// Initialize iterators lazily per series.
-		// Reuse the iterator and its memoized wrapper for instant queries.
+		// Initialize iterators lazily per series. An instant query visits each
+		// series once, so its iterator and memoized wrapper can be handed to the
+		// next one; a range query revisits every series and each keeps its own.
 		if series.samples == nil && !seriesExhausted {
 			if o.opts.IsInstantQuery() {
 				o.reusableChunkIter = series.rawSeries.Iterator(o.reusableChunkIter)

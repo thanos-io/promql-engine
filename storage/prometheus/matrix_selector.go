@@ -198,8 +198,9 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs = ts
 		)
 
-		// Initialize iterators lazily per series.
-		// Reuse the iterator for instant queries.
+		// Initialize iterators lazily per series. An instant query visits each
+		// series once, so its iterator can be handed to the next one; a range
+		// query revisits every series and each keeps its own chunk position.
 		// TODO: reuse the buffer created for the previous scanner.
 		if scanner.buffer == nil && !scanner.exhausted {
 			if o.opts.IsInstantQuery() {
