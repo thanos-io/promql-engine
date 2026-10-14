@@ -53,6 +53,9 @@ type vectorSelector struct {
 	shard     int
 	numShards int
 
+	reusableChunkIter chunkenc.Iterator
+	reusableMemoized  *storage.MemoizedSeriesIterator
+
 	selectTimestamp bool
 
 	opts               *query.Options
@@ -157,8 +160,17 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs        = ts
 			seriesExhausted = series.exhausted
 		)
+		// Initialize iterators lazily per series.
+		// Reuse the iterator and its memoized wrapper for instant queries.
 		if series.samples == nil && !seriesExhausted {
-			series.samples = storage.NewMemoizedIterator(series.rawSeries.Iterator(nil), o.lookbackDelta)
+			if o.opts.IsInstantQuery() {
+				o.reusableChunkIter = series.rawSeries.Iterator(o.reusableChunkIter)
+				// Reset rebinds the wrapper to new iterator.
+				o.reusableMemoized.Reset(o.reusableChunkIter)
+				series.samples = o.reusableMemoized
+			} else {
+				series.samples = storage.NewMemoizedIterator(series.rawSeries.Iterator(nil), o.lookbackDelta)
+			}
 		}
 		for currStep := 0; !seriesExhausted && currStep < n && seriesTs <= o.maxt; currStep++ {
 			currStepSamples = 0
@@ -239,6 +251,11 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 		numSeries := int64(len(o.series))
 		if o.seriesBatchSize == 0 || numSeries < o.seriesBatchSize {
 			o.seriesBatchSize = numSeries
+		}
+
+		// One memoized wrapper per selector instead of one per series.
+		if o.opts.IsInstantQuery() {
+			o.reusableMemoized = storage.NewMemoizedEmptyIterator(o.lookbackDelta)
 		}
 	})
 	return err
