@@ -27,6 +27,7 @@ type vectorScanner struct {
 	signature uint64
 	samples   *storage.MemoizedSeriesIterator
 	rawSeries SignedSeries
+	exhausted bool
 }
 
 type vectorSelector struct {
@@ -152,18 +153,20 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 
 	for ; o.currentSeries-fromSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
-			series   = &o.scanners[o.currentSeries]
-			seriesTs = ts
+			series          = &o.scanners[o.currentSeries]
+			seriesTs        = ts
+			seriesExhausted = series.exhausted
 		)
-		if series.samples == nil {
+		if series.samples == nil && !seriesExhausted {
 			series.samples = storage.NewMemoizedIterator(series.rawSeries.Iterator(nil), o.lookbackDelta)
 		}
-		for currStep := 0; currStep < n && seriesTs <= o.maxt; currStep++ {
+		for currStep := 0; !seriesExhausted && currStep < n && seriesTs <= o.maxt; currStep++ {
 			currStepSamples = 0
-			t, v, h, ok, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			t, v, h, ok, atEnd, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
 			if err != nil {
 				return 0, err
 			}
+			seriesExhausted = atEnd
 			if o.selectTimestamp {
 				v = float64(t) / 1000
 			}
@@ -190,6 +193,9 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 
 		if o.opts.IsInstantQuery() {
+			series.samples = nil
+		} else if seriesExhausted {
+			series.exhausted = true
 			series.samples = nil
 		}
 	}
@@ -265,7 +271,7 @@ func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
 }
 
 // TODO(fpetkovski): Add max samples limit.
-func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (int64, float64, *histogram.FloatHistogram, bool, error) {
+func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (_ int64, _ float64, _ *histogram.FloatHistogram, ok, exhausted bool, _ error) {
 	refTime := ts - offset
 	var t int64
 	var v float64
@@ -275,7 +281,7 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 	switch valueType {
 	case chunkenc.ValNone:
 		if it.Err() != nil {
-			return 0, 0, nil, false, it.Err()
+			return 0, 0, nil, false, false, it.Err()
 		}
 	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
 		t, fh = it.AtFloatHistogram()
@@ -285,14 +291,14 @@ func selectPoint(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset i
 		panic(errors.Newf("unknown value type %v", valueType))
 	}
 	if valueType == chunkenc.ValNone || t > refTime {
-		var ok bool
-		t, v, fh, ok = it.PeekPrev()
-		if !ok || t <= refTime-lookbackDelta {
-			return 0, 0, nil, false, nil
+		var hasPrev bool
+		t, v, fh, hasPrev = it.PeekPrev()
+		if !hasPrev || t <= refTime-lookbackDelta {
+			return 0, 0, nil, false, valueType == chunkenc.ValNone, nil
 		}
 	}
 	if value.IsStaleNaN(v) || (fh != nil && value.IsStaleNaN(fh.Sum)) {
-		return 0, 0, nil, false, nil
+		return 0, 0, nil, false, false, nil
 	}
-	return t, v, fh, true, nil
+	return t, v, fh, true, false, nil
 }
