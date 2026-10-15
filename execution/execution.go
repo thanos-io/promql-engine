@@ -318,7 +318,34 @@ func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
+
+	// Buffer the deeper side: materialize drains a child fully before emitting,
+	side := binary.NoSide
+	if opts.EnableMaterialization && !opts.IsInstantQuery() {
+		if joinDepth(e.LHS) > joinDepth(e.RHS) {
+			side = binary.LeftSide
+			leftOperator = exchange.NewMaterialize(leftOperator, opts)
+		} else {
+			side = binary.RightSide
+			rightOperator = exchange.NewMaterialize(rightOperator, opts)
+		}
+	}
+
+	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, side, opts)
+}
+
+// joinDepth returns the longest chain of nested binary operators under node.
+func joinDepth(node logicalplan.Node) int {
+	deepest := 0
+	for _, child := range node.Children() {
+		if d := joinDepth(*child); d > deepest {
+			deepest = d
+		}
+	}
+	if _, ok := node.(*logicalplan.Binary); ok {
+		return deepest + 1
+	}
+	return deepest
 }
 
 func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {

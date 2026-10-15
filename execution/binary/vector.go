@@ -29,15 +29,26 @@ type joinBucket struct {
 	histogramVal *histogram.FloatHistogram
 }
 
+// MaterializedSide identifies the buffered side of a join, which is driven to
+// completion before the other side is touched.
+type MaterializedSide int
+
+const (
+	NoSide MaterializedSide = iota
+	LeftSide
+	RightSide
+)
+
 // vectorOperator evaluates an expression between two step vectors.
 type vectorOperator struct {
-	lhs        model.VectorOperator
-	rhs        model.VectorOperator
-	matching   *parser.VectorMatching
-	opType     parser.ItemType
-	returnBool bool
-	stepsBatch int
-	sigFunc    func(labels.Labels) uint64
+	lhs          model.VectorOperator
+	rhs          model.VectorOperator
+	matching     *parser.VectorMatching
+	opType       parser.ItemType
+	returnBool   bool
+	stepsBatch   int
+	sigFunc      func(labels.Labels) uint64
+	materialized MaterializedSide
 
 	once         sync.Once
 	series       []labels.Labels
@@ -64,16 +75,18 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	opType parser.ItemType,
 	returnBool bool,
+	materialized MaterializedSide,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
 	op := &vectorOperator{
-		lhs:        lhs,
-		rhs:        rhs,
-		matching:   matching,
-		opType:     opType,
-		returnBool: returnBool,
-		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
-		stepsBatch: opts.StepsBatch,
+		lhs:          lhs,
+		rhs:          rhs,
+		matching:     matching,
+		opType:       opType,
+		returnBool:   returnBool,
+		sigFunc:      signatureFunc(matching.On, matching.MatchingLabels...),
+		stepsBatch:   opts.StepsBatch,
+		materialized: materialized,
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
@@ -109,29 +122,51 @@ func (o *vectorOperator) Next(ctx context.Context, buf []model.StepVector) (int,
 		return 0, err
 	}
 
-	var lhsN int
-	var lerrChan = make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				lerrChan <- errors.Newf("unexpected panic: %v", r)
-			}
-			close(lerrChan)
-		}()
-		var err error
-		lhsN, err = o.lhs.Next(ctx, o.lhsBuf)
-		if err != nil {
-			lerrChan <- err
-		}
-	}()
+	var lhsN, rhsN int
+	var lerr, rerr error
 
-	rhsN, rerr := o.rhs.Next(ctx, o.rhsBuf)
-	lerr := <-lerrChan
-	if rerr != nil {
-		return 0, rerr
-	}
-	if lerr != nil {
-		return 0, lerr
+	switch o.materialized {
+	case RightSide:
+		rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+		if rerr != nil {
+			return 0, rerr
+		}
+		lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+		if lerr != nil {
+			return 0, lerr
+		}
+	case LeftSide:
+		lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+		if lerr != nil {
+			return 0, lerr
+		}
+		rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+		if rerr != nil {
+			return 0, rerr
+		}
+	default:
+		var lerrChan = make(chan error, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					lerrChan <- errors.Newf("unexpected panic: %v", r)
+				}
+				close(lerrChan)
+			}()
+			lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+			if lerr != nil {
+				lerrChan <- lerr
+			}
+		}()
+
+		rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+		lerr = <-lerrChan
+		if rerr != nil {
+			return 0, rerr
+		}
+		if lerr != nil {
+			return 0, lerr
+		}
 	}
 
 	// TODO(fpetkovski): When one operator becomes empty,
@@ -161,29 +196,53 @@ func (o *vectorOperator) initOnce(ctx context.Context) error {
 }
 
 func (o *vectorOperator) init(ctx context.Context) error {
-	var highCardSide []labels.Labels
-	var errChan = make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				errChan <- errors.Newf("unexpected panic: %v", r)
-			}
-			close(errChan)
-		}()
-		var err error
-		highCardSide, err = o.lhs.Series(ctx)
-		if err != nil {
-			errChan <- err
-		}
-	}()
+	var highCardSide, lowCardSide []labels.Labels
 
-	lowCardSide, err := o.rhs.Series(ctx)
-	if err != nil {
-		return err
+	if o.materialized != NoSide {
+		// Load the buffered side's labels first; it is the side that runs next.
+		var err error
+		if o.materialized == RightSide {
+			lowCardSide, err = o.rhs.Series(ctx)
+			if err != nil {
+				return err
+			}
+			highCardSide, err = o.lhs.Series(ctx)
+		} else {
+			highCardSide, err = o.lhs.Series(ctx)
+			if err != nil {
+				return err
+			}
+			lowCardSide, err = o.rhs.Series(ctx)
+		}
+		if err != nil {
+			return err
+		}
+	} else {
+		var errChan = make(chan error, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					errChan <- errors.Newf("unexpected panic: %v", r)
+				}
+				close(errChan)
+			}()
+			var err error
+			highCardSide, err = o.lhs.Series(ctx)
+			if err != nil {
+				errChan <- err
+			}
+		}()
+
+		var err error
+		lowCardSide, err = o.rhs.Series(ctx)
+		if err != nil {
+			return err
+		}
+		if err := <-errChan; err != nil {
+			return err
+		}
 	}
-	if err := <-errChan; err != nil {
-		return err
-	}
+
 	o.lhsSampleIDs = highCardSide
 	o.rhsSampleIDs = lowCardSide
 

@@ -7130,3 +7130,254 @@ func TestInstantQueryPerSeriesReleasePreventMaxSamplesFailure(t *testing.T) {
 		})
 	}
 }
+
+// TestMaterializationCorrectness checks materialized results match the default engine.
+func TestMaterializationCorrectness(t *testing.T) {
+	t.Parallel()
+
+	load := `load 30s
+		http_requests_total{pod="nginx-1", route="/"} 1+1x40
+		http_requests_total{pod="nginx-2", route="/"} 2+2x40
+		http_requests_total{pod="nginx-3", route="/api"} 5+3x40
+		http_responses_total{pod="nginx-1", route="/"} 10+5x40
+		http_responses_total{pod="nginx-2", route="/"} 20+10x40
+		http_responses_total{pod="nginx-3", route="/api"} 50+15x40`
+
+	testStorage := promqltest.LoadedStorage(t, load)
+	t.Cleanup(func() { testStorage.Close() })
+
+	start := time.Unix(600, 0)
+	end := time.Unix(1200, 0)
+	step := 30 * time.Second
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{name: "simple vector * vector", query: `http_requests_total * http_responses_total`},
+		{name: "sum / sum", query: `sum(http_requests_total) / sum(http_responses_total)`},
+		{name: "sum by pod / sum by pod", query: `sum by (pod) (http_requests_total) / sum by (pod) (http_responses_total)`},
+		{name: "three-way join chain", query: `sum(http_requests_total) / sum(http_responses_total) + sum(http_requests_total)`},
+		{name: "four-way join balanced", query: `
+  (sum by (pod) (http_requests_total) + sum by (pod) (http_responses_total))
+/
+  (sum by (pod) (http_requests_total) - sum by (pod) (http_responses_total))`},
+		{name: "rate join", query: `sum(rate(http_requests_total[5m])) / sum(rate(http_responses_total[5m]))`},
+		{name: "rate join by pod", query: `sum by (pod) (rate(http_requests_total[5m])) / sum by (pod) (rate(http_responses_total[5m]))`},
+		{name: "and", query: `http_requests_total and http_responses_total`},
+		{name: "or", query: `http_requests_total or http_responses_total`},
+		{name: "unless", query: `http_requests_total unless on (pod) http_responses_total`},
+		{name: "comparison bool", query: `sum by (pod) (http_requests_total) > bool sum by (pod) (http_responses_total)`},
+		{name: "deep four-way multiply chain", query: `
+    http_requests_total{pod="nginx-1"} * http_requests_total{pod="nginx-1"}
+  *
+    http_requests_total{pod="nginx-1"}
+*
+  http_requests_total{pod="nginx-1"}`},
+		{name: "nested aggregation both sides", query: `
+  avg by (route) (http_requests_total) / avg by (route) (http_responses_total)
++
+  sum by (route) (http_requests_total)`},
+		{name: "group_left", query: `http_requests_total * on (pod) group_left () sum by (pod) (http_responses_total)`},
+	}
+
+	baseOpts := promql.EngineOpts{
+		Logger: promslog.NewNopLogger(), MaxSamples: 50000000, Timeout: 1 * time.Hour,
+		EnableAtModifier: true, EnableNegativeOffset: true,
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			defaultEngine := engine.New(engine.Opts{EngineOpts: baseOpts})
+			materializeEngine := engine.New(engine.Opts{EngineOpts: baseOpts, EnableMaterialization: true})
+
+			t.Run("range", func(t *testing.T) {
+				q1, err := defaultEngine.NewRangeQuery(ctx, testStorage, nil, tc.query, start, end, step)
+				testutil.Ok(t, err)
+				defer q1.Close()
+				q2, err := materializeEngine.NewRangeQuery(ctx, testStorage, nil, tc.query, start, end, step)
+				testutil.Ok(t, err)
+				defer q2.Close()
+
+				defaultResult, materializedResult := q1.Exec(ctx), q2.Exec(ctx)
+				testutil.Ok(t, defaultResult.Err)
+				testutil.Ok(t, materializedResult.Err)
+				testutil.WithGoCmp(comparer).Equals(t, defaultResult, materializedResult, queryExplanation(q2))
+			})
+
+			// Instant queries do not materialize; assert the path is untouched.
+			t.Run("instant", func(t *testing.T) {
+				q1, err := defaultEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, end)
+				testutil.Ok(t, err)
+				defer q1.Close()
+				q2, err := materializeEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, end)
+				testutil.Ok(t, err)
+				defer q2.Close()
+
+				defaultResult, materializedResult := q1.Exec(ctx), q2.Exec(ctx)
+				testutil.Ok(t, defaultResult.Err)
+				testutil.Ok(t, materializedResult.Err)
+				testutil.WithGoCmp(comparer).Equals(t, defaultResult, materializedResult, queryExplanation(q2))
+			})
+		})
+	}
+}
+
+// TestMaterializationExplain checks where [materialize] operators are inserted.
+func TestMaterializationExplain(t *testing.T) {
+	t.Parallel()
+
+	series := storage.MockSeries([]int64{240, 270, 300, 600, 630, 660}, []float64{1, 2, 3, 4, 5, 6}, []string{labels.MetricName, "foo"})
+	series2 := storage.MockSeries([]int64{240, 270, 300, 600, 630, 660}, []float64{10, 20, 30, 40, 50, 60}, []string{labels.MetricName, "bar"})
+
+	opts := promql.EngineOpts{Timeout: 1 * time.Hour, MaxSamples: 50000000}
+	start, end, step := time.Unix(0, 0), time.Unix(600, 0), 30*time.Second
+
+	for _, tc := range []struct {
+		name  string
+		query string
+		// want is the expected number of [materialize] operators.
+		want int
+	}{
+		{name: "no binary operator", query: `sum(foo)`, want: 0},
+		// Scalar binaries have one vector side, so there is nothing to sequence.
+		{name: "scalar binary", query: `foo * 2`, want: 0},
+		{name: "scalar binary lhs", query: `2 * foo`, want: 0},
+		{name: "simple binary no nesting", query: `foo * bar`, want: 1},
+		{name: "nested binary lhs", query: `(foo * bar) * foo`, want: 2},
+		{name: "nested binary rhs", query: `foo * (bar * foo)`, want: 2},
+		{name: "nested binary both sides", query: `(foo * bar) * (bar * foo)`, want: 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ng := engine.New(engine.Opts{EngineOpts: opts, EnableMaterialization: true})
+			query, err := ng.NewRangeQuery(context.Background(), storageWithSeries(series, series2), nil, tc.query, start, end, step)
+			testutil.Ok(t, err)
+			defer query.Close()
+
+			explainTree := query.(engine.ExplainableQuery).Explain()
+			got := countOperatorName(explainTree, "[materialize]")
+			testutil.Equals(t, tc.want, got, "unexpected number of [materialize] operators for: %s", tc.query)
+		})
+	}
+
+	// Instant queries never materialize, however nested the joins are.
+	t.Run("instant queries never materialize", func(t *testing.T) {
+		t.Parallel()
+		for _, query := range []string{
+			`foo * bar`,
+			`(foo * bar) * foo`,
+			`(foo * bar) * (bar * foo)`,
+			`sum(foo) / sum(bar)`,
+		} {
+			ng := engine.New(engine.Opts{EngineOpts: opts, EnableMaterialization: true})
+			q, err := ng.NewInstantQuery(context.Background(), storageWithSeries(series, series2), nil, query, end)
+			testutil.Ok(t, err)
+			got := countOperatorName(q.(engine.ExplainableQuery).Explain(), "[materialize]")
+			q.Close()
+			testutil.Equals(t, 0, got, "instant query should not materialize: %s", query)
+		}
+	})
+}
+
+// countOperatorName counts operators whose name contains the given substring.
+func countOperatorName(node *engine.ExplainOutputNode, name string) int {
+	if node == nil {
+		return 0
+	}
+	n := 0
+	if strings.Contains(node.OperatorName, name) {
+		n++
+	}
+	for _, child := range node.Children {
+		n += countOperatorName(&child, name)
+	}
+	return n
+}
+
+// TestMaterializationMaxSamples checks the maxSamples limit is enforced in both modes.
+func TestMaterializationMaxSamples(t *testing.T) {
+	t.Parallel()
+	load := `load 30s
+		http_requests_total{pod="nginx-1"} 1+1x100
+		http_requests_total{pod="nginx-2"} 2+2x100
+		http_requests_total{pod="nginx-3"} 3+3x100
+		http_responses_total{pod="nginx-1"} 10+5x100
+		http_responses_total{pod="nginx-2"} 20+10x100
+		http_responses_total{pod="nginx-3"} 30+15x100`
+	testStorage := promqltest.LoadedStorage(t, load)
+	t.Cleanup(func() { testStorage.Close() })
+
+	const query = `(http_requests_total + http_responses_total) * http_requests_total`
+	start, end, step := time.Unix(0, 0), time.Unix(3000, 0), 30*time.Second
+
+	for _, tc := range []struct {
+		name            string
+		materialization bool
+	}{
+		{name: "default", materialization: false},
+		{name: "materialized", materialization: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ng := engine.New(engine.Opts{
+				EngineOpts:            promql.EngineOpts{Timeout: 1 * time.Hour, MaxSamples: 10},
+				EnableMaterialization: tc.materialization,
+			})
+			q, err := ng.NewRangeQuery(context.Background(), testStorage, nil, query, start, end, step)
+			testutil.Ok(t, err)
+			defer q.Close()
+			res := q.Exec(context.Background())
+			require.Error(t, res.Err)
+			require.Contains(t, res.Err.Error(), "too many samples")
+		})
+	}
+}
+
+// TestMaterializationDeepChain checks deeply nested left-associative chains.
+func TestMaterializationDeepChain(t *testing.T) {
+	t.Parallel()
+	load := `load 30s
+		metric_a{pod="p1"} 1+1x40
+		metric_b{pod="p1"} 2+2x40
+		metric_c{pod="p1"} 3+3x40
+		metric_d{pod="p1"} 4+4x40
+		metric_e{pod="p1"} 5+5x40`
+	testStorage := promqltest.LoadedStorage(t, load)
+	t.Cleanup(func() { testStorage.Close() })
+
+	ctx := context.Background()
+	start := time.Unix(300, 0)
+	end := time.Unix(1200, 0)
+	step := 30 * time.Second
+	baseOpts := promql.EngineOpts{Timeout: 1 * time.Hour, MaxSamples: 50000000}
+
+	for _, tc := range []struct {
+		name  string
+		query string
+	}{
+		{name: "five-way addition chain", query: `metric_a + metric_b + metric_c + metric_d + metric_e`},
+		{name: "five-way with aggregations", query: `sum(metric_a) + sum(metric_b) + sum(metric_c) + sum(metric_d) + sum(metric_e)`},
+		{name: "mixed ops chain", query: `metric_a + metric_b - metric_c * metric_d / metric_e`},
+		{name: "rate chain simulating z-score numerator", query: `
+  sum(rate(metric_a[5m]))
+-
+  (sum(rate(metric_b[5m])) + sum(rate(metric_c[5m])) + sum(rate(metric_d[5m]))) / 3`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			defaultEngine := engine.New(engine.Opts{EngineOpts: baseOpts})
+			materializeEngine := engine.New(engine.Opts{EngineOpts: baseOpts, EnableMaterialization: true})
+
+			q1, err := defaultEngine.NewRangeQuery(ctx, testStorage, nil, tc.query, start, end, step)
+			require.NoError(t, err)
+			defer q1.Close()
+			q2, err := materializeEngine.NewRangeQuery(ctx, testStorage, nil, tc.query, start, end, step)
+			require.NoError(t, err)
+			defer q2.Close()
+			testutil.WithGoCmp(comparer).Equals(t, q1.Exec(ctx), q2.Exec(ctx), "deep chain mismatch: "+tc.query)
+		})
+	}
+}
