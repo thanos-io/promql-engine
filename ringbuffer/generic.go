@@ -18,6 +18,7 @@ import (
 // belongs in that window.
 type Buffer interface {
 	MaxT() int64
+	Empty() bool
 	Push(t int64, v Value)
 	Reset(mint int64, evalt int64)
 	Eval(ctx context.Context, _, _ float64) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error)
@@ -70,6 +71,11 @@ func (r *GenericRingBuffer) MaxT() int64 {
 		return math.MinInt64
 	}
 	return r.items[len(r.items)-1].T
+}
+
+// Empty reports whether any sample is retained for the current range.
+func (r *GenericRingBuffer) Empty() bool {
+	return len(r.items) == 0
 }
 
 // Push considers a sample for the current range.
