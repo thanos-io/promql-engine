@@ -362,6 +362,16 @@ func TestTrimSorts(t *testing.T) {
 			expr:     "timestamp(sort(X))",
 			expected: "timestamp(sort(X))",
 		},
+		{
+			name:     "sort in step invariant argument to timestamp function",
+			expr:     "timestamp(sort_desc(X @ 10))",
+			expected: "timestamp(sort_desc(X @ 10.000))",
+		},
+		{
+			name:     "sort in step invariant argument with offset to timestamp function",
+			expr:     "timestamp(sort(X @ 10 offset 1m))",
+			expected: "timestamp(sort(X @ 10.000 offset 1m))",
+		},
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {

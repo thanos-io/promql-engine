@@ -295,6 +295,20 @@ timestamp(
 			query: `timestamp((http_requests_total))`,
 		},
 		{
+			name: "timestamp of sort with @ modifier and offset",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 1.00+1.00x15
+			    http_requests_total{pod="nginx-2", route="/"} 1+2.00x21`,
+			query: `timestamp(sort_desc(http_requests_total @ 300.000 offset 1m))`,
+		},
+		{
+			name: "timestamp of sort_by_label with @ start()",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 1.00+1.00x15
+			    http_requests_total{pod="nginx-2", route="/"} 1+2.00x21`,
+			query: `timestamp(sort_by_label(http_requests_total @ start(), "pod"))`,
+		},
+		{
 			name: "subqueries in binary expression",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", route="/"} 1.00+0.20x40
@@ -3713,6 +3727,54 @@ count_values without () (
 			    http_requests_total{pod="nginx-2"}  1+2.00x21`,
 			query:     `timestamp(http_requests_total @ end() offset -2m23s)`,
 			queryTime: time.Unix(300, 0),
+		},
+		{
+			name: "timestamp - sort with @ modifier",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+21.71x40`,
+			query:     `timestamp(sort(http_requests_total @ 47.180))`,
+			queryTime: time.Unix(188, 0),
+		},
+		{
+			name: "timestamp - sort_desc with @ modifier, fuzzing failure",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+21.71x40`,
+			query:     `floor(max by (pod) (timestamp(sort_desc({__name__="http_requests_total"} @ 47.180))))`,
+			queryTime: time.Unix(188, 0),
+		},
+		{
+			name: "timestamp - sort_by_label with @ modifier and offset",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+21.71x40`,
+			query:     `timestamp(sort_by_label(http_requests_total @ 47.180 offset 10s, "pod"))`,
+			queryTime: time.Unix(188, 0),
+		},
+		{
+			name: "timestamp - sort_by_label_desc with @ end()",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+21.71x40`,
+			query:     `timestamp(sort_by_label_desc(http_requests_total @ end(), "pod"))`,
+			queryTime: time.Unix(188, 0),
+		},
+		{
+			name: "timestamp - sort with offset",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+21.71x40`,
+			query:     `timestamp(sort(http_requests_total offset 1m))`,
+			queryTime: time.Unix(188, 0),
+		},
+		{
+			name: "timestamp - label_replace with @ modifier",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40
+			    http_requests_total{pod="nginx-2", route="/"}  1+21.71x40`,
+			query:     `timestamp(label_replace(http_requests_total @ 47.180, "new", "$1", "pod", "(.*)"))`,
+			queryTime: time.Unix(188, 0),
 		},
 		{
 			name: "fuzz - min with NaN",

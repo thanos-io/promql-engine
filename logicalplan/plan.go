@@ -337,7 +337,9 @@ func trimSorts(expr Node) Node {
 			return true
 		}
 		e, pok := (*parent).(*FunctionCall)
-		f, cok := (*current).(*FunctionCall)
+		// The preprocessing wraps the argument in a step invariant expression if it is step
+		// invariant, as in "timestamp(sort(X @ 10))".
+		f, cok := unwrapStepInvariantExpr(*current).(*FunctionCall)
 
 		if pok && cok {
 			if e.Func.Name == "timestamp" && strings.HasPrefix(f.Func.Name, "sort") {
