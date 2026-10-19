@@ -17,7 +17,7 @@ type SampleTracker interface {
 }
 
 // SampleLimitOvershoot is the fraction of maxSamples allowed as overshoot before enforcement.
-const SampleLimitOvershoot = 0.005
+const SampleLimitOvershoot = 0.02
 
 type sampleTracker struct {
 	current atomic.Int64
