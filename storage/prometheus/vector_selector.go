@@ -55,8 +55,10 @@ type vectorSelector struct {
 
 	selectTimestamp bool
 
-	opts               *query.Options
-	lastTrackedSamples int
+	opts *query.Options
+	// lastTrackedSamples is the sample total at the last report; totalSamples restarts each Next.
+	lastTrackedSamples        int
+	sampleLimitCheckThreshold int
 }
 
 // NewVectorSelector creates operator which selects vector of series.
@@ -86,6 +88,8 @@ func NewVectorSelector(
 		selectTimestamp: selectTimestamp,
 
 		opts: queryOpts,
+
+		sampleLimitCheckThreshold: query.ComputeSampleLimitCheckThreshold(queryOpts, queryOpts.DecodingConcurrency),
 	}
 
 	// For instant queries, set the step to a positive value
@@ -186,10 +190,11 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs += o.step
 		}
 
-		if o.shouldCheckSampleLimit(fromSeries) {
-			if err := o.updateSampleTracker(totalSamples); err != nil {
+		if untracked := totalSamples - o.lastTrackedSamples; o.shouldCheckSampleLimit(fromSeries, untracked) {
+			if err := o.updateSampleTracker(untracked); err != nil {
 				return 0, err
 			}
+			o.lastTrackedSamples = totalSamples
 		}
 
 		if o.opts.IsInstantQuery() {
@@ -244,30 +249,25 @@ func (o *vectorSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func (o *vectorSelector) updateSampleTracker(totalSamples int) error {
-	delta := totalSamples - o.lastTrackedSamples
+func (o *vectorSelector) updateSampleTracker(delta int) error {
 	if delta > 0 {
 		o.opts.SampleTracker.Add(delta)
-		o.lastTrackedSamples = totalSamples
 		return o.opts.SampleTracker.CheckLimit()
 	} else if delta < 0 {
 		o.opts.SampleTracker.Remove(-delta)
 	}
-	o.lastTrackedSamples = totalSamples
 	return nil
 }
 
-func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
-	seriesProcessed := o.currentSeries + 1 - fromSeries
-
-	if seriesProcessed%sampleLimitCheckInterval == 0 {
+func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64, untracked int) bool {
+	if untracked > o.sampleLimitCheckThreshold {
 		return true
 	}
-
-	isEndOfBatch := seriesProcessed >= o.seriesBatchSize
-	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
-
-	return isEndOfBatch || isLastSeries
+	if untracked == 0 {
+		return false
+	}
+	seriesProcessed := o.currentSeries + 1 - fromSeries
+	return seriesProcessed >= o.seriesBatchSize || o.currentSeries+1 >= int64(len(o.scanners))
 }
 
 // TODO(fpetkovski): Add max samples limit.
