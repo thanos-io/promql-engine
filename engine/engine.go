@@ -81,6 +81,9 @@ type Opts struct {
 	// This check can produce false positives when querying time-series data which does not conform to the Prometheus data model,
 	// and can be disabled if it leads to false positives.
 	DisableDuplicateLabelChecks bool
+
+	// SelectorHashFunc overrides the selector pool hash. Nil uses DefaultSelectorHash.
+	SelectorHashFunc promstorage.SelectorHashFunc
 }
 
 // QueryOpts implements promql.QueryOpts but allows to override more engine default options.
@@ -199,6 +202,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		decodingConcurrency: decodingConcurrency,
 		selectorBatchSize:   selectorBatchSize,
 		maxSamplesPerQuery:  opts.MaxSamples,
+		selectorHashFunc:    opts.SelectorHashFunc,
 	}
 }
 
@@ -229,6 +233,7 @@ type Engine struct {
 	enableAnalysis           bool
 	noStepSubqueryIntervalFn func(time.Duration) time.Duration
 	maxSamplesPerQuery       int
+	selectorHashFunc         promstorage.SelectorHashFunc
 }
 
 func (e *Engine) MakeInstantQuery(ctx context.Context, q storage.Queryable, opts *QueryOpts, qs string, ts time.Time) (promql.Query, error) {
@@ -483,7 +488,7 @@ func (e *Engine) getLogicalOptimizers(opts *QueryOpts) []logicalplan.Optimizer {
 
 func (e *Engine) storageScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (engstorage.Scanners, error) {
 	if e.scanners == nil {
-		return promstorage.NewPrometheusScanners(queryable, qOpts, lplan)
+		return promstorage.NewPrometheusScanners(queryable, qOpts, lplan, e.selectorHashFunc)
 	}
 	return e.scanners, nil
 }
