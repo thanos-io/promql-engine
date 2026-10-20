@@ -110,6 +110,18 @@ func (o *histogramOperator) Explain() (next []model.VectorOperator) {
 	return nil
 }
 
+func (o *histogramOperator) Release() {
+	o.outputIndex = nil
+	o.seriesBuckets = nil
+	o.inputSeriesNames = nil
+	o.badBucketWarned = nil
+	o.scalar1Points = nil
+	o.scalar2Points = nil
+	o.vectorBuf = nil
+	o.scalar1Buf = nil
+	o.scalar2Buf = nil
+}
+
 func (o *histogramOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
 	o.once.Do(func() { err = o.loadSeries(ctx) })

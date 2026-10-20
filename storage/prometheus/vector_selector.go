@@ -106,6 +106,13 @@ func (o *vectorSelector) Explain() (next []model.VectorOperator) {
 	return nil
 }
 
+func (o *vectorSelector) Release() {
+	for i := range o.scanners {
+		o.scanners[i].samples = nil
+	}
+	o.scanners = nil
+}
+
 func (o *vectorSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err
