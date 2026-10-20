@@ -84,6 +84,8 @@ type matrixSelector struct {
 	shard     int
 	numShards int
 
+	reusableIter chunkenc.Iterator
+
 	nonCounterMetric string
 	hasFloats        bool
 }
@@ -196,10 +198,17 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			seriesTs = ts
 		)
 
-		// Initialize iterators lazily per series.
-		// TODO: reuse the iterator created for the previous scanner.
+		// Initialize iterators lazily per series. An instant query visits each
+		// series once, so its iterator can be handed to the next one; a range
+		// query revisits every series and each keeps its own chunk position.
+		// TODO: reuse the buffer created for the previous scanner.
 		if scanner.buffer == nil && !scanner.exhausted {
-			scanner.iterator = scanner.rawSeries.Iterator(nil)
+			if o.opts.IsInstantQuery() {
+				o.reusableIter = scanner.rawSeries.Iterator(o.reusableIter)
+				scanner.iterator = o.reusableIter
+			} else {
+				scanner.iterator = scanner.rawSeries.Iterator(nil)
+			}
 			scanner.buffer = o.newBuffer(ctx)
 		}
 
