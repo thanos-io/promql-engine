@@ -24,6 +24,14 @@ import (
 	"github.com/prometheus/prometheus/util/teststorage"
 )
 
+// Sample limits are sized per benchmark to sit just above each one's live
+// sample count, so the maxSamples check is exercised without rejecting queries.
+const (
+	maxSamplesRange      = 4000000
+	maxSamplesHistograms = 35000000
+	maxSamplesInstant    = 1000000
+)
+
 func BenchmarkChunkDecoding(b *testing.B) {
 	storage := setupStorage(b, 1000, 3, 720)
 	defer storage.Close()
@@ -427,7 +435,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 		EngineOpts: promql.EngineOpts{
 			Logger:               nil,
 			Reg:                  nil,
-			MaxSamples:           50000000,
+			MaxSamples:           maxSamplesRange,
 			Timeout:              100 * time.Second,
 			EnableAtModifier:     true,
 			EnableNegativeOffset: true,
@@ -552,7 +560,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 	opts := promql.EngineOpts{
 		Logger:               nil,
 		Reg:                  nil,
-		MaxSamples:           50000000,
+		MaxSamples:           maxSamplesHistograms,
 		Timeout:              100 * time.Second,
 		EnableAtModifier:     true,
 		EnableNegativeOffset: true,
@@ -736,7 +744,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+					EngineOpts: promql.EngineOpts{
+						MaxSamples: maxSamplesInstant,
+						Timeout:    100 * time.Second,
+					},
 					SelectorBatchSize: 256,
 				})
 				b.ResetTimer()
@@ -759,7 +770,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 				opts := promql.EngineOpts{
 					Logger:               nil,
 					Reg:                  nil,
-					MaxSamples:           50000000,
+					MaxSamples:           maxSamplesInstant,
 					Timeout:              100 * time.Second,
 					EnableAtModifier:     true,
 					EnableNegativeOffset: true,
@@ -778,7 +789,10 @@ func BenchmarkInstantQuery(b *testing.B) {
 			})
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+					EngineOpts: promql.EngineOpts{
+						MaxSamples: maxSamplesInstant,
+						Timeout:    100 * time.Second,
+					},
 					SelectorBatchSize: 256,
 				})
 				b.ResetTimer()

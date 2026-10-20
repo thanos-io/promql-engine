@@ -88,9 +88,9 @@ type matrixSelector struct {
 
 	nonCounterMetric string
 	hasFloats        bool
-}
 
-const sampleLimitCheckInterval = 1
+	sampleLimitCheckThreshold int
+}
 
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
@@ -128,6 +128,8 @@ func NewMatrixSelector(
 
 		shard:     shard,
 		numShards: numShard,
+
+		sampleLimitCheckThreshold: query.ComputeSampleLimitCheckThreshold(opts, opts.DecodingConcurrency),
 	}
 
 	// For instant queries, set the step to a positive value
@@ -190,7 +192,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	// Reset the current timestamp.
 	ts = o.currentStep
 	firstSeries := o.currentSeries
-	batchSamplesDelta := 0
+	var untrackedSamples int
 
 	for ; o.currentSeries-firstSeries < o.seriesBatchSize && o.currentSeries < int64(len(o.scanners)); o.currentSeries++ {
 		var (
@@ -217,6 +219,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			sampleCountBefore = scanner.buffer.SampleCount()
 		}
 
+		var sampleCount int
 		for currStep := 0; !scanner.exhausted && currStep < n && seriesTs <= o.maxt; currStep++ {
 			maxt := seriesTs - o.offset
 			mint := maxt - o.selectRange
@@ -246,24 +249,24 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 					o.hasFloats = true
 				}
 			}
-			o.telemetry.IncrementSamplesAtTimestamp(scanner.buffer.SampleCount(), seriesTs)
+			sampleCount = scanner.buffer.SampleCount()
+			o.telemetry.IncrementSamplesAtTimestamp(sampleCount, seriesTs)
 			seriesTs += o.step
 		}
 
 		if o.opts.IsInstantQuery() {
 			scanner.release()
 		} else if !scanner.exhausted {
-			batchSamplesDelta += scanner.buffer.SampleCount() - sampleCountBefore
+			untrackedSamples += sampleCount - sampleCountBefore
+			if o.shouldCheckSampleLimit(firstSeries, untrackedSamples) {
+				if err := o.updateSampleTracker(untrackedSamples); err != nil {
+					return 0, err
+				}
+				untrackedSamples = 0
+			}
 			if scanner.iteratorDrained {
 				scanner.releaseDrained()
 			}
-		}
-
-		if o.shouldCheckSampleLimit(firstSeries) {
-			if err := o.updateSampleTracker(batchSamplesDelta); err != nil {
-				return 0, err
-			}
-			batchSamplesDelta = 0
 		}
 	}
 
@@ -333,17 +336,15 @@ func (o *matrixSelector) loadSeries(ctx context.Context) error {
 	return err
 }
 
-func (o *matrixSelector) shouldCheckSampleLimit(firstSeries int64) bool {
-	seriesProcessed := o.currentSeries + 1 - firstSeries
-
-	if seriesProcessed%sampleLimitCheckInterval == 0 {
+func (o *matrixSelector) shouldCheckSampleLimit(firstSeries int64, untracked int) bool {
+	if untracked > o.sampleLimitCheckThreshold {
 		return true
 	}
-
-	isEndOfBatch := seriesProcessed >= o.seriesBatchSize
-	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
-
-	return isEndOfBatch || isLastSeries
+	if untracked == 0 {
+		return false
+	}
+	seriesProcessed := o.currentSeries + 1 - firstSeries
+	return seriesProcessed >= o.seriesBatchSize || o.currentSeries+1 >= int64(len(o.scanners))
 }
 
 func (o *matrixSelector) newBuffer(ctx context.Context) ringbuffer.Buffer {

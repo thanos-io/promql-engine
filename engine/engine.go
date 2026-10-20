@@ -557,6 +557,7 @@ func (q *compatibilityQuery) Exec(ctx context.Context) (ret *promql.Result) {
 
 	buf := make([]model.StepVector, q.opts.StepsBatch)
 	var batchSamples int
+	sampleLimitCheckThreshold := query.ComputeSampleLimitCheckThreshold(q.opts, 1)
 loop:
 	for {
 		select {
@@ -599,11 +600,12 @@ loop:
 					})
 					batchSamples += telemetry.CalculateHistogramSampleCount(vector.Histograms[j])
 				}
-			}
-			q.opts.SampleTracker.Add(batchSamples)
-			batchSamples = 0
-			if err := q.opts.SampleTracker.CheckLimit(); err != nil {
-				return newErrResult(ret, err)
+				if batchSamples > sampleLimitCheckThreshold {
+					if err := q.updateSampleTracker(batchSamples); err != nil {
+						return newErrResult(ret, err)
+					}
+					batchSamples = 0
+				}
 			}
 		}
 	}
@@ -685,6 +687,12 @@ func newErrResult(r *promql.Result, err error) *promql.Result {
 		r.Err = err
 	}
 	return r
+}
+
+// updateSampleTracker reports samples and checks the limit.
+func (q *compatibilityQuery) updateSampleTracker(samples int) error {
+	q.opts.SampleTracker.Add(samples)
+	return q.opts.SampleTracker.CheckLimit()
 }
 
 func (q *compatibilityQuery) Statement() parser.Statement { return nil }
