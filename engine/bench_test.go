@@ -101,7 +101,7 @@ func BenchmarkSingleQuery(b *testing.B) {
 
 	query := "sum(rate(http_requests_total[2m]))"
 	opts := engine.Opts{
-		EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+		Timeout:           100 * time.Second,
 		SelectorBatchSize: 256,
 	}
 	b.ReportAllocs()
@@ -424,14 +424,10 @@ func BenchmarkRangeQuery(b *testing.B) {
 	}
 
 	opts := engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			Logger:               nil,
-			Reg:                  nil,
-			MaxSamples:           50000000,
-			Timeout:              100 * time.Second,
-			EnableAtModifier:     true,
-			EnableNegativeOffset: true,
-		},
+		Logger:            nil,
+		Reg:               nil,
+		MaxSamples:        50000000,
+		Timeout:           100 * time.Second,
 		SelectorBatchSize: 256,
 	}
 
@@ -444,7 +440,7 @@ func BenchmarkRangeQuery(b *testing.B) {
 			b.ReportAllocs()
 			b.Run("old_engine", func(b *testing.B) {
 
-				promEngine := promql.NewEngine(opts.EngineOpts)
+				promEngine := promql.NewEngine(prometheusEngineOpts(opts))
 
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -549,13 +545,11 @@ func BenchmarkNativeHistograms(b *testing.B) {
 		},
 	}
 
-	opts := promql.EngineOpts{
-		Logger:               nil,
-		Reg:                  nil,
-		MaxSamples:           50000000,
-		Timeout:              100 * time.Second,
-		EnableAtModifier:     true,
-		EnableNegativeOffset: true,
+	opts := engine.Opts{
+		Logger:     nil,
+		Reg:        nil,
+		MaxSamples: 50000000,
+		Timeout:    100 * time.Second,
 	}
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
@@ -564,7 +558,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				testStep = tc.step
 			}
 			b.Run("old_engine", func(b *testing.B) {
-				engine := promql.NewEngine(opts)
+				engine := promql.NewEngine(prometheusEngineOpts(opts))
 
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -581,9 +575,7 @@ func BenchmarkNativeHistograms(b *testing.B) {
 				b.ReportAllocs()
 
 				for b.Loop() {
-					ng := engine.New(engine.Opts{
-						EngineOpts: opts,
-					})
+					ng := engine.New(opts)
 
 					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, testStep)
 					testutil.Ok(b, err)
@@ -736,7 +728,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 		b.Run(tc.name, func(b *testing.B) {
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+					Timeout:           100 * time.Second,
 					SelectorBatchSize: 256,
 				})
 				b.ResetTimer()
@@ -756,15 +748,13 @@ func BenchmarkInstantQuery(b *testing.B) {
 	for _, tc := range cases {
 		b.Run(tc.name, func(b *testing.B) {
 			b.Run("old_engine", func(b *testing.B) {
-				opts := promql.EngineOpts{
-					Logger:               nil,
-					Reg:                  nil,
-					MaxSamples:           50000000,
-					Timeout:              100 * time.Second,
-					EnableAtModifier:     true,
-					EnableNegativeOffset: true,
+				opts := engine.Opts{
+					Logger:     nil,
+					Reg:        nil,
+					MaxSamples: 50000000,
+					Timeout:    100 * time.Second,
 				}
-				engine := promql.NewEngine(opts)
+				engine := promql.NewEngine(prometheusEngineOpts(opts))
 
 				b.ResetTimer()
 				b.ReportAllocs()
@@ -778,7 +768,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 			})
 			b.Run("new_engine", func(b *testing.B) {
 				ng := engine.New(engine.Opts{
-					EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+					Timeout:           100 * time.Second,
 					SelectorBatchSize: 256,
 				})
 				b.ResetTimer()
@@ -811,7 +801,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		for b.Loop() {
 			opts := engine.Opts{
 				LogicalOptimizers: logicalplan.NoOptimizers,
-				EngineOpts:        promql.EngineOpts{Timeout: 100 * time.Second},
+				Timeout:           100 * time.Second,
 			}
 			ng := engine.New(opts)
 			ctx := context.Background()
@@ -826,7 +816,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for b.Loop() {
-			ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 100 * time.Second}})
+			ng := engine.New(engine.Opts{Timeout: 100 * time.Second})
 			ctx := context.Background()
 			qry, err := ng.NewRangeQuery(ctx, db, nil, query, start, end, step)
 			testutil.Ok(b, err)

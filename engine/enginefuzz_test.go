@@ -151,12 +151,10 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			http_requests_total{pod="nginx-1"} %.2f+%.2fx15
 			http_requests_total{pod="nginx-2"} %2.f+%.2fx21`, initialVal1, inc1, initialVal2, inc2)
 
-		opts := promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-			EnablePerStepStats:   true,
+		opts := engine.Opts{
+			Timeout:            1 * time.Hour,
+			MaxSamples:         1e10,
+			EnablePerStepStats: true,
 		}
 		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 
@@ -177,8 +175,11 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 		}
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, SelectorBatchSize: 256})
-		oldEngine := promql.NewEngine(opts)
+		newEngineOpts := opts
+		newEngineOpts.EnableAnalysis = true
+		newEngineOpts.SelectorBatchSize = 256
+		newEngine := engine.New(newEngineOpts)
+		oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 
 		var (
 			q1              promql.Query
@@ -246,12 +247,10 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			http_requests_total{pod="nginx-1", route="/"} %.2f+%.2fx40
 			http_requests_total{pod="nginx-2", route="/"} %2.f+%.2fx40`, initialVal1, inc1, initialVal2, inc2)
 
-		opts := promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-			EnablePerStepStats:   true,
+		opts := engine.Opts{
+			Timeout:            1 * time.Hour,
+			MaxSamples:         1e10,
+			EnablePerStepStats: true,
 		}
 		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 
@@ -259,13 +258,12 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 		defer storage.Close()
 
 		queryTime := time.Unix(int64(ts), 0)
-		newEngine := engine.New(engine.Opts{
-			EngineOpts:        opts,
-			LogicalOptimizers: logicalplan.AllOptimizers,
-			EnableAnalysis:    true,
-			SelectorBatchSize: 256,
-		})
-		oldEngine := promql.NewEngine(opts)
+		newEngineOpts := opts
+		newEngineOpts.LogicalOptimizers = logicalplan.AllOptimizers
+		newEngineOpts.EnableAnalysis = true
+		newEngineOpts.SelectorBatchSize = 256
+		newEngine := engine.New(newEngineOpts)
+		oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 
 		seriesSet, err := getSeries(context.Background(), storage, "http_requests_total")
 		require.NoError(t, err)
@@ -451,12 +449,10 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			schema2, count2, bucket2,
 		)
 
-		opts := promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-			EnablePerStepStats:   true,
+		opts := engine.Opts{
+			Timeout:            1 * time.Hour,
+			MaxSamples:         1e10,
+			EnablePerStepStats: true,
 		}
 
 		qOpts := promql.NewPrometheusQueryOpts(true, 0)
@@ -482,8 +478,11 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 
 		rnd := rand.New(rand.NewSource(seed))
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
-		newEngine := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true, SelectorBatchSize: 256})
-		oldEngine := promql.NewEngine(opts)
+		newEngineOpts := opts
+		newEngineOpts.EnableAnalysis = true
+		newEngineOpts.SelectorBatchSize = 256
+		newEngine := engine.New(newEngineOpts)
+		oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 
 		instantCases := make([]*testCase, 0, testRuns/2)
 		rangeCases := make([]*testCase, 0, testRuns/2)
@@ -678,11 +677,9 @@ func FuzzDistributedEngineQuery(f *testing.F) {
 			http_requests_total{pod="nginx-1", zone="west"} %.2f+%.2fx15
 			http_requests_total{pod="nginx-2", zone="west"} %.2f+%.2fx15`, initialVal1, inc1, initialVal2, inc2, initialVal1*2, inc1, initialVal2*2, inc2)
 
-		opts := promql.EngineOpts{
-			Timeout:              1 * time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
+		opts := engine.Opts{
+			Timeout:    1 * time.Hour,
+			MaxSamples: 1e10,
 		}
 
 		storage1 := promqltest.LoadedStorage(t, load1)
@@ -697,7 +694,8 @@ func FuzzDistributedEngineQuery(f *testing.F) {
 		end := time.Unix(int64(endTS), 0)
 		interval := time.Duration(intervalSeconds) * time.Second
 
-		engineOpts := engine.Opts{EngineOpts: opts, SelectorBatchSize: 256}
+		engineOpts := opts
+		engineOpts.SelectorBatchSize = 256
 
 		// Create remote engines for each partition
 		remoteEngine1 := engine.NewRemoteEngine(
@@ -731,7 +729,7 @@ func FuzzDistributedEngineQuery(f *testing.F) {
 		ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
 		distEngine := engine.NewDistributedEngine(engineOpts)
-		promEngine := promql.NewEngine(opts)
+		promEngine := promql.NewEngine(prometheusEngineOpts(opts))
 
 		cases := make([]*testCase, 0, testRuns)
 

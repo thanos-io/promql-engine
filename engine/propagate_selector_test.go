@@ -17,7 +17,6 @@ import (
 	"github.com/efficientgo/core/testutil"
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/promql/promqltest"
 )
@@ -62,28 +61,22 @@ func TestPropagateMatchers(t *testing.T) {
 	ps := promqlsmith.New(rnd, seriesSet, psOpts...)
 
 	// Engine options
-	engineOpts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	engineOpts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
-	normalEngine := engine.New(engine.Opts{
-		EngineOpts:                  engineOpts,
-		LogicalOptimizers:           logicalplan.NoOptimizers,
-		DisableDuplicateLabelChecks: false,
-	})
+	normalEngineOpts := engineOpts
+	normalEngineOpts.LogicalOptimizers = logicalplan.NoOptimizers
+	normalEngine := engine.New(normalEngineOpts)
 
-	optimizedEngine := engine.New(engine.Opts{
-		EngineOpts: engineOpts,
-		LogicalOptimizers: []logicalplan.Optimizer{
-			logicalplan.SortMatchers{},
-			logicalplan.MergeSelectsOptimizer{},
-			logicalplan.PropagateMatchersOptimizer{},
-		},
-		DisableDuplicateLabelChecks: false,
-	})
+	optimizedEngineOpts := engineOpts
+	optimizedEngineOpts.LogicalOptimizers = []logicalplan.Optimizer{
+		logicalplan.SortMatchers{},
+		logicalplan.MergeSelectsOptimizer{},
+		logicalplan.PropagateMatchersOptimizer{},
+	}
+	optimizedEngine := engine.New(optimizedEngineOpts)
 
 	ctx := context.Background()
 	queryTime := time.Unix(600, 0)
