@@ -54,8 +54,30 @@ func IsUnimplemented(err error) bool {
 	return errors.Is(err, parse.ErrNotSupportedExpr) || errors.Is(err, parse.ErrNotImplemented)
 }
 
+// Opts configures the query engine. Only options supported by this engine are exposed.
 type Opts struct {
-	promql.EngineOpts
+	Logger *slog.Logger
+	Reg    prometheus.Registerer
+
+	// MaxSamples limits the number of samples loaded by a query.
+	MaxSamples int
+
+	// Timeout limits the duration of query execution.
+	Timeout time.Duration
+
+	// ActiveQueryTracker tracks queries and limits concurrent execution.
+	ActiveQueryTracker promql.QueryTracker
+
+	// LookbackDelta is the maximum age of a sample selected by an instant vector selector.
+	// Defaults to 5 minutes if not specified.
+	LookbackDelta time.Duration
+
+	// NoStepSubqueryIntervalFn returns the evaluation interval in milliseconds for
+	// a subquery without an explicit step. Its argument is the range in milliseconds.
+	NoStepSubqueryIntervalFn func(rangeMillis int64) int64
+
+	// EnablePerStepStats enables per-step sample statistics.
+	EnablePerStepStats bool
 
 	// LogicalOptimizers are optimizers that are run if the value is not nil. If it is nil then the default optimizers are run. Default optimizer list is available in the logicalplan package.
 	LogicalOptimizers []logicalplan.Optimizer

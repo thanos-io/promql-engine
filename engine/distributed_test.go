@@ -352,13 +352,9 @@ func TestDistributedAggregations(t *testing.T) {
 				t.Run(test.name, func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
 						opts := engine.Opts{
-							EngineOpts: promql.EngineOpts{
-								Timeout:              1 * time.Hour,
-								MaxSamples:           1e10,
-								EnableNegativeOffset: true,
-								EnableAtModifier:     true,
-								LookbackDelta:        lookbackDelta,
-							},
+							Timeout:       1 * time.Hour,
+							MaxSamples:    1e10,
+							LookbackDelta: lookbackDelta,
 						}
 
 						for _, s := range test.seriesSets {
@@ -389,7 +385,7 @@ func TestDistributedAggregations(t *testing.T) {
 									testutil.Ok(t, err)
 
 									distResult := distQry.Exec(ctx)
-									promEngine := promql.NewEngine(opts.EngineOpts)
+									promEngine := promql.NewEngine(prometheusEngineOpts(opts))
 									promQry, err := promEngine.NewInstantQuery(ctx, completeSeriesSet, queryOpts, query.query, instantTS)
 									testutil.Ok(t, err)
 									promResult := promQry.Exec(ctx)
@@ -410,7 +406,7 @@ func TestDistributedAggregations(t *testing.T) {
 								testutil.Ok(t, err)
 
 								distResult := distQry.Exec(ctx)
-								promEngine := promql.NewEngine(opts.EngineOpts)
+								promEngine := promql.NewEngine(prometheusEngineOpts(opts))
 								promQry, err := promEngine.NewRangeQuery(ctx, completeSeriesSet, queryOpts, query.query, query.rangeStart, test.rangeEnd, rangeStep)
 								testutil.Ok(t, err)
 								promResult := promQry.Exec(ctx)
@@ -429,10 +425,8 @@ func TestDistributedEngineWarnings(t *testing.T) {
 	t.Parallel()
 
 	opts := engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			MaxSamples: math.MaxInt64,
-			Timeout:    1 * time.Minute,
-		},
+		MaxSamples: math.MaxInt64,
+		Timeout:    1 * time.Minute,
 	}
 
 	querier := &storage.MockQueryable{

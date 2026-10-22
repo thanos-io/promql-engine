@@ -23,7 +23,7 @@ import (
 )
 
 func TestUserDefinedOperators(t *testing.T) {
-	opts := promql.EngineOpts{
+	opts := engine.Opts{
 		Timeout:    1 * time.Hour,
 		MaxSamples: 1e10,
 	}
@@ -36,10 +36,8 @@ load 30s
 	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
 
-	newEngine := engine.New(engine.Opts{
-		EngineOpts:        opts,
-		LogicalOptimizers: append(slices.Clone(logicalplan.DefaultOptimizers), &injectVectorSelector{}),
-	})
+	opts.LogicalOptimizers = append(slices.Clone(logicalplan.DefaultOptimizers), &injectVectorSelector{})
+	newEngine := engine.New(opts)
 	query := "sum(http_requests_total)"
 	qry, err := newEngine.NewRangeQuery(context.Background(), storage, nil, query, time.Unix(0, 0), time.Unix(90, 0), 30*time.Second)
 	testutil.Ok(t, err)

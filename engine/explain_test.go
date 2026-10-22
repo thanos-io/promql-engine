@@ -25,7 +25,7 @@ import (
 
 func TestQueryExplain(t *testing.T) {
 	t.Parallel()
-	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	opts := engine.Opts{Timeout: 1 * time.Hour}
 	series := storage.MockSeries(
 		[]int64{240, 270, 300, 600, 630, 660},
 		[]float64{1, 2, 3, 4, 5, 6},
@@ -86,7 +86,7 @@ func TestQueryExplain(t *testing.T) {
 	} {
 		{
 			t.Run(tc.query, func(t *testing.T) {
-				ng := engine.New(engine.Opts{EngineOpts: opts})
+				ng := engine.New(opts)
 				ctx := context.Background()
 
 				var (
@@ -112,7 +112,7 @@ func TestQueryExplain(t *testing.T) {
 
 func TestQueryAnalyzeOperatorID(t *testing.T) {
 	t.Parallel()
-	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	opts := engine.Opts{Timeout: 1 * time.Hour}
 	series := storage.MockSeries(
 		[]int64{240, 270, 300, 600, 630, 660},
 		[]float64{1, 2, 3, 4, 5, 6},
@@ -138,7 +138,9 @@ func TestQueryAnalyzeOperatorID(t *testing.T) {
 		},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
-			ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+			ngOpts := opts
+			ngOpts.EnableAnalysis = true
+			ng := engine.New(ngOpts)
 			ctx := context.Background()
 			query, err := ng.NewInstantQuery(ctx, storageWithSeries(series), nil, tc.query, start)
 			testutil.Ok(t, err)
@@ -217,7 +219,7 @@ func getMaxSeriesCount(got *engine.AnalyzeOutputNode) int {
 }
 
 func TestQueryAnalyze(t *testing.T) {
-	opts := promql.EngineOpts{Timeout: 1 * time.Hour}
+	opts := engine.Opts{Timeout: 1 * time.Hour}
 	seriesList := []storage.Series{
 		storage.MockSeries(
 			[]int64{240, 270, 300, 600, 630, 660},
@@ -268,7 +270,9 @@ func TestQueryAnalyze(t *testing.T) {
 		{
 			t.Run(tc.query, func(t *testing.T) {
 				t.Parallel()
-				ng := engine.New(engine.Opts{EngineOpts: opts, EnableAnalysis: true})
+				ngOpts := opts
+				ngOpts.EnableAnalysis = true
+				ng := engine.New(ngOpts)
 				ctx := context.Background()
 
 				var (
@@ -306,7 +310,7 @@ func TestQueryAnalyze(t *testing.T) {
 }
 func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	t.Parallel()
-	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true, DecodingConcurrency: 2})
+	ng := engine.New(engine.Opts{Timeout: 1 * time.Hour, EnableAnalysis: true, DecodingConcurrency: 2})
 	ctx := context.Background()
 
 	load := `load 30s
@@ -360,10 +364,8 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 
 func TestAnalyzeNoop(t *testing.T) {
 	ng := engine.New(engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			MaxSamples: 1000,
-			Timeout:    time.Minute,
-		},
+		MaxSamples: 1000,
+		Timeout:    time.Minute,
 		LogicalOptimizers: []logicalplan.Optimizer{
 			logicalplan.DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(nil)},
 		},
@@ -421,7 +423,7 @@ func renderAnalysisTree(node *engine.AnalyzeOutputNode, level int) string {
 
 func TestAnalyzPeak(t *testing.T) {
 	t.Parallel()
-	ng := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}, EnableAnalysis: true, DecodingConcurrency: 2})
+	ng := engine.New(engine.Opts{Timeout: 1 * time.Hour, EnableAnalysis: true, DecodingConcurrency: 2})
 	ctx := context.Background()
 	load := `load 30s
 				http_requests_total{pod="nginx-1"} 1+1x100

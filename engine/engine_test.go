@@ -51,6 +51,23 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+// prometheusEngineOpts configures the reference engine for comparison tests.
+func prometheusEngineOpts(opts engine.Opts) promql.EngineOpts {
+	return promql.EngineOpts{
+		Logger:                   opts.Logger,
+		Reg:                      opts.Reg,
+		MaxSamples:               opts.MaxSamples,
+		Timeout:                  opts.Timeout,
+		ActiveQueryTracker:       opts.ActiveQueryTracker,
+		LookbackDelta:            opts.LookbackDelta,
+		NoStepSubqueryIntervalFn: opts.NoStepSubqueryIntervalFn,
+		EnablePerStepStats:       opts.EnablePerStepStats,
+		// These features are always supported by our engine, not configurable.
+		EnableAtModifier:     true,
+		EnableNegativeOffset: true,
+	}
+}
+
 func TestMain(m *testing.M) {
 	parser.EnableExperimentalFunctions = true
 	goleak.VerifyTestMain(m,
@@ -78,14 +95,11 @@ func TestPromqlAcceptance(t *testing.T) {
 	t.Cleanup(func() { parser.EnableExperimentalFunctions = true })
 
 	engine := engine.New(engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			Logger:                   promslog.NewNopLogger(),
-			EnableAtModifier:         true,
-			EnableNegativeOffset:     true,
-			MaxSamples:               5e10,
-			Timeout:                  1 * time.Hour,
-			NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
-		}})
+		Logger:                   promslog.NewNopLogger(),
+		MaxSamples:               5e10,
+		Timeout:                  1 * time.Hour,
+		NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
+	})
 
 	st := &skipTest{
 		skipTests: []string{
@@ -104,11 +118,9 @@ func TestPromqlAcceptance(t *testing.T) {
 
 func TestVectorSelectorWithGaps(t *testing.T) {
 	t.Parallel()
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
 	series := storage.MockSeries(
@@ -122,7 +134,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	end := time.Unix(1000, 0)
 
 	ctx := context.Background()
-	newEngine := engine.New(engine.Opts{EngineOpts: opts})
+	newEngine := engine.New(opts)
 	q1, err := newEngine.NewRangeQuery(ctx, storageWithSeries(series), nil, query, start, end, 30*time.Second)
 	testutil.Ok(t, err)
 	defer q1.Close()
@@ -130,7 +142,7 @@ func TestVectorSelectorWithGaps(t *testing.T) {
 	newResult := q1.Exec(ctx)
 	testutil.Ok(t, newResult.Err)
 
-	oldEngine := promql.NewEngine(opts)
+	oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 	q2, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(series), nil, query, start, end, 30*time.Second)
 	testutil.Ok(t, err)
 	defer q2.Close()
@@ -170,11 +182,9 @@ func (q *querierCloseChecker) Close() error {
 // after the query is closed.
 func TestQuerierClosedAfterQueryClosed(t *testing.T) {
 	t.Parallel()
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
 	load := `load 30s
@@ -185,12 +195,11 @@ func TestQuerierClosedAfterQueryClosed(t *testing.T) {
 	defer storage.Close()
 
 	optimizers := logicalplan.AllOptimizers
-	newEngine := engine.New(engine.Opts{
-		EngineOpts:        opts,
-		LogicalOptimizers: optimizers,
-		// Set to 1 to make sure batching is tested.
-		SelectorBatchSize: 1,
-	})
+	newEngineOpts := opts
+	newEngineOpts.LogicalOptimizers = optimizers
+	// Set to 1 to make sure batching is tested.
+	newEngineOpts.SelectorBatchSize = 1
+	newEngine := engine.New(newEngineOpts)
 	ctx := context.Background()
 	qr := &queryableCloseChecker{
 		Queryable: storage,
@@ -210,13 +219,9 @@ func TestQueriesAgainstOldEngine(t *testing.T) {
 	start := time.Unix(0, 0)
 	end := time.Unix(1800, 0)
 	step := time.Second * 30
-	// Negative offset and at modifier are enabled by default
-	// since Prometheus v2.33.0 so we also enable them.
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
 	cases := []struct {
@@ -2376,19 +2381,18 @@ or
 						if disableOptimizers {
 							optimizers = logicalplan.NoOptimizers
 						}
-						newEngine := engine.New(engine.Opts{
-							EngineOpts:        opts,
-							LogicalOptimizers: optimizers,
-							// Set to 1 to make sure batching is tested.
-							SelectorBatchSize: 1,
-						})
+						newEngineOpts := opts
+						newEngineOpts.LogicalOptimizers = optimizers
+						// Set to 1 to make sure batching is tested.
+						newEngineOpts.SelectorBatchSize = 1
+						newEngine := engine.New(newEngineOpts)
 						ctx := context.Background()
 						q1, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
 						testutil.Ok(t, err)
 						defer q1.Close()
 						newResult := q1.Exec(ctx)
 
-						oldEngine := promql.NewEngine(opts)
+						oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 						q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.start, tc.end, tc.step)
 						testutil.Ok(t, err)
 						defer q2.Close()
@@ -2483,7 +2487,7 @@ func TestWarnings(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
+			newEngine := engine.New(engine.Opts{Timeout: 1 * time.Hour})
 			q1, err := newEngine.NewRangeQuery(context.Background(), querier, nil, tc.query, start, end, step)
 			testutil.Ok(t, err)
 
@@ -2528,7 +2532,7 @@ func (s scannersWithWarns) NewMatrixSelector(ctx context.Context, opts *query.Op
 
 func TestWarningsPlanCreation(t *testing.T) {
 	var (
-		opts         = engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}}
+		opts         = engine.Opts{Timeout: 1 * time.Hour}
 		expectedWarn = errors.New("test warning")
 	)
 
@@ -2593,22 +2597,20 @@ func TestEdgeCases(t *testing.T) {
 		},
 	}
 
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 	step := time.Second * 30
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
-			oldEngine := promql.NewEngine(opts)
+			oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 			q1, err := oldEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
 			testutil.Ok(t, err)
 
-			newEngine := engine.New(engine.Opts{EngineOpts: opts})
+			newEngine := engine.New(opts)
 			q2, err := newEngine.NewRangeQuery(ctx, storageWithSeries(tc.series...), nil, tc.query, tc.start, tc.end, step)
 			testutil.Ok(t, err)
 
@@ -2621,13 +2623,9 @@ func TestEdgeCases(t *testing.T) {
 }
 
 func TestXFunctionsRangeQuery(t *testing.T) {
-	// Negative offset and at modifier are enabled by default
-	// since Prometheus v2.33.0, so we also enable them.
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
 	cases := []struct {
@@ -2720,11 +2718,10 @@ func TestXFunctionsRangeQuery(t *testing.T) {
 			defer storage.Close()
 
 			ctx := context.Background()
-			newEngine := engine.New(engine.Opts{
-				EngineOpts:        opts,
-				LogicalOptimizers: logicalplan.AllOptimizers,
-				EnableXFunctions:  true,
-			})
+			newEngineOpts := opts
+			newEngineOpts.LogicalOptimizers = logicalplan.AllOptimizers
+			newEngineOpts.EnableXFunctions = true
+			newEngine := engine.New(newEngineOpts)
 			query, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, tc.startTime, tc.endTime, tc.step)
 			testutil.Ok(t, err)
 			defer query.Close()
@@ -2979,12 +2976,8 @@ func TestXFunctionsFloatToHistogramTransition(t *testing.T) {
 
 func newXTestEngine(extLookback time.Duration) *engine.Engine {
 	return engine.New(engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			Timeout:              time.Hour,
-			MaxSamples:           1e10,
-			EnableNegativeOffset: true,
-			EnableAtModifier:     true,
-		},
+		Timeout:           time.Hour,
+		MaxSamples:        1e10,
 		LogicalOptimizers: logicalplan.AllOptimizers,
 		EnableXFunctions:  true,
 		ExtLookbackDelta:  extLookback,
@@ -3005,13 +2998,9 @@ func newXTestHistogram(mult float64) *histogram.FloatHistogram {
 
 func TestXFunctions(t *testing.T) {
 	defaultQueryTime := time.Unix(50, 0)
-	// Negative offset and at modifier are enabled by default
-	// since Prometheus v2.33.0, so we also enable them.
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
 	defaultLoad := `load 5s
@@ -3227,11 +3216,10 @@ func TestXFunctions(t *testing.T) {
 			optimizers := logicalplan.AllOptimizers
 
 			ctx := context.Background()
-			newEngine := engine.New(engine.Opts{
-				EngineOpts:        opts,
-				LogicalOptimizers: optimizers,
-				EnableXFunctions:  true,
-			})
+			newEngineOpts := opts
+			newEngineOpts.LogicalOptimizers = optimizers
+			newEngineOpts.EnableXFunctions = true
+			newEngine := engine.New(newEngineOpts)
 			query, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, queryTime)
 			testutil.Ok(t, err)
 			defer query.Close()
@@ -3264,13 +3252,9 @@ func TestXFunctionsWhenDisabled(t *testing.T) {
 
 func TestRateVsXRate(t *testing.T) {
 	defaultQueryTime := time.Unix(25, 0)
-	// Negative offset and at modifier are enabled by default
-	// since Prometheus v2.33.0, so we also enable them.
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e10,
 	}
 
 	defaultLoad := `load 5s
@@ -3557,12 +3541,10 @@ func TestRateVsXRate(t *testing.T) {
 			}
 
 			optimizers := logicalplan.AllOptimizers
-
-			newEngine := engine.New(engine.Opts{
-				EngineOpts:        opts,
-				LogicalOptimizers: optimizers,
-				EnableXFunctions:  true,
-			})
+			newEngineOpts := opts
+			newEngineOpts.LogicalOptimizers = optimizers
+			newEngineOpts.EnableXFunctions = true
+			newEngine := engine.New(newEngineOpts)
 			query, err := newEngine.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
 			testutil.Ok(t, err)
 			defer query.Close()
@@ -4867,13 +4849,9 @@ min without () (
 			for _, disableOptimizers := range disableOptimizerOpts {
 				t.Run(fmt.Sprintf("disableOptimizers=%t", disableOptimizers), func(t *testing.T) {
 					for _, lookbackDelta := range lookbackDeltas {
-						// Negative offset and at modifier are enabled by default
-						// since Prometheus v2.33.0, so we also enable them.
-						opts := promql.EngineOpts{
+						opts := engine.Opts{
 							Timeout:                  1 * time.Hour,
 							MaxSamples:               1e10,
-							EnableNegativeOffset:     true,
-							EnableAtModifier:         true,
 							NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 							LookbackDelta:            lookbackDelta,
 						}
@@ -4887,10 +4865,9 @@ min without () (
 						if disableOptimizers {
 							optimizers = logicalplan.NoOptimizers
 						}
-						newEngine := engine.New(engine.Opts{
-							EngineOpts:        opts,
-							LogicalOptimizers: optimizers,
-						})
+						newEngineOpts := opts
+						newEngineOpts.LogicalOptimizers = optimizers
+						newEngine := engine.New(newEngineOpts)
 
 						ctx := context.Background()
 						q1, err := newEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
@@ -4899,7 +4876,7 @@ min without () (
 
 						newResult := q1.Exec(ctx)
 
-						oldEngine := promql.NewEngine(opts)
+						oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 						q2, err := oldEngine.NewInstantQuery(ctx, testStorage, nil, tc.query, queryTime)
 						testutil.Ok(t, err)
 						defer q2.Close()
@@ -4930,7 +4907,7 @@ func TestQueryCancellation(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	newEngine := engine.New(engine.Opts{EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour}})
+	newEngine := engine.New(engine.Opts{Timeout: 1 * time.Hour})
 	q1, err := newEngine.NewRangeQuery(ctx, querier, nil, query, start, end, step)
 	testutil.Ok(t, err)
 
@@ -4962,12 +4939,10 @@ func TestQueryConcurrency(t *testing.T) {
 		responseChan = make(chan struct{}, maxQueries)
 	)
 	newEngine := engine.New(engine.Opts{
-		EngineOpts: promql.EngineOpts{
-			Timeout:            1 * time.Hour,
-			MaxSamples:         math.MaxInt64,
-			ActiveQueryTracker: promql.NewActiveQueryTracker(t.TempDir(), concurrency, logger),
-		}},
-	)
+		Timeout:            1 * time.Hour,
+		MaxSamples:         math.MaxInt64,
+		ActiveQueryTracker: promql.NewActiveQueryTracker(t.TempDir(), concurrency, logger),
+	})
 	for range maxQueries {
 		go func() {
 			qry, err := newEngine.NewRangeQuery(ctx, queryable, nil, `count(metric)`, time.Unix(0, 0), time.Unix(300, 0), time.Second*30)
@@ -5015,7 +4990,7 @@ func TestQueryTimeout(t *testing.T) {
 				http_requests_total{pod="nginx-1"} 1+1x1
 				http_requests_total{pod="nginx-2"} 1+2x1`
 
-	opts := promql.EngineOpts{
+	opts := engine.Opts{
 		Timeout:    1 * time.Microsecond,
 		MaxSamples: math.MaxInt64,
 	}
@@ -5023,7 +4998,7 @@ func TestQueryTimeout(t *testing.T) {
 	storage := promqltest.LoadedStorage(t, load)
 	defer storage.Close()
 
-	newEngine := engine.New(engine.Opts{EngineOpts: opts})
+	newEngine := engine.New(opts)
 
 	q, err := newEngine.NewInstantQuery(context.Background(), storage, nil, query, end)
 	testutil.Ok(t, err)
@@ -5060,10 +5035,8 @@ func TestMaxSamples(t *testing.T) {
 
 		t.Run("exceeds limit", func(t *testing.T) {
 			ng := engine.New(engine.Opts{
-				EngineOpts: promql.EngineOpts{
-					Timeout:    1 * time.Hour,
-					MaxSamples: 5000, // Lower than ~8000 expected
-				},
+				Timeout:    1 * time.Hour,
+				MaxSamples: 5000, // Lower than ~8000 expected
 			})
 			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 			require.NoError(t, err)
@@ -5074,10 +5047,8 @@ func TestMaxSamples(t *testing.T) {
 
 		t.Run("within limit", func(t *testing.T) {
 			ng := engine.New(engine.Opts{
-				EngineOpts: promql.EngineOpts{
-					Timeout:    1 * time.Hour,
-					MaxSamples: 50000, // Higher than ~8000 expected
-				},
+				Timeout:    1 * time.Hour,
+				MaxSamples: 50000, // Higher than ~8000 expected
 			})
 			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 			require.NoError(t, err)
@@ -5107,10 +5078,8 @@ func TestMaxSamples(t *testing.T) {
 		step := 30 * time.Second
 
 		ng := engine.New(engine.Opts{
-			EngineOpts: promql.EngineOpts{
-				Timeout:    1 * time.Hour,
-				MaxSamples: 5000, // Lower than 10000 series per step
-			},
+			Timeout:    1 * time.Hour,
+			MaxSamples: 5000, // Lower than 10000 series per step
 		})
 		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 		require.NoError(t, err)
@@ -5142,10 +5111,8 @@ func TestMaxSamples(t *testing.T) {
 		step := 60 * time.Second
 
 		ng := engine.New(engine.Opts{
-			EngineOpts: promql.EngineOpts{
-				Timeout:    1 * time.Hour,
-				MaxSamples: 1000, // Lower than expected
-			},
+			Timeout:    1 * time.Hour,
+			MaxSamples: 1000, // Lower than expected
 		})
 		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 		require.NoError(t, err)
@@ -5174,7 +5141,7 @@ func TestMaxSamples(t *testing.T) {
 		step := 30 * time.Second
 
 		ng := engine.New(engine.Opts{
-			EngineOpts: promql.EngineOpts{Timeout: 1 * time.Hour},
+			Timeout: 1 * time.Hour,
 		})
 		q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 		require.NoError(t, err)
@@ -5211,10 +5178,8 @@ func TestMaxSamples(t *testing.T) {
 			// Set limit between one batch (12000) and total (24000) so only the engine
 			// accumulation check catches it, not the vector selector.
 			ng := engine.New(engine.Opts{
-				EngineOpts: promql.EngineOpts{
-					Timeout:    1 * time.Hour,
-					MaxSamples: 15000,
-				},
+				Timeout:    1 * time.Hour,
+				MaxSamples: 15000,
 			})
 			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 			require.NoError(t, err)
@@ -5226,10 +5191,8 @@ func TestMaxSamples(t *testing.T) {
 
 		t.Run("within limit", func(t *testing.T) {
 			ng := engine.New(engine.Opts{
-				EngineOpts: promql.EngineOpts{
-					Timeout:    1 * time.Hour,
-					MaxSamples: 500000, // Higher than ~24000 expected
-				},
+				Timeout:    1 * time.Hour,
+				MaxSamples: 500000, // Higher than ~24000 expected
 			})
 			q, err := ng.NewRangeQuery(context.Background(), storage, nil, query, start, end, step)
 			require.NoError(t, err)
@@ -5544,16 +5507,15 @@ sum_over_time(sum_over_time(metric{job="1"}[1m40s])[1m40s:25s] @ 3000.000)[3s:1s
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			t.Parallel()
-			opts := promql.EngineOpts{
-				Logger:           nil,
-				Reg:              nil,
-				MaxSamples:       10,
-				Timeout:          10 * time.Second,
-				LookbackDelta:    5 * time.Second,
-				EnableAtModifier: true,
+			opts := engine.Opts{
+				Logger:        nil,
+				Reg:           nil,
+				MaxSamples:    10,
+				Timeout:       10 * time.Second,
+				LookbackDelta: 5 * time.Second,
 			}
 
-			ng := engine.New(engine.Opts{EngineOpts: opts})
+			ng := engine.New(opts)
 			hintsRecorder := &hintRecordingQuerier{}
 			queryable := &storage.MockQueryable{MockQuerier: hintsRecorder}
 			ctx := context.Background()
@@ -5776,12 +5738,10 @@ quantile without (pod) (
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			opts := promql.EngineOpts{
+			opts := engine.Opts{
 				Timeout:                  300 * time.Second,
 				MaxSamples:               math.MaxInt64,
 				EnablePerStepStats:       true,
-				EnableAtModifier:         true,
-				EnableNegativeOffset:     true,
 				NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 			}
 			qOpts := promql.NewPrometheusQueryOpts(true, 5*time.Minute)
@@ -5791,8 +5751,10 @@ quantile without (pod) (
 
 			ctx := context.Background()
 
-			oldEngine := promql.NewEngine(opts)
-			newEngine := engine.New(engine.Opts{EnableAnalysis: true, EngineOpts: opts})
+			oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
+			newEngineOpts := opts
+			newEngineOpts.EnableAnalysis = true
+			newEngine := engine.New(newEngineOpts)
 
 			// Instant query
 			oldQ, err := oldEngine.NewInstantQuery(ctx, storage, qOpts, tc.query, tc.end)
@@ -6110,12 +6072,8 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 
 	var (
 		opts = engine.Opts{
-			EngineOpts: promql.EngineOpts{
-				Timeout:              1 * time.Hour,
-				MaxSamples:           1e16,
-				EnableNegativeOffset: true,
-				EnableAtModifier:     true,
-			},
+			Timeout:    1 * time.Hour,
+			MaxSamples: 1e16,
 		}
 		start = time.UnixMilli(6146221)
 		end   = time.UnixMilli(6236221)
@@ -6128,7 +6086,7 @@ func TestNativeHistogramRateWithNaN(t *testing.T) {
 		return qry.Exec(context.Background())
 	}
 
-	promResult := execQuery(promql.NewEngine(opts.EngineOpts))
+	promResult := execQuery(promql.NewEngine(prometheusEngineOpts(opts)))
 	newResult := execQuery(engine.New(opts))
 	testutil.WithGoCmp(comparer).Equals(t, promResult, newResult)
 }
@@ -6144,11 +6102,9 @@ type histogramGeneratorFunc func(app storage.Appender, numSeries int, withMixedT
 
 func TestNativeHistograms(t *testing.T) {
 	t.Parallel()
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e16,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
+	opts := engine.Opts{
+		Timeout:    1 * time.Hour,
+		MaxSamples: 1e16,
 	}
 
 	cases := []histogramTestCase{
@@ -6356,7 +6312,7 @@ and
 	})
 }
 
-func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.EngineOpts, generateHistograms histogramGeneratorFunc) {
+func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts engine.Opts, generateHistograms histogramGeneratorFunc) {
 	numHistograms := 10
 	mixedTypesOpts := []bool{false, true}
 	var (
@@ -6377,11 +6333,10 @@ func testNativeHistograms(t *testing.T, cases []histogramTestCase, opts promql.E
 					testutil.Ok(t, err)
 					testutil.Ok(t, app.Commit())
 
-					promEngine := promql.NewEngine(opts)
-					thanosEngine := engine.New(engine.Opts{
-						EngineOpts:        opts,
-						LogicalOptimizers: logicalplan.AllOptimizers,
-					})
+					promEngine := promql.NewEngine(prometheusEngineOpts(opts))
+					thanosEngineOpts := opts
+					thanosEngineOpts.LogicalOptimizers = logicalplan.AllOptimizers
+					thanosEngine := engine.New(thanosEngineOpts)
 
 					t.Run("instant", func(t *testing.T) {
 						ctx := context.Background()
@@ -6527,17 +6482,12 @@ func TestMixedNativeHistogramTypes(t *testing.T) {
 	testutil.Ok(t, err)
 	testutil.Ok(t, app.Commit())
 
-	opts := promql.EngineOpts{
-		Timeout:              1 * time.Hour,
-		MaxSamples:           1e10,
-		EnableNegativeOffset: true,
-		EnableAtModifier:     true,
-	}
-
-	engine := engine.New(engine.Opts{
-		EngineOpts:        opts,
+	opts := engine.Opts{
+		Timeout:           1 * time.Hour,
+		MaxSamples:        1e10,
 		LogicalOptimizers: logicalplan.AllOptimizers,
-	})
+	}
+	engine := engine.New(opts)
 
 	ctx := context.Background()
 
@@ -7027,11 +6977,9 @@ func TestDoubleExponentialSmoothing(t *testing.T) {
 			storage := promqltest.LoadedStorage(t, tcase.load)
 			defer storage.Close()
 
-			opts := promql.EngineOpts{
-				Timeout:              testTimeout,
-				MaxSamples:           testMaxSamples,
-				EnableNegativeOffset: true,
-				EnableAtModifier:     true,
+			opts := engine.Opts{
+				Timeout:    testTimeout,
+				MaxSamples: testMaxSamples,
 			}
 
 			start := defaultStart
@@ -7048,12 +6996,12 @@ func TestDoubleExponentialSmoothing(t *testing.T) {
 			}
 
 			ctx := context.Background()
-			oldEngine := promql.NewEngine(opts)
+			oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
 			q1, err := oldEngine.NewRangeQuery(ctx, storage, nil, tcase.query, start, end, step)
 			testutil.Ok(t, errors.Wrap(err, "create old engine range query"))
 			oldResult := q1.Exec(ctx)
 
-			newEngine := engine.New(engine.Opts{EngineOpts: opts})
+			newEngine := engine.New(opts)
 			q2, err := newEngine.NewRangeQuery(ctx, storage, nil, tcase.query, start, end, step)
 			testutil.Ok(t, errors.Wrap(err, "create new engine range query"))
 			newResult := q2.Exec(ctx)
@@ -7118,10 +7066,8 @@ func TestInstantQueryPerSeriesReleasePreventMaxSamplesFailure(t *testing.T) {
 
 			// With maxSamples limit — should succeed due to per-series release
 			ng := engine.New(engine.Opts{
-				EngineOpts: promql.EngineOpts{
-					Timeout:    1 * time.Hour,
-					MaxSamples: maxSamples,
-				},
+				Timeout:    1 * time.Hour,
+				MaxSamples: maxSamples,
 			})
 			q, err := ng.NewInstantQuery(ctx, st, nil, tc.query, queryTime)
 			require.NoError(t, err)
