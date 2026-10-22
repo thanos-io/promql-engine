@@ -144,6 +144,13 @@ func (o *matrixSelector) Explain() []model.VectorOperator {
 	return nil
 }
 
+func (o *matrixSelector) Release() {
+	for i := range o.scanners {
+		o.scanners[i].release()
+	}
+	o.scanners = nil
+}
+
 func (o *matrixSelector) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := o.loadSeries(ctx); err != nil {
 		return nil, err

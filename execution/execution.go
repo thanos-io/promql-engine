@@ -318,7 +318,47 @@ func newVectorBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage
 	if err != nil {
 		return nil, err
 	}
-	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, opts)
+
+	// Buffer the deeper side so it finishes and frees its memory before the other
+	// side starts.
+	side := binary.NoSide
+	if opts.EnableMaterialization && (!opts.IsInstantQuery() || containsSubquery(e.LHS) || containsSubquery(e.RHS)) {
+		if joinDepth(e.LHS) > joinDepth(e.RHS) {
+			side = binary.LeftSide
+			leftOperator = exchange.NewMaterialize(leftOperator, opts)
+		} else {
+			side = binary.RightSide
+			rightOperator = exchange.NewMaterialize(rightOperator, opts)
+		}
+	}
+
+	return binary.NewVectorOperator(leftOperator, rightOperator, e.VectorMatching, e.Op, e.ReturnBool, side, opts)
+}
+
+func containsSubquery(node logicalplan.Node) bool {
+	if _, ok := node.(*logicalplan.Subquery); ok {
+		return true
+	}
+	for _, child := range node.Children() {
+		if containsSubquery(*child) {
+			return true
+		}
+	}
+	return false
+}
+
+// joinDepth returns the longest chain of nested binary operators under node.
+func joinDepth(node logicalplan.Node) int {
+	deepest := 0
+	for _, child := range node.Children() {
+		if d := joinDepth(*child); d > deepest {
+			deepest = d
+		}
+	}
+	if _, ok := node.(*logicalplan.Binary); ok {
+		return deepest + 1
+	}
+	return deepest
 }
 
 func newScalarBinaryOperator(ctx context.Context, e *logicalplan.Binary, storage storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {

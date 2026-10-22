@@ -171,6 +171,11 @@ func (a *kAggregate) Next(ctx context.Context, buf []model.StepVector) (int, err
 	return n, nil
 }
 
+func (a *kAggregate) Release() {
+	a.heaps = nil
+	a.inputToHeap = nil
+}
+
 func (a *kAggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
 	a.once.Do(func() { err = a.init(ctx) })
