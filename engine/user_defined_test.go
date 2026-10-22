@@ -11,13 +11,13 @@ import (
 
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/logicalplan"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -33,7 +33,7 @@ load 30s
 	http_requests_total{container="a"} 1x30
 	http_requests_total{container="b"} 2x30`
 
-	storage := promqltest.LoadedStorage(t, load)
+	storage := teststorage.LoadedStorage(t, load)
 	defer storage.Close()
 
 	opts.LogicalOptimizers = append(slices.Clone(logicalplan.DefaultOptimizers), &injectVectorSelector{})

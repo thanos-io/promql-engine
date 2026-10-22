@@ -10,13 +10,13 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/ringbuffer"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -32,7 +32,7 @@ var rangeFunctions = []string{
 func newTestMatrixSelector(t *testing.T, load, functionName string, selectRange, maxt time.Duration, stepsBatch int) (*matrixSelector, func()) {
 	t.Helper()
 
-	testStorage := promqltest.LoadedStorage(t, load)
+	testStorage := teststorage.LoadedStorage(t, load)
 
 	opts := &query.Options{
 		Start:               time.UnixMilli(0),

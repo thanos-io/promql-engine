@@ -30,7 +30,7 @@ type aggregateTable interface {
 	// aggregate aggregates the given vector into the table.
 	aggregate(vector model.StepVector) error
 	// populateVector writes out the accumulated result into the provided vector.
-	populateVector(ctx context.Context, vec *model.StepVector)
+	populateVector(ctx context.Context, vec *model.StepVector, posRange posrange.PositionRange)
 	// reset resets the table with a new aggregation argument.
 	// The argument is currently used for quantile aggregation.
 	reset(arg float64)
@@ -110,11 +110,11 @@ func (t *scalarTable) reset(arg float64) {
 	t.ts = math.MinInt64
 }
 
-func (t *scalarTable) populateVector(ctx context.Context, vec *model.StepVector) {
+func (t *scalarTable) populateVector(ctx context.Context, vec *model.StepVector, posRange posrange.PositionRange) {
 	hint := len(t.outputs)
 	for i, v := range t.outputs {
 		acc := t.accumulators[i]
-		emitAccumulatorWarnings(ctx, acc.Warnings())
+		emitAccumulatorWarnings(ctx, acc.Warnings(), posRange)
 		switch acc.ValueType() {
 		case compute.NoValue, compute.MixedTypeValue:
 			// MixedTypeValue: warning already emitted by emitAccumulatorWarnings
@@ -132,7 +132,7 @@ func (t *scalarTable) populateVector(ctx context.Context, vec *model.StepVector)
 }
 
 // emitAccumulatorWarnings converts accumulator warning flags to annotations and adds them to context.
-func emitAccumulatorWarnings(ctx context.Context, warn warnings.Warnings) {
+func emitAccumulatorWarnings(ctx context.Context, warn warnings.Warnings, posRange posrange.PositionRange) {
 	if warn == 0 {
 		return
 	}
@@ -143,10 +143,10 @@ func emitAccumulatorWarnings(ctx context.Context, warn warnings.Warnings) {
 		warnings.AddToContext(warnings.MixedFloatsHistogramsAggWarning, ctx)
 	}
 	if warn&warnings.WarnCounterResetCollision != 0 {
-		warnings.AddToContext(annotations.NewHistogramCounterResetCollisionWarning(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
+		warnings.AddToContext(annotations.NewHistogramCounterResetCollisionWarning(posRange, annotations.HistogramAgg), ctx)
 	}
 	if warn&warnings.WarnNHCBBoundsReconciledAgg != 0 {
-		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posRange, annotations.HistogramAgg), ctx)
 	}
 }
 

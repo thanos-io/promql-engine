@@ -14,6 +14,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type vectorTable struct {
@@ -50,8 +51,8 @@ func (t *vectorTable) aggregate(vector model.StepVector) error {
 	return t.accumulator.AddVector(vector.Samples, vector.Histograms)
 }
 
-func (t *vectorTable) populateVector(ctx context.Context, vec *model.StepVector) {
-	emitAccumulatorWarnings(ctx, t.accumulator.Warnings())
+func (t *vectorTable) populateVector(ctx context.Context, vec *model.StepVector, posRange posrange.PositionRange) {
+	emitAccumulatorWarnings(ctx, t.accumulator.Warnings(), posRange)
 	switch t.accumulator.ValueType() {
 	case compute.NoValue, compute.MixedTypeValue:
 		// MixedTypeValue: warning already emitted by emitAccumulatorWarnings

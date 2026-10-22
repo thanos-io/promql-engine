@@ -8,10 +8,13 @@ import (
 	"math"
 	"math/rand"
 	"regexp"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/thanos-io/promql-engine/api"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/cortexproject/promqlsmith"
@@ -19,7 +22,6 @@ import (
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -88,7 +90,7 @@ func TestComputeDistributionPoints(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 			plan, err := NewFromAST(expr, &query.Options{}, PlanOptions{})
 			testutil.Ok(t, err)
@@ -823,7 +825,7 @@ count by (cluster) (
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			runTest := func(optimizers []Optimizer) {
-				expr, err := parser.ParseExpr(tcase.expr)
+				expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 				testutil.Ok(t, err)
 
 				plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -1032,7 +1034,7 @@ sum(dedup(
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: queryStart, End: queryEnd, Step: queryStep}, PlanOptions{})
@@ -1054,7 +1056,7 @@ func TestDistributedExecutionUsesConsistentEngineMetadata(t *testing.T) {
 		mint: queryTime.Add(-2 * time.Hour).UnixMilli(),
 	}
 
-	expr, err := parser.ParseExpr(`sum_over_time(metric[1w])`)
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(`sum_over_time(metric[1w])`)
 	testutil.Ok(t, err)
 
 	plan, _ := NewFromAST(expr, &query.Options{Start: queryTime, End: queryTime}, PlanOptions{})
@@ -1122,7 +1124,7 @@ sum(
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: tcase.queryStart, End: tcase.queryEnd, Step: time.Minute}, PlanOptions{})
@@ -1182,7 +1184,7 @@ sum by (pod) (dedup(
 				DistributedExecutionOptimizer{Endpoints: api.NewStaticEndpoints(engines)},
 			}
 
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -1263,7 +1265,7 @@ max(
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -1286,7 +1288,7 @@ sum(dedup(
   remote(sum by (region) (metric{region="east"}))
 ))`
 	)
-	expr, err := parser.ParseExpr(`sum(metric{region="east"})`)
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(`sum(metric{region="east"})`)
 	testutil.Ok(t, err)
 
 	engines := []api.RemoteEngine{
@@ -1368,7 +1370,7 @@ func TestPreservesPartitionLabels(t *testing.T) {
 
 	parse := func(t *testing.T, expr string) Node {
 		t.Helper()
-		parsed, err := parser.ParseExpr(expr)
+		parsed, err := parser.NewParser(parser.Options{}).ParseExpr(expr)
 		testutil.Ok(t, err)
 		plan, err := NewFromAST(parsed, &query.Options{
 			Start: time.Unix(0, 0),
@@ -1545,7 +1547,7 @@ func FuzzDistributedExecutionPreservesPartitionLabels(f *testing.F) {
 			http_requests_total{pod="nginx-1", region="west"} 3+1x15
 			http_requests_total{pod="nginx-2", region="west"} 4+2x15`
 
-		testStorage := promqltest.LoadedStorage(t, load)
+		testStorage := teststorage.LoadedStorage(t, load)
 		defer testStorage.Close()
 
 		engines := []api.RemoteEngine{
@@ -1561,15 +1563,24 @@ func FuzzDistributedExecutionPreservesPartitionLabels(f *testing.F) {
 			labels.FromStrings("__name__", "http_requests_total", "pod", "nginx-2", "region", "west"),
 		}
 
-		// Exclude functions that produce unlabeled series by design.
+		// Match the non-experimental parser used below. Passing disabled functions
+		// to promqlsmith can produce malformed variadic calls before parsing.
+		// Also exclude functions that produce unlabeled series by design.
 		enabledFunctions := make([]*parser.Function, 0, len(parser.Functions))
 		for _, f := range parser.Functions {
+			if f.Experimental {
+				continue
+			}
 			switch f.Name {
 			case "vector", "absent", "absent_over_time":
 				continue
 			}
 			enabledFunctions = append(enabledFunctions, f)
 		}
+		// A seed must select the same functions regardless of map iteration order.
+		slices.SortFunc(enabledFunctions, func(a, b *parser.Function) int {
+			return strings.Compare(a.Name, b.Name)
+		})
 
 		psOpts := []promqlsmith.Option{
 			promqlsmith.WithEnableOffset(false),
@@ -1604,7 +1615,7 @@ func FuzzDistributedExecutionPreservesPartitionLabels(f *testing.F) {
 			expr := ps.WalkRangeQuery()
 			exprStr := expr.Pretty(0)
 
-			parsed, err := parser.ParseExpr(exprStr)
+			parsed, err := parser.NewParser(parser.Options{}).ParseExpr(exprStr)
 			if err != nil {
 				continue
 			}

@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -239,11 +240,11 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 	case *parser.NumberLiteral:
 		return &NumberLiteral{Val: t.Val}
 	case *parser.StepInvariantExpr:
-		// We expect functions to be pushed down into matrix selectors. This means that
-		// parents of matrixselector nodes are always expected to be functions, not step invariant
-		// operators.
-		if m, ok := t.Expr.(*parser.MatrixSelector); ok {
-			return replacePrometheusNodes(m)
+		// Range functions expect matrix selectors or subqueries as direct arguments,
+		// not wrapped in step-invariant operators.
+		switch t.Expr.(type) {
+		case *parser.MatrixSelector, *parser.SubqueryExpr:
+			return replacePrometheusNodes(t.Expr)
 		}
 		return &StepInvariantExpr{Expr: replacePrometheusNodes(t.Expr)}
 	case *parser.MatrixSelector:
@@ -260,31 +261,21 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 	// TODO: we dont yet have logical nodes for these, keep traversing here but set fields in-place
 	case *parser.Call:
 		if t.Func.Name == "timestamp" {
-			// pushed-down timestamp function
-			switch v := UnwrapParens(t.Args[0]).(type) {
-			case *parser.VectorSelector:
-				return &VectorSelector{VectorSelector: v, SelectTimestamp: true}
-			case *parser.StepInvariantExpr:
-				vs, ok := UnwrapParens(v.Expr).(*parser.VectorSelector)
-				if ok {
-					// Prometheus weirdness
-					if vs.Timestamp != nil {
-						vs.OriginalOffset = 0
-					}
-					return &StepInvariantExpr{
-						Expr: &VectorSelector{VectorSelector: vs, SelectTimestamp: true},
-					}
-				}
+			if node, ok := timestampSelector(t.Args[0]); ok {
+				return node
 			}
 		}
 		args := make([]Node, len(t.Args))
+		positions := make([]posrange.PositionRange, len(t.Args))
 		// nested timestamp functions
 		for i, arg := range t.Args {
 			args[i] = replacePrometheusNodes(arg)
+			positions[i] = arg.PositionRange()
 		}
 		return &FunctionCall{
-			Func: *t.Func,
-			Args: args,
+			Func:         *t.Func,
+			Args:         args,
+			ArgsPosRange: positions,
 		}
 	case *parser.ParenExpr:
 		return &Parens{
@@ -296,12 +287,18 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 			Expr: replacePrometheusNodes(t.Expr),
 		}
 	case *parser.AggregateExpr:
+		var paramPos posrange.PositionRange
+		if t.Param != nil {
+			paramPos = t.Param.PositionRange()
+		}
 		return &Aggregation{
-			Op:       t.Op,
-			Expr:     replacePrometheusNodes(t.Expr),
-			Param:    replacePrometheusNodes(t.Param),
-			Grouping: t.Grouping,
-			Without:  t.Without,
+			ExprPosRange:  t.Expr.PositionRange(),
+			ParamPosRange: paramPos,
+			Op:            t.Op,
+			Expr:          replacePrometheusNodes(t.Expr),
+			Param:         replacePrometheusNodes(t.Param),
+			Grouping:      t.Grouping,
+			Without:       t.Without,
 		}
 	case *parser.BinaryExpr:
 		return &Binary{
@@ -325,6 +322,25 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 		return nil
 	}
 	panic("Unrecognized AST node")
+}
+
+// timestampSelector pushes timestamp into a vector selector through parentheses
+// and step-invariant wrappers only. Other expressions need normal function
+// evaluation, since their sample timestamps may differ from the stored samples.
+func timestampSelector(expr parser.Expr) (Node, bool) {
+	switch expr := UnwrapParens(expr).(type) {
+	case *parser.VectorSelector:
+		// Preserve the existing offset handling for selectors pinned with @.
+		if expr.Timestamp != nil {
+			expr.OriginalOffset = 0
+		}
+		return &VectorSelector{VectorSelector: expr, SelectTimestamp: true}, true
+	case *parser.StepInvariantExpr:
+		if node, ok := timestampSelector(expr.Expr); ok {
+			return &StepInvariantExpr{Expr: node}, true
+		}
+	}
+	return nil, false
 }
 
 func trimSorts(expr Node) Node {

@@ -24,12 +24,13 @@ import (
 )
 
 type aggregate struct {
-	next        model.VectorOperator
-	paramOp     model.VectorOperator
-	by          bool
-	labels      []string
-	aggregation parser.ItemType
-	stepsBatch  int
+	next                    model.VectorOperator
+	paramOp                 model.VectorOperator
+	by                      bool
+	labels                  []string
+	aggregation             parser.ItemType
+	posRange, paramPosRange posrange.PositionRange
+	stepsBatch              int
 
 	once   sync.Once
 	series []labels.Labels
@@ -47,6 +48,7 @@ func NewHashAggregate(
 	next model.VectorOperator,
 	paramOp model.VectorOperator,
 	aggregation parser.ItemType,
+	posRange, paramPosRange posrange.PositionRange,
 	by bool,
 	labels []string,
 	opts *query.Options,
@@ -60,13 +62,15 @@ func NewHashAggregate(
 	// https://github.com/prometheus/prometheus/blob/8ed39fdab1ead382a354e45ded999eb3610f8d5f/model/labels/labels.go#L162-L181
 	slices.Sort(labels)
 	a := &aggregate{
-		next:        next,
-		paramOp:     paramOp,
-		by:          by,
-		labels:      labels,
-		aggregation: aggregation,
-		stepsBatch:  opts.StepsBatch,
-		params:      make([]float64, opts.StepsBatch),
+		next:          next,
+		paramOp:       paramOp,
+		by:            by,
+		labels:        labels,
+		aggregation:   aggregation,
+		posRange:      posRange,
+		paramPosRange: paramPosRange,
+		stepsBatch:    opts.StepsBatch,
+		params:        make([]float64, opts.StepsBatch),
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(a, opts), a), nil
@@ -118,7 +122,7 @@ func (a *aggregate) Next(ctx context.Context, buf []model.StepVector) (int, erro
 		for i := range n {
 			a.params[i] = a.paramBuf[i].Samples[0]
 			if sample := a.params[i]; math.IsNaN(sample) || sample < 0 || sample > 1 {
-				warnings.AddToContext(annotations.NewInvalidQuantileWarning(sample, posrange.PositionRange{}), ctx)
+				warnings.AddToContext(annotations.NewInvalidQuantileWarning(sample, a.paramPosRange), ctx)
 			}
 		}
 	}
@@ -163,7 +167,7 @@ func (a *aggregate) Next(ctx context.Context, buf []model.StepVector) (int, erro
 	n := min(numTables, len(buf))
 	for i := range n {
 		buf[i].Reset(a.tables[i].timestamp())
-		a.tables[i].populateVector(ctx, &buf[i])
+		a.tables[i].populateVector(ctx, &buf[i], a.posRange)
 	}
 	return n, nil
 }

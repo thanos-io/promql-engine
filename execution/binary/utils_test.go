@@ -7,10 +7,45 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/thanos-io/promql-engine/warnings"
+
 	"github.com/efficientgo/core/testutil"
+	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 )
+
+func TestHistogramTrimming(t *testing.T) {
+	h := &histogram.FloatHistogram{Count: 4, ZeroCount: 4, ZeroThreshold: 1, CounterResetHint: histogram.NotCounterReset}
+	original := h.Copy()
+	for _, op := range []parser.ItemType{parser.TRIM_LOWER, parser.TRIM_UPPER} {
+		t.Run(op.String(), func(t *testing.T) {
+			_, got, keep, warn, err := binOp(op, 0, 0, h, nil)
+			testutil.Ok(t, err)
+			testutil.Assert(t, keep)
+			testutil.Equals(t, warnings.Warnings(0), warn)
+			testutil.Equals(t, 2.0, got.Count)
+			testutil.Equals(t, original, h, "trimming must not mutate shared input")
+			testutil.Assert(t, !shouldDropMetricName(op, false))
+
+			for _, invalid := range [][2]*histogram.FloatHistogram{{nil, nil}, {nil, h}, {h, h}} {
+				_, _, keep, warn, err := binOp(op, 0, 0, invalid[0], invalid[1])
+				testutil.Ok(t, err)
+				testutil.Assert(t, !keep)
+				testutil.Equals(t, warnings.WarnIncompatibleTypesInBinOp, warn)
+			}
+		})
+	}
+}
+
+func TestHistogramSubtractionProducesGauge(t *testing.T) {
+	h := &histogram.FloatHistogram{Count: 4, Sum: 8, CounterResetHint: histogram.NotCounterReset}
+	_, got, keep, _, err := binOp(parser.SUB, 0, 0, h, h)
+	testutil.Ok(t, err)
+	testutil.Assert(t, keep)
+	testutil.Equals(t, histogram.GaugeType, got.CounterResetHint)
+	testutil.Equals(t, histogram.NotCounterReset, h.CounterResetHint)
+}
 
 // TestErrManyToManyMatchDeterministicOrder verifies that errManyToManyMatch.Error()
 // produces a byte-identical error string regardless of which of the two duplicate

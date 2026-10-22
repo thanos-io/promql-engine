@@ -124,17 +124,39 @@ func TestSetBatchSize(t *testing.T) {
 			expected: `sum(rate(http_requests_total[batch=10][5m0s])) and sum(rate(http_requests_total[batch=10][5m0s]))`,
 		},
 		{
+			name:     "subquery requires complete steps",
+			expr:     `sum(sum_over_time(foo[5m:1m]))`,
+			expected: `sum(sum_over_time(foo[5m0s:1m0s]))`,
+		},
+		{
+			name:     "subquery with label-changing expression requires complete steps",
+			expr:     `sum(sum_over_time((-foo)[5m:1m]))`,
+			expected: `sum(sum_over_time(-foo[5m0s:1m0s]))`,
+		},
+		{
+			name:     "aggregation inside subquery enables batching",
+			expr:     `sum(sum_over_time(sum(foo)[5m:1m]))`,
+			expected: `sum(sum_over_time(sum(foo[batch=10])[5m0s:1m0s]))`,
+		},
+		{
 			name:     "group_left disables batching",
 			expr:     `max by (pod) (metric_a * on (pod) group_left (namespace) metric_b)`,
 			expected: `max by (pod) (metric_a * on (pod) group_left (namespace) metric_b)`,
 		},
 	}
 
+	t.Run("clear pre-existing batch size at subquery boundary", func(t *testing.T) {
+		selector := &VectorSelector{BatchSize: 10}
+		root := &Subquery{Expr: selector}
+		SelectorBatchSize{Size: 10}.Optimize(root, &query.Options{})
+		testutil.Equals(t, int64(0), selector.BatchSize)
+	})
+
 	optimizers := append([]Optimizer{SelectorBatchSize{Size: 10}}, DefaultOptimizers...)
 	for _, tcase := range cases {
 		t.Run(tcase.expr, func(t *testing.T) {
 			t.Parallel()
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})

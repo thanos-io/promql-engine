@@ -37,7 +37,7 @@ func (DetectHistogramStatsOptimizer) Optimize(plan Node, _ *query.Options) (Node
 					// walking up the path to see if we find a subquery (or a
 					// histogram function) further up.
 					n.DecodeNativeHistogramStats = true
-				case "histogram_quantile", "histogram_quantiles", "histogram_fraction":
+				case "histogram_quantile", "histogram_quantiles", "histogram_fraction", "histogram_stddev", "histogram_stdvar":
 					// If we ever see a function that needs the whole histogram,
 					// we will not skip the buckets.
 					n.DecodeNativeHistogramStats = false

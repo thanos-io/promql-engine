@@ -150,16 +150,20 @@ func (o *subqueryOperator) Next(ctx context.Context, buf []model.StepVector) (in
 	maxSteps := min(o.stepsBatch, len(buf))
 
 	for i := 0; o.currentStep <= o.maxt && i < maxSteps; i++ {
+		evaluationTime := o.currentStep
+		if o.subQuery.Timestamp != nil {
+			evaluationTime = *o.subQuery.Timestamp
+		}
 		var (
-			rangeStart = o.currentStep - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
+			rangeStart = evaluationTime - o.subQuery.Range.Milliseconds() - o.subQuery.OriginalOffset.Milliseconds()
 			mint       = rangeStart + 1
-			maxt       = o.currentStep - o.subQuery.OriginalOffset.Milliseconds()
+			maxt       = evaluationTime - o.subQuery.OriginalOffset.Milliseconds()
 		)
 		// Ring buffers use an exclusive lower boundary. mint is the first
 		// millisecond included by the subquery and remains the lower bound used
 		// while collecting vectors; Reset therefore receives rangeStart.
 		for _, b := range o.buffers {
-			b.Reset(rangeStart, maxt+o.subQuery.Offset.Milliseconds())
+			b.Reset(rangeStart, o.currentStep)
 		}
 		o.currentTrackedSamples = 0
 		o.lastTrackedSamples = 0
@@ -318,7 +322,7 @@ func (o *subqueryOperator) initSeries(ctx context.Context) error {
 		}
 		for i, s := range series {
 			lbls := s
-			if o.funcExpr.Func.Name != "last_over_time" {
+			if o.funcExpr.Func.Name != "last_over_time" && o.funcExpr.Func.Name != "first_over_time" {
 				lbls = s.DropReserved(schema.IsMetadataLabel)
 			}
 			o.series[i] = lbls

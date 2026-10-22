@@ -16,7 +16,6 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -32,6 +31,10 @@ func (s *Scanners) Close() error {
 	return s.querier.Close()
 }
 
+// NewPrometheusScanners shares a querier across concurrently executing selectors.
+// The storage must support concurrent selection, iteration of distinct series
+// sets, and creation/advancement of distinct sample iterators from that querier.
+// Reader synchronization, if needed, is the storage implementation's responsibility.
 func NewPrometheusScanners(queryable storage.Queryable, qOpts *query.Options, lplan logicalplan.Plan) (*Scanners, error) {
 	var min, max int64
 	if lplan != nil {
@@ -99,7 +102,7 @@ func (p Scanners) NewMatrixSelector(
 		}
 		arg = unwrap
 		if math.IsNaN(unwrap) || unwrap < 0 || unwrap > 1 {
-			warnings.AddToContext(annotations.NewInvalidQuantileWarning(unwrap, posrange.PositionRange{}), ctx)
+			warnings.AddToContext(annotations.NewInvalidQuantileWarning(unwrap, call.ArgPositionRange(0)), ctx)
 		}
 	case "predict_linear":
 		unwrap, err := logicalplan.UnwrapFloat(call.Args[1])
@@ -140,6 +143,7 @@ func (p Scanners) NewMatrixSelector(
 	for i := range opts.DecodingConcurrency {
 		operator, err := NewMatrixSelector(
 			selector,
+			vs.PositionRange(),
 			call.Func.Name,
 			arg,
 			arg2,
