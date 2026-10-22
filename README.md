@@ -80,10 +80,7 @@ The engine uses two orthogonal kinds of parallelism, both expressed through *exc
 
 ### Storage concurrency requirements
 
-Storage must support concurrent `Select` calls and iteration of distinct series
-sets and sample iterators from a shared `storage.Querier`, including iterators
-created from the same `Series`. Each individual iterator is used sequentially.
-This requirement also applies when `DecodingConcurrency` is set to one.
+Storage must support concurrent `Select` calls and iteration of distinct series sets and sample iterators from a shared `storage.Querier`, including iterators created from the same `Series`. Each individual iterator is used sequentially. This requirement also applies when `DecodingConcurrency` is set to one.
 
 ### Plan optimization
 
