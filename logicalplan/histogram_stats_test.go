@@ -49,15 +49,20 @@ func TestDetectHistogramStatsOptimizer(t *testing.T) {
 			want: []bool{false},
 		},
 		{
-			name: "histogram stddev does not block upstream detector",
+			name: "histogram stddev requires buckets",
 			expr: `histogram_count(histogram_stddev(metric) * metric)`,
-			want: []bool{true, true},
+			want: []bool{false, true},
+		},
+		{
+			name: "histogram stdvar requires buckets",
+			expr: `histogram_count(histogram_stdvar(metric) * metric)`,
+			want: []bool{false, true},
 		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tc.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
 			testutil.Ok(t, err)
 
 			plan, err := NewFromAST(expr, &query.Options{}, PlanOptions{})

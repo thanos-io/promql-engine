@@ -13,12 +13,12 @@ import (
 
 	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/stretchr/testify/require"
 )
@@ -27,6 +27,7 @@ func TestQueryExplain(t *testing.T) {
 	t.Parallel()
 	opts := engine.Opts{Timeout: 1 * time.Hour}
 	series := storage.MockSeries(
+		nil,
 		[]int64{240, 270, 300, 600, 630, 660},
 		[]float64{1, 2, 3, 4, 5, 6},
 		[]string{labels.MetricName, "foo"},
@@ -60,8 +61,10 @@ func TestQueryExplain(t *testing.T) {
 			}},
 		},
 		{
-			query:    `foo`,
-			expected: &engine.ExplainOutputNode{OperatorName: "[coalesce]", Children: concurrencyOperators},
+			query: `foo`,
+			expected: &engine.ExplainOutputNode{OperatorName: "[duplicateLabelCheck]", Children: []engine.ExplainOutputNode{
+				{OperatorName: "[coalesce]", Children: concurrencyOperators},
+			}},
 		},
 		{
 			query: `sum by (job) (foo)`,
@@ -114,6 +117,7 @@ func TestQueryAnalyzeOperatorID(t *testing.T) {
 	t.Parallel()
 	opts := engine.Opts{Timeout: 1 * time.Hour}
 	series := storage.MockSeries(
+		nil,
 		[]int64{240, 270, 300, 600, 630, 660},
 		[]float64{1, 2, 3, 4, 5, 6},
 		[]string{`__name__`, "foo"},
@@ -222,21 +226,25 @@ func TestQueryAnalyze(t *testing.T) {
 	opts := engine.Opts{Timeout: 1 * time.Hour}
 	seriesList := []storage.Series{
 		storage.MockSeries(
+			nil,
 			[]int64{240, 270, 300, 600, 630, 660},
 			[]float64{1, 2, 3, 4, 5, 6},
 			[]string{labels.MetricName, "foo"},
 		),
 		storage.MockSeries(
+			nil,
 			[]int64{240, 270, 300, 600, 630, 660},
 			[]float64{1, 2, 3, 4, 5, 6},
 			[]string{labels.MetricName, "http_requests_total", "pod", "nginx-1"},
 		),
 		storage.MockSeries(
+			nil,
 			[]int64{240, 270, 300, 600, 630, 660},
 			[]float64{1, 2, 3, 4, 5, 6},
 			[]string{labels.MetricName, "http_requests_total", "pod", "nginx-2"},
 		),
 		storage.MockSeries(
+			nil,
 			[]int64{240, 270, 300, 600, 630, 660},
 			[]float64{1, 2, 3, 4, 5, 6},
 			[]string{labels.MetricName, "http_requests_total", "pod", "nginx-3"},
@@ -317,7 +325,7 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 				http_requests_total{pod="nginx-1"} 1+1x100
 				http_requests_total{pod="nginx-2"} 1+1x100`
 
-	tstorage := promqltest.LoadedStorage(t, load)
+	tstorage := teststorage.LoadedStorage(t, load)
 	defer tstorage.Close()
 	minT := tstorage.Head().Meta().MinTime
 	maxT := tstorage.Head().Meta().MaxTime
@@ -334,7 +342,7 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
 		tstorage,
-		promql.NewPrometheusQueryOpts(false, 0),
+		promql.NewPrometheusQueryOpts(false, 0, nil),
 		"sum(rate(http_requests_total[10m])) by (pod)", // Increase range to 60 minutes
 		time.Unix(minT, 0),
 		time.Unix(maxT, 0),
@@ -376,7 +384,7 @@ func TestAnalyzeNoop(t *testing.T) {
 		storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
 			return storage.NoopQuerier(), nil
 		}),
-		promql.NewPrometheusQueryOpts(false, 0),
+		promql.NewPrometheusQueryOpts(false, 0, nil),
 		"up",
 		time.Unix(0, 0),
 	)
@@ -429,7 +437,7 @@ func TestAnalyzPeak(t *testing.T) {
 				http_requests_total{pod="nginx-1"} 1+1x100
 				http_requests_total{pod="nginx-2"} 1+1x100`
 
-	tstorage := promqltest.LoadedStorage(t, load)
+	tstorage := teststorage.LoadedStorage(t, load)
 	defer tstorage.Close()
 	minT := tstorage.Head().Meta().MinTime
 	maxT := tstorage.Head().Meta().MaxTime
@@ -446,7 +454,7 @@ func TestAnalyzPeak(t *testing.T) {
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
 		tstorage,
-		promql.NewPrometheusQueryOpts(false, 0),
+		promql.NewPrometheusQueryOpts(false, 0, nil),
 		"sum(rate(http_requests_total[10m])) by (pod)",
 		time.Unix(minT, 0),
 		time.Unix(maxT, 0),

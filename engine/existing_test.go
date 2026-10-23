@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 func TestRangeQuery(t *testing.T) {
@@ -141,7 +141,7 @@ func TestRangeQuery(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
 			t.Parallel()
-			storage := promqltest.LoadedStorage(t, c.Load)
+			storage := teststorage.LoadedStorage(t, c.Load)
 			defer storage.Close()
 
 			qry, err := ng.NewRangeQuery(context.Background(), storage, nil, c.Query, c.Start, c.End, c.Interval)

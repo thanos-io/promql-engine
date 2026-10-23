@@ -63,6 +63,10 @@ jobs:
     name: Run tests
     env:
       GOBIN: /tmp/.bin
+      # Serialize packages/tests without changing the engine's decoding concurrency.
+      GOMAXPROCS: '4'
+      GOMEMLIMIT: 2GiB
+      GOFLAGS: -p=1 -parallel=1
     steps:
       - name: Check out code into the Go module directory.
         uses: actions/checkout@v4
@@ -81,6 +85,10 @@ jobs:
     name: Run tests --tags=slicelabels
     env:
       GOBIN: /tmp/.bin
+      # Serialize packages/tests without changing the engine's decoding concurrency.
+      GOMAXPROCS: '4'
+      GOMEMLIMIT: 2GiB
+      GOFLAGS: -p=1 -parallel=1
     steps:
       - name: Check out code into the Go module directory.
         uses: actions/checkout@v4

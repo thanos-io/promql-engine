@@ -76,7 +76,11 @@ Because samples are streamed one step batch at a time rather than fully material
 
 ### Concurrency control
 
-The engine uses two orthogonal kinds of parallelism, both expressed through *exchange* operators that respect the same `Next()` interface as ordinary operators. *Inter-operator* (pipeline) parallelism is added by concurrent exchanges, which run a downstream operator in a background goroutine so that successive pipeline stages execute on different cores. *Intra-operator* (data) parallelism is added by fanning a selector out into several shards, each reading a disjoint hash partition of the matching series, and merging them with a coalesce exchange; this parallelizes chunk decoding across cores. The degree of intra-operator parallelism is controlled by the `DecodingConcurrency` option, which defaults to half of `GOMAXPROCS`.
+The engine uses two orthogonal kinds of parallelism, both expressed through *exchange* operators that respect the same `Next()` interface as ordinary operators. *Inter-operator* (pipeline) parallelism is added by concurrent exchanges, which run a downstream operator in a background goroutine so that successive pipeline stages execute on different cores. *Intra-operator* (data) parallelism is added by fanning a selector out into several shards, each reading a disjoint partition of the matching series, and merging them with a coalesce exchange; this parallelizes chunk decoding across cores. The degree of intra-operator parallelism is controlled by the `DecodingConcurrency` option, which defaults to half of `GOMAXPROCS`.
+
+### Storage concurrency requirements
+
+Storage must support concurrent `Select` calls and iteration of distinct series sets and sample iterators from a shared `storage.Querier`, including iterators created from the same `Series`. Each individual iterator is used sequentially. This requirement also applies when `DecodingConcurrency` is set to one.
 
 ### Plan optimization
 
