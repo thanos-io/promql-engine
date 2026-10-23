@@ -13,7 +13,6 @@ import (
 
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -266,16 +265,13 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 			}
 		}
 		args := make([]Node, len(t.Args))
-		positions := make([]posrange.PositionRange, len(t.Args))
 		// nested timestamp functions
 		for i, arg := range t.Args {
 			args[i] = replacePrometheusNodes(arg)
-			positions[i] = arg.PositionRange()
 		}
 		return &FunctionCall{
-			Func:         *t.Func,
-			Args:         args,
-			ArgsPosRange: positions,
+			Func: *t.Func,
+			Args: args,
 		}
 	case *parser.ParenExpr:
 		return &Parens{
@@ -287,18 +283,12 @@ func replacePrometheusNodes(plan parser.Expr) Node {
 			Expr: replacePrometheusNodes(t.Expr),
 		}
 	case *parser.AggregateExpr:
-		var paramPos posrange.PositionRange
-		if t.Param != nil {
-			paramPos = t.Param.PositionRange()
-		}
 		return &Aggregation{
-			ExprPosRange:  t.Expr.PositionRange(),
-			ParamPosRange: paramPos,
-			Op:            t.Op,
-			Expr:          replacePrometheusNodes(t.Expr),
-			Param:         replacePrometheusNodes(t.Param),
-			Grouping:      t.Grouping,
-			Without:       t.Without,
+			Op:       t.Op,
+			Expr:     replacePrometheusNodes(t.Expr),
+			Param:    replacePrometheusNodes(t.Param),
+			Grouping: t.Grouping,
+			Without:  t.Without,
 		}
 	case *parser.BinaryExpr:
 		return &Binary{

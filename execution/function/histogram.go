@@ -37,14 +37,12 @@ type histogramOperator struct {
 	once   sync.Once
 	series []labels.Labels
 
-	funcName       string
-	funcArgs       logicalplan.Nodes
-	vectorPosRange posrange.PositionRange
-	scalarPosRange posrange.PositionRange
-	stepsBatch     int
-	vectorOp       model.VectorOperator
-	scalar1Op      model.VectorOperator
-	scalar2Op      model.VectorOperator
+	funcName   string
+	funcArgs   logicalplan.Nodes
+	stepsBatch int
+	vectorOp   model.VectorOperator
+	scalar1Op  model.VectorOperator
+	scalar2Op  model.VectorOperator
 
 	// scalarPoints is a reusable buffer for points from the first argument of histogram_quantile.
 	scalar1Points []float64
@@ -76,11 +74,9 @@ func newHistogramOperator(
 	opts *query.Options,
 ) model.VectorOperator {
 	o := &histogramOperator{
-		funcName:       call.Func.Name,
-		funcArgs:       call.Args,
-		vectorPosRange: call.ArgPositionRange(len(call.Args) - 1),
-		scalarPosRange: call.ArgPositionRange(0),
-		stepsBatch:     stepsBatch,
+		funcName:   call.Func.Name,
+		funcArgs:   call.Args,
+		stepsBatch: stepsBatch,
 	}
 
 	switch o.funcName {
@@ -163,7 +159,7 @@ func (o *histogramOperator) Next(ctx context.Context, buf []model.StepVector) (i
 			if len(scalar.Samples) > 0 {
 				sample := scalar.Samples[0]
 				if math.IsNaN(sample) || sample < 0 || sample > 1 {
-					warnings.AddToContext(annotations.NewInvalidQuantileWarning(sample, o.scalarPosRange), ctx)
+					warnings.AddToContext(annotations.NewInvalidQuantileWarning(sample, posrange.PositionRange{}), ctx)
 				}
 				o.scalar1Points = append(o.scalar1Points, sample)
 			}
@@ -232,7 +228,7 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				if outputSeries != nil && !o.badBucketWarned[uint64(seriesID)] {
 					o.badBucketWarned[uint64(seriesID)] = true
 					metricName := o.inputSeriesNames[seriesID]
-					warnings.AddToContext(annotations.NewBadBucketLabelWarning(metricName, outputSeries.bucketLabelValue, o.vectorPosRange), ctx)
+					warnings.AddToContext(annotations.NewBadBucketLabelWarning(metricName, outputSeries.bucketLabelValue, posrange.PositionRange{}), ctx)
 				}
 				continue
 			}
@@ -256,15 +252,15 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				var v float64
 				switch o.funcName {
 				case "histogram_quantile":
-					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], o.vectorPosRange)
+					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
 					buf[n].AppendSample(uint64(outputSeriesID), v)
 				case "histogram_fraction":
-					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], o.vectorPosRange)
+					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
 					buf[n].AppendSample(uint64(outputSeriesID), v)
 				}
 				warnings.MergeToContext(annos, ctx)
 			} else {
-				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning(o.inputSeriesNames[seriesID], o.vectorPosRange), ctx)
+				warnings.AddToContext(annotations.NewMixedClassicNativeHistogramsWarning(o.inputSeriesNames[seriesID], posrange.PositionRange{}), ctx)
 				o.seriesBuckets[outputSeriesID] = o.seriesBuckets[outputSeriesID][:0]
 			}
 		}
@@ -289,7 +285,7 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				v, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := promql.BucketQuantile(o.scalar1Points[stepIndex], stepBuckets)
 				buf[n].AppendSample(uint64(i), v)
 				if forcedMonotonicity {
-					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.inputSeriesNames[i], o.vectorPosRange, vector.T, minBucket, maxBucket, maxDiff), ctx)
+					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.inputSeriesNames[i], posrange.PositionRange{}, vector.T, minBucket, maxBucket, maxDiff), ctx)
 				}
 			case "histogram_fraction":
 				// BucketFraction handles single bucket and other edge cases properly.

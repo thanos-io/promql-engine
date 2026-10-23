@@ -301,9 +301,9 @@ func newAggregateExpression(ctx context.Context, e *logicalplan.Aggregation, sca
 		}
 	}
 	if e.Op == parser.TOPK || e.Op == parser.BOTTOMK || e.Op == parser.LIMITK || e.Op == parser.LIMIT_RATIO {
-		next, err = aggregate.NewKHashAggregate(next, paramOp, e.Op, e.ExprPosRange, e.ParamPosRange, !e.Without, e.Grouping, opts)
+		next, err = aggregate.NewKHashAggregate(next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 	} else {
-		next, err = aggregate.NewHashAggregate(next, paramOp, e.Op, e.ExprPosRange, e.ParamPosRange, !e.Without, e.Grouping, opts)
+		next, err = aggregate.NewHashAggregate(next, paramOp, e.Op, !e.Without, e.Grouping, opts)
 	}
 	if err != nil {
 		return nil, err

@@ -12,7 +12,6 @@ import (
 	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/parser/posrange"
 )
 
 type NodeType string
@@ -212,21 +211,10 @@ type FunctionCall struct {
 	Func parser.Function
 	// Arguments passed into the function.
 	Args []Node `json:"-"`
-	// Source positions are retained for annotations after AST conversion.
-	ArgsPosRange []posrange.PositionRange `json:",omitempty"`
-}
-
-func (f *FunctionCall) ArgPositionRange(i int) posrange.PositionRange {
-	if i < len(f.ArgsPosRange) {
-		return f.ArgsPosRange[i]
-	}
-	// Programmatically constructed plans may not have source positions.
-	return posrange.PositionRange{}
 }
 
 func (f *FunctionCall) Clone() Node {
 	clone := *f
-	clone.ArgsPosRange = shallowCloneSlice(f.ArgsPosRange)
 	clone.Args = make([]Node, 0, len(f.Args))
 	for _, arg := range f.Args {
 		clone.Args = append(clone.Args, arg.Clone())
@@ -296,13 +284,11 @@ func (p *Unary) UnmarshalJSON(data []byte) error {
 
 // Aggregation represents a PromQL aggregation.
 type Aggregation struct {
-	Op            parser.ItemType
-	Expr          Node `json:"-"`
-	Param         Node `json:"-"`
-	Grouping      []string
-	Without       bool
-	ExprPosRange  posrange.PositionRange
-	ParamPosRange posrange.PositionRange
+	Op       parser.ItemType
+	Expr     Node `json:"-"`
+	Param    Node `json:"-"`
+	Grouping []string
+	Without  bool
 }
 
 func (f *Aggregation) Clone() Node {
@@ -351,20 +337,16 @@ func (f *Aggregation) getAggOpStr() string {
 }
 
 type aggregation struct {
-	Op            string
-	Grouping      []string
-	Without       bool
-	ExprPosRange  posrange.PositionRange
-	ParamPosRange posrange.PositionRange
+	Op       string
+	Grouping []string
+	Without  bool
 }
 
 func (f *Aggregation) MarshalJSON() ([]byte, error) {
 	return json.Marshal(aggregation{
-		Op:            f.Op.String(),
-		Grouping:      f.Grouping,
-		Without:       f.Without,
-		ExprPosRange:  f.ExprPosRange,
-		ParamPosRange: f.ParamPosRange,
+		Op:       f.Op.String(),
+		Grouping: f.Grouping,
+		Without:  f.Without,
 	})
 }
 
@@ -379,8 +361,6 @@ func (f *Aggregation) UnmarshalJSON(data []byte) error {
 	f.Op = opItem.Typ
 	f.Grouping = a.Grouping
 	f.Without = a.Without
-	f.ExprPosRange = a.ExprPosRange
-	f.ParamPosRange = a.ParamPosRange
 	return nil
 }
 

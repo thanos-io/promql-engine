@@ -66,7 +66,6 @@ type matrixSelector struct {
 	once       sync.Once
 
 	functionName string
-	posRange     posrange.PositionRange
 	call         ringbuffer.FunctionCall
 	fhReader     *histogram.FloatHistogram
 	opts         *query.Options
@@ -96,7 +95,6 @@ const sampleLimitCheckInterval = 1
 // NewMatrixSelector creates operator which selects vector of series over time.
 func NewMatrixSelector(
 	selector SeriesSelector,
-	posRange posrange.PositionRange,
 	functionName string,
 	arg float64,
 	arg2 float64,
@@ -111,7 +109,6 @@ func NewMatrixSelector(
 	}
 	m := &matrixSelector{
 		storage:      selector,
-		posRange:     posRange,
 		call:         call,
 		functionName: functionName,
 		scalarArg:    arg,
@@ -163,7 +160,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 
 	if o.currentStep > o.maxt {
 		if o.nonCounterMetric != "" && o.hasFloats {
-			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, o.posRange), ctx)
+			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
 		}
 
 		return 0, nil
@@ -236,7 +233,7 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 				return 0, err
 			}
 			if warn != 0 {
-				emitRingbufferWarnings(ctx, warn, scanner.metricName, o.posRange)
+				emitRingbufferWarnings(ctx, warn, scanner.metricName)
 			}
 			if ok {
 				buf[currStep].T = seriesTs
@@ -460,29 +457,29 @@ func (m *matrixScanner) selectPoints(
 }
 
 // emitRingbufferWarnings converts warnings.Warnings flags to proper annotations with metric names.
-func emitRingbufferWarnings(ctx context.Context, warn warnings.Warnings, metricName string, posRange posrange.PositionRange) {
+func emitRingbufferWarnings(ctx context.Context, warn warnings.Warnings, metricName string) {
 	if warn&warnings.WarnNotCounter != 0 {
-		warnings.AddToContext(annotations.NewNativeHistogramNotCounterWarning(metricName, posRange), ctx)
+		warnings.AddToContext(annotations.NewNativeHistogramNotCounterWarning(metricName, posrange.PositionRange{}), ctx)
 	}
 	if warn&warnings.WarnNotGauge != 0 {
-		warnings.AddToContext(annotations.NewNativeHistogramNotGaugeWarning(metricName, posRange), ctx)
+		warnings.AddToContext(annotations.NewNativeHistogramNotGaugeWarning(metricName, posrange.PositionRange{}), ctx)
 	}
 	if warn&warnings.WarnMixedFloatsHistograms != 0 {
-		warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning(metricName, posRange), ctx)
+		warnings.AddToContext(annotations.NewMixedFloatsHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
 	}
 	if warn&warnings.WarnMixedExponentialCustomBuckets != 0 {
-		warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, posRange), ctx)
+		warnings.AddToContext(annotations.NewMixedExponentialCustomHistogramsWarning(metricName, posrange.PositionRange{}), ctx)
 	}
 	if warn&warnings.WarnHistogramIgnoredInMixedRange != 0 {
-		warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, posRange), ctx)
+		warnings.AddToContext(annotations.NewHistogramIgnoredInMixedRangeInfo(metricName, posrange.PositionRange{}), ctx)
 	}
 	if warn&warnings.WarnCounterResetCollision != 0 {
-		warnings.AddToContext(annotations.NewHistogramCounterResetCollisionWarning(posRange, annotations.HistogramAgg), ctx)
+		warnings.AddToContext(annotations.NewHistogramCounterResetCollisionWarning(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
 	}
 	if warn&warnings.WarnNHCBBoundsReconciled != 0 {
-		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posRange, annotations.HistogramSub), ctx)
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramSub), ctx)
 	}
 	if warn&warnings.WarnNHCBBoundsReconciledAgg != 0 {
-		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posRange, annotations.HistogramAgg), ctx)
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
 	}
 }

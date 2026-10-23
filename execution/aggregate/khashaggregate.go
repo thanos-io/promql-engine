@@ -26,14 +26,13 @@ import (
 )
 
 type kAggregate struct {
-	next                    model.VectorOperator
-	paramOp                 model.VectorOperator
-	by                      bool
-	labels                  []string
-	aggregation             parser.ItemType
-	posRange, paramPosRange posrange.PositionRange
-	stepsBatch              int
-	compare                 func(float64, float64) bool
+	next        model.VectorOperator
+	paramOp     model.VectorOperator
+	by          bool
+	labels      []string
+	aggregation parser.ItemType
+	stepsBatch  int
+	compare     func(float64, float64) bool
 
 	once        sync.Once
 	series      []labels.Labels
@@ -49,7 +48,6 @@ func NewKHashAggregate(
 	next model.VectorOperator,
 	paramOp model.VectorOperator,
 	aggregation parser.ItemType,
-	posRange, paramPosRange posrange.PositionRange,
 	by bool,
 	labels []string,
 	opts *query.Options,
@@ -72,16 +70,14 @@ func NewKHashAggregate(
 	slices.Sort(labels)
 
 	op := &kAggregate{
-		next:          next,
-		by:            by,
-		aggregation:   aggregation,
-		posRange:      posRange,
-		paramPosRange: paramPosRange,
-		labels:        labels,
-		paramOp:       paramOp,
-		compare:       compare,
-		params:        make([]float64, opts.StepsBatch),
-		stepsBatch:    opts.StepsBatch,
+		next:        next,
+		by:          by,
+		aggregation: aggregation,
+		labels:      labels,
+		paramOp:     paramOp,
+		compare:     compare,
+		params:      make([]float64, opts.StepsBatch),
+		stepsBatch:  opts.StepsBatch,
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
@@ -136,10 +132,10 @@ func (a *kAggregate) Next(ctx context.Context, buf []model.StepVector) (int, err
 			switch {
 			case val < -1.0:
 				val = -1.0
-				warnings.AddToContext(annotations.NewInvalidRatioWarning(a.params[i], val, a.paramPosRange), ctx)
+				warnings.AddToContext(annotations.NewInvalidRatioWarning(a.params[i], val, posrange.PositionRange{}), ctx)
 			case val > 1.0:
 				val = 1.0
-				warnings.AddToContext(annotations.NewInvalidRatioWarning(a.params[i], val, a.paramPosRange), ctx)
+				warnings.AddToContext(annotations.NewInvalidRatioWarning(a.params[i], val, posrange.PositionRange{}), ctx)
 			}
 			a.params[i] = val
 		}
@@ -155,7 +151,7 @@ func (a *kAggregate) Next(ctx context.Context, buf []model.StepVector) (int, err
 			continue
 		}
 		if a.aggregation != parser.LIMITK && a.aggregation != parser.LIMIT_RATIO && len(vector.Histograms) > 0 {
-			warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo(a.aggregation.String(), a.posRange), ctx)
+			warnings.AddToContext(annotations.NewHistogramIgnoredInAggregationInfo(a.aggregation.String(), posrange.PositionRange{}), ctx)
 		}
 
 		var k int

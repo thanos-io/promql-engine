@@ -16,6 +16,7 @@ import (
 
 	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/promql"
+	"github.com/prometheus/prometheus/promql/parser/posrange"
 	"github.com/prometheus/prometheus/storage"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
 	"github.com/prometheus/prometheus/util/annotations"
@@ -102,7 +103,7 @@ func (p Scanners) NewMatrixSelector(
 		}
 		arg = unwrap
 		if math.IsNaN(unwrap) || unwrap < 0 || unwrap > 1 {
-			warnings.AddToContext(annotations.NewInvalidQuantileWarning(unwrap, call.ArgPositionRange(0)), ctx)
+			warnings.AddToContext(annotations.NewInvalidQuantileWarning(unwrap, posrange.PositionRange{}), ctx)
 		}
 	case "predict_linear":
 		unwrap, err := logicalplan.UnwrapFloat(call.Args[1])
@@ -143,7 +144,6 @@ func (p Scanners) NewMatrixSelector(
 	for i := range opts.DecodingConcurrency {
 		operator, err := NewMatrixSelector(
 			selector,
-			vs.PositionRange(),
 			call.Func.Name,
 			arg,
 			arg2,
