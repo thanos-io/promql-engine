@@ -759,6 +759,14 @@ or
 			query: `avg_over_time(http_requests_total[30s])`,
 		},
 		{
+			name: "avg_over_time histogram overflow",
+			load: `load 30s
+			    metric {{schema:0 count:1 sum:1 buckets:[1]}} {{schema:0 count:1 sum:1e308 buckets:[1]}}x2 {{schema:0 count:1 sum:1 buckets:[1]}}x4`,
+			query:         `avg_over_time(metric[2m])`,
+			end:           time.Unix(240, 0),
+			expectSuccess: true,
+		},
+		{
 			name: "abs",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1"} -10+1x15

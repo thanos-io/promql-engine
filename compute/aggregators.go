@@ -405,12 +405,10 @@ type AvgAcc struct {
 	avg         float64
 	incremental bool
 	count       int64
-	hasValue    bool
 	hasError    bool // histogram error occurred; accumulator becomes no-op
 
 	histSum                 *histogram.FloatHistogram
 	histScratch             *histogram.FloatHistogram
-	histSumScratch          *histogram.FloatHistogram
 	histCompensation        *histogram.FloatHistogram
 	histCompensationScratch *histogram.FloatHistogram
 	histIncremental         bool
@@ -452,29 +450,28 @@ func (a *AvgAcc) addHistogram(h *histogram.FloatHistogram) error {
 	if a.histSum == nil {
 		a.histSum = h.Copy()
 		a.histScratch = &histogram.FloatHistogram{}
-		a.histSumScratch = &histogram.FloatHistogram{}
 		return nil
 	}
 
 	if !a.histIncremental {
 		// Try a compensated sum first. Keep the previous sum intact so that
 		// an overflow can switch to an incremental mean without losing it.
-		a.histSum.CopyTo(a.histSumScratch)
+		a.histSum.CopyTo(a.histScratch)
 		if a.histCompensation != nil {
 			if a.histCompensationScratch == nil {
 				a.histCompensationScratch = &histogram.FloatHistogram{}
 			}
 			a.histCompensation.CopyTo(a.histCompensationScratch)
 		}
-		c, _, reconciled, err := a.histSumScratch.KahanAdd(h, a.histCompensationScratch)
+		c, _, reconciled, err := a.histScratch.KahanAdd(h, a.histCompensationScratch)
 		if err != nil {
 			return err
 		}
 		if reconciled {
 			a.warn |= warnings.WarnNHCBBoundsReconciledAgg
 		}
-		if !a.histSumScratch.HasOverflow() {
-			a.histSum, a.histSumScratch = a.histSumScratch, a.histSum
+		if !a.histScratch.HasOverflow() {
+			a.histSum, a.histScratch = a.histScratch, a.histSum
 			a.histCompensation, a.histCompensationScratch = c, a.histCompensation
 			return nil
 		}
@@ -503,13 +500,10 @@ func (a *AvgAcc) addHistogram(h *histogram.FloatHistogram) error {
 
 func (a *AvgAcc) addFloat(v float64) error {
 	a.count++
-	if !a.hasValue {
-		a.hasValue = true
+	if a.count == 1 {
 		a.kahanSum = v
 		return nil
 	}
-
-	a.hasValue = true
 
 	if !a.incremental {
 		newSum, newC := KahanSumInc(v, a.kahanSum, a.kahanC)
@@ -623,7 +617,6 @@ func (a *AvgAcc) Warnings() warnings.Warnings {
 }
 
 func (a *AvgAcc) Reset(_ float64) {
-	a.hasValue = false
 	a.hasError = false
 	a.incremental = false
 	a.kahanSum = 0

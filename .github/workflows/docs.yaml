@@ -24,16 +24,4 @@ jobs:
           go-version-file: go.mod
 
       - name: Check docs
-        run: |
-          if make check-docs > /tmp/check-docs.log 2>&1; then
-            cat /tmp/check-docs.log
-          else
-            status=$?
-            cat /tmp/check-docs.log
-            details="$(tail -c 12000 /tmp/check-docs.log)"
-            details="${details//'%'/'%25'}"
-            details="${details//$'\r'/'%0D'}"
-            details="${details//$'\n'/'%0A'}"
-            echo "::error title=Documentation check failed::$details"
-            exit "$status"
-          fi
+        run: make check-docs
