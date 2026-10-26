@@ -135,6 +135,84 @@ func renderExprTree(expr Node) string {
 	}
 }
 
+func TestTimestampSelector(t *testing.T) {
+	for _, tc := range []struct {
+		selector string
+		offset   time.Duration
+	}{
+		{"metric", 0},
+		{"metric offset 1m", time.Minute},
+		{"metric offset -1m", -time.Minute},
+		{"metric @ 1000", 0},
+		{"metric @ 1000 offset 1m", 0},
+		{"metric @ 1000 offset -1m", 0},
+	} {
+		t.Run(tc.selector, func(t *testing.T) {
+			for _, wrappers := range []struct {
+				name     string
+				selector bool
+				call     bool
+			}{
+				{name: "unwrapped"},
+				{name: "invariant selector", selector: true},
+				{name: "invariant call", call: true},
+				{name: "both invariant", selector: true, call: true},
+			} {
+				t.Run(wrappers.name, func(t *testing.T) {
+					expr, err := parser.NewParser(parser.Options{}).ParseExpr("timestamp((" + tc.selector + "))")
+					testutil.Ok(t, err)
+					call := expr.(*parser.Call)
+					selector := UnwrapParens(call.Args[0]).(*parser.VectorSelector)
+					originalOffset := selector.Offset
+
+					// Exercise both upstream AST shapes, including parentheses on
+					// either side of the step-invariant wrapper.
+					wantWrappers := 0
+					if wrappers.selector {
+						call.Args[0] = &parser.ParenExpr{Expr: &parser.StepInvariantExpr{Expr: call.Args[0]}}
+						wantWrappers++
+					}
+					if wrappers.call {
+						expr = &parser.StepInvariantExpr{Expr: expr}
+						wantWrappers++
+					}
+
+					node := replacePrometheusNodes(expr)
+					for range wantWrappers {
+						invariant, ok := node.(*StepInvariantExpr)
+						testutil.Assert(t, ok, "step-invariant wrappers must be preserved")
+						node = invariant.Expr
+					}
+					vector, ok := node.(*VectorSelector)
+					testutil.Assert(t, ok, "timestamp must be pushed into the selector")
+					testutil.Assert(t, vector.SelectTimestamp)
+					testutil.Equals(t, tc.offset, vector.OriginalOffset)
+					testutil.Equals(t, originalOffset, vector.Offset, "the effective offset must not change")
+				})
+			}
+		})
+	}
+}
+
+func TestTimestampSelectorDoesNotCrossExpressions(t *testing.T) {
+	for _, arg := range []string{"sort(metric)", "timestamp(metric)", "abs(metric)", "metric + other"} {
+		t.Run(arg, func(t *testing.T) {
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr("timestamp(" + arg + ")")
+			testutil.Ok(t, err)
+			call := expr.(*parser.Call)
+			_, ok := timestampSelector(call.Args[0])
+			testutil.Assert(t, !ok, "must not push timestamp through another expression")
+
+			call.Args[0] = &parser.StepInvariantExpr{Expr: &parser.ParenExpr{Expr: call.Args[0]}}
+			_, ok = timestampSelector(call.Args[0])
+			testutil.Assert(t, !ok, "wrapping an expression must not make it eligible for pushdown")
+			converted, ok := replacePrometheusNodes(call).(*FunctionCall)
+			testutil.Assert(t, ok, "the outer timestamp must remain a function call")
+			testutil.Equals(t, "timestamp", converted.Func.Name)
+		})
+	}
+}
+
 func TestDefaultOptimizers(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -200,7 +278,7 @@ func TestDefaultOptimizers(t *testing.T) {
 
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -313,7 +391,7 @@ func TestMatcherPropagation(t *testing.T) {
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			t.Parallel()
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
@@ -365,7 +443,7 @@ func TestTrimSorts(t *testing.T) {
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
@@ -418,7 +496,7 @@ func TestReduceConstantExpressions(t *testing.T) {
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
-			expr, err := parser.ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})

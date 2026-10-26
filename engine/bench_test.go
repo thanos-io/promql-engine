@@ -13,15 +13,14 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/tsdb"
 	"github.com/prometheus/prometheus/tsdb/chunkenc"
-	"github.com/prometheus/prometheus/util/teststorage"
 )
 
 func BenchmarkChunkDecoding(b *testing.B) {
@@ -789,6 +788,7 @@ func BenchmarkInstantQuery(b *testing.B) {
 func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 	db := createRequestsMetricBlock(b, 10000, 9900)
 	defer db.Close()
+	queryable := teststorage.WrapQueryable(db)
 
 	start := time.Unix(0, 0)
 	end := start.Add(6 * time.Hour)
@@ -805,7 +805,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 			}
 			ng := engine.New(opts)
 			ctx := context.Background()
-			qry, err := ng.NewRangeQuery(ctx, db, nil, query, start, end, step)
+			qry, err := ng.NewRangeQuery(ctx, queryable, nil, query, start, end, step)
 			testutil.Ok(b, err)
 
 			res := qry.Exec(ctx)
@@ -818,7 +818,7 @@ func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 		for b.Loop() {
 			ng := engine.New(engine.Opts{Timeout: 100 * time.Second})
 			ctx := context.Background()
-			qry, err := ng.NewRangeQuery(ctx, db, nil, query, start, end, step)
+			qry, err := ng.NewRangeQuery(ctx, queryable, nil, query, start, end, step)
 			testutil.Ok(b, err)
 
 			res := qry.Exec(ctx)
@@ -844,7 +844,7 @@ func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.Test
 // nolint: unparam
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *teststorage.TestStorage {
 	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
-	return promqltest.LoadedStorage(b, load)
+	return teststorage.LoadedStorage(b, load)
 }
 
 func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *tsdb.DB {

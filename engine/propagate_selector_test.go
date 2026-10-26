@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/thanos-io/promql-engine/engine"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/logicalplan"
 
 	"github.com/cortexproject/promqlsmith"
@@ -18,7 +19,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
-	"github.com/prometheus/prometheus/promql/promqltest"
 )
 
 func TestPropagateMatchers(t *testing.T) {
@@ -43,7 +43,7 @@ func TestPropagateMatchers(t *testing.T) {
 		http_requests_total3{pod="nginx-2", job="app", env="dev", cluster="us-east-1"} 2+2x40
 	`
 
-	storage := promqltest.LoadedStorage(t, load)
+	storage := teststorage.LoadedStorage(t, load)
 	defer storage.Close()
 
 	// Get series for PromQLSmith

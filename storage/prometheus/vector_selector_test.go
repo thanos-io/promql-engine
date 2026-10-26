@@ -10,11 +10,11 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
+	"github.com/thanos-io/promql-engine/internal/teststorage"
 	"github.com/thanos-io/promql-engine/query"
 
 	"github.com/efficientgo/core/testutil"
 	"github.com/prometheus/prometheus/model/labels"
-	"github.com/prometheus/prometheus/promql/promqltest"
 	"github.com/prometheus/prometheus/storage"
 )
 
@@ -38,7 +38,7 @@ func sampleTimestamps(vectors []model.StepVector, signature uint64) []int64 {
 func newTestVectorSelector(t *testing.T, load string, maxt time.Duration, stepsBatch int) (*vectorSelector, func()) {
 	t.Helper()
 
-	testStorage := promqltest.LoadedStorage(t, load)
+	testStorage := teststorage.LoadedStorage(t, load)
 
 	opts := &query.Options{
 		Start:               time.UnixMilli(0),
@@ -215,7 +215,7 @@ func testSelectPointExhaustion(t *testing.T) {
 func memoizedIteratorFor(t *testing.T, load string, lookbackDelta int64) *storage.MemoizedSeriesIterator {
 	t.Helper()
 
-	testStorage := promqltest.LoadedStorage(t, load)
+	testStorage := teststorage.LoadedStorage(t, load)
 	t.Cleanup(func() { testutil.Ok(t, testStorage.Close()) })
 
 	querier, err := testStorage.Querier(0, 600_000)
