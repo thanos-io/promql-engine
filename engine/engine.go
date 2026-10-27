@@ -35,6 +35,12 @@ import (
 	"github.com/prometheus/prometheus/util/stats"
 )
 
+func init() {
+	// TODO: Restore per-engine registration once Prometheus exposes custom-function APIs.
+	// For v0.315.1, register globally before concurrent parsing starts.
+	maps.Copy(parser.Functions, parse.XFunctions)
+}
+
 type QueryType int
 
 type engineMetrics struct {
@@ -96,8 +102,8 @@ type Opts struct {
 	// and aggregations. Defaults to false.
 	EnableExperimentalFunctions bool
 
-	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
-	// This will default to false.
+	// EnableXFunctions is temporarily ignored: X functions are always enabled
+	// until Prometheus restores per-parser custom-function registration.
 	EnableXFunctions bool
 
 	// EnableAnalysis enables query analysis.
@@ -129,20 +135,14 @@ type QueryOpts struct {
 func (opts QueryOpts) LookbackDelta() time.Duration { return opts.LookbackDeltaParam }
 func (opts QueryOpts) EnablePerStepStats() bool     { return opts.EnablePerStepStatsParam }
 
-// UseStartTimestamps disables unsupported start-timestamp evaluation.
-func (QueryOpts) UseStartTimestamps() *bool { return new(false) }
-
-func fromPromQLOpts(opts promql.QueryOpts) (*QueryOpts, error) {
+func fromPromQLOpts(opts promql.QueryOpts) *QueryOpts {
 	if opts == nil {
-		return &QueryOpts{}, nil
-	}
-	if enabled := opts.UseStartTimestamps(); enabled != nil && *enabled {
-		return nil, errors.Wrap(parse.ErrNotImplemented, "start-timestamp evaluation")
+		return &QueryOpts{}
 	}
 	return &QueryOpts{
 		LookbackDeltaParam:      opts.LookbackDelta(),
 		EnablePerStepStatsParam: opts.EnablePerStepStats(),
-	}, nil
+	}
 }
 
 // New creates a new query engine with the given options. The query engine will
@@ -178,13 +178,9 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 		)
 	}
 
-	parserOpts := parser.Options{
-		Functions:                   maps.Clone(parser.Functions),
+	queryParser := parser.NewParser(parser.Options{
 		EnableExperimentalFunctions: opts.EnableExperimentalFunctions,
-	}
-	if opts.EnableXFunctions {
-		maps.Copy(parserOpts.Functions, parse.XFunctions)
-	}
+	})
 
 	metrics := &engineMetrics{
 		currentQueries: promauto.With(opts.Reg).NewGauge(
@@ -217,7 +213,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	}
 
 	return &Engine{
-		parser:             parser.NewParser(parserOpts),
+		parser:             queryParser,
 		scanners:           scanners,
 		activeQueryTracker: queryTracker,
 
@@ -462,20 +458,12 @@ func (e *Engine) MakeRangeQueryFromPlan(ctx context.Context, q storage.Queryable
 
 // NewInstantQuery implements the promql.Engine interface.
 func (e *Engine) NewInstantQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, ts time.Time) (promql.Query, error) {
-	qOpts, err := fromPromQLOpts(opts)
-	if err != nil {
-		return nil, err
-	}
-	return e.MakeInstantQuery(ctx, q, qOpts, qs, ts)
+	return e.MakeInstantQuery(ctx, q, fromPromQLOpts(opts), qs, ts)
 }
 
 // NewRangeQuery implements the promql.Engine interface.
 func (e *Engine) NewRangeQuery(ctx context.Context, q storage.Queryable, opts promql.QueryOpts, qs string, start, end time.Time, step time.Duration) (promql.Query, error) {
-	qOpts, err := fromPromQLOpts(opts)
-	if err != nil {
-		return nil, err
-	}
-	return e.MakeRangeQuery(ctx, q, qOpts, qs, start, end, step)
+	return e.MakeRangeQuery(ctx, q, fromPromQLOpts(opts), qs, start, end, step)
 }
 
 func (e *Engine) makeQueryOpts(start time.Time, end time.Time, step time.Duration, opts *QueryOpts) *query.Options {

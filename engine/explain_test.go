@@ -342,7 +342,7 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
 		tstorage,
-		promql.NewPrometheusQueryOpts(false, 0, nil),
+		promql.NewPrometheusQueryOpts(false, 0),
 		"sum(rate(http_requests_total[10m])) by (pod)", // Increase range to 60 minutes
 		time.Unix(minT, 0),
 		time.Unix(maxT, 0),
@@ -384,7 +384,7 @@ func TestAnalyzeNoop(t *testing.T) {
 		storage.QueryableFunc(func(_, _ int64) (storage.Querier, error) {
 			return storage.NoopQuerier(), nil
 		}),
-		promql.NewPrometheusQueryOpts(false, 0, nil),
+		promql.NewPrometheusQueryOpts(false, 0),
 		"up",
 		time.Unix(0, 0),
 	)
@@ -454,7 +454,7 @@ func TestAnalyzPeak(t *testing.T) {
 	rangeQry, err := ng.NewRangeQuery(
 		ctx,
 		tstorage,
-		promql.NewPrometheusQueryOpts(false, 0, nil),
+		promql.NewPrometheusQueryOpts(false, 0),
 		"sum(rate(http_requests_total[10m])) by (pod)",
 		time.Unix(minT, 0),
 		time.Unix(maxT, 0),

@@ -21,7 +21,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/thanos-io/promql-engine/api"
 	"github.com/thanos-io/promql-engine/engine"
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/extlabels"
@@ -107,6 +106,7 @@ func TestPromqlAcceptance(t *testing.T) {
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/type_and_unit.test",       // feature unsupported
+			"testdata/duration_expression.test", // experimental duration expressions unsupported
 			"testdata/extended_vectors.test",    // experimental anchored/smoothed modifiers unsupported
 			"testdata/fill-modifier.test",       // experimental binary fill modifiers unsupported
 			"testdata/start_timestamps.test",    // experimental start-timestamp evaluation unsupported
@@ -3399,10 +3399,11 @@ func TestParserXFunctions(t *testing.T) {
 			testutil.Ok(t, err)
 			defer q.Close()
 			testutil.Assert(t, strings.Contains(q.String(), name+"("), "the extended function must be preserved")
-			_, err = standard.ParseExpr(expr)
-			testutil.Assert(t, err != nil, "extended functions must not leak into other parsers")
+			parsed, err := standard.ParseExpr(expr)
+			testutil.Ok(t, err)
+			testutil.Equals(t, name, parsed.(*parser.Call).Func.Name)
 			_, registered := parser.Functions[name]
-			testutil.Assert(t, !registered, "the global function registry must not change")
+			testutil.Assert(t, registered, "extended functions must be registered globally")
 		})
 	}
 	q, err := enabled.NewInstantQuery(ctx, storageWithSeries(), nil, `rate(metric[5m])`, now)
@@ -3439,23 +3440,6 @@ func TestParserExperimentalFunctions(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestXFunctionsWhenDisabled(t *testing.T) {
-	var (
-		query = "xincrease(http_requests[50s])"
-		start = time.Unix(0, 0)
-		end   = time.Unix(100, 0)
-		step  = time.Second * 10
-	)
-	ng := engine.New(engine.Opts{})
-	_, err := ng.NewRangeQuery(context.Background(), nil, nil, query, start, end, step)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
-
-	_, err = ng.NewInstantQuery(context.Background(), nil, nil, query, start)
-	testutil.NotOk(t, err)
-	testutil.Equals(t, `1:1: parse error: unknown function with name "xincrease"`, err.Error())
 }
 
 func TestRateVsXRate(t *testing.T) {
@@ -5099,13 +5083,8 @@ min without () (
 	}
 }
 
-func TestStartTimestampsDisabled(t *testing.T) {
+func TestPrometheusQueryOpts(t *testing.T) {
 	t.Parallel()
-	opts := engine.QueryOpts{}
-	testutil.Equals(t, false, *opts.UseStartTimestamps())
-	// The interface must not expose shared mutable configuration.
-	*opts.UseStartTimestamps() = true
-	testutil.Equals(t, false, *opts.UseStartTimestamps())
 
 	// Exercise upstream option conversion through the public query API. A
 	// sample two minutes old is visible with the default lookback, but not with
@@ -5117,8 +5096,8 @@ func TestStartTimestampsDisabled(t *testing.T) {
 		wantPerStepStats bool
 	}{
 		{name: "nil options", wantSamples: 1},
-		{name: "unset start timestamps", opts: promql.NewPrometheusQueryOpts(true, time.Minute, nil), wantPerStepStats: true},
-		{name: "disabled start timestamps", opts: promql.NewPrometheusQueryOpts(true, time.Minute, new(false)), wantPerStepStats: true},
+		{name: "custom lookback and stats", opts: promql.NewPrometheusQueryOpts(true, time.Minute), wantPerStepStats: true},
+		{name: "default lookback without stats", opts: promql.NewPrometheusQueryOpts(false, 0), wantSamples: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := engine.New(engine.Opts{Timeout: time.Minute, MaxSamples: 1000})
@@ -5134,46 +5113,6 @@ func TestStartTimestampsDisabled(t *testing.T) {
 				testutil.Equals(t, float64(7), vector[0].F)
 			}
 			testutil.Equals(t, tc.wantPerStepStats, q.Stats().Samples.StepTrackingEnabled())
-		})
-	}
-}
-
-func TestStartTimestampsRejectedAtQueryBoundary(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	now := time.Unix(0, 0)
-	opts := promql.NewPrometheusQueryOpts(false, 0, new(true))
-	e := engine.New(engine.Opts{})
-	distributed := engine.NewDistributedEngine(engine.Opts{})
-	endpoints := api.NewStaticEndpoints(nil)
-
-	for _, tc := range []struct {
-		name      string
-		makeQuery func() (promql.Query, error)
-	}{
-		{"instant", func() (promql.Query, error) {
-			return e.NewInstantQuery(ctx, nil, opts, "1", now)
-		}},
-		{"range", func() (promql.Query, error) {
-			return e.NewRangeQuery(ctx, nil, opts, "1", now, now.Add(time.Minute), time.Second)
-		}},
-		{"distributed instant", func() (promql.Query, error) {
-			return distributed.MakeInstantQuery(ctx, nil, endpoints, opts, "1", now)
-		}},
-		{"distributed range", func() (promql.Query, error) {
-			return distributed.MakeRangeQuery(ctx, nil, endpoints, opts, "1", now, now.Add(time.Minute), time.Second)
-		}},
-		{"distributed instant plan", func() (promql.Query, error) {
-			return distributed.MakeInstantQueryFromPlan(ctx, nil, endpoints, opts, nil, now)
-		}},
-		{"distributed range plan", func() (promql.Query, error) {
-			return distributed.MakeRangeQueryFromPlan(ctx, nil, endpoints, opts, nil, now, now.Add(time.Minute), time.Second)
-		}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			q, err := tc.makeQuery()
-			testutil.Assert(t, q == nil)
-			testutil.Assert(t, engine.IsUnimplemented(err), "unsupported queries must allow fallback before planning or storage access")
 		})
 	}
 }
@@ -6035,7 +5974,7 @@ quantile without (pod) (
 				EnablePerStepStats:       true,
 				NoStepSubqueryIntervalFn: func(rangeMillis int64) int64 { return 30 * time.Second.Milliseconds() },
 			}
-			qOpts := promql.NewPrometheusQueryOpts(true, 5*time.Minute, nil)
+			qOpts := promql.NewPrometheusQueryOpts(true, 5*time.Minute)
 
 			storage := teststorage.LoadedStorage(t, tc.load)
 			defer storage.Close()

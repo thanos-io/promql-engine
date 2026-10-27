@@ -156,7 +156,7 @@ func FuzzEnginePromQLSmithRangeQuery(f *testing.F) {
 			MaxSamples:         1e10,
 			EnablePerStepStats: true,
 		}
-		qOpts := promql.NewPrometheusQueryOpts(true, 0, nil)
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 
 		storage := teststorage.LoadedStorage(t, load)
 		defer storage.Close()
@@ -252,7 +252,7 @@ func FuzzEnginePromQLSmithInstantQuery(f *testing.F) {
 			MaxSamples:         1e10,
 			EnablePerStepStats: true,
 		}
-		qOpts := promql.NewPrometheusQueryOpts(true, 0, nil)
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 
 		storage := teststorage.LoadedStorage(t, load)
 		defer storage.Close()
@@ -455,7 +455,7 @@ func FuzzNativeHistogramQuery(f *testing.F) {
 			EnablePerStepStats: true,
 		}
 
-		qOpts := promql.NewPrometheusQueryOpts(true, 0, nil)
+		qOpts := promql.NewPrometheusQueryOpts(true, 0)
 		queryable := teststorage.LoadedStorage(t, load)
 		t.Cleanup(func() {
 			queryable.Close()

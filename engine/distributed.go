@@ -74,10 +74,7 @@ func (l DistributedEngine) MakeInstantQueryFromPlan(ctx context.Context, q stora
 	// recomputing those fields in each optimizer.
 	e = api.NewCachedEndpoints(e)
 
-	qOpts, err := fromPromQLOpts(opts)
-	if err != nil {
-		return nil, err
-	}
+	qOpts := fromPromQLOpts(opts)
 	qOpts.LogicalOptimizers = []logicalplan.Optimizer{
 		logicalplan.PassthroughOptimizer{Endpoints: e},
 		logicalplan.DistributedExecutionOptimizer{Endpoints: e},
@@ -99,10 +96,7 @@ func (l DistributedEngine) MakeRangeQueryFromPlan(ctx context.Context, q storage
 	// recomputing those fields in each optimizer.
 	e = api.NewCachedEndpoints(e)
 
-	qOpts, err := fromPromQLOpts(opts)
-	if err != nil {
-		return nil, err
-	}
+	qOpts := fromPromQLOpts(opts)
 	qOpts.LogicalOptimizers = []logicalplan.Optimizer{
 		logicalplan.PassthroughOptimizer{Endpoints: e},
 		logicalplan.DistributedExecutionOptimizer{Endpoints: e},
@@ -122,10 +116,7 @@ func (l DistributedEngine) MakeInstantQuery(ctx context.Context, q storage.Query
 	// recomputing those fields in each optimizer.
 	e = api.NewCachedEndpoints(e)
 
-	qOpts, err := fromPromQLOpts(opts)
-	if err != nil {
-		return nil, err
-	}
+	qOpts := fromPromQLOpts(opts)
 	qOpts.LogicalOptimizers = []logicalplan.Optimizer{
 		logicalplan.PassthroughOptimizer{Endpoints: e},
 		logicalplan.DistributedExecutionOptimizer{Endpoints: e},
@@ -147,10 +138,7 @@ func (l DistributedEngine) MakeRangeQuery(ctx context.Context, q storage.Queryab
 	// recomputing those fields in each optimizer.
 	e = api.NewCachedEndpoints(e)
 
-	qOpts, err := fromPromQLOpts(opts)
-	if err != nil {
-		return nil, err
-	}
+	qOpts := fromPromQLOpts(opts)
 	qOpts.LogicalOptimizers = []logicalplan.Optimizer{
 		logicalplan.PassthroughOptimizer{Endpoints: e},
 		logicalplan.DistributedExecutionOptimizer{Endpoints: e},

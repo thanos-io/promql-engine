@@ -333,7 +333,7 @@ func TestDistributedAggregations(t *testing.T) {
 	lookbackDeltas := []time.Duration{0, 30 * time.Second, 5 * time.Minute}
 	allQueryOpts := []promql.QueryOpts{nil}
 	for _, l := range lookbackDeltas {
-		allQueryOpts = append(allQueryOpts, promql.NewPrometheusQueryOpts(false, l, nil))
+		allQueryOpts = append(allQueryOpts, promql.NewPrometheusQueryOpts(false, l))
 	}
 
 	for _, query := range queries {

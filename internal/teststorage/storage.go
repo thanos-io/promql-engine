@@ -30,9 +30,9 @@ func New(t testing.TB, opts ...promteststorage.Option) *TestStorage {
 	return &TestStorage{TestStorage: promteststorage.New(t, opts...)}
 }
 
-func LoadedStorage(t testing.TB, input string, opts ...promteststorage.Option) *TestStorage {
+func LoadedStorage(t testing.TB, input string) *TestStorage {
 	t.Helper()
-	return &TestStorage{TestStorage: promqltest.LoadedStorage(t, input, opts...)}
+	return &TestStorage{TestStorage: promqltest.LoadedStorage(t, input)}
 }
 
 func (s *TestStorage) Querier(mint, maxt int64) (storage.Querier, error) {
