@@ -88,6 +88,11 @@ func (a *aggregate) Explain() (next []model.VectorOperator) {
 	}
 }
 
+func (a *aggregate) Release() {
+	a.tables = nil
+	a.lastBatch = nil
+}
+
 func (a *aggregate) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
 	a.once.Do(func() { err = a.initializeTables(ctx) })

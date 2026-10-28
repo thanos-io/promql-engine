@@ -290,6 +290,11 @@ func (o *subqueryOperator) collect(v model.StepVector, mint int64) {
 
 }
 
+func (o *subqueryOperator) Release() {
+	o.buffers = nil
+	o.lastVectors = nil
+}
+
 func (o *subqueryOperator) Series(ctx context.Context) ([]labels.Labels, error) {
 	if err := o.initSeries(ctx); err != nil {
 		return nil, err
