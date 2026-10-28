@@ -9,6 +9,7 @@ import (
 
 	"github.com/thanos-io/promql-engine/query"
 
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 )
@@ -26,7 +27,10 @@ func (p ProjectionOptimizer) Optimize(plan Node, _ *query.Options) (Node, annota
 func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) {
 	switch n := (*node).(type) {
 	case *VectorSelector:
-		if projection != nil {
+		// Series that differ only in __name__ become duplicates once the name is
+		// dropped, and a projection would hide that. Only project selectors that
+		// match a single metric name.
+		if projection != nil && matchesSingleMetricName(n.LabelMatchers) {
 			n.Projection = projection
 		} else {
 			// Set dummy projection.
@@ -129,7 +133,7 @@ func (p ProjectionOptimizer) pushProjection(node *Node, projection *Projection) 
 
 	case *FunctionCall:
 		// Handle function-specific label requirements.
-		updatedProjection := getFunctionLabelRequirements(n.Func.Name, n.Args, projection)
+		updatedProjection := getFunctionLabelRequirements(n.Func.Name, projection)
 		for _, child := range n.Children() {
 			p.pushProjection(child, updatedProjection)
 		}
@@ -155,16 +159,17 @@ func extendProjection(projection Projection, lbls []string) Projection {
 	}
 }
 
-// unwrapStepInvariantExpr recursively unwraps step invariant expressions to get to the underlying node.
-func unwrapStepInvariantExpr(node Node) Node {
-	if stepInvariant, ok := node.(*StepInvariantExpr); ok {
-		return unwrapStepInvariantExpr(stepInvariant.Expr)
+func matchesSingleMetricName(matchers []*labels.Matcher) bool {
+	for _, m := range matchers {
+		if m.Name == labels.MetricName && m.Type == labels.MatchEqual {
+			return true
+		}
 	}
-	return node
+	return false
 }
 
 // getFunctionLabelRequirements returns an updated projection based on function-specific requirements.
-func getFunctionLabelRequirements(funcName string, args []Node, projection *Projection) *Projection {
+func getFunctionLabelRequirements(funcName string, projection *Projection) *Projection {
 	if projection == nil {
 		projection = &Projection{}
 	}
@@ -184,51 +189,10 @@ func getFunctionLabelRequirements(funcName string, args []Node, projection *Proj
 	case "histogram_quantile":
 		// Unsafe to push projection down for histogram_quantile as it requires le label.
 		return nil
-	case "label_replace":
-		dstArg := unwrapStepInvariantExpr(args[1])
-		if dstLit, ok := dstArg.(*StringLiteral); ok {
-			dstLabel := dstLit.Val
-			needed := slices.Contains(result.Labels, dstLabel)
-			needSourceLabels := (result.Include && needed) || (!result.Include && !needed)
-			if !needSourceLabels {
-				return result
-			}
-
-			srcArg := unwrapStepInvariantExpr(args[3])
-			if strLit, ok := srcArg.(*StringLiteral); ok {
-				if result.Include && needed {
-					result.Labels = append(result.Labels, strLit.Val)
-				} else {
-					result.Labels = slices.DeleteFunc(result.Labels, func(s string) bool {
-						return s == strLit.Val
-					})
-				}
-			}
-		}
-	case "label_join":
-		dstArg := unwrapStepInvariantExpr(args[1])
-		if dstLit, ok := dstArg.(*StringLiteral); ok {
-			dstLabel := dstLit.Val
-			needed := slices.Contains(result.Labels, dstLabel)
-			needSourceLabels := (result.Include && needed) || (!result.Include && !needed)
-			if !needSourceLabels {
-				return result
-			}
-
-			// Only if the destination label is needed, we need the source labels
-			for i := 3; i < len(args); i++ {
-				srcArg := unwrapStepInvariantExpr(args[i])
-				if strLit, ok := srcArg.(*StringLiteral); ok {
-					if result.Include && needed {
-						result.Labels = append(result.Labels, strLit.Val)
-					} else {
-						result.Labels = slices.DeleteFunc(result.Labels, func(s string) bool {
-							return s == strLit.Val
-						})
-					}
-				}
-			}
-		}
+	case "label_replace", "label_join":
+		// Relabeling can make distinct series equal, so keep all labels to
+		// detect duplicates.
+		return nil
 	}
 
 	return result
