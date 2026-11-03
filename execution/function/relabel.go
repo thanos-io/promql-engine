@@ -95,6 +95,7 @@ func (o *relabelOperator) loadSeriesForLabelJoin(series []labels.Labels) error {
 		}
 		labelJoinSrcLabels = append(labelJoinSrcLabels, srcLabel)
 	}
+	lb := labels.NewBuilder(labels.EmptyLabels())
 	for i, s := range series {
 		lbls := s
 		srcVals := make([]string, len(labelJoinSrcLabels))
@@ -102,12 +103,15 @@ func (o *relabelOperator) loadSeriesForLabelJoin(series []labels.Labels) error {
 		for j, src := range labelJoinSrcLabels {
 			srcVals[j] = lbls.Get(src)
 		}
-		lb := labels.NewBuilder(lbls)
-		if strval := strings.Join(srcVals, labelJoinSep); strval == "" {
-			lb.Del(labelJoinDst)
-		} else {
-			lb.Set(labelJoinDst, strval)
+		strval := strings.Join(srcVals, labelJoinSep)
+		if strval == "" && !lbls.Has(labelJoinDst) {
+			// Nothing to delete and nothing to set.
+			o.series[i] = lbls
+			continue
 		}
+		lb.Reset(lbls)
+		// Set deletes the label when the joined value is empty.
+		lb.Set(labelJoinDst, strval)
 		o.series[i] = lb.Labels()
 	}
 	return nil
@@ -137,6 +141,8 @@ func (o *relabelOperator) loadSeriesForLabelReplace(series []labels.Labels) erro
 		return errors.Newf("invalid regular expression in label_replace(): %s", labelReplaceRegexVal)
 	}
 
+	lb := labels.NewBuilder(labels.EmptyLabels())
+	var res []byte // reused across iterations
 	for i, s := range series {
 		lbls := s
 
@@ -146,11 +152,15 @@ func (o *relabelOperator) loadSeriesForLabelReplace(series []labels.Labels) erro
 			o.series[i] = lbls
 			continue
 		}
-		res := labelReplaceRegex.ExpandString([]byte{}, labelReplaceRepl, srcVal, matches)
-		lb := labels.NewBuilder(lbls).Del(labelReplaceDst)
-		if len(res) > 0 {
-			lb.Set(labelReplaceDst, string(res))
+		res = labelReplaceRegex.ExpandString(res[:0], labelReplaceRepl, srcVal, matches)
+		if len(res) == 0 && !lbls.Has(labelReplaceDst) {
+			// Nothing to delete and nothing to set.
+			o.series[i] = lbls
+			continue
 		}
+		lb.Reset(lbls)
+		// Set deletes the label when the replacement is empty.
+		lb.Set(labelReplaceDst, string(res))
 		o.series[i] = lb.Labels()
 	}
 

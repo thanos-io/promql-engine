@@ -785,6 +785,155 @@ func BenchmarkInstantQuery(b *testing.B) {
 	}
 }
 
+// BenchmarkLabelReplace covers the relabel operator.
+func BenchmarkLabelReplace(b *testing.B) {
+	samplesPerHour := 60 * 2
+	storage := setupStorage(b, 1000, 3, 720)
+	defer storage.Close()
+	sixHourStorage := setupStorage(b, 1000, 3, 6*samplesPerHour)
+	defer sixHourStorage.Close()
+
+	queryTime := time.Unix(50, 0)
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "label_replace",
+			query: `label_replace(http_requests_total, "shard", "$1", "pod", "p(\\d+)")`,
+		},
+		{
+			name:  "label_join",
+			query: `label_join(http_requests_total, "combined", "-", "pod", "container")`,
+		},
+		{
+			name: "nested label_replace",
+			query: `label_replace(label_replace(label_replace(label_replace(` +
+				`http_requests_total, "l1", "$1", "pod", "p(\\d+)"),` +
+				` "l2", "$1", "l1", "(\\d+)"),` +
+				` "l3", "$1", "l2", "(\\d+)"),` +
+				` "l4", "$1", "l3", "(\\d+)")`,
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("instant", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					Timeout:           100 * time.Second,
+					SelectorBatchSize: 256,
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+			b.Run("range", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					Timeout:           100 * time.Second,
+					SelectorBatchSize: 256,
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewRangeQuery(context.Background(), sixHourStorage, nil, tc.query, start, end, step)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+		})
+	}
+}
+
+// BenchmarkLabelReplaceWideSeries is BenchmarkLabelReplace at 20 labels per series instead of 3.
+func BenchmarkLabelReplaceWideSeries(b *testing.B) {
+	const (
+		numPods       = 1000
+		numContainers = 3
+		numLabels     = 20
+		numSteps      = 720
+	)
+	storage := teststorage.LoadedStorage(b, synthesizeWideLoad(numPods, numContainers, numLabels, numSteps))
+	defer storage.Close()
+
+	queryTime := time.Unix(50, 0)
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "label_replace",
+			query: `label_replace(http_requests_total, "shard", "$1", "pod", "p(\\d+)")`,
+		},
+		{
+			name:  "label_join",
+			query: `label_join(http_requests_total, "combined", "-", "pod", "container")`,
+		},
+		{
+			name: "nested label_replace",
+			query: `label_replace(label_replace(label_replace(label_replace(` +
+				`http_requests_total, "l1", "$1", "pod", "p(\\d+)"),` +
+				` "l2", "$1", "l1", "(\\d+)"),` +
+				` "l3", "$1", "l2", "(\\d+)"),` +
+				` "l4", "$1", "l3", "(\\d+)")`,
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("instant", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					Timeout:           100 * time.Second,
+					SelectorBatchSize: 256,
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+			b.Run("range", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					Timeout:           100 * time.Second,
+					SelectorBatchSize: 256,
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+		})
+	}
+}
+
 func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 	db := createRequestsMetricBlock(b, 10000, 9900)
 	defer db.Close()
@@ -845,6 +994,24 @@ func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.Test
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *teststorage.TestStorage {
 	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
 	return teststorage.LoadedStorage(b, load)
+}
+
+// synthesizeWideLoad is synthesizeLoad with numLabels labels per series, counting __name__.
+func synthesizeWideLoad(numPods, numContainers, numLabels, numSteps int) string {
+	var sb strings.Builder
+	sb.WriteString("load 30s\n")
+	for i := range numPods {
+		for j := range numContainers {
+			sb.WriteString(fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"`, i, j))
+			for k := range numLabels - 3 {
+				sb.WriteString(fmt.Sprintf(`, label_%02d="value_%d_%d_%d"`, k, i, j, k))
+			}
+			sb.WriteString(fmt.Sprintf(`} %d+%dx%d%s`, i, j, numSteps, "\n"))
+		}
+		sb.WriteString(fmt.Sprintf(`http_responses_total{pod="p%d", owner="team%d"} %dx%d%s`, i, i%10, i, numSteps, "\n"))
+	}
+
+	return sb.String()
 }
 
 func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *tsdb.DB {
