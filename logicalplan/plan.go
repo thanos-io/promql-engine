@@ -158,6 +158,13 @@ func (p *plan) Root() Node {
 // MinMaxTime returns the min and max timestamp that any selector in the query
 // can read.
 func MinMaxTime(root Node, qOpts *query.Options) (int64, int64) {
+	mint, maxt, _ := selectorTimeRange(root, qOpts)
+	return mint, maxt
+}
+
+// selectorTimeRange also reports whether the plan reads any series.
+func selectorTimeRange(root Node, qOpts *query.Options) (int64, int64, bool) {
+	var hasSelector bool
 	var minTimestamp, maxTimestamp int64 = math.MaxInt64, math.MinInt64
 	// Whenever a MatrixSelector is evaluated, evalRange is set to the corresponding range.
 	// The evaluation of the VectorSelector inside then evaluates the given range and unsets
@@ -167,6 +174,7 @@ func MinMaxTime(root Node, qOpts *query.Options) (int64, int64) {
 	TraverseWithParents(nil, &root, func(parents []*Node, node *Node) {
 		switch n := (*node).(type) {
 		case *VectorSelector:
+			hasSelector = true
 			start, end := getTimeRangesForSelector(qOpts, n.VectorSelector, parents, evalRange)
 			if start < minTimestamp {
 				minTimestamp = start
@@ -180,13 +188,11 @@ func MinMaxTime(root Node, qOpts *query.Options) (int64, int64) {
 		}
 	})
 
-	if maxTimestamp == math.MinInt64 {
-		// This happens when there was no selector. Hence no time range to select.
-		minTimestamp = 0
-		maxTimestamp = 0
+	if !hasSelector {
+		return 0, 0, false
 	}
 
-	return minTimestamp, maxTimestamp
+	return minTimestamp, maxTimestamp, true
 }
 
 func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) {

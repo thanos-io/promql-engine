@@ -4,6 +4,7 @@
 package logicalplan
 
 import (
+	"fmt"
 	"math"
 	"testing"
 	"time"
@@ -16,11 +17,56 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 )
 
+func TestSelectorFreePlansStayLocal(t *testing.T) {
+	queries := []string{
+		`1`,
+		`vector(0.9999)`,
+		`vector(1 - 0.9999)`,
+		`time()`,
+		`vector(time())`,
+		`day_of_week()`,
+		`label_replace(vector(1), "region", "east", "", "")`,
+		`sum(vector(1))`,
+		`avg(vector(1))`,
+		`absent(vector(1))`,
+		`sum_over_time(vector(1)[5m:1m])`,
+		`max_over_time(vector(time())[5m:1m])`,
+	}
+	for _, count := range []int{0, 1, 2} {
+		engines := []api.RemoteEngine{
+			newEngineMock(0, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")}),
+			newEngineMock(0, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")}),
+		}
+		endpoints := api.NewStaticEndpoints(engines[:count])
+		for i, optimizers := range [][]Optimizer{
+			{PassthroughOptimizer{Endpoints: endpoints}},
+			{DistributedExecutionOptimizer{Endpoints: endpoints}},
+			{PassthroughOptimizer{Endpoints: endpoints}, DistributedExecutionOptimizer{Endpoints: endpoints}},
+		} {
+			for _, qs := range queries {
+				t.Run(fmt.Sprintf("engines=%d/optimizer=%d/%s", count, i, qs), func(t *testing.T) {
+					expr, err := parser.NewParser(parser.Options{}).ParseExpr(qs)
+					testutil.Ok(t, err)
+					opts := &query.Options{
+						Start: time.Unix(600, 0), End: time.Unix(1200, 0), Step: time.Minute,
+					}
+					plan, err := NewFromAST(expr, opts, PlanOptions{})
+					testutil.Ok(t, err)
+					local, _ := New(plan.Root().Clone(), opts, PlanOptions{}).Optimize(NoOptimizers)
+					optimized, warns := plan.Optimize(optimizers)
+					testutil.Equals(t, local.Root().String(), optimized.Root().String())
+					testutil.Equals(t, 0, len(warns))
+				})
+			}
+		}
+	}
+}
+
 func TestPassthrough(t *testing.T) {
 	expr, err := parser.NewParser(parser.Options{}).ParseExpr(`time()`)
 	testutil.Ok(t, err)
 
-	t.Run("optimized with one engine, in bounds", func(t *testing.T) {
+	t.Run("not optimized with one engine, in bounds", func(t *testing.T) {
 		engines := []api.RemoteEngine{
 			newEngineMock(math.MinInt64, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east"), labels.FromStrings("region", "south")}),
 		}
@@ -29,7 +75,7 @@ func TestPassthrough(t *testing.T) {
 		plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
 		optimizedPlan, _ := plan.Optimize(optimizers)
 
-		testutil.Equals(t, "remote(time())", renderExprTree(optimizedPlan.Root()))
+		testutil.Equals(t, "time()", renderExprTree(optimizedPlan.Root()))
 	})
 
 	t.Run("not optimized with two engines", func(t *testing.T) {

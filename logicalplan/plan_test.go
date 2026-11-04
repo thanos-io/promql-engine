@@ -135,6 +135,34 @@ func renderExprTree(expr Node) string {
 	}
 }
 
+func TestSelectorTimeRange(t *testing.T) {
+	for _, tc := range []struct {
+		query       string
+		mint, maxt  int64
+		hasSelector bool
+	}{
+		{query: `vector(1)`},
+		{query: `sum_over_time(vector(time())[5m:1m])`},
+		{query: `metric @ 0.000`, hasSelector: true},
+		{query: `metric[5m]`, mint: -300000, hasSelector: true},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.query)
+			testutil.Ok(t, err)
+			opts := &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}
+			plan, err := NewFromAST(expr, opts, PlanOptions{})
+			testutil.Ok(t, err)
+			mint, maxt, hasSelector := selectorTimeRange(plan.Root(), opts)
+			testutil.Equals(t, tc.mint, mint)
+			testutil.Equals(t, tc.maxt, maxt)
+			testutil.Equals(t, tc.hasSelector, hasSelector)
+			publicMin, publicMax := MinMaxTime(plan.Root(), opts)
+			testutil.Equals(t, mint, publicMin)
+			testutil.Equals(t, maxt, publicMax)
+		})
+	}
+}
+
 func TestTimestampSelector(t *testing.T) {
 	for _, tc := range []struct {
 		selector string

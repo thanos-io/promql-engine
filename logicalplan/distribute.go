@@ -166,7 +166,11 @@ type DistributedExecutionOptimizer struct {
 //     a distribution strategy whose parent has none.
 //  3. Replace each selected subtree with the remote plan for its strategy.
 func (m DistributedExecutionOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
-	engines := m.Endpoints.Engines(MinMaxTime(plan, opts))
+	mint, maxt, hasSelector := selectorTimeRange(plan, opts)
+	if !hasSelector {
+		return plan, nil
+	}
+	engines := m.Endpoints.Engines(mint, maxt)
 	sort.Slice(engines, func(i, j int) bool {
 		return engines[i].MinT() < engines[j].MinT()
 	})

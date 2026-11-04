@@ -42,18 +42,17 @@ func labelSetsMatch(matchers []*labels.Matcher, lset ...labels.Labels) bool {
 }
 
 func (m PassthroughOptimizer) Optimize(plan Node, opts *query.Options) (Node, annotations.Annotations) {
-	mint, maxt := MinMaxTime(plan, opts)
+	mint, maxt, hasSelector := selectorTimeRange(plan, opts)
+	if !hasSelector {
+		return plan, nil
+	}
 	engines := m.Endpoints.Engines(mint, maxt)
 	if len(engines) == 0 {
 		return plan, nil
 	}
-	var (
-		hasSelector       bool
-		matchingEngineSet = make(map[api.RemoteEngine]struct{})
-	)
+	matchingEngineSet := make(map[api.RemoteEngine]struct{})
 	TraverseBottomUp(nil, &plan, func(parent, current *Node) (stop bool) {
 		if vs, ok := (*current).(*VectorSelector); ok {
-			hasSelector = true
 			for _, e := range engines {
 				if !labelSetsMatch(vs.LabelMatchers, e.LabelSets()...) {
 					continue
@@ -68,18 +67,6 @@ func (m PassthroughOptimizer) Optimize(plan Node, opts *query.Options) (Node, an
 	})
 
 	matchingEngines := slices.Collect(maps.Keys(matchingEngineSet))
-	if len(matchingEngines) == 0 {
-		if !hasSelector && matchingEngineTime(engines[0], mint, maxt) {
-			return RemoteExecution{
-				Engine:          engines[0],
-				Query:           plan.Clone(),
-				QueryRangeStart: opts.Start,
-				QueryRangeEnd:   opts.End,
-			}, nil
-		}
-		return plan, nil
-	}
-
 	if len(matchingEngines) == 1 && matchingEngineTime(matchingEngines[0], mint, maxt) {
 		return RemoteExecution{
 			Engine:          matchingEngines[0],

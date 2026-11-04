@@ -215,6 +215,7 @@ func TestDistributedAggregations(t *testing.T) {
 	}{
 		{name: "binop with selector and constant series", query: `bar or on () vector(0)`},
 		{name: "binop with aggregation and constant series", query: `sum(bar) or on () vector(0)`},
+		{name: "histogram count with constant fallback", query: `histogram_count(bar) or vector(1)`},
 		{name: "sum", query: `sum by (pod) (bar)`},
 		{name: "sum by __name__", query: `sum by (__name__) ({__name__=~".+"})`},
 		{name: "parenthesis", query: `sum by (pod) ((bar))`},
@@ -419,6 +420,67 @@ func TestDistributedAggregations(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+type unexpectedQueryEngine struct {
+	api.RemoteEngine
+}
+
+func (unexpectedQueryEngine) NewRangeQuery(context.Context, promql.QueryOpts, api.RemoteQuery, time.Time, time.Time, time.Duration) (promql.Query, error) {
+	return nil, errors.New("selector-free query sent to a remote engine")
+}
+
+func TestDistributedEngineSelectorFreeQueries(t *testing.T) {
+	opts := engine.Opts{MaxSamples: math.MaxInt64, Timeout: time.Minute}
+	querier := storageWithMockSeries()
+	remotes := []api.RemoteEngine{
+		unexpectedQueryEngine{engine.NewRemoteEngine(opts, querier, 0, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "east")})},
+		unexpectedQueryEngine{engine.NewRemoteEngine(opts, querier, 0, math.MaxInt64, []labels.Labels{labels.FromStrings("region", "west")})},
+	}
+	for _, count := range []int{0, 1, 2} {
+		for _, qs := range []string{
+			`1`,
+			`vector(0.9999)`,
+			`vector(1 - 0.9999)`,
+			`time()`,
+			`vector(time())`,
+			`day_of_week()`,
+			`label_replace(vector(1), "region", "east", "", "")`,
+			`sum(vector(1))`,
+			`avg(vector(1))`,
+			`absent(vector(1))`,
+			`sum_over_time(vector(1)[5m:1m])`,
+			`max_over_time(vector(time())[5m:1m])`,
+		} {
+			for _, instant := range []bool{true, false} {
+				t.Run(fmt.Sprintf("engines=%d/instant=%t/%s", count, instant, qs), func(t *testing.T) {
+					ctx := context.Background()
+					start, end, step := time.Unix(600, 0), time.Unix(1200, 0), time.Minute
+					endpoints := api.NewStaticEndpoints(remotes[:count])
+					dist := engine.NewDistributedEngine(opts)
+					prom := promql.NewEngine(prometheusEngineOpts(opts))
+					var actual, expected promql.Query
+					var err error
+					if instant {
+						actual, err = dist.MakeInstantQuery(ctx, querier, endpoints, nil, qs, start)
+						testutil.Ok(t, err)
+						expected, err = prom.NewInstantQuery(ctx, querier, nil, qs, start)
+					} else {
+						actual, err = dist.MakeRangeQuery(ctx, querier, endpoints, nil, qs, start, end, step)
+						testutil.Ok(t, err)
+						expected, err = prom.NewRangeQuery(ctx, querier, nil, qs, start, end, step)
+					}
+					testutil.Ok(t, err)
+					defer actual.Close()
+					defer expected.Close()
+					want, got := expected.Exec(ctx), actual.Exec(ctx)
+					testutil.Ok(t, want.Err)
+					testutil.Ok(t, got.Err)
+					testutil.WithGoCmp(comparer).Equals(t, want, got)
+				})
+			}
+		}
 	}
 }
 
