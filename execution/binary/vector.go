@@ -10,7 +10,6 @@ import (
 
 	"github.com/thanos-io/promql-engine/execution/model"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
-	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/query"
 	"github.com/thanos-io/promql-engine/warnings"
 
@@ -19,6 +18,7 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql/parser"
+	"github.com/prometheus/prometheus/schema"
 	"golang.org/x/exp/slices"
 )
 
@@ -626,32 +626,31 @@ func (h *joinHelper) append(ls labels.Labels) int {
 }
 
 func (o *vectorOperator) resultMetric(b *labels.Builder, highCard, lowCard labels.Labels) labels.Labels {
-	b.Reset(highCard)
-
+	base := highCard
 	if shouldDropMetricName(o.opType, o.returnBool) {
-		b.Del(labels.MetricName)
-		b.Del(extlabels.MetricType)
-		b.Del(extlabels.MetricUnit)
+		base = base.DropReserved(schema.IsMetadataLabel)
 	}
+	b.Reset(base)
 
 	if o.matching.Card == parser.CardOneToOne {
 		if o.matching.On {
 			b.Keep(o.matching.MatchingLabels...)
 		} else {
-			b.Del(o.matching.MatchingLabels...)
+			// Del counts against the output size estimate whether or not the label
+			// is there, so only delete the ones that are.
+			for _, ln := range o.matching.MatchingLabels {
+				if base.Has(ln) {
+					b.Del(ln)
+				}
+			}
 		}
 	}
 	for _, ln := range o.matching.Include {
 		if v := lowCard.Get(ln); v != "" {
 			b.Set(ln, v)
-		} else {
+		} else if base.Has(ln) {
 			b.Del(ln)
 		}
-	}
-	if o.returnBool {
-		b.Del(labels.MetricName)
-		b.Del(extlabels.MetricType)
-		b.Del(extlabels.MetricUnit)
 	}
 	return b.Labels()
 }

@@ -785,6 +785,90 @@ func BenchmarkInstantQuery(b *testing.B) {
 	}
 }
 
+// BenchmarkVectorBinaryWideSeries covers the vector-to-vector binary operator at 20 labels per series.
+func BenchmarkVectorBinaryWideSeries(b *testing.B) {
+	const (
+		numPods       = 1000
+		numContainers = 3
+		numLabels     = 20
+		numSteps      = 720
+	)
+	storage := teststorage.LoadedStorage(b, synthesizeWideLoad(numPods, numContainers, numLabels, numSteps))
+	defer storage.Close()
+
+	queryTime := time.Unix(50, 0)
+	start := time.Unix(0, 0)
+	end := start.Add(2 * time.Hour)
+	step := time.Second * 30
+
+	cases := []struct {
+		name  string
+		query string
+	}{
+		{
+			name:  "one to one on",
+			query: `http_requests_total / on (pod, container) http_requests_total`,
+		},
+		{
+			name:  "one to one ignoring",
+			query: `http_requests_total / ignoring (nonexistent) http_requests_total`,
+		},
+		{
+			name:  "many to one group_left",
+			query: `http_requests_total / on (pod) group_left () http_responses_total`,
+		},
+		{
+			name:  "many to one group_left with include",
+			query: `http_requests_total / on (pod) group_left (owner) http_responses_total`,
+		},
+		{
+			name:  "many to one group_left missing include",
+			query: `http_requests_total / on (pod) group_left (nonexistent) http_responses_total`,
+		},
+		{
+			name:  "comparison with bool",
+			query: `http_requests_total > bool on (pod, container) http_requests_total`,
+		},
+	}
+
+	for _, tc := range cases {
+		b.Run(tc.name, func(b *testing.B) {
+			b.Run("instant", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					Timeout:           100 * time.Second,
+					SelectorBatchSize: 256,
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewInstantQuery(context.Background(), storage, nil, tc.query, queryTime)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+			b.Run("range", func(b *testing.B) {
+				ng := engine.New(engine.Opts{
+					Timeout:           100 * time.Second,
+					SelectorBatchSize: 256,
+				})
+				b.ResetTimer()
+				b.ReportAllocs()
+
+				for b.Loop() {
+					qry, err := ng.NewRangeQuery(context.Background(), storage, nil, tc.query, start, end, step)
+					testutil.Ok(b, err)
+
+					res := qry.Exec(context.Background())
+					testutil.Ok(b, res.Err)
+				}
+			})
+		})
+	}
+}
+
 func BenchmarkMergeSelectorsOptimizer(b *testing.B) {
 	db := createRequestsMetricBlock(b, 10000, 9900)
 	defer db.Close()
@@ -845,6 +929,24 @@ func executeRangeQueryWithOpts(b *testing.B, q string, storage *teststorage.Test
 func setupStorage(b *testing.B, numLabelsA int, numLabelsB int, numSteps int) *teststorage.TestStorage {
 	load := synthesizeLoad(numLabelsA, numLabelsB, numSteps)
 	return teststorage.LoadedStorage(b, load)
+}
+
+// synthesizeWideLoad is synthesizeLoad with numLabels labels per series, counting __name__.
+func synthesizeWideLoad(numPods, numContainers, numLabels, numSteps int) string {
+	var sb strings.Builder
+	sb.WriteString("load 30s\n")
+	for i := range numPods {
+		for j := range numContainers {
+			sb.WriteString(fmt.Sprintf(`http_requests_total{pod="p%d", container="c%d"`, i, j))
+			for k := range numLabels - 3 {
+				sb.WriteString(fmt.Sprintf(`, label_%02d="value_%d_%d_%d"`, k, i, j, k))
+			}
+			sb.WriteString(fmt.Sprintf(`} %d+%dx%d%s`, i, j, numSteps, "\n"))
+		}
+		sb.WriteString(fmt.Sprintf(`http_responses_total{pod="p%d", owner="team%d"} %dx%d%s`, i, i%10, i, numSteps, "\n"))
+	}
+
+	return sb.String()
 }
 
 func createRequestsMetricBlock(b *testing.B, numRequests int, numSuccess int) *tsdb.DB {
