@@ -672,7 +672,7 @@ func preservesPartitionLabels(expr Node, partitionLabels map[string]struct{}) bo
 		return preservesPartitionLabels(e.LHS, partitionLabels) &&
 			preservesPartitionLabels(e.RHS, partitionLabels)
 	case *FunctionCall:
-		if e.Func.Name == "label_replace" || e.Func.Name == "label_join" {
+		if e.Func.Name == "label_replace" || e.Func.Name == "label_join" || e.Func.Name == "histogram_quantiles" {
 			if _, ok := partitionLabels[UnsafeUnwrapString(e.Args[1])]; ok {
 				return false
 			}
@@ -730,7 +730,7 @@ func (m DistributedExecutionOptimizer) isDistributiveOperation(expr *Node, engin
 			return false
 		}
 	case *FunctionCall:
-		if e.Func.Name == "label_replace" || e.Func.Name == "label_join" {
+		if e.Func.Name == "label_replace" || e.Func.Name == "label_join" || e.Func.Name == "histogram_quantiles" {
 			targetLabel := UnsafeUnwrapString(e.Args[1])
 			if _, ok := engineLabels[targetLabel]; ok {
 				warns.Add(RewrittenExternalLabelWarning)

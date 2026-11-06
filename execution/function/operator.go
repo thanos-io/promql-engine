@@ -32,7 +32,7 @@ func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.Vec
 		return newRelabelOperator(nextOps[0], funcExpr, opts), nil
 	case "absent":
 		return newAbsentOperator(funcExpr, nextOps[0], opts), nil
-	case "histogram_quantile", "histogram_fraction":
+	case "histogram_quantile", "histogram_fraction", "histogram_quantiles":
 		return newHistogramOperator(funcExpr, nextOps, stepsBatch, opts), nil
 	}
 
