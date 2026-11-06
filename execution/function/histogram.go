@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -18,6 +19,7 @@ import (
 	"github.com/thanos-io/promql-engine/warnings"
 
 	"github.com/cespare/xxhash/v2"
+	"github.com/efficientgo/core/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser/posrange"
@@ -41,8 +43,16 @@ type histogramOperator struct {
 	funcArgs   logicalplan.Nodes
 	stepsBatch int
 	vectorOp   model.VectorOperator
-	scalar1Op  model.VectorOperator
-	scalar2Op  model.VectorOperator
+
+	// scalarOp and scalarPoints are used in histogram_quantiles due being variadic
+	scalarOp     []model.VectorOperator
+	scalarPoints [][]float64
+	scalarBuf    [][]model.StepVector
+	labelName    string
+	quantiles    []float64
+
+	scalar1Op model.VectorOperator
+	scalar2Op model.VectorOperator
 
 	// scalarPoints is a reusable buffer for points from the first argument of histogram_quantile.
 	scalar1Points []float64
@@ -72,7 +82,7 @@ func newHistogramOperator(
 	nextOps []model.VectorOperator,
 	stepsBatch int,
 	opts *query.Options,
-) model.VectorOperator {
+) (model.VectorOperator, error) {
 	o := &histogramOperator{
 		funcName:   call.Func.Name,
 		funcArgs:   call.Args,
@@ -84,6 +94,26 @@ func newHistogramOperator(
 		o.scalar1Op = nextOps[0]
 		o.vectorOp = nextOps[1]
 		o.scalar1Points = make([]float64, stepsBatch)
+	case "histogram_quantiles":
+		o.vectorOp = nextOps[0]
+		o.scalarOp = nextOps[1:]
+		label, err := logicalplan.UnwrapString(call.Args[1])
+		if err != nil {
+			return nil, errors.Wrap(parse.ErrNotSupportedExpr, "histogram_quantiles: label must be a constant string")
+		}
+		o.labelName = label
+		o.quantiles = make([]float64, len(o.scalarOp))
+		for i := range o.scalarOp {
+			q, err := logicalplan.UnwrapFloat(call.Args[i+2])
+			if err != nil {
+				return nil, errors.Wrap(parse.ErrNotSupportedExpr, "histogram_quantiles: quantile must be a constant")
+			}
+			o.quantiles[i] = q
+		}
+		o.scalarPoints = make([][]float64, len(o.scalarOp))
+		for i := range o.scalarPoints {
+			o.scalarPoints[i] = make([]float64, stepsBatch)
+		}
 	case "histogram_fraction":
 		o.scalar1Op = nextOps[0]
 		o.scalar2Op = nextOps[1]
@@ -93,7 +123,7 @@ func newHistogramOperator(
 	default:
 		panic("unsupported function passed")
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts), o)
+	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts), o), nil
 }
 
 func (o *histogramOperator) String() string {
@@ -104,6 +134,8 @@ func (o *histogramOperator) Explain() (next []model.VectorOperator) {
 	switch o.funcName {
 	case "histogram_quantile":
 		return []model.VectorOperator{o.scalar1Op, o.vectorOp}
+	case "histogram_quantiles":
+		return append([]model.VectorOperator{o.vectorOp}, o.scalarOp...)
 	case "histogram_fraction":
 		return []model.VectorOperator{o.scalar1Op, o.scalar2Op, o.vectorOp}
 	}
@@ -162,6 +194,27 @@ func (o *histogramOperator) Next(ctx context.Context, buf []model.StepVector) (i
 					warnings.AddToContext(annotations.NewInvalidQuantileWarning(sample, posrange.PositionRange{}), ctx)
 				}
 				o.scalar1Points = append(o.scalar1Points, sample)
+			}
+		}
+	case "histogram_quantiles":
+		for i := range len(o.scalarOp) {
+			scalarN, err := o.scalarOp[i].Next(ctx, o.scalarBuf[i][:vectorN])
+			if err != nil {
+				return 0, err
+			}
+			if scalarN == 0 {
+				return 0, nil
+			}
+			o.scalarPoints[i] = o.scalarPoints[i][:0]
+			for j := range scalarN {
+				scalar := o.scalarBuf[i][j]
+				if len(scalar.Samples) > 0 {
+					sample := scalar.Samples[0]
+					if math.IsNaN(sample) || sample < 0 || sample > 1 {
+						warnings.AddToContext(annotations.NewInvalidQuantileWarning(sample, posrange.PositionRange{}), ctx)
+					}
+					o.scalarPoints[i] = append(o.scalarPoints[i], sample)
+				}
 			}
 		}
 	case "histogram_fraction":
@@ -254,6 +307,11 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				case "histogram_quantile":
 					v, annos = promql.HistogramQuantile(o.scalar1Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
 					buf[n].AppendSample(uint64(outputSeriesID), v)
+				case "histogram_quantiles":
+					for j := range len(o.quantiles) {
+						v, annos = promql.HistogramQuantile(o.scalarPoints[j][stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
+						buf[n].AppendSample(uint64(outputSeriesID*len(o.quantiles)+j), v)
+					}
 				case "histogram_fraction":
 					v, annos = promql.HistogramFraction(o.scalar1Points[stepIndex], o.scalar2Points[stepIndex], vector.Histograms[i], o.inputSeriesNames[seriesID], posrange.PositionRange{})
 					buf[n].AppendSample(uint64(outputSeriesID), v)
@@ -271,7 +329,7 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				continue
 			}
 			// If we are after how many scalar points we have then it needs to be NaN.
-			if stepIndex >= len(o.scalar1Points) {
+			if o.funcName != "histogram_quantiles" && stepIndex >= len(o.scalar1Points) {
 				buf[n].AppendSample(uint64(i), math.NaN())
 				continue
 			}
@@ -286,6 +344,27 @@ func (o *histogramOperator) processInputSeries(ctx context.Context, vectors []mo
 				buf[n].AppendSample(uint64(i), v)
 				if forcedMonotonicity {
 					warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.inputSeriesNames[i], posrange.PositionRange{}, vector.T, minBucket, maxBucket, maxDiff), ctx)
+				}
+			case "histogram_quantiles":
+				for j := range len(o.quantiles) {
+					row := uint64(i*len(o.quantiles) + j)
+					if stepIndex >= len(o.scalarPoints[j]) {
+						buf[n].AppendSample(row, math.NaN())
+						continue
+					}
+					// histogram_quantile needs at least 2 buckets.
+					if len(stepBuckets) == 1 {
+						buf[n].AppendSample(row, math.NaN())
+						continue
+					}
+					// BucketQuantile sorts and coalesces stepBuckets in place hence copy
+					// to read the original buckets.
+					buckets := append(promql.Buckets(nil), stepBuckets...)
+					v, forcedMonotonicity, _, minBucket, maxBucket, maxDiff := promql.BucketQuantile(o.scalarPoints[j][stepIndex], buckets)
+					buf[n].AppendSample(row, v)
+					if forcedMonotonicity {
+						warnings.AddToContext(annotations.NewHistogramQuantileForcedMonotonicityInfo(o.inputSeriesNames[i], posrange.PositionRange{}, vector.T, minBucket, maxBucket, maxDiff), ctx)
+					}
 				}
 			case "histogram_fraction":
 				// BucketFraction handles single bucket and other edge cases properly.
@@ -306,6 +385,10 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	if o.scalar2Op != nil {
 		o.scalar2Buf = make([]model.StepVector, o.stepsBatch)
 	}
+	o.scalarBuf = make([][]model.StepVector, len(o.scalarOp))
+	for i := range len(o.scalarOp) {
+		o.scalarBuf[i] = make([]model.StepVector, o.stepsBatch)
+	}
 
 	series, err := o.vectorOp.Series(ctx)
 	if err != nil {
@@ -322,6 +405,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	o.inputSeriesNames = make([]string, len(series))
 	o.outputIndex = make([]*histogramSeries, len(series))
 	b := labels.ScratchBuilder{}
+
 	for i, s := range series {
 		hasBucketValue := true
 		lbls, bucketLabel := extlabels.DropBucketLabel(s, b)
@@ -344,9 +428,18 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 		seriesHash := hasher.Sum64()
 		seriesID, ok := seriesHashes[seriesHash]
 		if !ok {
-			o.series = append(o.series, lbls)
-			seriesID = len(o.series) - 1
+			seriesID = len(seriesHashes)
 			seriesHashes[seriesHash] = seriesID
+			if o.funcName == "histogram_quantiles" {
+				// appending quantiles by making group * len(quantile) + qi
+				for _, q := range o.quantiles {
+					// using FormatOpenMetricsFloat since the whole numbers in prometheus return 0.0 and not 0
+					qLbls := labels.NewBuilder(lbls).Set(o.labelName, labels.FormatOpenMetricsFloat(q)).Labels()
+					o.series = append(o.series, qLbls)
+				}
+			} else {
+				o.series = append(o.series, lbls)
+			}
 		}
 
 		o.inputSeriesNames[i] = s.Get(labels.MetricName)
@@ -357,7 +450,7 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 			bucketLabelValue: bucketLabel.Value,
 		}
 	}
-	o.seriesBuckets = make([]promql.Buckets, len(o.series))
+	o.seriesBuckets = make([]promql.Buckets, len(seriesHashes))
 	o.badBucketWarned = make(map[uint64]bool)
 	return nil
 }

@@ -1904,6 +1904,52 @@ sum by (grpc_method, grpc_code) (
 			query: `histogram_quantile(scalar(max(quantile)), http_requests_total)`,
 		},
 		{
+			name: "histogram quantiles",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			    http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			    http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			    http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			    http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			    http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			    http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantiles(http_requests_total, "quantile", 0.5, 0.9, 0.99)`,
+		},
+		{
+			name: "histogram quantiles with whole-number quantiles",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			    http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			    http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10`,
+			query: `histogram_quantiles(http_requests_total, "quantile", 0, 0.5, 1)`,
+		},
+		{
+			name: "histogram quantiles on malformed data",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 1+3x10
+			    http_requests_total{pod="nginx-2"} 2+3x10`,
+			query: `histogram_quantiles(http_requests_total, "quantile", 0.5, 0.9)`,
+		},
+		{
+			name: "histogram quantiles out of range",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			    http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10`,
+			query: `histogram_quantiles(http_requests_total, "quantile", -0.1, 1.5)`,
+		},
+		{
+			name: "histogram quantiles with sum",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", le="1"} 1+3x10
+			    http_requests_total{pod="nginx-2", le="1"} 2+3x10
+			    http_requests_total{pod="nginx-1", le="2"} 1+2x10
+			    http_requests_total{pod="nginx-2", le="2"} 2+2x10
+			    http_requests_total{pod="nginx-2", le="5"} 3+2x10
+			    http_requests_total{pod="nginx-1", le="+Inf"} 1+1x10
+			    http_requests_total{pod="nginx-2", le="+Inf"} 4+1x10`,
+			query: `histogram_quantiles(sum by (pod, le) (rate(http_requests_total[2m])), "quantile", 0.5, 0.9)`,
+		},
+		{
 			name: "topk",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
@@ -3410,6 +3456,15 @@ func TestParserXFunctions(t *testing.T) {
 	defer q.Close()
 	_, err = enabled.NewInstantQuery(ctx, storageWithSeries(), nil, `xrate(1)`, now)
 	testutil.Assert(t, err != nil && strings.Contains(err.Error(), "expected type range vector"), "extended functions must retain their argument validation: %v", err)
+}
+
+func TestHistogramQuantilesNonConstantQuantile(t *testing.T) {
+	t.Parallel()
+	// Non-constant quantiles (e.g. scalar(x)) are unsupported and must fall back.
+	eng := engine.New(engine.Opts{EnableExperimentalFunctions: true, Timeout: time.Minute})
+	expr := `histogram_quantiles(http_requests_total, "quantile", scalar(http_requests_total))`
+	_, err := eng.NewInstantQuery(context.Background(), storageWithSeries(), nil, expr, time.Unix(0, 0))
+	testutil.Assert(t, err != nil && engine.IsUnimplemented(err), "non-constant quantile must be rejected as unimplemented: %v", err)
 }
 
 func TestParserExperimentalFunctions(t *testing.T) {
@@ -6506,6 +6561,14 @@ histogram_sum(
 		{
 			name:  "histogram_quantile",
 			query: `histogram_quantile(0.7, native_histogram_series)`,
+		},
+		{
+			name:  "histogram_quantiles",
+			query: `histogram_quantiles(native_histogram_series, "quantile", 0.5, 0.7, 0.9)`,
+		},
+		{
+			name:  "histogram_quantiles(histogram_sum)",
+			query: `histogram_quantiles(histogram_sum(native_histogram_series), "quantile", 0.5, 0.9)`,
 		},
 		{
 			// Test strange query with a mix of histogram functions.

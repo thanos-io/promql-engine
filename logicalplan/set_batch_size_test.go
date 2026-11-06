@@ -114,6 +114,11 @@ func TestSetBatchSize(t *testing.T) {
 			expected: `sum(histogram_quantile(0.9, rate(http_requests_total[5m0s])))`,
 		},
 		{
+			name:     "histogram_quantiles does not allow batching",
+			expr:     `sum(histogram_quantiles(rate(http_requests_total[5m]), "quantile", 0.9))`,
+			expected: `sum(histogram_quantiles(rate(http_requests_total[5m0s]), "quantile", 0.9))`,
+		},
+		{
 			name:     "or operator allows batching",
 			expr:     `sum(increase(http_requests_total[5m]) or present_over_time(http_requests_total[1h]))`,
 			expected: `sum(increase(http_requests_total[batch=10][5m0s]) or present_over_time(http_requests_total[batch=10][1h0m0s]))`,
@@ -156,7 +161,7 @@ func TestSetBatchSize(t *testing.T) {
 	for _, tcase := range cases {
 		t.Run(tcase.expr, func(t *testing.T) {
 			t.Parallel()
-			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
+			expr, err := parser.NewParser(parser.Options{EnableExperimentalFunctions: true}).ParseExpr(tcase.expr)
 			testutil.Ok(t, err)
 
 			plan, _ := NewFromAST(expr, &query.Options{}, PlanOptions{})
