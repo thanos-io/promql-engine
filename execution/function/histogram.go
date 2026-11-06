@@ -10,7 +10,9 @@ import (
 	"strconv"
 	"sync"
 
+	"github.com/efficientgo/core/errors"
 	"github.com/thanos-io/promql-engine/execution/model"
+	"github.com/thanos-io/promql-engine/execution/parse"
 	"github.com/thanos-io/promql-engine/execution/telemetry"
 	"github.com/thanos-io/promql-engine/extlabels"
 	"github.com/thanos-io/promql-engine/logicalplan"
@@ -80,7 +82,7 @@ func newHistogramOperator(
 	nextOps []model.VectorOperator,
 	stepsBatch int,
 	opts *query.Options,
-) model.VectorOperator {
+) (model.VectorOperator, error) {
 	o := &histogramOperator{
 		funcName:   call.Func.Name,
 		funcArgs:   call.Args,
@@ -95,6 +97,19 @@ func newHistogramOperator(
 	case "histogram_quantiles":
 		o.vectorOp = nextOps[0]
 		o.scalarOp = nextOps[1:]
+		label, err := logicalplan.UnwrapString(call.Args[1])
+		if err != nil {
+			return nil, errors.Wrap(parse.ErrNotSupportedExpr, "histogram_quantiles: label must be a constant string")
+		}
+		o.labelName = label
+		o.quantiles = make([]float64, len(o.scalarOp))
+		for i := range o.scalarOp {
+			q, err := logicalplan.UnwrapFloat(call.Args[i+2])
+			if err != nil {
+				return nil, errors.Wrap(parse.ErrNotSupportedExpr, "histogram_quantiles: quantile must be a constant")
+			}
+			o.quantiles[i] = q
+		}
 		o.scalarPoints = make([][]float64, len(o.scalarOp))
 		for i := range o.scalarPoints {
 			o.scalarPoints[i] = make([]float64, stepsBatch)
@@ -108,7 +123,7 @@ func newHistogramOperator(
 	default:
 		panic("unsupported function passed")
 	}
-	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts), o)
+	return telemetry.NewOperator(telemetry.NewTelemetry(o, opts), o), nil
 }
 
 func (o *histogramOperator) String() string {
@@ -390,14 +405,6 @@ func (o *histogramOperator) loadSeries(ctx context.Context) error {
 	o.inputSeriesNames = make([]string, len(series))
 	o.outputIndex = make([]*histogramSeries, len(series))
 	b := labels.ScratchBuilder{}
-
-	if o.funcName == "histogram_quantiles" {
-		o.labelName = o.funcArgs[1].(*logicalplan.StringLiteral).Val
-		o.quantiles = make([]float64, len(o.scalarOp))
-		for i := range o.scalarOp {
-			o.quantiles[i] = o.funcArgs[i+2].(*logicalplan.NumberLiteral).Val
-		}
-	}
 
 	for i, s := range series {
 		hasBucketValue := true

@@ -33,7 +33,7 @@ func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.Vec
 	case "absent":
 		return newAbsentOperator(funcExpr, nextOps[0], opts), nil
 	case "histogram_quantile", "histogram_fraction", "histogram_quantiles":
-		return newHistogramOperator(funcExpr, nextOps, stepsBatch, opts), nil
+		return newHistogramOperator(funcExpr, nextOps, stepsBatch, opts)
 	}
 
 	// Short-circuit functions that take no args. Their only input is the step's timestamp.
