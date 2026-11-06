@@ -892,3 +892,45 @@ func synthesizeLoad(numPods, numContainers, numSteps int) string {
 
 	return sb.String()
 }
+
+// BenchmarkRelabelChainDepth measures allocation volume as a relabel chain
+// gets deeper. One operator holds every rule, so cost is near-flat in depth.
+//
+// 10,000 series, -benchtime=20x, Apple M1 Pro, against 89d6517:
+//
+//	depth    before          after
+//	1        11,281,485 B    8,761,570 B
+//	2        15,422,361 B    9,349,786 B
+//	3        19,712,967 B    9,904,227 B
+//	5        28,883,064 B   10,979,132 B
+//	10       56,206,178 B   14,779,576 B
+func BenchmarkRelabelChainDepth(b *testing.B) {
+	// Many series, one step: the label sets are the cost under study, not the
+	// samples.
+	store := setupStorage(b, 1000, 10, 1)
+	defer store.Close()
+
+	queryTime := time.Unix(30, 0)
+	ng := engine.New(engine.Opts{
+		Timeout:    100 * time.Second,
+		MaxSamples: 1e10,
+	})
+
+	for _, depth := range []int{1, 2, 3, 5, 10} {
+		query := deepRelabelChain(depth)
+
+		b.Run(fmt.Sprintf("depth=%d", depth), func(b *testing.B) {
+			ctx := context.Background()
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for b.Loop() {
+				qry, err := ng.NewInstantQuery(ctx, store, nil, query, queryTime)
+				testutil.Ok(b, err)
+				res := qry.Exec(ctx)
+				testutil.Ok(b, res.Err)
+				qry.Close()
+			}
+		})
+	}
+}

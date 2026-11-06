@@ -18,6 +18,7 @@ package execution
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"time"
 
@@ -110,10 +111,47 @@ func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scann
 	return model.WithID(op, logicalplan.NodeFingerprint(e)), nil
 }
 
+// collectRelabelChain returns the adjacent relabel calls above node, and the
+// expression they sit on, innermost-first.
+func collectRelabelChain(call *logicalplan.FunctionCall) ([]*logicalplan.FunctionCall, logicalplan.Node) {
+	var (
+		calls   []*logicalplan.FunctionCall
+		current logicalplan.Node = call
+	)
+	for {
+		// Step over the checks the planner wraps every FunctionCall in. Two
+		// series colliding after an inner call still collide after the outer.
+		if check, ok := current.(*logicalplan.CheckDuplicateLabels); ok {
+			current = check.Expr
+			continue
+		}
+		next, ok := current.(*logicalplan.FunctionCall)
+		if !ok || !function.IsRelabelFunc(next.Func.Name) {
+			break
+		}
+		calls = append(calls, next)
+		current = next.Args[0]
+	}
+	slices.Reverse(calls)
+	return calls, current
+}
+
 func newCall(ctx context.Context, e *logicalplan.FunctionCall, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	hints.Func = e.Func.Name
 	hints.Grouping = nil
 	hints.By = false
+
+	// Collapse a chain of relabel calls into one operator. A single call falls
+	// through below and reaches the same operator as a chain of one.
+	if function.IsRelabelFunc(e.Func.Name) {
+		if calls, inner := collectRelabelChain(e); len(calls) > 1 {
+			next, err := newOperator(ctx, inner, scanners, opts, hints)
+			if err != nil {
+				return nil, err
+			}
+			return function.NewRelabelOperator(next, calls, opts), nil
+		}
+	}
 
 	if e.Func.Name == "absent_over_time" {
 		return newAbsentOverTimeOperator(ctx, e, scanners, opts, hints)

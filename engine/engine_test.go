@@ -4257,7 +4257,7 @@ min without () (
 			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
 			    http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
 			queryTime: time.Unix(160, 0),
-			query:     `label_replace(http_requests_total, "foo", "$1", "series", "]]")`,
+			query:     `label_replace(http_requests_total, "foo", "$1", "series", "([")`,
 		},
 		{
 			name: "label_replace non-existing src label",
@@ -4267,6 +4267,269 @@ min without () (
 			    http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
 			queryTime: time.Unix(160, 0),
 			query:     `label_replace(http_requests_total, "foo", "$1", "bar", ".*")`,
+		},
+		// Nested calls execute as one operator, so every chain shape is
+		// compared against Prometheus here.
+		{
+			name: "nested label_replace",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
+			    http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "series", "(.*)"),
+  "bar",
+  "$1",
+  "pod",
+  "nginx-(.*)"
+)`,
+		},
+		{
+			// Only works if rules apply in order against the label set being
+			// built, not against the input.
+			name: "nested label_replace reading an earlier destination",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "pod", "nginx-(.*)"),
+  "bar",
+  "p$1",
+  "foo",
+  "(.*)"
+)`,
+		},
+		{
+			// An empty expansion deletes the destination, which the next rule
+			// then reads.
+			name: "nested label_replace with an empty expansion",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "series", "", "pod", "(.*)"),
+  "bar",
+  "$1",
+  "series",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_replace where no rule matches",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "pod", "nomatch"),
+  "bar",
+  "$1",
+  "series",
+  "alsonomatch"
+)`,
+		},
+		{
+			name: "nested label_replace with a bad regular expression in the inner call",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "series", "(["),
+  "bar",
+  "$1",
+  "pod",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_replace with a bad regular expression in the outer call",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "series", "(.*)"),
+  "bar",
+  "$1",
+  "pod",
+  "(["
+)`,
+		},
+		{
+			name: "deeply nested label_replace",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(
+    label_replace(
+      label_replace(http_requests_total, "a", "$1", "pod", "nginx-(.*)"),
+      "b",
+      "$1!",
+      "a",
+      "(.*)"
+    ),
+    "c",
+    "[$1]",
+    "b",
+    "(.*)"
+  ),
+  "d",
+  "<$1>",
+  "c",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_join",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_join(label_join(http_requests_total, "foo", "-", "pod", "series"), "bar", "/", "foo", "pod")`,
+		},
+		{
+			name: "nested label_join with empty sources",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_join(
+  label_join(http_requests_total, "foo", "-", "absent", "alsoabsent"),
+  "bar",
+  "-",
+  "foo",
+  "pod"
+)`,
+		},
+		{
+			name: "mixed label_join over label_replace",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_join(
+  label_replace(http_requests_total, "foo", "$1", "pod", "nginx-(.*)"),
+  "bar",
+  "-",
+  "foo",
+  "series"
+)`,
+		},
+		{
+			name: "mixed label_replace over label_join",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_join(http_requests_total, "foo", "-", "pod", "series"),
+  "bar",
+  "$1",
+  "foo",
+  "nginx-(.*)"
+)`,
+		},
+		{
+			// Must still be rejected, though the per-call checks are gone.
+			name: "nested label_replace producing duplicate label sets",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query:     `label_replace(label_replace(http_requests_total, "pod", "same", "", ""), "series", "same", "", "")`,
+		},
+		{
+			name: "nested label_replace under an aggregation",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+sum by (bar) (
+  label_replace(
+    label_replace(http_requests_total, "foo", "$1", "pod", "nginx-(.*)"),
+    "bar",
+    "$1",
+    "foo",
+    "(.*)"
+  )
+)`,
+		},
+		{
+			// An aggregation between the calls breaks the chain.
+			name: "label_replace chain broken by an aggregation",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  sum by (foo) (label_replace(http_requests_total, "foo", "$1", "pod", "nginx-(.*)")),
+  "bar",
+  "$1",
+  "foo",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_replace over native histograms",
+			load: `load 30s
+			    http_request_duration_seconds{pod="nginx-1", job="web"} {{schema:0 count:10 sum:20 buckets:[1 2 3]}}+{{schema:0 count:5 sum:10 buckets:[1 1 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2", job="batch"} {{schema:0 count:4 sum:8 buckets:[1 1]}}+{{schema:0 count:2 sum:4 buckets:[1 1]}}x20`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_request_duration_seconds, "svc", "$1", "pod", "nginx-(.*)"),
+  "team",
+  "$1-team",
+  "svc",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_replace under histogram_count",
+			load: `load 30s
+			    http_request_duration_seconds{pod="nginx-1", job="web"} {{schema:0 count:10 sum:20 buckets:[1 2 3]}}+{{schema:0 count:5 sum:10 buckets:[1 1 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2", job="batch"} {{schema:0 count:4 sum:8 buckets:[1 1]}}+{{schema:0 count:2 sum:4 buckets:[1 1]}}x20`,
+			queryTime: time.Unix(160, 0),
+			query: `
+histogram_count(
+  label_replace(
+    label_replace(http_request_duration_seconds, "a", "$1", "job", "(.*)"),
+    "b",
+    "$1!",
+    "a",
+    "(.*)"
+  )
+)`,
+		},
+		{
+			name: "mixed relabel chain over native histograms",
+			load: `load 30s
+			    http_request_duration_seconds{pod="nginx-1", job="web"} {{schema:0 count:10 sum:20 buckets:[1 2 3]}}+{{schema:0 count:5 sum:10 buckets:[1 1 1]}}x20
+			    http_request_duration_seconds{pod="nginx-2", job="batch"} {{schema:0 count:4 sum:8 buckets:[1 1]}}+{{schema:0 count:2 sum:4 buckets:[1 1]}}x20`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_join(
+  label_replace(http_request_duration_seconds, "a", "$1", "job", "(.*)"),
+  "b",
+  "-",
+  "a",
+  "pod"
+)`,
 		},
 		{
 			name: "topk",
