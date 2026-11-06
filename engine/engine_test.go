@@ -3460,8 +3460,7 @@ func TestParserXFunctions(t *testing.T) {
 
 func TestHistogramQuantilesNonConstantQuantile(t *testing.T) {
 	t.Parallel()
-	// currently histogram_quantiles fail with quantile arg being a scalr(x)
-	// just takes in a number literal i will fix it in some time
+	// Non-constant quantiles (e.g. scalar(x)) are unsupported and must fall back.
 	eng := engine.New(engine.Opts{EnableExperimentalFunctions: true, Timeout: time.Minute})
 	expr := `histogram_quantiles(http_requests_total, "quantile", scalar(http_requests_total))`
 	_, err := eng.NewInstantQuery(context.Background(), storageWithSeries(), nil, expr, time.Unix(0, 0))
