@@ -181,8 +181,8 @@ func getFunctionLabelRequirements(funcName string, args []Node, projection *Proj
 			Labels:  []string{},
 			Include: true,
 		}
-	case "histogram_quantile":
-		// Unsafe to push projection down for histogram_quantile as it requires le label.
+	case "histogram_quantile", "histogram_fraction":
+		// Unsafe to push projection down as these functions require the le label.
 		return nil
 	case "label_replace":
 		dstArg := unwrapStepInvariantExpr(args[1])
