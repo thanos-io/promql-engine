@@ -828,7 +828,11 @@ func histogramRate(points []Sample, isCounter bool) (*histogram.FloatHistogram, 
 		}
 	}
 
-	h := last.CopyToSchema(minSchema)
+	h, err := last.CopyToSchema(minSchema)
+	if err != nil {
+		// Invalid bucket layout; fail rather than return a wrong result.
+		return nil, warn, err
+	}
 	if _, _, nhcbBoundsReconciled, err := h.Sub(prev); err != nil {
 		return nil, warn, err
 	} else if nhcbBoundsReconciled {
