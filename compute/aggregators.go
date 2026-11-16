@@ -913,6 +913,11 @@ func Quantile(q float64, points []float64) float64 {
 	upperIndex := math.Min(n-1, lowerIndex+1)
 
 	weight := rank - math.Floor(rank)
+	// An exact rank must return the sample itself: interpolating with weight 0
+	// turns an infinite neighbour into NaN (Inf*0). Matches Prometheus #19899.
+	if weight == 0 {
+		return points[int(lowerIndex)]
+	}
 	return points[int(lowerIndex)]*(1-weight) + points[int(upperIndex)]*weight
 }
 
