@@ -102,7 +102,7 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 // than once. The window is applied for every parent step, including instant
 // queries, because the inner query may evaluate steps outside the window.
 func (a *AnalyzeOutputNode) mergeSubqueryInner(inner *AnalyzeOutputNode) {
-	info := a.OperatorTelemetry.Subquery()
+	info := subqueryTelemetry(a.OperatorTelemetry)
 	innerSamples := inner.OperatorTelemetry.Samples()
 	if info == nil || innerSamples == nil {
 		return
@@ -151,6 +151,15 @@ func (a *AnalyzeOutputNode) addAtStep(step int, n int64) {
 	}
 }
 
+// subqueryTelemetry returns the subquery telemetry behind t, or nil.
+func subqueryTelemetry(t telemetry.OperatorTelemetry) *telemetry.SubqueryTelemetry {
+	if op, ok := t.(*telemetry.Operator); ok {
+		t = op.OperatorTelemetry
+	}
+	st, _ := t.(*telemetry.SubqueryTelemetry)
+	return st
+}
+
 func analyzeQuery(op model.VectorOperator) *AnalyzeOutputNode {
 	var operatorID *uint64
 	if ider, ok := op.(model.OperatorIDer); ok {
@@ -167,7 +176,7 @@ func analyzeQuery(op model.VectorOperator) *AnalyzeOutputNode {
 		childTelemetry []*AnalyzeOutputNode
 		subqueryInner  *AnalyzeOutputNode
 	)
-	info := obsv.Subquery()
+	info := subqueryTelemetry(obsv)
 	for _, child := range children {
 		if node := analyzeQuery(child); node != nil {
 			childTelemetry = append(childTelemetry, node)
