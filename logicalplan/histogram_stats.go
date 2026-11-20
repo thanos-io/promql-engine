@@ -6,6 +6,7 @@ package logicalplan
 import (
 	"github.com/thanos-io/promql-engine/query"
 
+	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/prometheus/prometheus/util/annotations"
 )
 
@@ -32,7 +33,8 @@ func (DetectHistogramStatsOptimizer) Optimize(plan Node, _ *query.Options) (Node
 
 			case *FunctionCall:
 				switch p.Func.Name {
-				case "histogram_count", "histogram_sum", "histogram_avg":
+				case "histogram_count", "histogram_sum", "histogram_avg", "timestamp", "start_timestamp", "absent":
+					// These need only a histogram's count and sum, or no values at all.
 					// We allow skipping buckets preliminarily. But we continue
 					// walking up the path to see if we find a subquery (or a
 					// histogram function) further up.
@@ -42,11 +44,23 @@ func (DetectHistogramStatsOptimizer) Optimize(plan Node, _ *query.Options) (Node
 					// we will not skip the buckets.
 					n.DecodeNativeHistogramStats = false
 					break pathLoop
+				case "changes":
+					// Detecting a change compares whole histograms.
+					n.DecodeNativeHistogramStats = false
+					break pathLoop
+				}
+
+			case *Aggregation:
+				if p.Op == parser.COUNT_VALUES {
+					// The value label is the whole histogram rendered as a string.
+					n.DecodeNativeHistogramStats = false
+					break pathLoop
 				}
 
 			case *Binary:
-				if op := p.Op.String(); op == "</" || op == ">/" {
-					// Trimming depends on buckets, we will not skip them.
+				switch p.Op {
+				case parser.TRIM_UPPER, parser.TRIM_LOWER, parser.EQLC, parser.NEQ:
+					// Trimming and (in)equality depend on buckets.
 					n.DecodeNativeHistogramStats = false
 					break pathLoop
 				}

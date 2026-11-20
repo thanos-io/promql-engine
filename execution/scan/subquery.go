@@ -86,7 +86,7 @@ func NewSubqueryOperator(next, paramOp, paramOp2 model.VectorOperator, opts *que
 		params:        make([]float64, opts.StepsBatch),
 		params2:       make([]float64, opts.StepsBatch),
 	}
-	o.telemetry = telemetry.NewSubqueryTelemetry(o, opts)
+	o.telemetry = telemetry.NewSubqueryTelemetry(o, opts, subQuery, next)
 	return telemetry.NewOperator(o.telemetry, o), nil
 }
 
@@ -149,6 +149,7 @@ func (o *subqueryOperator) Next(ctx context.Context, buf []model.StepVector) (in
 	n := 0
 	maxSteps := min(o.stepsBatch, len(buf))
 
+	batchSamples := 0
 	for i := 0; o.currentStep <= o.maxt && i < maxSteps; i++ {
 		evaluationTime := o.currentStep
 		if o.subQuery.Timestamp != nil {
@@ -231,11 +232,15 @@ func (o *subqueryOperator) Next(ctx context.Context, buf []model.StepVector) (in
 					buf[n].AppendSampleWithSizeHint(uint64(sampleId), f, hint)
 				}
 			}
-			o.telemetry.IncrementSamplesAtTimestamp(rangeSamples.SampleCount(), buf[n].T)
+			// The materialized subquery points are not counted as total samples:
+			// the inner query's samples are, during analysis (Prometheus #19873).
+			// They still count towards the peak.
+			batchSamples += rangeSamples.SampleCount()
 		}
 		n++
 		o.currentStep += o.step
 	}
+	o.telemetry.UpdatePeak(batchSamples)
 
 	return n, nil
 }
