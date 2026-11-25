@@ -28,8 +28,6 @@ func NewFunctionOperator(funcExpr *logicalplan.FunctionCall, nextOps []model.Vec
 		return newScalarOperator(nextOps[0], opts), nil
 	case "timestamp":
 		return newTimestampOperator(nextOps[0], opts), nil
-	case "label_join", "label_replace":
-		return newRelabelOperator(nextOps[0], funcExpr, opts), nil
 	case "absent":
 		return newAbsentOperator(funcExpr, nextOps[0], opts), nil
 	case "histogram_quantile", "histogram_fraction":
