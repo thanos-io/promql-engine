@@ -80,6 +80,7 @@ func newTestVectorSelector(t *testing.T, load string, maxt time.Duration) (*vect
 // including a series that only looks finished.
 func TestVectorSelectorReleasesIterator(t *testing.T) {
 	t.Run("releases an exhausted series", testVectorSelectorReleasesExhausted)
+	t.Run("releases a series after the last step", testVectorSelectorReleasesAfterLastStep)
 	t.Run("keeps a gapped series", testVectorSelectorKeepsGapped)
 	t.Run("selectPoint reports exhaustion", testSelectPointExhaustion)
 }
@@ -125,6 +126,30 @@ func testVectorSelectorReleasesExhausted(t *testing.T) {
 	testutil.Equals(t, 1, n)
 	testutil.Assert(t, series.samples == nil, "released iterator must not be recreated")
 	testutil.Equals(t, 0, len(sampleTimestamps(buf[:n], series.signature)))
+}
+
+func testVectorSelectorReleasesAfterLastStep(t *testing.T) {
+	// Samples until 1200s, but the query ends at 270s: one batch.
+	o, cleanup := newTestVectorSelector(t, `load 30s
+		metric 1+1x40`, 270*time.Second)
+	defer cleanup()
+
+	ctx := context.Background()
+	_, err := o.Series(ctx)
+	testutil.Ok(t, err)
+	series := &o.scanners[0]
+	buf := make([]model.StepVector, 10)
+
+	n, err := o.Next(ctx, buf)
+	testutil.Ok(t, err)
+	testutil.Equals(t, 10, len(sampleTimestamps(buf[:n], series.signature)))
+	testutil.Assert(t, series.exhausted, "series must be done after the last step")
+	testutil.Assert(t, series.samples == nil, "iterator must be released after the last step")
+
+	n, err = o.Next(ctx, buf)
+	testutil.Ok(t, err)
+	testutil.Equals(t, 0, n)
+	testutil.Assert(t, series.samples == nil, "released iterator must not be recreated")
 }
 
 // A gap wider than the lookback delta also makes selectPoint return ok=false,
@@ -290,8 +315,9 @@ func (c *countingTracker) CheckLimit() error { return nil }
 func (c *countingTracker) Limit() int64      { return math.MaxInt64 }
 
 // TestSmoothedVectorSelectorReleasesIterator is TestVectorSelectorReleasesIterator
-// for smoothed range queries: a finished series drops its iterator and its
-// charge to the sample limit, a gapped series keeps both. The tracker holds
+// for smoothed range queries: a series that has run out of samples or reached
+// the last step drops its iterator and its charge to the sample limit, a
+// gapped series keeps both. The tracker holds
 // the buffered samples plus the outputs of the last batch.
 func TestSmoothedVectorSelectorReleasesIterator(t *testing.T) {
 	t.Run("releases an exhausted series", func(t *testing.T) {
@@ -341,6 +367,35 @@ func TestSmoothedVectorSelectorReleasesIterator(t *testing.T) {
 		testutil.Equals(t, 0, series.chargedBuffered)
 		testutil.Equals(t, 0, len(sampleTimestamps(buf[:n], series.signature)))
 		testutil.Equals(t, 0, tracker.current)
+	})
+
+	t.Run("releases a series after the last step", func(t *testing.T) {
+		// Samples until 1200s, but the query ends at 270s: one batch.
+		o, cleanup := newTestVectorSelector(t, `load 30s
+			metric 1+1x40`, 270*time.Second)
+		defer cleanup()
+		o.smoothed = true
+		tracker := &countingTracker{}
+		o.opts.SampleTracker = tracker
+
+		ctx := context.Background()
+		_, err := o.Series(ctx)
+		testutil.Ok(t, err)
+		series := &o.scanners[0]
+		buf := make([]model.StepVector, 10)
+
+		n, err := o.Next(ctx, buf)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 10, len(sampleTimestamps(buf[:n], series.signature)))
+		testutil.Assert(t, series.smoothed == nil, "iterator must be released after the last step")
+		testutil.Assert(t, series.exhausted, "series must be done after the last step")
+		testutil.Equals(t, 0, series.chargedBuffered)
+		testutil.Equals(t, 10, tracker.current, "only the outputs")
+
+		n, err = o.Next(ctx, buf)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 0, n)
+		testutil.Assert(t, series.smoothed == nil, "released iterator must not be recreated")
 	})
 
 	t.Run("keeps a gapped series", func(t *testing.T) {

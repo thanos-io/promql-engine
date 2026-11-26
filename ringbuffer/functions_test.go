@@ -455,3 +455,31 @@ func TestExtendedRangeRateMixedSamples(t *testing.T) {
 		}
 	}
 }
+
+// TestInterpolateHistogramsMixedBuckets checks that interpolating between an
+// exponential and a custom bucket histogram fails instead of being treated as
+// a counter reset.
+func TestInterpolateHistogramsMixedBuckets(t *testing.T) {
+	exp := newTestHistogram(1)
+	custom := &histogram.FloatHistogram{
+		Schema:          histogram.CustomBucketsSchema,
+		Count:           4,
+		Sum:             5,
+		CustomValues:    []float64{5, 10},
+		PositiveSpans:   []histogram.Span{{Offset: 0, Length: 3}},
+		PositiveBuckets: []float64{1, 2, 1},
+	}
+	for _, tc := range []struct {
+		name   string
+		h1, h2 *histogram.FloatHistogram
+	}{
+		{"exponential then custom", exp, custom},
+		{"custom then exponential", custom, exp},
+	} {
+		for _, isCounter := range []bool{true, false} {
+			h, _, err := InterpolateHistograms(tc.h1, 0, tc.h2, 10, 5, isCounter)
+			require.ErrorIs(t, err, histogram.ErrHistogramsIncompatibleSchema, "%s isCounter=%v", tc.name, isCounter)
+			require.Nil(t, h)
+		}
+	}
+}

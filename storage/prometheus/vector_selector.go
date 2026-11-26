@@ -246,9 +246,12 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 			o.telemetry.IncrementSamplesAtTimestamp(currStepSamples, seriesTs)
 			seriesTs += o.step
 		}
+		// A series is done once it has no more samples or has been evaluated at
+		// the last step. Releasing it then also drops its smoothed buffer from
+		// the sample limit before the next series is read.
+		seriesDone := o.opts.IsInstantQuery() || seriesExhausted || seriesTs > o.maxt
 		if series.smoothed != nil {
-			released := o.opts.IsInstantQuery() || seriesExhausted
-			if err := o.trackSmoothedBuffer(series, smoothedPeak, released); err != nil {
+			if err := o.trackSmoothedBuffer(series, smoothedPeak, seriesDone); err != nil {
 				return 0, err
 			}
 		}
@@ -262,7 +265,7 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		if o.opts.IsInstantQuery() {
 			series.samples = nil
 			series.smoothed = nil
-		} else if seriesExhausted {
+		} else if seriesDone {
 			series.exhausted = true
 			series.samples = nil
 			series.smoothed = nil

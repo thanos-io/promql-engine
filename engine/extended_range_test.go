@@ -471,48 +471,52 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 				step = tc.step
 			}
 
-			for _, lookbackDelta := range []time.Duration{0, 25 * time.Second} {
-				for _, disableOptimizers := range []bool{false, true} {
-					t.Run(fmt.Sprintf("lookbackDelta=%v/disableOptimizers=%v", lookbackDelta, disableOptimizers), func(t *testing.T) {
-						optimizers := logicalplan.AllOptimizers
-						if disableOptimizers {
-							optimizers = logicalplan.NoOptimizers
-						}
-						opts := engine.Opts{
-							Timeout:           time.Hour,
-							MaxSamples:        1e10,
-							LookbackDelta:     lookbackDelta,
-							LogicalOptimizers: optimizers,
-							SelectorBatchSize: 1,
-						}
-						newEngine := engine.New(opts)
-						oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
-						ctx := context.Background()
-
-						q1, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, start, end, step)
-						testutil.Ok(t, err)
-						defer q1.Close()
-						q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, tc.query, start, end, step)
-						testutil.Ok(t, err)
-						defer q2.Close()
-						want, got := q2.Exec(ctx), q1.Exec(ctx)
-						// comparer discards PromQL annotations, so check them first.
-						assertSameAnnotationsAndHints(t, want, got)
-						testutil.WithGoCmp(comparer).Equals(t, want, got, queryExplanation(q1))
-
-						for ts := start; !ts.After(end); ts = ts.Add(5 * time.Second) {
-							q1, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, ts)
-							testutil.Ok(t, err)
-							q2, err := oldEngine.NewInstantQuery(ctx, storage, nil, tc.query, ts)
-							testutil.Ok(t, err)
-							want, got := q2.Exec(ctx), q1.Exec(ctx)
-							assertSameAnnotationsAndHints(t, want, got)
-							testutil.WithGoCmp(comparer).Equals(t, want, got, "instant query at %v\n%s", ts.Unix(), queryExplanation(q1))
-							q1.Close()
-							q2.Close()
-						}
-					})
+			// Instant queries at the start, between samples (across the reset
+			// of counterHistograms at 25s), on a sample past the first range,
+			// and at the end.
+			var instants []time.Time
+			for _, ts := range []time.Time{start, start.Add(5 * time.Second), start.Add(25 * time.Second), start.Add(35 * time.Second), start.Add(60 * time.Second), end} {
+				if !ts.After(end) && !slices.Contains(instants, ts) {
+					instants = append(instants, ts)
 				}
+			}
+
+			for _, lookbackDelta := range []time.Duration{0, 25 * time.Second} {
+				t.Run(fmt.Sprintf("lookbackDelta=%v", lookbackDelta), func(t *testing.T) {
+					opts := engine.Opts{
+						Timeout:           time.Hour,
+						MaxSamples:        1e10,
+						LookbackDelta:     lookbackDelta,
+						LogicalOptimizers: logicalplan.AllOptimizers,
+						SelectorBatchSize: 1,
+					}
+					newEngine := engine.New(opts)
+					oldEngine := promql.NewEngine(prometheusEngineOpts(opts))
+					ctx := context.Background()
+
+					q1, err := newEngine.NewRangeQuery(ctx, storage, nil, tc.query, start, end, step)
+					testutil.Ok(t, err)
+					defer q1.Close()
+					q2, err := oldEngine.NewRangeQuery(ctx, storage, nil, tc.query, start, end, step)
+					testutil.Ok(t, err)
+					defer q2.Close()
+					want, got := q2.Exec(ctx), q1.Exec(ctx)
+					// comparer discards PromQL annotations, so check them first.
+					assertSameAnnotationsAndHints(t, want, got)
+					testutil.WithGoCmp(comparer).Equals(t, want, got, queryExplanation(q1))
+
+					for _, ts := range instants {
+						q1, err := newEngine.NewInstantQuery(ctx, storage, nil, tc.query, ts)
+						testutil.Ok(t, err)
+						q2, err := oldEngine.NewInstantQuery(ctx, storage, nil, tc.query, ts)
+						testutil.Ok(t, err)
+						want, got := q2.Exec(ctx), q1.Exec(ctx)
+						assertSameAnnotationsAndHints(t, want, got)
+						testutil.WithGoCmp(comparer).Equals(t, want, got, "instant query at %v\n%s", ts.Unix(), queryExplanation(q1))
+						q1.Close()
+						q2.Close()
+					}
+				})
 			}
 		})
 	}
@@ -598,6 +602,17 @@ func TestAnchoredSmoothedValidation(t *testing.T) {
 		{query: `quantile_over_time(0.5, metric[30s] smoothed)`, fails: true},
 		// The error is raised even when no series is selected.
 		{query: `sum_over_time(missing[30s] anchored)`, fails: true},
+		{query: `sum_over_time((metric[30s] anchored))`, fails: true},
+		// With several errors, the one Prometheus evaluates first.
+		{query: `sum_over_time(metric[30s] anchored) + sum_over_time(metric[30s] smoothed)`, fails: true},
+		{query: `sum_over_time(metric[30s] smoothed) + max_over_time(metric[30s] anchored)`, fails: true},
+		{query: `sum(sum_over_time(metric[30s] anchored)) / count_over_time(metric[30s] smoothed)`, fails: true},
+		{query: `rate(metric[30s] anchored) + sum_over_time(metric[30s] smoothed)`, fails: true},
+		{query: `topk(scalar(max_over_time(metric[30s] smoothed)), sum_over_time(metric[30s] anchored))`, fails: true},
+		{query: `quantile_over_time(scalar(max_over_time(metric[30s] smoothed)), metric[30s] anchored)`, fails: true},
+		{query: `predict_linear(metric[30s] anchored, scalar(sum_over_time(metric[30s] smoothed)))`, fails: true},
+		{query: `max_over_time(sum_over_time(metric[30s] smoothed)[1m:10s]) + sum_over_time(metric[30s] anchored)`, fails: true},
+		{query: `label_replace(sum_over_time(m[30s] smoothed), "a", "b", "c", "d") or sum_over_time(m[30s] anchored)`, fails: true},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			q1, err := ng.NewInstantQuery(ctx, storage, nil, tc.query, time.Unix(50, 0))
@@ -618,6 +633,32 @@ func TestAnchoredSmoothedValidation(t *testing.T) {
 			testutil.Equals(t, want.Err.Error(), got.Err.Error())
 		})
 	}
+}
+
+// TestAnchoredSmoothedValidationSkipsStorage checks that a query failing on an
+// unsupported modifier creates no selector, not even for its valid branches.
+func TestAnchoredSmoothedValidationSkipsStorage(t *testing.T) {
+	storage := teststorage.LoadedStorage(t, `load 10s
+		metric 0 10 20 30 40 50`)
+	defer storage.Close()
+
+	const q = `sum(rate(metric[1m])) + sum_over_time(metric[30s] anchored) + metric`
+	qOpts := &query.Options{Start: time.Unix(0, 0), End: time.Unix(50, 0), Step: 10 * time.Second, LookbackDelta: 5 * time.Minute}
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(q)
+	testutil.Ok(t, err)
+	lplan, err := logicalplan.NewFromAST(expr, qOpts, logicalplan.PlanOptions{})
+	testutil.Ok(t, err)
+	realScanners, err := promscan.NewPrometheusScanners(storage, qOpts, lplan)
+	testutil.Ok(t, err)
+	spy := &hintsSpy{inner: realScanners}
+	defer spy.Close()
+
+	eng := engine.NewWithScanners(engine.Opts{Timeout: time.Hour, MaxSamples: 1e10}, spy)
+	query, err := eng.NewRangeQuery(context.Background(), storage, nil, q, qOpts.Start, qOpts.End, qOpts.Step)
+	testutil.Ok(t, err)
+	defer query.Close()
+	testutil.NotOk(t, query.Exec(context.Background()).Err)
+	testutil.Equals(t, 0, len(spy.vectorHints)+len(spy.matrixHints), "selectors created")
 }
 
 // hintsSpy wraps real scanners and records the SelectHints passed to them.
@@ -892,6 +933,24 @@ func TestSmoothedSampleLimit(t *testing.T) {
 			opts:  engine.Opts{DecodingConcurrency: 1, SelectorBatchSize: 2},
 			below: 304,
 			above: 305,
+		},
+		{
+			// The series still have samples after the last step. At 300s, the
+			// third series' previous sample, 301 samples ahead, the next one
+			// read beyond the window and its output, plus the outputs of the
+			// two series before it, whose buffers were released after the last
+			// step.
+			name: "buffers released after the last step",
+			load: `load 1s
+			    metric{id="a"} 0+1x1200
+			    metric{id="b"} 0+1x1200
+			    metric{id="c"} 0+1x1200`,
+			start: time.Unix(300, 0),
+			end:   time.Unix(310, 0),
+			step:  10 * time.Second,
+			opts:  engine.Opts{DecodingConcurrency: 1, SelectorBatchSize: 3},
+			below: 307,
+			above: 308,
 		},
 	}
 

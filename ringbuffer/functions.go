@@ -1005,6 +1005,11 @@ func InterpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram
 	}
 	fraction := float64(t-t1) / float64(t2-t1)
 
+	// DetectReset reports a change between exponential and custom buckets as
+	// a reset, so reject it before the reset check.
+	if h1.UsesCustomBuckets() != h2.UsesCustomBuckets() {
+		return nil, 0, histogram.ErrHistogramsIncompatibleSchema
+	}
 	if isCounter && h2.DetectReset(h1) {
 		return h2.Copy().Mul(fraction), 0, nil
 	}

@@ -47,6 +47,12 @@ import (
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
+	// Prometheus fails during evaluation when a function does not support the
+	// modifier of its range selector. Fail the same way, without building or
+	// running any other operator.
+	if err := logicalplan.ValidateRangeModifiers(expr); err != nil {
+		return newDeferredError(err), nil
+	}
 	hints := promstorage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
@@ -176,10 +182,6 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 		}
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *logicalplan.MatrixSelector:
-		// Validate against absent_over_time before it is rewritten to last_over_time.
-		if err := logicalplan.CheckRangeModifiers(call.Func.Name, arg.VectorSelector); err != nil {
-			return newDeferredError(err), nil
-		}
 		matrixCall := &logicalplan.FunctionCall{
 			Func: parser.Function{Name: "last_over_time"},
 			Args: call.Args,
@@ -206,9 +208,6 @@ func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t 
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	vs := t.VectorSelector
-	if err := logicalplan.CheckRangeModifiers(e.Func.Name, vs); err != nil {
-		return newDeferredError(err), nil
-	}
 
 	milliSecondRange := t.Range.Milliseconds()
 	if parse.IsExtFunction(e.Func.Name) {

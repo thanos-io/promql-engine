@@ -36,6 +36,9 @@ func TestOptimizeSkipsInvalidRangeModifiers(t *testing.T) {
 		{expr: `changes(metric[5m] smoothed)`},
 		{expr: `quantile_over_time(0.5, metric[5m] smoothed)`},
 		{expr: `sum(rate(a[1m])) + absent_over_time(b[5m] anchored)`},
+		{expr: `sum_over_time((metric[5m] anchored))`},
+		{expr: `max_over_time(rate(b[5m] smoothed)[10m:1m])`, optimize: true},
+		{expr: `max_over_time(sum_over_time(b[5m] smoothed)[10m:1m])`},
 	} {
 		t.Run(tc.expr, func(t *testing.T) {
 			expr, err := parser.NewParser(parser.Options{}).ParseExpr(tc.expr)
@@ -48,4 +51,17 @@ func TestOptimizeSkipsInvalidRangeModifiers(t *testing.T) {
 			testutil.Equals(t, tc.optimize, o.calls > 0)
 		})
 	}
+}
+
+// TestValidateRangeModifiersUnwrapsParens checks a plan built directly, which
+// can keep parentheses around a function argument that parsing would remove.
+func TestValidateRangeModifiersUnwrapsParens(t *testing.T) {
+	expr, err := parser.NewParser(parser.Options{}).ParseExpr(`sum_over_time(metric[5m] anchored)`)
+	testutil.Ok(t, err)
+	plan, err := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})
+	testutil.Ok(t, err)
+
+	call := plan.Root().(*FunctionCall)
+	call.Args[0] = &Parens{Expr: &Parens{Expr: call.Args[0]}}
+	testutil.NotOk(t, ValidateRangeModifiers(call))
 }

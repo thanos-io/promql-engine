@@ -205,7 +205,7 @@ func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) 
 	// function fails during evaluation, as in Prometheus. Skip the optimizers
 	// so that none of them, such as the distributed optimizer, prunes the
 	// selector whose operator returns that error.
-	if hasInvalidRangeModifiers(p.expr) {
+	if ValidateRangeModifiers(p.expr) != nil {
 		optimizers = nil
 	}
 	for _, o := range optimizers {
