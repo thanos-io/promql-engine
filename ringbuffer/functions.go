@@ -29,6 +29,15 @@ type FunctionArgs struct {
 	// quantile_over_time and predict_linear use one, so we only use one here.
 	ScalarPoint  float64
 	ScalarPoint2 float64 // only for double_exponential_smoothing (trend factor)
+
+	// Anchored/Smoothed modifiers for extended range selectors.
+	// See https://github.com/prometheus/proposals/blob/main/proposals/0052-extended-range-selectors-semantics.md
+	Anchored bool
+	Smoothed bool
+	// MixedWindow reports that the extended window of an anchored or smoothed
+	// selector holds both floats and native histograms, including samples
+	// that were not retained in Samples.
+	MixedWindow bool
 }
 
 type FunctionCall func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error)
@@ -328,13 +337,21 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
-		return changes(f.Samples), nil, true, 0, nil
+		start, ok := pickFirstSampleIndex(f)
+		if !ok {
+			return 0., nil, false, 0, nil
+		}
+		return changes(f.Samples[start:]), nil, true, 0, nil
 	},
 	"resets": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
-		return resets(f.Samples), nil, true, 0, nil
+		start, ok := pickFirstSampleIndex(f)
+		if !ok {
+			return 0., nil, false, 0, nil
+		}
+		return resets(f.Samples[start:]), nil, true, 0, nil
 	},
 	"deriv": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) < 2 {
@@ -364,18 +381,27 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		return v, fh, true, warn, nil
 	},
 	"rate": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f, true, true)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
 		return extrapolatedRate(f.Samples, len(f.Samples), true, true, f.StepTime, f.SelectRange, f.Offset)
 	},
 	"delta": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f, false, false)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
 		return extrapolatedRate(f.Samples, len(f.Samples), false, false, f.StepTime, f.SelectRange, f.Offset)
 	},
 	"increase": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		if f.Anchored || f.Smoothed {
+			return extendedRangeRate(f, true, false)
+		}
 		if len(f.Samples) < 2 {
 			return 0., nil, false, 0, nil
 		}
@@ -739,6 +765,20 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 	return resultValue, nil, true, 0, nil
 }
 
+// mixedFloatsHistograms reports whether samples contains both floats and
+// histograms.
+func mixedFloatsHistograms(samples []Sample) bool {
+	var fd, hd bool
+	for _, s := range samples {
+		hd = hd || s.V.H != nil
+		fd = fd || s.V.H == nil
+		if fd && hd {
+			return true
+		}
+	}
+	return false
+}
+
 // sameHistogramValues reports whether every sample in the range is a histogram
 // equal to the first one. It is the histogram analog of the float path's
 // sameVals check and gates xincrease's "zero" injection for a newly-appeared
@@ -754,6 +794,323 @@ func sameHistogramValues(samples []Sample) bool {
 		}
 	}
 	return true
+}
+
+// extendedRangeRate implements rate, increase and delta for the anchored and
+// smoothed modifiers from Prometheus proposal 0052. It takes the values at the
+// range boundaries, either by picking real samples (anchored) or by
+// interpolating (smoothed), and corrects for counter resets in between.
+//
+// This mirrors extendedRate and extendedHistogramRate in
+// prometheus/prometheus promql/functions.go.
+func extendedRangeRate(f FunctionArgs, isCounter, isRate bool) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+	samples := f.Samples
+	if len(samples) == 0 {
+		return 0, nil, false, 0, nil
+	}
+	// Prometheus reads the whole extended window and refuses to compute a
+	// rate over a mix of floats and histograms anywhere in it. MixedWindow
+	// covers samples the buffer no longer holds; the scan covers callers that
+	// do not set it.
+	if f.MixedWindow || mixedFloatsHistograms(samples) {
+		return 0, nil, false, warnings.WarnMixedFloatsHistograms, nil
+	}
+
+	var (
+		lastSampleIndex = len(samples) - 1
+		rangeEnd        = f.StepTime - f.Offset
+		rangeStart      = rangeEnd - f.SelectRange
+	)
+
+	// The newest sample at or before the range start, or the first sample.
+	firstSampleIndex := max(sort.Search(lastSampleIndex, func(i int) bool {
+		return samples[i].T > rangeStart
+	})-1, 0)
+	// Smoothed selectors also use the first sample at or after the range end.
+	if f.Smoothed {
+		lastSampleIndex = sort.Search(lastSampleIndex, func(i int) bool {
+			return samples[i].T >= rangeEnd
+		})
+	}
+
+	if samples[lastSampleIndex].T <= rangeStart {
+		return 0, nil, false, 0, nil
+	}
+	if f.Smoothed && samples[firstSampleIndex].T > rangeEnd {
+		return 0, nil, false, 0, nil
+	}
+
+	if samples[firstSampleIndex].V.H != nil {
+		h, warn := extendedHistogramRate(samples, firstSampleIndex, lastSampleIndex, rangeStart, rangeEnd, f.SelectRange, f.Smoothed, isCounter, isRate)
+		return 0, h, h != nil, warn, nil
+	}
+
+	left := pickOrInterpolateLeft(samples, firstSampleIndex, rangeStart, f.Smoothed, isCounter)
+	right := pickOrInterpolateRight(samples, lastSampleIndex, rangeEnd, f.Smoothed, isCounter)
+
+	resultValue := right - left
+
+	if isCounter {
+		// Only samples strictly within the range need counter reset
+		// correction; the boundary helpers already handle the boundaries.
+		if samples[firstSampleIndex].T <= rangeStart {
+			firstSampleIndex++
+		}
+		if samples[lastSampleIndex].T >= rangeEnd {
+			lastSampleIndex--
+		}
+		resultValue += correctForCounterResets(left, right, samples[firstSampleIndex:lastSampleIndex+1])
+	}
+	if isRate {
+		resultValue /= float64(f.SelectRange) / 1000
+	}
+
+	return resultValue, nil, true, 0, nil
+}
+
+// extendedHistogramRate is extendedRangeRate for native histograms. first and
+// last are the indices of the boundary samples. It returns nil when no result
+// can be computed.
+func extendedHistogramRate(samples []Sample, first, last int, rangeStart, rangeEnd, selectRange int64, smoothed, isCounter, isRate bool) (*histogram.FloatHistogram, warnings.Warnings) {
+	var warn warnings.Warnings
+
+	usingCustomBuckets := samples[first].V.H.UsesCustomBuckets()
+	for _, p := range samples[first : last+1] {
+		if p.V.H.UsesCustomBuckets() != usingCustomBuckets {
+			return nil, warn | warnings.WarnMixedExponentialCustomBuckets
+		}
+		if isCounter && p.V.H.CounterResetHint == histogram.GaugeType {
+			warn |= warnings.WarnNotCounter
+		}
+	}
+
+	left, w, err := pickOrInterpolateLeftHistogram(samples, first, rangeStart, smoothed, isCounter)
+	warn |= w
+	if err != nil {
+		return nil, warn | histogramErrorWarning(err)
+	}
+	right, w, err := pickOrInterpolateRightHistogram(samples, last, rangeEnd, smoothed, isCounter)
+	warn |= w
+	if err != nil {
+		return nil, warn | histogramErrorWarning(err)
+	}
+
+	if !isCounter && (left.CounterResetHint != histogram.GaugeType || right.CounterResetHint != histogram.GaugeType) {
+		warn |= warnings.WarnNotGauge
+	}
+
+	// Copy right so that the counter reset correction still sees it unchanged.
+	result := right.Copy()
+	if _, _, reconciled, err := result.Sub(left); err != nil {
+		return nil, warn | histogramErrorWarning(err)
+	} else if reconciled {
+		warn |= warnings.WarnNHCBBoundsReconciled
+	}
+
+	if isCounter {
+		correction, w, ok := correctForCounterResetsHistogram(samples, first, last, left, right, rangeStart, smoothed)
+		warn |= w
+		if !ok {
+			return nil, warn
+		}
+		if correction != nil {
+			if _, _, reconciled, err := result.Add(correction); err != nil {
+				return nil, warn | histogramErrorWarning(err)
+			} else if reconciled {
+				warn |= warnings.WarnNHCBBoundsReconciledAdd
+			}
+		}
+	}
+	if isRate {
+		result.Div(float64(selectRange) / 1000)
+	}
+
+	result.CounterResetHint = histogram.GaugeType
+	return result.Compact(0), warn
+}
+
+// histogramErrorWarning returns the warning Prometheus emits for an error from
+// histogram arithmetic. Other errors drop the result without a warning.
+func histogramErrorWarning(err error) warnings.Warnings {
+	if errors.Is(err, histogram.ErrHistogramsIncompatibleSchema) {
+		return warnings.WarnMixedExponentialCustomBuckets
+	}
+	return 0
+}
+
+// pickOrInterpolateLeft returns the value at the left boundary of the range.
+// For smoothed selectors it interpolates between the samples around the range
+// start; otherwise it returns the first sample's value.
+func pickOrInterpolateLeft(samples []Sample, first int, rangeStart int64, smoothed, isCounter bool) float64 {
+	if smoothed && samples[first].T < rangeStart && first+1 < len(samples) {
+		return interpolateAt(samples[first], samples[first+1], rangeStart, isCounter)
+	}
+	return samples[first].V.F
+}
+
+// pickOrInterpolateRight returns the value at the right boundary of the range.
+// For smoothed selectors it interpolates between the samples around the range
+// end; otherwise it returns the last sample's value.
+func pickOrInterpolateRight(samples []Sample, last int, rangeEnd int64, smoothed, isCounter bool) float64 {
+	if smoothed && last > 0 && samples[last].T > rangeEnd {
+		return interpolateAt(samples[last-1], samples[last], rangeEnd, isCounter)
+	}
+	return samples[last].V.F
+}
+
+// pickOrInterpolateLeftHistogram is pickOrInterpolateLeft for histograms. It
+// always returns a copy.
+func pickOrInterpolateLeftHistogram(samples []Sample, first int, rangeStart int64, smoothed, isCounter bool) (*histogram.FloatHistogram, warnings.Warnings, error) {
+	if smoothed && samples[first].T < rangeStart && first+1 < len(samples) {
+		return InterpolateHistograms(samples[first].V.H, samples[first].T, samples[first+1].V.H, samples[first+1].T, rangeStart, isCounter)
+	}
+	return samples[first].V.H.Copy(), 0, nil
+}
+
+// pickOrInterpolateRightHistogram is pickOrInterpolateRight for histograms. It
+// always returns a copy.
+func pickOrInterpolateRightHistogram(samples []Sample, last int, rangeEnd int64, smoothed, isCounter bool) (*histogram.FloatHistogram, warnings.Warnings, error) {
+	if smoothed && last > 0 && samples[last].T > rangeEnd {
+		return InterpolateHistograms(samples[last-1].V.H, samples[last-1].T, samples[last].V.H, samples[last].T, rangeEnd, isCounter)
+	}
+	return samples[last].V.H.Copy(), 0, nil
+}
+
+// interpolateAt performs linear interpolation between two samples at the given timestamp.
+// If isCounter is true and there is a counter reset (y2 < y1), it models the
+// counter as starting from 0 post-reset by setting y1 to 0.
+//
+// This matches Prometheus' interpolate function in promql/functions.go from
+// v0.310.0 onwards. Earlier versions, including v0.308.0, instead add y1 to y2
+// on the right edge, which counts the pre-reset value as increase.
+func interpolateAt(left, right Sample, timestamp int64, isCounter bool) float64 {
+	y1 := left.V.F
+	y2 := right.V.F
+	if isCounter && y2 < y1 {
+		y1 = 0
+	}
+	return y1 + (y2-y1)*float64(timestamp-left.T)/float64(right.T-left.T)
+}
+
+// InterpolateHistograms linearly interpolates between h1 at t1 and h2 at t2 at
+// time t and returns a new histogram. If isCounter is true and there is a
+// counter reset, the counter is modeled as starting from zero after it. It
+// mirrors interpolateHistograms in Prometheus' promql/functions.go.
+func InterpolateHistograms(h1 *histogram.FloatHistogram, t1 int64, h2 *histogram.FloatHistogram, t2, t int64, isCounter bool) (*histogram.FloatHistogram, warnings.Warnings, error) {
+	if t == t1 {
+		return h1.Copy(), 0, nil
+	}
+	if t == t2 {
+		return h2.Copy(), 0, nil
+	}
+	fraction := float64(t-t1) / float64(t2-t1)
+
+	// DetectReset reports a change between exponential and custom buckets as
+	// a reset, so reject it before the reset check.
+	if h1.UsesCustomBuckets() != h2.UsesCustomBuckets() {
+		return nil, 0, histogram.ErrHistogramsIncompatibleSchema
+	}
+	if isCounter && h2.DetectReset(h1) {
+		return h2.Copy().Mul(fraction), 0, nil
+	}
+
+	// Result = h1 + (h2 - h1) * fraction.
+	var warn warnings.Warnings
+	result := h2.Copy()
+	_, _, reconciled, err := result.Sub(h1)
+	if err != nil {
+		return nil, warn, err
+	}
+	if reconciled {
+		warn |= warnings.WarnNHCBBoundsReconciled
+	}
+	result.Mul(fraction)
+	_, _, reconciled, err = result.Add(h1)
+	if err != nil {
+		return nil, warn, err
+	}
+	if reconciled {
+		warn |= warnings.WarnNHCBBoundsReconciledAdd
+	}
+	return result, warn, nil
+}
+
+// correctForCounterResets calculates the correction for counter resets across
+// interior samples and the right boundary value. This matches Prometheus'
+// correctForCounterResets in promql/functions.go.
+func correctForCounterResets(left, right float64, points []Sample) float64 {
+	var correction float64
+	prev := left
+	for _, p := range points {
+		if p.V.F < prev {
+			correction += prev
+		}
+		prev = p.V.F
+	}
+	if right < prev {
+		correction += prev
+	}
+	return correction
+}
+
+// correctForCounterResetsHistogram is correctForCounterResets for histograms
+// between the boundary samples first and last, whose boundary values are left
+// and right. It returns the accumulated correction (nil if there is none) and
+// false if combining histograms failed. It mirrors the function of the same
+// name in Prometheus' promql/functions.go.
+func correctForCounterResetsHistogram(samples []Sample, first, last int, left, right *histogram.FloatHistogram, rangeStart int64, smoothed bool) (*histogram.FloatHistogram, warnings.Warnings, bool) {
+	// samples[first] is represented by left, so the loop starts one beyond.
+	from := first + 1
+	prev := left
+	if smoothed && samples[first].T < rangeStart && from < len(samples) && samples[from].V.H.DetectReset(samples[first].V.H) {
+		// The left interpolation spanned the reset between samples[first] and
+		// samples[first+1]. It is already accounted for, so compare the next
+		// sample against samples[first+1] instead.
+		prev = samples[from].V.H
+		from++
+	}
+	// samples[last] is excluded: right is either a copy of it or an
+	// interpolation that inherits its counter reset hint, so it would detect a
+	// reset against itself. The final check against right covers it.
+	to := last - 1
+	if from > to+1 {
+		return nil, 0, true
+	}
+
+	var (
+		correction *histogram.FloatHistogram
+		warn       warnings.Warnings
+	)
+	addCorrection := func(h *histogram.FloatHistogram) bool {
+		if correction == nil {
+			correction = h.Copy()
+			return true
+		}
+		_, _, reconciled, err := correction.Add(h)
+		if err != nil {
+			warn |= histogramErrorWarning(err)
+			return false
+		}
+		if reconciled {
+			warn |= warnings.WarnNHCBBoundsReconciledAdd
+		}
+		return true
+	}
+
+	for _, p := range samples[from : to+1] {
+		if p.V.H.DetectReset(prev) {
+			if !addCorrection(prev) {
+				return nil, warn, false
+			}
+		}
+		prev = p.V.H
+	}
+	if right.DetectReset(prev) {
+		if !addCorrection(prev) {
+			return nil, warn, false
+		}
+	}
+	return correction, warn, true
 }
 
 // histogramRate is a helper function for extrapolatedRate. It requires
@@ -1078,6 +1435,26 @@ func stdvarOverTime(points []Sample) (float64, bool, warnings.Warnings) {
 		return 0, false, warn
 	}
 	return ((aux + cAux) / count), true, warn
+}
+
+// pickFirstSampleIndex returns the index of the first sample changes and
+// resets consider. For anchored selectors it is the newest sample of either
+// type at or before the range start, or the first sample when there is none.
+// ok is false when no sample lies after the range start, as there is nothing
+// to measure. Samples hold floats and histograms in one timestamp-ordered
+// slice, so this matches Prometheus' pickFirstSampleIndices.
+func pickFirstSampleIndex(f FunctionArgs) (int, bool) {
+	if !f.Anchored {
+		return 0, true
+	}
+	rangeStart := f.StepTime - f.Offset - f.SelectRange
+	afterStart := sort.Search(len(f.Samples), func(i int) bool {
+		return f.Samples[i].T > rangeStart
+	})
+	if afterStart == len(f.Samples) {
+		return 0, false
+	}
+	return max(afterStart-1, 0), true
 }
 
 func changes(points []Sample) float64 {

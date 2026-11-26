@@ -18,6 +18,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"sort"
 	"time"
 
@@ -37,6 +38,7 @@ import (
 	"github.com/thanos-io/promql-engine/storage"
 
 	"github.com/efficientgo/core/errors"
+	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/promql"
 	"github.com/prometheus/prometheus/promql/parser"
 	promstorage "github.com/prometheus/prometheus/storage"
@@ -45,6 +47,12 @@ import (
 // New creates new physical query execution for a given query expression which represents logical plan.
 // TODO(bwplotka): Add definition (could be parameters for each execution operator) we can optimize - it would represent physical plan.
 func New(ctx context.Context, expr logicalplan.Node, storage storage.Scanners, opts *query.Options) (model.VectorOperator, error) {
+	// Prometheus fails during evaluation when a function does not support the
+	// modifier of its range selector. Fail the same way, without building or
+	// running any other operator.
+	if err := logicalplan.ValidateRangeModifiers(expr); err != nil {
+		return newDeferredError(err), nil
+	}
 	hints := promstorage.SelectHints{
 		Start: opts.Start.UnixMilli(),
 		End:   opts.End.UnixMilli(),
@@ -101,6 +109,11 @@ func newOperator(ctx context.Context, expr logicalplan.Node, storage storage.Sca
 
 func newVectorSelector(ctx context.Context, e *logicalplan.VectorSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	start, end := getTimeRangesForVectorSelector(e, opts, 0)
+	if e.Smoothed && !e.SelectTimestamp {
+		// Smoothed instant vectors need samples after the evaluation time
+		// for interpolation, so extend the end by lookbackDelta.
+		end += opts.LookbackDelta.Milliseconds()
+	}
 	hints.Start = start
 	hints.End = end
 	op, err := scanners.NewVectorSelector(ctx, opts, hints, *e)
@@ -194,14 +207,30 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t *logicalplan.MatrixSelector, scanners storage.Scanners, opts *query.Options, hints promstorage.SelectHints) (model.VectorOperator, error) {
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
+	vs := t.VectorSelector
+
 	milliSecondRange := t.Range.Milliseconds()
 	if parse.IsExtFunction(e.Func.Name) {
 		milliSecondRange += opts.ExtLookbackDelta.Milliseconds()
 	}
 
-	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, milliSecondRange)
+	// For anchored/smoothed, widen the query window (Start/End) but keep
+	// hints.Range equal to the original selector range. Backends use Range for
+	// resolution selection and pushdown decisions and should see the true range.
+	queryRange := milliSecondRange
+	if vs.Anchored {
+		queryRange += opts.LookbackDelta.Milliseconds()
+	}
+	if vs.Smoothed {
+		queryRange += opts.LookbackDelta.Milliseconds()
+	}
+
+	start, end := getTimeRangesForVectorSelector(t.VectorSelector, opts, queryRange)
 	hints.Start = start
 	hints.End = end
+	if vs.Smoothed {
+		hints.End += opts.LookbackDelta.Milliseconds()
+	}
 	hints.Range = milliSecondRange
 	op, err := scanners.NewMatrixSelector(ctx, opts, hints, *t, *e)
 	if err != nil {
@@ -419,6 +448,33 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 		return nil, err
 	}
 	return exchange.NewDuplicateLabelCheck(op, opts), nil
+}
+
+// deferredError is an operator whose Series and Next return its error, so that
+// validation errors surface at evaluation time rather than query creation
+// time, matching Prometheus behavior.
+type deferredError struct {
+	err error
+}
+
+func newDeferredError(err error) model.VectorOperator {
+	return &deferredError{err: err}
+}
+
+func (d *deferredError) Next(context.Context, []model.StepVector) (int, error) {
+	return 0, d.err
+}
+
+func (d *deferredError) Series(context.Context) ([]labels.Labels, error) {
+	return nil, d.err
+}
+
+func (d *deferredError) Explain() []model.VectorOperator {
+	return nil
+}
+
+func (d *deferredError) String() string {
+	return fmt.Sprintf("[deferredError] %v", d.err)
 }
 
 // Copy from https://github.com/prometheus/prometheus/blob/v2.39.1/promql/engine.go#L791.

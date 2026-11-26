@@ -120,6 +120,16 @@ func getTimeRangesForSelector(qOpts *query.Options, n *parser.VectorSelector, pa
 		start -= qOpts.LookbackDelta.Milliseconds()
 	} else {
 		start -= evalRange.Milliseconds()
+		// Anchored and smoothed range selectors also read the lookback delta
+		// before the range for the sample at its start.
+		if n.Anchored || n.Smoothed {
+			start -= qOpts.LookbackDelta.Milliseconds()
+		}
+	}
+	// Smoothed selectors interpolate with the first sample after the
+	// evaluation time, within the lookback delta.
+	if n.Smoothed {
+		end += qOpts.LookbackDelta.Milliseconds()
 	}
 
 	start -= n.OriginalOffset.Milliseconds()
@@ -191,6 +201,13 @@ func MinMaxTime(root Node, qOpts *query.Options) (int64, int64) {
 
 func (p *plan) Optimize(optimizers []Optimizer) (Plan, annotations.Annotations) {
 	annos := annotations.New()
+	// A query that uses the anchored or smoothed modifier with an unsupported
+	// function fails during evaluation, as in Prometheus. Skip the optimizers
+	// so that none of them, such as the distributed optimizer, prunes the
+	// selector whose operator returns that error.
+	if ValidateRangeModifiers(p.expr) != nil {
+		optimizers = nil
+	}
 	for _, o := range optimizers {
 		var a annotations.Annotations
 		p.expr, a = o.Optimize(p.expr, p.opts)

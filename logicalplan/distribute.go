@@ -588,6 +588,10 @@ func calculateStepAlignedStart(opts *query.Options, engineMinTime time.Time) tim
 // 6h can correctly evaluate only the last 5h of the range.
 // The first 1 hour of data cannot be correctly calculated since the range selector in the engine
 // will not be able to gather enough points.
+//
+// Anchored range selectors additionally read one lookback delta before the start of
+// their range, so their range is extended by the lookback delta. Smoothed selectors
+// are never distributed, see isDistributiveOperation.
 func calculateStartOffset(expr *Node, lookbackDelta time.Duration) time.Duration {
 	if expr == nil {
 		return lookbackDelta
@@ -603,6 +607,9 @@ func calculateStartOffset(expr *Node, lookbackDelta time.Duration) time.Duration
 			selectRange += n.Range
 		case *MatrixSelector:
 			selectRange += n.Range
+			if n.VectorSelector.Anchored {
+				selectRange += lookbackDelta
+			}
 		case *VectorSelector:
 			offset = n.Offset
 		}
@@ -708,6 +715,16 @@ func (m DistributedExecutionOptimizer) isDistributiveOperation(expr *Node, engin
 	switch e := (*expr).(type) {
 	case RemoteMerge, RemoteExecution:
 		return false
+	case *VectorSelector:
+		// Smoothed selectors read samples after each evaluation step, which
+		// time-partitioned engines cannot merge safely: a newer engine that
+		// returns no value, for example on a window mixing floats and
+		// histograms, does not replace the value an older engine computed
+		// without the later samples, and offsets of enclosing subqueries move
+		// the look-ahead further. Evaluate them locally.
+		if e.Smoothed {
+			return false
+		}
 	case *Binary:
 		if isBinaryExpressionWithOneScalarSide(e) {
 			return true

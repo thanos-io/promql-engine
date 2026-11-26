@@ -146,19 +146,19 @@ func (r *GenericRingBuffer) drop(drop int) {
 }
 
 func (r *GenericRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
-	return r.eval(scalarArg, scalarArg2, math.MinInt64)
+	return r.call(r.functionArgs(scalarArg, scalarArg2))
 }
 
-func (r *GenericRingBuffer) eval(scalarArg float64, scalarArg2 float64, metricAppearedTs int64) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
-	return r.call(FunctionArgs{
+func (r *GenericRingBuffer) functionArgs(scalarArg float64, scalarArg2 float64) FunctionArgs {
+	return FunctionArgs{
 		Samples:          r.items,
 		StepTime:         r.currentStep,
 		SelectRange:      r.selectRange,
 		Offset:           r.offset,
 		ScalarPoint:      scalarArg,
 		ScalarPoint2:     scalarArg2, // only for double_exponential_smoothing
-		MetricAppearedTs: metricAppearedTs,
-	})
+		MetricAppearedTs: math.MinInt64,
+	}
 }
 
 func resize(s []Sample, n int) []Sample {

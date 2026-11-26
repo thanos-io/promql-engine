@@ -27,6 +27,7 @@ func NewOperator(opts *query.Options) model.VectorOperator {
 		false, // selectTimestamp
 		0,     // shard
 		1,     // numShards
+		false, // smoothed
 	)
 	op := &operator{VectorOperator: scanner}
 	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op)

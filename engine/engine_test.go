@@ -107,7 +107,7 @@ func TestPromqlAcceptance(t *testing.T) {
 		skipTests: []string{
 			"testdata/name_label_dropping.test", // feature unsupported
 			"testdata/type_and_unit.test",       // feature unsupported
-			"testdata/extended_vectors.test",    // experimental anchored/smoothed modifiers unsupported
+			"testdata/extended_vectors.test",    // run by TestExtendedVectorsAcceptance without range vector results
 			"testdata/fill-modifier.test",       // experimental binary fill modifiers unsupported
 			"testdata/start_timestamps.test",    // experimental start-timestamp evaluation unsupported
 			"testdata/info.test",                // info() function unsupported
