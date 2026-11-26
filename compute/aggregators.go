@@ -588,7 +588,8 @@ func (a *AvgAcc) Value() (float64, *histogram.FloatHistogram) {
 	if a.incremental {
 		return a.avg + a.kahanC, h
 	}
-	return (a.kahanSum + a.kahanC) / float64(a.count), h
+	// Match Prometheus: adding before dividing can round differently.
+	return a.kahanSum/float64(a.count) + a.kahanC/float64(a.count), h
 }
 
 func (a *AvgAcc) ValueType() ValueType {

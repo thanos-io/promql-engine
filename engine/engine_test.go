@@ -3844,6 +3844,23 @@ count_values without () (
 )`,
 		},
 		{
+			name: "avg rounding affects equality",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 0.1
+			    http_requests_total{pod="nginx-2"} 0.1
+			    http_requests_total{pod="nginx-3"} 0.1`,
+			query:     `avg(http_requests_total) == bool 0.1`,
+			queryTime: time.Unix(0, 0),
+		},
+		{
+			name: "avg_over_time rounding affects equality",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1"} 600+40x2
+			    http_requests_total{pod="nginx-2"} 8+2.8x2`,
+			query:     `avg(avg_over_time(http_requests_total[2m] @ 86.000) == http_requests_total)`,
+			queryTime: time.Unix(44, 0),
+		},
+		{
 			name: "sum evaluates to -0 fuzz",
 			load: `load 30s
 			    http_requests_total{pod="nginx-2", route="/"}  0`,
