@@ -53,6 +53,12 @@ func TestExtendedVectorsAcceptance(t *testing.T) {
 const (
 	counterHistograms = `{{schema:0 sum:5 count:4 buckets:[1 2 1]}} {{schema:0 sum:6 count:5 buckets:[1 2 2]}} {{schema:0 sum:9 count:7 buckets:[2 3 2]}} {{schema:0 sum:2 count:1 buckets:[1]}} {{schema:0 sum:4 count:3 buckets:[1 1 1]}} {{schema:0 sum:8 count:6 buckets:[2 2 2]}}`
 	gaugeHistograms   = `{{schema:0 sum:5 count:4 buckets:[1 2 1] counter_reset_hint:gauge}} {{schema:0 sum:3 count:2 buckets:[1 1] counter_reset_hint:gauge}} {{schema:0 sum:7 count:6 buckets:[2 2 2] counter_reset_hint:gauge}}`
+	// Resets after the 2nd, 4th and 7th samples.
+	multiResetHistograms = `{{schema:0 sum:4 count:4 buckets:[1 2 1]}} {{schema:0 sum:8 count:8 buckets:[2 4 2]}} {{schema:0 sum:2 count:2 buckets:[1 0 1]}} {{schema:0 sum:6 count:6 buckets:[2 2 2]}} {{schema:0 sum:2 count:2 buckets:[0 1 1]}} {{schema:0 sum:8 count:8 buckets:[2 3 3]}} {{schema:0 sum:12 count:12 buckets:[4 4 4]}} {{schema:0 sum:3 count:3 buckets:[1 1 1]}} {{schema:0 sum:6 count:6 buckets:[2 2 2]}}`
+	// Custom bucket bounds change from [5 10] to [5 10 20], then to [5] and
+	// back to [5 10]. The resets after the 1st and 4th samples have different
+	// bounds, so their correction is reconciled too.
+	changingBoundsHistograms = `{{schema:-53 sum:10 count:8 custom_values:[5 10] buckets:[2 4 2]}} {{schema:-53 sum:2 count:2 custom_values:[5 10] buckets:[1 0 1]}} {{schema:-53 sum:12 count:10 custom_values:[5 10 20] buckets:[2 4 2 2]}} {{schema:-53 sum:15 count:12 custom_values:[5 10 20] buckets:[3 5 2 2]}} {{schema:-53 sum:3 count:3 custom_values:[5 10 20] buckets:[1 1 1 0]}} {{schema:-53 sum:4 count:4 custom_values:[5] buckets:[2 2]}} {{schema:-53 sum:6 count:6 custom_values:[5 10] buckets:[2 2 2]}} {{schema:-53 sum:9 count:9 custom_values:[5 10] buckets:[3 3 3]}}`
 )
 
 // TestAnchoredSmoothedModifiers compares anchored and smoothed selectors with
@@ -364,6 +370,53 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 			name: "smoothed instant vector on gauge histograms",
 			load: `load 10s
 			    metric ` + gaugeHistograms,
+			query: `metric smoothed`,
+			step:  5 * time.Second,
+		},
+		// Several counter resets inside one window, so the correction adds up
+		// more than one histogram.
+		{
+			name: "anchored rate with two histogram resets in the window",
+			load: `load 10s
+			    metric ` + multiResetHistograms,
+			query: `rate(metric[60s] anchored)`,
+		},
+		{
+			name: "smoothed increase with two histogram resets in the window",
+			load: `load 10s
+			    metric ` + multiResetHistograms,
+			query: `increase(metric[60s] smoothed)`,
+		},
+		// Custom bucket histograms whose bounds change, so subtraction,
+		// correction and interpolation reconcile bucket layouts.
+		{
+			name: "anchored rate on custom buckets with changing bounds",
+			load: `load 10s
+			    metric ` + changingBoundsHistograms,
+			query: `rate(metric[30s] anchored)`,
+		},
+		{
+			name: "anchored increase on custom buckets with changing bounds over a long window",
+			load: `load 10s
+			    metric ` + changingBoundsHistograms,
+			query: `increase(metric[60s] anchored)`,
+		},
+		{
+			name: "smoothed rate on custom buckets with changing bounds",
+			load: `load 10s
+			    metric ` + changingBoundsHistograms,
+			query: `rate(metric[30s] smoothed)`,
+		},
+		{
+			name: "smoothed increase on custom buckets with changing bounds over a long window",
+			load: `load 10s
+			    metric ` + changingBoundsHistograms,
+			query: `increase(metric[60s] smoothed)`,
+		},
+		{
+			name: "smoothed instant vector on custom buckets with changing bounds",
+			load: `load 10s
+			    metric ` + changingBoundsHistograms,
 			query: `metric smoothed`,
 			step:  5 * time.Second,
 		},

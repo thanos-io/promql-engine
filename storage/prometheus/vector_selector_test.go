@@ -5,6 +5,7 @@ package prometheus
 
 import (
 	"context"
+	"math"
 	"testing"
 	"time"
 
@@ -278,6 +279,105 @@ func TestSmoothedIteratorBuffered(t *testing.T) {
 			}
 		}
 	}
+}
+
+// countingTracker is a SampleTracker without a limit that exposes its balance.
+type countingTracker struct{ current int }
+
+func (c *countingTracker) Add(n int)         { c.current += n }
+func (c *countingTracker) Remove(n int)      { c.current -= n }
+func (c *countingTracker) CheckLimit() error { return nil }
+func (c *countingTracker) Limit() int64      { return math.MaxInt64 }
+
+// TestSmoothedVectorSelectorReleasesIterator is TestVectorSelectorReleasesIterator
+// for smoothed range queries: a finished series drops its iterator and its
+// charge to the sample limit, a gapped series keeps both. The tracker holds
+// the buffered samples plus the outputs of the last batch.
+func TestSmoothedVectorSelectorReleasesIterator(t *testing.T) {
+	t.Run("releases an exhausted series", func(t *testing.T) {
+		// Samples at 0s..90s only. A smoothed point needs a sample after
+		// ts-5m, so the last point is ts=360s and the release lands at ts=390s.
+		o, cleanup := newTestVectorSelector(t, `load 30s
+			metric 1+1x3`, 600*time.Second, 10)
+		defer cleanup()
+		o.smoothed = true
+		tracker := &countingTracker{}
+		o.opts.SampleTracker = tracker
+
+		ctx := context.Background()
+		_, err := o.Series(ctx)
+		testutil.Ok(t, err)
+		series := &o.scanners[0]
+		buf := make([]model.StepVector, 10)
+
+		// Batch 1, ts 0s..270s.
+		n, err := o.Next(ctx, buf)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 10, n)
+		testutil.Equals(t,
+			[]int64{0, 30000, 60000, 90000, 120000, 150000, 180000, 210000, 240000, 270000},
+			sampleTimestamps(buf[:n], series.signature))
+		testutil.Assert(t, !series.exhausted, "must not be released while inside the lookback window")
+		testutil.Assert(t, series.smoothed != nil, "iterator must stay live inside the lookback window")
+		testutil.Assert(t, series.chargedBuffered > 0, "the buffered samples must be charged")
+		testutil.Equals(t, series.smoothed.buffered, series.chargedBuffered)
+		testutil.Equals(t, 11, tracker.current, "10 outputs and 1 buffered sample")
+
+		// Batch 2, ts 300s..570s.
+		n, err = o.Next(ctx, buf)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 10, n)
+		testutil.Equals(t, []int64{300000, 330000, 360000}, sampleTimestamps(buf[:n], series.signature))
+		testutil.Assert(t, series.exhausted, "must be released once past lastSample+lookbackDelta")
+		testutil.Assert(t, series.smoothed == nil, "exhausted iterator must be released")
+		testutil.Equals(t, 0, series.chargedBuffered)
+		testutil.Equals(t, 3, tracker.current, "3 outputs and no buffered sample")
+
+		// Batch 3, ts 600s: no rebuild.
+		n, err = o.Next(ctx, buf)
+		testutil.Ok(t, err)
+		testutil.Equals(t, 1, n)
+		testutil.Assert(t, series.smoothed == nil, "released iterator must not be recreated")
+		testutil.Equals(t, 0, series.chargedBuffered)
+		testutil.Equals(t, 0, len(sampleTimestamps(buf[:n], series.signature)))
+		testutil.Equals(t, 0, tracker.current)
+	})
+
+	t.Run("keeps a gapped series", func(t *testing.T) {
+		// Samples at 0s and 900s..1050s. The gap is wider than twice the
+		// lookback, so some steps see no sample before or after them.
+		o, cleanup := newTestVectorSelector(t, `load 30s
+			metric 1 _x29 5+1x5`, 1200*time.Second, 10)
+		defer cleanup()
+		o.smoothed = true
+		tracker := &countingTracker{}
+		o.opts.SampleTracker = tracker
+
+		ctx := context.Background()
+		_, err := o.Series(ctx)
+		testutil.Ok(t, err)
+		series := &o.scanners[0]
+		buf := make([]model.StepVector, 10)
+
+		for _, want := range [][]int64{
+			// ts 0s..270s: the first sample carried forward.
+			{0, 30000, 60000, 90000, 120000, 150000, 180000, 210000, 240000, 270000},
+			// ts 300s..570s: no sample within the lookback on either side.
+			nil,
+			// ts 600s..870s: only samples ahead, nothing to interpolate from.
+			nil,
+			// ts 900s..1170s: the series resumes.
+			{900000, 930000, 960000, 990000, 1020000, 1050000, 1080000, 1110000, 1140000, 1170000},
+		} {
+			n, err := o.Next(ctx, buf)
+			testutil.Ok(t, err)
+			testutil.Equals(t, want, sampleTimestamps(buf[:n], series.signature))
+			testutil.Assert(t, !series.exhausted, "a gapped series must not be marked exhausted")
+			testutil.Assert(t, series.smoothed != nil, "a gapped series must keep its iterator")
+			testutil.Equals(t, series.smoothed.buffered, series.chargedBuffered)
+			testutil.Equals(t, series.smoothed.buffered+len(want), tracker.current)
+		}
+	})
 }
 
 // TestSmoothedInstantQueryReleasesBuffer checks that the smoothed iterator an

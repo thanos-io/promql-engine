@@ -765,6 +765,20 @@ func extendedRate(samples []Sample, isCounter, isRate bool, stepTime int64, sele
 	return resultValue, nil, true, 0, nil
 }
 
+// mixedFloatsHistograms reports whether samples contains both floats and
+// histograms.
+func mixedFloatsHistograms(samples []Sample) bool {
+	var fd, hd bool
+	for _, s := range samples {
+		hd = hd || s.V.H != nil
+		fd = fd || s.V.H == nil
+		if fd && hd {
+			return true
+		}
+	}
+	return false
+}
+
 // sameHistogramValues reports whether every sample in the range is a histogram
 // equal to the first one. It is the histogram analog of the float path's
 // sameVals check and gates xincrease's "zero" injection for a newly-appeared
@@ -795,8 +809,10 @@ func extendedRangeRate(f FunctionArgs, isCounter, isRate bool) (float64, *histog
 		return 0, nil, false, 0, nil
 	}
 	// Prometheus reads the whole extended window and refuses to compute a
-	// rate over a mix of floats and histograms anywhere in it.
-	if f.MixedWindow {
+	// rate over a mix of floats and histograms anywhere in it. MixedWindow
+	// covers samples the buffer no longer holds; the scan covers callers that
+	// do not set it.
+	if f.MixedWindow || mixedFloatsHistograms(samples) {
 		return 0, nil, false, warnings.WarnMixedFloatsHistograms, nil
 	}
 

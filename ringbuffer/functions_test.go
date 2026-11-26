@@ -417,3 +417,41 @@ func TestExtendedRateHistogramSingleSampleUndefined(t *testing.T) {
 		require.Nil(t, h)
 	})
 }
+
+// TestExtendedRangeRateMixedSamples checks that rate, increase and delta with
+// anchored or smoothed reject mixed floats and histograms even when the caller
+// does not set MixedWindow.
+func TestExtendedRangeRateMixedSamples(t *testing.T) {
+	h := func(ts int64, mult float64) Sample { return Sample{T: ts, V: Value{H: newTestHistogram(mult)}} }
+	f := func(ts int64, v float64) Sample { return Sample{T: ts, V: Value{F: v}} }
+
+	for _, tc := range []struct {
+		name    string
+		samples []Sample
+	}{
+		{"histogram first", []Sample{h(0, 1), f(100_000, 2), h(200_000, 3), h(300_000, 4)}},
+		{"float first", []Sample{f(0, 1), h(100_000, 2), f(200_000, 3), f(300_000, 4)}},
+		{"histogram inside floats", []Sample{f(0, 1), f(100_000, 2), h(150_000, 2), f(200_000, 3), f(300_000, 4)}},
+	} {
+		for _, name := range []string{"rate", "increase", "delta"} {
+			call, err := NewRangeVectorFunc(name)
+			require.NoError(t, err)
+			for _, mod := range []string{"anchored", "smoothed"} {
+				t.Run(tc.name+"/"+name+"/"+mod, func(t *testing.T) {
+					v, fh, ok, warn, err := call(FunctionArgs{
+						Samples:     tc.samples,
+						StepTime:    300_000,
+						SelectRange: 300_000,
+						Anchored:    mod == "anchored",
+						Smoothed:    mod == "smoothed",
+					})
+					require.NoError(t, err)
+					require.False(t, ok)
+					require.Nil(t, fh)
+					require.Zero(t, v)
+					require.NotZero(t, warn&warnings.WarnMixedFloatsHistograms)
+				})
+			}
+		}
+	}
+}
