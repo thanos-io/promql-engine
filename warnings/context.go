@@ -37,6 +37,7 @@ const (
 	WarnNHCBBoundsReconciled    // for subtraction operations (rate, irate, delta)
 	WarnNHCBBoundsReconciledAgg // for aggregation operations (sum, avg, sum_over_time, avg_over_time)
 	WarnIncompatibleTypesInBinOp
+	WarnNHCBBoundsReconciledAdd // for additions in anchored/smoothed histogram rates and interpolation
 )
 
 type warningKey string

@@ -94,86 +94,7 @@ func TestExtendedRingBufferRejectsStaleCandidatesAfterReset(t *testing.T) {
 	require.Equal(t, []Sample{{T: 101, V: Value{F: 5}}}, buffer.items)
 }
 
-func TestAnchoredRingBufferRetainsTwoBaselines(t *testing.T) {
-	h := func(sum float64) *histogram.FloatHistogram { return &histogram.FloatHistogram{Sum: sum, Count: sum} }
-
-	tests := []struct {
-		name     string
-		samples  []Sample
-		expected []Sample
-	}{
-		{
-			name: "keeps the two newest baselines in order",
-			samples: []Sample{
-				{T: 92, V: Value{F: 1}},
-				{T: 95, V: Value{F: 2}},
-				{T: 100, V: Value{F: 3}},
-				{T: 101, V: Value{F: 4}},
-			},
-			expected: []Sample{
-				{T: 95, V: Value{F: 2}},
-				{T: 100, V: Value{F: 3}},
-				{T: 101, V: Value{F: 4}},
-			},
-		},
-		{
-			name: "inserts out-of-order baselines and drops the oldest",
-			samples: []Sample{
-				{T: 101, V: Value{F: 4}},
-				{T: 95, V: Value{F: 2}},
-				{T: 99, V: Value{F: 3}},
-				{T: 92, V: Value{F: 1}}, // Older than both retained baselines.
-			},
-			expected: []Sample{
-				{T: 95, V: Value{F: 2}},
-				{T: 99, V: Value{F: 3}},
-				{T: 101, V: Value{F: 4}},
-			},
-		},
-		{
-			name: "replaces a baseline with an equal timestamp",
-			samples: []Sample{
-				{T: 95, V: Value{F: 1}},
-				{T: 99, V: Value{F: 2}},
-				{T: 95, V: Value{F: 3}},
-			},
-			expected: []Sample{
-				{T: 95, V: Value{F: 3}},
-				{T: 99, V: Value{F: 2}},
-			},
-		},
-		{
-			name: "does not alias histograms when inserting",
-			samples: []Sample{
-				{T: 99, V: Value{H: h(2)}},
-				{T: 95, V: Value{H: h(1)}},
-			},
-			expected: []Sample{
-				{T: 95, V: Value{H: h(1)}},
-				{T: 99, V: Value{H: h(2)}},
-			},
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			buffer := NewAnchored(context.Background(), 4, 10, 0, 9, nil)
-			buffer.Reset(100, 110)
-			for _, sample := range test.samples {
-				buffer.Push(sample.T, sample.V)
-			}
-
-			require.Equal(t, test.expected, buffer.items)
-			want := 0
-			for _, s := range test.expected {
-				want += valueSampleCount(s.V)
-			}
-			require.Equal(t, want, buffer.SampleCount())
-		})
-	}
-}
-
-func TestAnchoredRingBufferResetKeepsTwoBaselines(t *testing.T) {
+func TestAnchoredRingBufferKeepsNewestBaseline(t *testing.T) {
 	buffer := NewAnchored(context.Background(), 4, 10, 0, 9, nil)
 	buffer.Reset(80, 90)
 	for _, ts := range []int64{85, 92, 95, 100, 105} {
@@ -182,29 +103,57 @@ func TestAnchoredRingBufferResetKeepsTwoBaselines(t *testing.T) {
 
 	buffer.Reset(100, 110)
 	require.Equal(t, []Sample{
-		{T: 95, V: Value{F: 95}},
 		{T: 100, V: Value{F: 100}},
 		{T: 105, V: Value{F: 105}},
 	}, buffer.items)
-	require.Equal(t, 3, buffer.SampleCount())
+	require.Equal(t, 2, buffer.SampleCount())
 }
 
-func TestAnchoredRingBufferRejectsDroppedHistograms(t *testing.T) {
-	buffer := NewAnchored(context.Background(), 4, 10, 0, 9, func(FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+func TestExtendedRingBufferReportsMixedWindow(t *testing.T) {
+	var mixed bool
+	call := func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+		mixed = f.MixedWindow
 		return 0, nil, true, 0, nil
+	}
+	h := &histogram.FloatHistogram{Count: 1}
+
+	t.Run("dropped histogram within the extended window", func(t *testing.T) {
+		buffer := NewAnchored(context.Background(), 4, 10, 0, 9, call)
+		buffer.Reset(100, 110)
+		// The histogram is within the lookback but replaced by a newer baseline.
+		buffer.Push(92, Value{H: h})
+		buffer.Push(95, Value{F: 1})
+		buffer.Push(105, Value{F: 2})
+		require.Len(t, buffer.items, 2)
+
+		_, _, _, _, err := buffer.Eval(context.Background(), 0, 0)
+		require.NoError(t, err)
+		require.True(t, mixed)
+
+		// Once the histogram leaves the extended window, the window is uniform.
+		buffer.Reset(110, 120)
+		_, _, _, _, err = buffer.Eval(context.Background(), 0, 0)
+		require.NoError(t, err)
+		require.False(t, mixed)
 	})
-	buffer.Reset(100, 110)
-	// The histogram is within the lookback but evicted by two newer baselines.
-	buffer.Push(92, Value{H: &histogram.FloatHistogram{Count: 1}})
-	buffer.Push(95, Value{F: 1})
-	buffer.Push(99, Value{F: 2})
-	require.Len(t, buffer.items, 2)
 
-	_, _, _, _, err := buffer.Eval(context.Background(), 0, 0)
-	require.ErrorIs(t, err, ErrExtendedRangeHistograms)
+	t.Run("single type", func(t *testing.T) {
+		buffer := NewSmoothed(context.Background(), 4, 10, 0, 9, call)
+		buffer.Reset(100, 110)
+		buffer.Push(95, Value{H: h})
+		buffer.Push(105, Value{H: h})
+		_, _, _, _, err := buffer.Eval(context.Background(), 0, 0)
+		require.NoError(t, err)
+		require.False(t, mixed)
+	})
 
-	// Once the histogram leaves the extended window, evaluation succeeds.
-	buffer.Reset(110, 120)
-	_, _, _, _, err = buffer.Eval(context.Background(), 0, 0)
-	require.NoError(t, err)
+	t.Run("not reported without a modifier", func(t *testing.T) {
+		buffer := NewWithExtLookback(context.Background(), 4, 10, 0, 9, call)
+		buffer.Reset(100, 110)
+		buffer.Push(95, Value{H: h})
+		buffer.Push(105, Value{F: 1})
+		_, _, _, _, err := buffer.Eval(context.Background(), 0, 0)
+		require.NoError(t, err)
+		require.False(t, mixed)
+	})
 }

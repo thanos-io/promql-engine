@@ -52,6 +52,9 @@ func hashMatchers(matchers []*labels.Matcher, mint, maxt int64, hints storage.Se
 	writeInt64(sb, mint)
 	writeInt64(sb, maxt)
 	writeInt64(sb, hints.Step)
+	// Anchored and smoothed selectors widen mint and maxt but keep the original
+	// range, so the bounds alone do not identify the hints.
+	writeInt64(sb, hints.Range)
 	writeString(sb, hints.Func)
 	writeString(sb, strings.Join(hints.Grouping, ";"))
 	writeBool(sb, hints.By)

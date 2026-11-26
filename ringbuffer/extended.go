@@ -12,8 +12,8 @@ import (
 	"github.com/prometheus/prometheus/model/histogram"
 )
 
-// ExtendedRingBuffer retains the newest samples at or before the range start as
-// baselines for xrate, xincrease, xdelta and the anchored and smoothed
+// ExtendedRingBuffer retains the newest sample at or before the range start as
+// a baseline for xrate, xincrease, xdelta and the anchored and smoothed
 // modifiers. Samples are normally offered to Push in timestamp order, but
 // baseline insertion also preserves ordering when a prefetched sample arrives
 // after an in-window sample.
@@ -21,11 +21,16 @@ type ExtendedRingBuffer struct {
 	*GenericRingBuffer
 
 	extLookback      int64
-	baselines        int
 	metricAppearedTs int64
-	// lastHistogramTs is the newest native histogram offered to Push, even if
-	// it was not retained. Anchored and smoothed selectors reject the range when
-	// it falls within the extended window, as Prometheus does.
+	anchored         bool
+	smoothed         bool
+
+	// lastFloatTs and lastHistogramTs are the newest float and native
+	// histogram offered to Push, even if they were not retained as baselines.
+	// Prometheus reads the whole extended window for anchored and smoothed
+	// selectors, so a window holding both types must be detected even when
+	// only the newest baseline is kept.
+	lastFloatTs     int64
 	lastHistogramTs int64
 }
 
@@ -41,8 +46,8 @@ func NewWithExtLookback(
 	return &ExtendedRingBuffer{
 		GenericRingBuffer: New(ctx, size, selectRange, offset, call),
 		extLookback:       extLookback,
-		baselines:         1,
 		metricAppearedTs:  math.MinInt64,
+		lastFloatTs:       math.MinInt64,
 		lastHistogramTs:   math.MinInt64,
 	}
 }
@@ -53,10 +58,6 @@ func NewWithExtLookback(
 func NewAnchored(ctx context.Context, size int, selectRange, offset, lookback int64, call FunctionCall) *ExtendedRingBuffer {
 	b := NewWithExtLookback(ctx, size, selectRange, offset, lookback, call)
 	b.anchored = true
-	// When no sample falls inside the range, Prometheus' pickFirstSampleIndex
-	// selects the second newest sample at or before the range start, so changes
-	// and resets need two baselines to compare.
-	b.baselines = 2
 	return b
 }
 
@@ -70,8 +71,8 @@ func NewSmoothed(ctx context.Context, size int, selectRange, offset, lookback in
 }
 
 // Reset applies the extended-window rule to samples retained from the previous
-// evaluation step. It keeps the suffix after mint and up to r.baselines of the
-// newest samples at or before mint that are within extLookback.
+// evaluation step. It keeps the suffix after mint and, when one exists within
+// extLookback, the newest baseline at or before mint.
 func (r *ExtendedRingBuffer) Reset(mint int64, evalt int64) {
 	r.currentStep = evalt
 	r.currentRangeStart = mint
@@ -79,7 +80,7 @@ func (r *ExtendedRingBuffer) Reset(mint int64, evalt int64) {
 	var drop int
 	for drop = 0; drop < len(r.items) && r.items[drop].T <= mint; drop++ {
 	}
-	for kept := 0; kept < r.baselines && drop > 0 && r.items[drop-1].T >= mint-r.extLookback; kept++ {
+	if drop > 0 && r.items[drop-1].T >= mint-r.extLookback {
 		drop--
 	}
 	r.drop(drop)
@@ -93,8 +94,10 @@ func (r *ExtendedRingBuffer) Push(t int64, v Value) {
 	if r.metricAppearedTs == math.MinInt64 || t < r.metricAppearedTs {
 		r.metricAppearedTs = t
 	}
-	if v.H != nil && t > r.lastHistogramTs {
-		r.lastHistogramTs = t
+	if v.H != nil {
+		r.lastHistogramTs = max(r.lastHistogramTs, t)
+	} else {
+		r.lastFloatTs = max(r.lastFloatTs, t)
 	}
 
 	if t > r.currentRangeStart {
@@ -105,41 +108,47 @@ func (r *ExtendedRingBuffer) Push(t int64, v Value) {
 		return
 	}
 
-	// Reset leaves at most r.baselines samples before the in-window suffix.
-	// pos is where t belongs among them and n is how many there are.
-	pos, n := 0, 0
-	for ; n < len(r.items) && r.items[n].T <= r.currentRangeStart; n++ {
-		if r.items[n].T < t {
-			pos = n + 1
+	// Reset leaves at most one baseline before the in-window suffix. Find and
+	// replace it if one exists.
+	baseline := -1
+	for i := len(r.items) - 1; i >= 0; i-- {
+		if r.items[i].T <= r.currentRangeStart {
+			baseline = i
+			break
 		}
 	}
-	if pos < n && r.items[pos].T == t {
-		r.sampleCount -= valueSampleCount(r.items[pos].V)
-		setSample(&r.items[pos], t, v)
-		r.sampleCount += valueSampleCount(v)
-		return
-	}
-	if pos == 0 && n >= r.baselines {
-		// Older than every retained baseline.
+	if baseline >= 0 {
+		if t >= r.items[baseline].T {
+			r.sampleCount -= valueSampleCount(r.items[baseline].V)
+			setSample(&r.items[baseline], t, v)
+			r.sampleCount += valueSampleCount(v)
+		}
 		return
 	}
 
-	// Insert in timestamp order. Inserting before the end is only needed if a
-	// prefetched baseline is supplied after a newer sample; it preserves the
-	// ordering expected by MaxT and the range functions.
+	// This path is only needed if a prefetched baseline is supplied after an
+	// in-window sample. Insert it before the in-window suffix to preserve the
+	// timestamp ordering expected by MaxT and the range functions.
 	r.items = append(r.items, Sample{})
-	copy(r.items[pos+1:], r.items[pos:len(r.items)-1])
-	r.items[pos] = Sample{}
-	setSample(&r.items[pos], t, v)
+	copy(r.items[1:], r.items[:len(r.items)-1])
+	r.items[0] = Sample{}
+	setSample(&r.items[0], t, v)
 	r.sampleCount += valueSampleCount(v)
-	if n+1 > r.baselines {
-		r.drop(1)
-	}
 }
 
 func (r *ExtendedRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
-	if (r.anchored || r.smoothed) && r.lastHistogramTs >= r.currentRangeStart-r.extLookback {
-		return 0, nil, false, 0, ErrExtendedRangeHistograms
+	var mixed bool
+	if r.anchored || r.smoothed {
+		// Samples are only pushed up to the current step's maxt, so the newest
+		// sample of each type lies in the extended window if it is not older
+		// than the oldest baseline the window admits.
+		windowStart := r.currentRangeStart - r.extLookback
+		mixed = r.lastFloatTs >= windowStart && r.lastHistogramTs >= windowStart
 	}
-	return r.eval(scalarArg, scalarArg2, r.metricAppearedTs)
+	args := r.functionArgs(scalarArg, scalarArg2)
+	args.MetricAppearedTs = r.metricAppearedTs
+	args.Anchored = r.anchored
+	args.Smoothed = r.smoothed
+	args.MixedWindow = mixed
+	return r.call(args)
 }

@@ -19,10 +19,7 @@ package execution
 import (
 	"context"
 	"fmt"
-	"maps"
-	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/aggregate"
@@ -180,7 +177,7 @@ func newAbsentOverTimeOperator(ctx context.Context, call *logicalplan.FunctionCa
 		return function.NewFunctionOperator(f, []model.VectorOperator{argOp}, opts.StepsBatch, opts)
 	case *logicalplan.MatrixSelector:
 		// Validate against absent_over_time before it is rewritten to last_over_time.
-		if err := checkRangeModifiers(call.Func.Name, arg.VectorSelector); err != nil {
+		if err := logicalplan.CheckRangeModifiers(call.Func.Name, arg.VectorSelector); err != nil {
 			return newDeferredError(err), nil
 		}
 		matrixCall := &logicalplan.FunctionCall{
@@ -209,7 +206,7 @@ func newRangeVectorFunction(ctx context.Context, e *logicalplan.FunctionCall, t 
 	// TODO(saswatamcode): Range vector result might need new operator
 	// before it can be non-nested. https://github.com/thanos-io/promql-engine/issues/39
 	vs := t.VectorSelector
-	if err := checkRangeModifiers(e.Func.Name, vs); err != nil {
+	if err := logicalplan.CheckRangeModifiers(e.Func.Name, vs); err != nil {
 		return newDeferredError(err), nil
 	}
 
@@ -454,35 +451,15 @@ func newDuplicateLabelCheck(ctx context.Context, e *logicalplan.CheckDuplicateLa
 	return exchange.NewDuplicateLabelCheck(op, opts), nil
 }
 
-// checkRangeModifiers returns Prometheus' error when the anchored or smoothed
-// modifier is used with a function that does not support it.
-func checkRangeModifiers(funcName string, vs *logicalplan.VectorSelector) error {
-	if vs.Anchored {
-		if _, ok := parse.AnchoredSafeFunctions[funcName]; !ok {
-			return errors.Newf("anchored modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.AnchoredSafeFunctions)), ", "), funcName)
-		}
-	}
-	if vs.Smoothed {
-		if _, ok := parse.SmoothedSafeFunctions[funcName]; !ok {
-			return errors.Newf("smoothed modifier can only be used with: %s - not with %s", strings.Join(slices.Sorted(maps.Keys(parse.SmoothedSafeFunctions)), ", "), funcName)
-		}
-	}
-	return nil
-}
-
-// deferredError is an operator that returns an error on first Next() call,
-// allowing validation errors to surface at evaluation time rather than
-// query creation time, matching Prometheus behavior.
+// deferredError is an operator whose Series and Next return its error, so that
+// validation errors surface at evaluation time rather than query creation
+// time, matching Prometheus behavior.
 type deferredError struct {
-	model.VectorOperator
 	err error
 }
 
 func newDeferredError(err error) model.VectorOperator {
-	return &deferredError{
-		VectorOperator: noop.NewOperator(&query.Options{}),
-		err:            err,
-	}
+	return &deferredError{err: err}
 }
 
 func (d *deferredError) Next(context.Context, []model.StepVector) (int, error) {

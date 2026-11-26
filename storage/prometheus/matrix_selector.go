@@ -167,10 +167,6 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 	}
 
 	if o.currentStep > o.maxt {
-		if o.nonCounterMetric != "" && o.hasFloats {
-			warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
-		}
-
 		return 0, nil
 	}
 	if err := o.loadSeries(ctx); err != nil {
@@ -256,6 +252,12 @@ func (o *matrixSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 				} else {
 					// Lazy pre-allocate sample slices with capacity hint
 					buf[currStep].AppendSampleWithSizeHint(scanner.signature, f, expectedSamples)
+					// Report a float result of rate or increase on a metric not named
+					// like a counter as soon as it is produced: an operator above may
+					// stop reading before this selector reaches the end.
+					if !o.hasFloats && o.nonCounterMetric != "" {
+						warnings.AddToContext(annotations.NewPossibleNonCounterInfo(o.nonCounterMetric, posrange.PositionRange{}), ctx)
+					}
 					o.hasFloats = true
 				}
 			}
@@ -500,5 +502,8 @@ func emitRingbufferWarnings(ctx context.Context, warn warnings.Warnings, metricN
 	}
 	if warn&warnings.WarnNHCBBoundsReconciledAgg != 0 {
 		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramAgg), ctx)
+	}
+	if warn&warnings.WarnNHCBBoundsReconciledAdd != 0 {
+		warnings.AddToContext(annotations.NewMismatchedCustomBucketsHistogramsInfo(posrange.PositionRange{}, annotations.HistogramAdd), ctx)
 	}
 }

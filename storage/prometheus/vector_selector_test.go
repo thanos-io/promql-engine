@@ -227,3 +227,83 @@ func memoizedIteratorFor(t *testing.T, load string, lookbackDelta int64) *storag
 	testutil.Assert(t, set.Next(), "expected one series")
 	return storage.NewMemoizedIterator(set.At().Iterator(nil), lookbackDelta)
 }
+
+func smoothedIteratorFor(t *testing.T, load string) *smoothedIterator {
+	t.Helper()
+
+	testStorage := teststorage.LoadedStorage(t, load)
+	t.Cleanup(func() { testutil.Ok(t, testStorage.Close()) })
+
+	querier, err := testStorage.Querier(0, 3_600_000)
+	testutil.Ok(t, err)
+	t.Cleanup(func() { testutil.Ok(t, querier.Close()) })
+
+	set := querier.Select(context.Background(), false, nil,
+		labels.MustNewMatcher(labels.MatchEqual, "__name__", "metric"))
+	testutil.Assert(t, set.Next(), "expected one series")
+	return newSmoothedIterator(set.At().Iterator(nil))
+}
+
+// TestSmoothedIteratorBuffered checks that the incremental count of buffered
+// samples matches what the iterator holds, and that vacated buffer slots do
+// not keep histograms alive.
+func TestSmoothedIteratorBuffered(t *testing.T) {
+	for _, load := range []string{
+		`load 10s
+			metric 0+1x60 _x300 5`,
+		`load 10s
+			metric {{schema:0 sum:5 count:4 buckets:[1 2 1]}}x60 _x300 {{schema:0 sum:5 count:4 buckets:[1 2 1]}}`,
+		`load 10s
+			metric 1 2 stale 4 {{schema:0 sum:5 count:4 buckets:[1 2 1]}} 6 _x20 7`,
+	} {
+		it := smoothedIteratorFor(t, load)
+		lookback := testLookbackDelta.Milliseconds()
+		for ts := int64(0); ts <= 3_600_000; ts += 15_000 {
+			_, _, _, _, _, err := it.selectPoint(ts, lookback, 0)
+			testutil.Ok(t, err)
+
+			want := 0
+			if it.prevOK {
+				want += smoothedPointSamples(it.prev)
+			}
+			for _, p := range it.ahead {
+				want += smoothedPointSamples(p)
+			}
+			if it.hasPending {
+				want += smoothedPointSamples(it.pending)
+			}
+			testutil.Equals(t, want, it.buffered, "at %d", ts)
+			for _, p := range it.ahead[len(it.ahead):cap(it.ahead)] {
+				testutil.Assert(t, p.h == nil, "vacated slot at %d keeps a histogram", ts)
+			}
+		}
+	}
+}
+
+// TestSmoothedInstantQueryReleasesBuffer checks that the smoothed iterator an
+// instant query reuses across series holds no samples once a series is done, as
+// its charge to the sample limit is dropped.
+func TestSmoothedInstantQueryReleasesBuffer(t *testing.T) {
+	o, cleanup := newTestVectorSelector(t, `load 1s
+		metric{id="a"} 0+1x600
+		metric{id="b"} 0+1x600`, 0, 10)
+	defer cleanup()
+	o.smoothed = true
+
+	ctx := context.Background()
+	_, err := o.Series(ctx)
+	testutil.Ok(t, err)
+
+	buf := make([]model.StepVector, 10)
+	n, err := o.Next(ctx, buf)
+	testutil.Ok(t, err)
+	testutil.Equals(t, 1, n)
+	testutil.Equals(t, 2, len(buf[0].Samples))
+
+	testutil.Equals(t, 0, o.reusableSmoothed.buffered)
+	testutil.Equals(t, 0, len(o.reusableSmoothed.ahead))
+	testutil.Assert(t, !o.reusableSmoothed.prevOK && !o.reusableSmoothed.hasPending, "released iterator keeps samples")
+	for _, s := range o.scanners {
+		testutil.Equals(t, 0, s.chargedBuffered)
+	}
+}
