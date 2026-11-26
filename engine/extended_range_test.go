@@ -284,19 +284,19 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 			name: "anchored rate at fixed time",
 			load: `load 10s
 			    metric 0 10 20 5 15 25 35 45 55 65 75`,
-			query: `rate(metric[30s] anchored @ 45)`,
+			query: `rate(metric[30s] anchored @ 45.000)`,
 		},
 		{
 			name: "smoothed increase at fixed time",
 			load: `load 10s
 			    metric 0 10 20 5 15 25 35 45 55 65 75`,
-			query: `increase(metric[30s] smoothed @ 45)`,
+			query: `increase(metric[30s] smoothed @ 45.000)`,
 		},
 		{
 			name: "smoothed instant vector at fixed time",
 			load: `load 10s
 			    metric 1 2 3 4 5 6 7 8 9 10 11`,
-			query: `metric smoothed @ 33`,
+			query: `metric @ 33.000 smoothed`,
 		},
 		{
 			name: "anchored rate in subquery",
@@ -379,13 +379,13 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 			name: "anchored rate with two histogram resets in the window",
 			load: `load 10s
 			    metric ` + multiResetHistograms,
-			query: `rate(metric[60s] anchored)`,
+			query: `rate(metric[1m] anchored)`,
 		},
 		{
 			name: "smoothed increase with two histogram resets in the window",
 			load: `load 10s
 			    metric ` + multiResetHistograms,
-			query: `increase(metric[60s] smoothed)`,
+			query: `increase(metric[1m] smoothed)`,
 		},
 		// Custom bucket histograms whose bounds change, so subtraction,
 		// correction and interpolation reconcile bucket layouts.
@@ -399,7 +399,7 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 			name: "anchored increase on custom buckets with changing bounds over a long window",
 			load: `load 10s
 			    metric ` + changingBoundsHistograms,
-			query: `increase(metric[60s] anchored)`,
+			query: `increase(metric[1m] anchored)`,
 		},
 		{
 			name: "smoothed rate on custom buckets with changing bounds",
@@ -411,7 +411,7 @@ func TestAnchoredSmoothedModifiers(t *testing.T) {
 			name: "smoothed increase on custom buckets with changing bounds over a long window",
 			load: `load 10s
 			    metric ` + changingBoundsHistograms,
-			query: `increase(metric[60s] smoothed)`,
+			query: `increase(metric[1m] smoothed)`,
 		},
 		{
 			name: "smoothed instant vector on custom buckets with changing bounds",
@@ -830,7 +830,7 @@ func TestSmoothedSampleLimit(t *testing.T) {
 			// the lookback delta, and the output.
 			name: "instant query",
 			load: `load 1s
-				metric 0+1x600`,
+			    metric 0+1x600`,
 			start: time.Unix(300, 500_000_000),
 			below: 301,
 			above: 302,
@@ -840,7 +840,7 @@ func TestSmoothedSampleLimit(t *testing.T) {
 			// the output. They have drained by the last step of the batch.
 			name: "buffer drained before the end of the batch",
 			load: `load 1s
-				metric 0+1x600`,
+			    metric 0+1x600`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(1200, 0),
 			step:  600 * time.Second,
@@ -852,7 +852,7 @@ func TestSmoothedSampleLimit(t *testing.T) {
 			// the six steps of the batch so far.
 			name: "more than one batch",
 			load: `load 1s
-				metric 0+1x600`,
+			    metric 0+1x600`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(1200, 0),
 			step:  60 * time.Second,
@@ -884,8 +884,8 @@ func TestSmoothedSampleLimit(t *testing.T) {
 			// outputs; the first series' buffer was released before.
 			name: "buffers of series not held at the same time",
 			load: `load 1s
-				metric{id="a"} 0+1x600
-				metric{id="b"} 0+1x600`,
+			    metric{id="a"} 0+1x600
+			    metric{id="b"} 0+1x600`,
 			start: time.Unix(0, 0),
 			end:   time.Unix(1200, 0),
 			step:  600 * time.Second,

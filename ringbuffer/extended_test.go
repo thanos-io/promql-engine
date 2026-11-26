@@ -111,7 +111,7 @@ func TestAnchoredRingBufferKeepsNewestBaseline(t *testing.T) {
 
 func TestExtendedRingBufferReportsMixedWindow(t *testing.T) {
 	var mixed bool
-	call := func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+	var call FunctionCall = func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		mixed = f.MixedWindow
 		return 0, nil, true, 0, nil
 	}

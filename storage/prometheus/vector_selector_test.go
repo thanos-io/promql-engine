@@ -36,7 +36,7 @@ func sampleTimestamps(vectors []model.StepVector, signature uint64) []int64 {
 
 // newTestVectorSelector builds the operator directly so tests can inspect
 // per-series scanner state.
-func newTestVectorSelector(t *testing.T, load string, maxt time.Duration, stepsBatch int) (*vectorSelector, func()) {
+func newTestVectorSelector(t *testing.T, load string, maxt time.Duration) (*vectorSelector, func()) {
 	t.Helper()
 
 	testStorage := teststorage.LoadedStorage(t, load)
@@ -45,7 +45,7 @@ func newTestVectorSelector(t *testing.T, load string, maxt time.Duration, stepsB
 		Start:               time.UnixMilli(0),
 		End:                 time.UnixMilli(maxt.Milliseconds()),
 		Step:                30 * time.Second,
-		StepsBatch:          stepsBatch,
+		StepsBatch:          10,
 		LookbackDelta:       testLookbackDelta,
 		DecodingConcurrency: 1,
 		SampleTracker:       query.NewSampleTracker(0),
@@ -89,7 +89,7 @@ func testVectorSelectorReleasesExhausted(t *testing.T) {
 	load := `load 30s
 		metric 1+1x3`
 
-	o, cleanup := newTestVectorSelector(t, load, 600*time.Second, 10)
+	o, cleanup := newTestVectorSelector(t, load, 600*time.Second)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -134,7 +134,7 @@ func testVectorSelectorKeepsGapped(t *testing.T) {
 	load := `load 30s
 		metric 1 _ _ _ _ _ _ _ _ _ _ _ _ _ _ 5+1x5`
 
-	o, cleanup := newTestVectorSelector(t, load, 600*time.Second, 10)
+	o, cleanup := newTestVectorSelector(t, load, 600*time.Second)
 	defer cleanup()
 
 	ctx := context.Background()
@@ -298,7 +298,7 @@ func TestSmoothedVectorSelectorReleasesIterator(t *testing.T) {
 		// Samples at 0s..90s only. A smoothed point needs a sample after
 		// ts-5m, so the last point is ts=360s and the release lands at ts=390s.
 		o, cleanup := newTestVectorSelector(t, `load 30s
-			metric 1+1x3`, 600*time.Second, 10)
+			metric 1+1x3`, 600*time.Second)
 		defer cleanup()
 		o.smoothed = true
 		tracker := &countingTracker{}
@@ -347,7 +347,7 @@ func TestSmoothedVectorSelectorReleasesIterator(t *testing.T) {
 		// Samples at 0s and 900s..1050s. The gap is wider than twice the
 		// lookback, so some steps see no sample before or after them.
 		o, cleanup := newTestVectorSelector(t, `load 30s
-			metric 1 _x29 5+1x5`, 1200*time.Second, 10)
+			metric 1 _x29 5+1x5`, 1200*time.Second)
 		defer cleanup()
 		o.smoothed = true
 		tracker := &countingTracker{}
@@ -386,7 +386,7 @@ func TestSmoothedVectorSelectorReleasesIterator(t *testing.T) {
 func TestSmoothedInstantQueryReleasesBuffer(t *testing.T) {
 	o, cleanup := newTestVectorSelector(t, `load 1s
 		metric{id="a"} 0+1x600
-		metric{id="b"} 0+1x600`, 0, 10)
+		metric{id="b"} 0+1x600`, 0)
 	defer cleanup()
 	o.smoothed = true
 
