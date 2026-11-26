@@ -450,6 +450,16 @@ func TestTrimSorts(t *testing.T) {
 			expr:     "timestamp(sort(X @ 10 offset 1m))",
 			expected: "timestamp(sort(X @ 10.000 offset 1m))",
 		},
+		{
+			name:     "step invariant sort outside timestamp",
+			expr:     "sum(sort(X @ 10))",
+			expected: "sum(X @ 10.000)",
+		},
+		{
+			name:     "only keep the sort directly under timestamp",
+			expr:     "sort(X) and on (pod) timestamp(sort_desc(sort(Y @ 10)))",
+			expected: "X and on (pod) timestamp(sort_desc(Y @ 10.000))",
+		},
 	}
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
@@ -460,6 +470,21 @@ func TestTrimSorts(t *testing.T) {
 			testutil.Equals(t, tcase.expected, plan.Root().String())
 		})
 	}
+}
+
+func TestTrimSortsFromBytes(t *testing.T) {
+	ast, err := parser.NewParser(parser.Options{}).ParseExpr("sort(X) and on (pod) timestamp((sort_desc(Y @ 10)))")
+	testutil.Ok(t, err)
+
+	root := replacePrometheusNodes(ast).(*Binary)
+	timestamp := root.RHS.(*FunctionCall)
+	timestamp.Args[0] = &StepInvariantExpr{Expr: timestamp.Args[0]}
+	data, err := Marshal(insertDuplicateLabelChecks(root))
+	testutil.Ok(t, err)
+
+	plan, err := NewFromBytes(data, &query.Options{}, PlanOptions{})
+	testutil.Ok(t, err)
+	testutil.Equals(t, "X and on (pod) timestamp((sort_desc(Y @ 10.000)))", plan.Root().String())
 }
 
 func TestReduceConstantExpressions(t *testing.T) {
