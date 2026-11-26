@@ -3944,6 +3944,14 @@ count_values without () (
 			queryTime: time.Unix(188, 0),
 		},
 		{
+			name: "timestamp - sort does not affect an unrelated sort",
+			load: `load 30s
+			    a{pod="nginx-1"} 1 2 3 4
+			    b{pod="nginx-1"} 5 6`,
+			query:     `sort(a) and on (pod) (timestamp(sort(b @ 47.180)) == 92)`,
+			queryTime: time.Unix(92, 0),
+		},
+		{
 			name: "timestamp - sort_desc with @ modifier, fuzzing failure",
 			load: `load 30s
 			    http_requests_total{pod="nginx-1", route="/"} 41+15.20x40

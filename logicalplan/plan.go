@@ -5,7 +5,6 @@ package logicalplan
 
 import (
 	"math"
-	"strings"
 	"time"
 
 	"github.com/thanos-io/promql-engine/execution/parse"
@@ -334,43 +333,28 @@ func timestampSelector(expr parser.Expr) (Node, bool) {
 }
 
 func trimSorts(expr Node) Node {
-	canTrimSorts := true
-	// We cannot trim inner sort if its an argument to a timestamp function.
-	// If we would do it we could transform "timestamp(sort(X))" into "timestamp(X)"
-	// Which might return actual timestamps of samples instead of query execution timestamp.
-	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
-		if current == nil || parent == nil {
-			return true
-		}
-		e, pok := (*parent).(*FunctionCall)
-		// The preprocessing wraps the argument in a step invariant expression if it is step
-		// invariant, as in "timestamp(sort(X @ 10))".
-		f, cok := unwrapStepInvariantExpr(*current).(*FunctionCall)
+	return trimSortsIn(expr, false)
+}
 
-		if pok && cok {
-			if e.Func.Name == "timestamp" && strings.HasPrefix(f.Func.Name, "sort") {
-				canTrimSorts = false
-				return true
+func trimSortsIn(expr Node, keepSort bool) Node {
+	keepChildSort := false
+	switch n := expr.(type) {
+	case *StepInvariantExpr, *CheckDuplicateLabels, *Parens:
+		keepChildSort = keepSort
+	case *FunctionCall:
+		switch n.Func.Name {
+		case "timestamp":
+			// timestamp(sort(X)) uses the evaluation timestamp, unlike timestamp(X).
+			keepChildSort = true
+		case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
+			if !keepSort && len(n.Args) > 0 {
+				return trimSortsIn(n.Args[0], false)
 			}
 		}
-		return false
-	})
-	if !canTrimSorts {
-		return expr
 	}
-	TraverseBottomUp(nil, &expr, func(parent, current *Node) bool {
-		if current == nil || parent == nil {
-			return true
-		}
-		switch e := (*parent).(type) {
-		case *FunctionCall:
-			switch e.Func.Name {
-			case "sort", "sort_desc", "sort_by_label", "sort_by_label_desc":
-				*parent = *current
-			}
-		}
-		return false
-	})
+	for _, child := range expr.Children() {
+		*child = trimSortsIn(*child, keepChildSort)
+	}
 	return expr
 }
 
