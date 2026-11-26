@@ -57,6 +57,7 @@ type vectorSelector struct {
 	reusableMemoized  *storage.MemoizedSeriesIterator
 
 	selectTimestamp bool
+	smoothed        bool
 
 	opts               *query.Options
 	lastTrackedSamples int
@@ -70,6 +71,7 @@ func NewVectorSelector(
 	batchSize int64,
 	selectTimestamp bool,
 	shard, numShards int,
+	smoothed bool,
 ) model.VectorOperator {
 	o := &vectorSelector{
 		storage: selector,
@@ -87,6 +89,7 @@ func NewVectorSelector(
 		numShards: numShards,
 
 		selectTimestamp: selectTimestamp,
+		smoothed:        smoothed,
 
 		opts: queryOpts,
 	}
@@ -175,7 +178,19 @@ func (o *vectorSelector) Next(ctx context.Context, buf []model.StepVector) (int,
 		}
 		for currStep := 0; !seriesExhausted && currStep < n && seriesTs <= o.maxt; currStep++ {
 			currStepSamples = 0
-			t, v, h, ok, atEnd, err := selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			var (
+				t     int64
+				v     float64
+				h     *histogram.FloatHistogram
+				ok    bool
+				atEnd bool
+				err   error
+			)
+			if o.smoothed {
+				t, v, ok, atEnd, err = selectPointSmoothed(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			} else {
+				t, v, h, ok, atEnd, err = selectPoint(series.samples, seriesTs, o.lookbackDelta, o.offset)
+			}
 			if err != nil {
 				return 0, err
 			}
@@ -286,6 +301,59 @@ func (o *vectorSelector) shouldCheckSampleLimit(fromSeries int64) bool {
 	isLastSeries := o.currentSeries+1 >= int64(len(o.scanners))
 
 	return isEndOfBatch || isLastSeries
+}
+
+// selectPointSmoothed returns an interpolated value at the given timestamp by
+// looking at samples in [ts-lookbackDelta, ts+lookbackDelta]. When a sample
+// exists exactly at ts it is returned as-is. When samples exist on both sides,
+// linear interpolation is performed. When only a previous sample exists, its
+// value is carried forward.
+func selectPointSmoothed(it *storage.MemoizedSeriesIterator, ts, lookbackDelta, offset int64) (_ int64, _ float64, ok, exhausted bool, _ error) {
+	refTime := ts - offset
+
+	valueType := it.Seek(refTime)
+	switch valueType {
+	case chunkenc.ValNone:
+		if it.Err() != nil {
+			return 0, 0, false, false, it.Err()
+		}
+	case chunkenc.ValFloatHistogram, chunkenc.ValHistogram:
+		// Histograms not supported for smoothed instant vectors.
+		return 0, 0, false, false, nil
+	case chunkenc.ValFloat:
+		seekT, seekV := it.At()
+		if value.IsStaleNaN(seekV) {
+			return 0, 0, false, false, nil
+		}
+		if seekT == refTime {
+			// Exact match.
+			return ts, seekV, true, false, nil
+		}
+		// seekT > refTime: we have the "next" sample. Check for a previous one.
+		if seekT <= refTime+lookbackDelta {
+			_, prevT, prevV, _, prevOK := it.PeekPrev()
+			if prevOK && !value.IsStaleNaN(prevV) && prevT > refTime-lookbackDelta {
+				// Interpolate between prev and next.
+				v := prevV + (seekV-prevV)*float64(refTime-prevT)/float64(seekT-prevT)
+				return ts, v, true, false, nil
+			}
+		}
+	default:
+		panic(errors.Newf("unknown value type %v", valueType))
+	}
+
+	// No sample at or after refTime (or next sample is beyond lookback).
+	// Fall back to previous sample (carry forward).
+	_, prevT, prevV, _, prevOK := it.PeekPrev()
+	if !prevOK || prevT <= refTime-lookbackDelta {
+		// The series is exhausted only when no sample exists at or after
+		// refTime: later steps have a larger refTime and cannot match either.
+		return 0, 0, false, valueType == chunkenc.ValNone, nil
+	}
+	if value.IsStaleNaN(prevV) {
+		return 0, 0, false, false, nil
+	}
+	return ts, prevV, true, false, nil
 }
 
 // TODO(fpetkovski): Add max samples limit.
