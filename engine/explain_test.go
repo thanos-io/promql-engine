@@ -370,6 +370,40 @@ func TestAnalyzeOutputNode_Samples(t *testing.T) {
 	require.EqualValues(t, expected, result)
 }
 
+func TestAnalyzeRemoteSamples(t *testing.T) {
+	t.Parallel()
+	store := teststorage.LoadedStorage(t, `load 1s
+		foo 1+1x10`)
+	defer store.Close()
+	ctx := t.Context()
+	start, end := time.Unix(3, 0), time.Unix(4, 0)
+	const expr = "sum(count_over_time(foo[3s]))"
+	opts := engine.Opts{Timeout: time.Minute, EnableAnalysis: true, DecodingConcurrency: 1}
+
+	child, err := engine.New(opts).NewRangeQuery(ctx, store, nil, expr, start, end, time.Second)
+	require.NoError(t, err)
+	defer child.Close()
+	want := child.Exec(ctx)
+	require.NoError(t, want.Err)
+	wantSamples := child.Stats().Samples
+	require.EqualValues(t, 6, wantSamples.TotalSamples)
+	require.Positive(t, wantSamples.PeakSamples)
+
+	remote := engine.NewRemoteEngine(opts, store, 0, 10_000, nil)
+	parent, err := engine.NewDistributedEngine(opts).MakeRangeQuery(
+		ctx, store, api.NewStaticEndpoints([]api.RemoteEngine{remote}), nil, expr, start, end, time.Second,
+	)
+	require.NoError(t, err)
+	defer parent.Close()
+	got := parent.Exec(ctx)
+	require.NoError(t, got.Err)
+	require.Equal(t, want.Value, got.Value)
+	require.Contains(t, renderAnalysisTree(parent.(engine.ExplainableQuery).Analyze(), 0), "[remoteExec]")
+	gotSamples := parent.Stats().Samples
+	require.Equal(t, wantSamples.TotalSamples, gotSamples.TotalSamples)
+	require.Equal(t, wantSamples.PeakSamples, gotSamples.PeakSamples)
+}
+
 func TestAnalyzeNoop(t *testing.T) {
 	ng := engine.New(engine.Opts{
 		MaxSamples: 1000,
