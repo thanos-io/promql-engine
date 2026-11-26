@@ -57,6 +57,7 @@ func prometheusEngineOpts(opts engine.Opts) promql.EngineOpts {
 	return promql.EngineOpts{
 		Parser: parser.NewParser(parser.Options{
 			EnableExperimentalFunctions: opts.EnableExperimentalFunctions,
+			EnableUnquotedUTF8Names:     opts.EnableUnquotedUTF8Names,
 		}),
 		Logger:                   opts.Logger,
 		Reg:                      opts.Reg,
@@ -97,6 +98,7 @@ func (s *skipTest) Run(name string, t func(*testing.T)) bool {
 func TestPromqlAcceptance(t *testing.T) {
 	engine := engine.New(engine.Opts{
 		EnableExperimentalFunctions: true,
+		EnableUnquotedUTF8Names:     true,
 		Logger:                      promslog.NewNopLogger(),
 		MaxSamples:                  5e10,
 		Timeout:                     1 * time.Hour,

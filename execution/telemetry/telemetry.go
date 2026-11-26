@@ -33,6 +33,17 @@ type OperatorTelemetry interface {
 	UpdatePeak(count int)
 }
 
+// SubqueryTelemetry is the telemetry of a subquery operator. Query analysis
+// uses it to attribute the inner query's samples to the parent steps that
+// consume them, as Prometheus does.
+type SubqueryTelemetry struct {
+	*TrackedTelemetry
+	// Consumer describes the parent steps and the window each one reads.
+	Consumer stats.SubqueryConsumer
+	// Inner is the operator evaluating the subquery expression.
+	Inner model.VectorOperator
+}
+
 func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
 		return NewTrackedTelemetry(operator, opts, nil)
@@ -40,11 +51,27 @@ func NewTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry 
 	return NewNoopTelemetry(operator)
 }
 
-func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
-	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, &logicalplan.Subquery{})
+func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options, subquery *logicalplan.Subquery, inner model.VectorOperator) OperatorTelemetry {
+	if !opts.EnableAnalysis {
+		return NewNoopTelemetry(operator)
 	}
-	return NewNoopTelemetry(operator)
+	interval := opts.Step.Milliseconds()
+	numSteps := 1
+	if interval > 0 {
+		numSteps = int((opts.End.UnixMilli()-opts.Start.UnixMilli())/interval) + 1
+	}
+	return &SubqueryTelemetry{
+		TrackedTelemetry: NewTrackedTelemetry(operator, opts, &logicalplan.Subquery{}),
+		Consumer: stats.SubqueryConsumer{
+			Start:       opts.Start.UnixMilli(),
+			Interval:    interval,
+			NumSteps:    numSteps,
+			Offset:      subquery.OriginalOffset.Milliseconds(),
+			Range:       subquery.Range.Milliseconds(),
+			AtTimestamp: subquery.Timestamp,
+		},
+		Inner: inner,
+	}
 }
 
 func NewStepInvariantTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {

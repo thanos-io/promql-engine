@@ -96,6 +96,11 @@ type Opts struct {
 	// and aggregations. Defaults to false.
 	EnableExperimentalFunctions bool
 
+	// EnableUnquotedUTF8Names allows Unicode letters and non-leading dots in unquoted
+	// metric and label names, like Prometheus' promql-unquoted-utf8-names feature.
+	// Defaults to false.
+	EnableUnquotedUTF8Names bool
+
 	// EnableXFunctions enables custom xRate, xIncrease and xDelta functions.
 	// This will default to false.
 	EnableXFunctions bool
@@ -181,6 +186,7 @@ func NewWithScanners(opts Opts, scanners engstorage.Scanners) *Engine {
 	parserOpts := parser.Options{
 		Functions:                   maps.Clone(parser.Functions),
 		EnableExperimentalFunctions: opts.EnableExperimentalFunctions,
+		EnableUnquotedUTF8Names:     opts.EnableUnquotedUTF8Names,
 	}
 	if opts.EnableXFunctions {
 		maps.Copy(parserOpts.Functions, parse.XFunctions)
