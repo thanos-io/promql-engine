@@ -231,6 +231,10 @@ func TestDuplicateLabels(t *testing.T) {
 		{name: "aggregation must not hide float collision", expr: `sum(-{__name__=~"f1|f2"})`, internal: true},
 		{name: "aggregation must not hide histogram collision", expr: `sum(-{__name__=~"h1|h2"})`, internal: true},
 		{name: "aggregation must not hide mixed collision", expr: `sum(-{__name__=~"f1|h1"})`, internal: true},
+		{name: "relabel chain collides at the inner call", expr: `label_replace(label_replace({__name__=~"f1|f2"}, "__name__", "", "__name__", ".*"), "x", "1", "job", ".*")`},
+		{name: "relabel chain collides at the outer call", expr: `label_replace(label_replace({__name__=~"f1|f2"}, "x", "1", "job", ".*"), "__name__", "", "__name__", ".*")`},
+		{name: "relabel chain over colliding input", expr: `label_replace(label_replace(-{__name__=~"f1|f2"}, "x", "1", "job", ".*"), "y", "2", "x", ".*")`},
+		{name: "mixed relabel chain collides", expr: `label_join(label_replace({__name__=~"f1|f2"}, "__name__", "", "__name__", ".*"), "x", "-", "job")`},
 	} {
 		for _, batchSize := range []int64{0, 1, 2} {
 			for _, concurrency := range []int{1, 2} {
@@ -4336,7 +4340,7 @@ min without () (
 			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50
 			    http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
 			queryTime: time.Unix(160, 0),
-			query:     `label_replace(http_requests_total, "foo", "$1", "series", "]]")`,
+			query:     `label_replace(http_requests_total, "foo", "$1", "series", "([")`,
 		},
 		{
 			name: "label_replace non-existing src label",
@@ -4346,6 +4350,65 @@ min without () (
 			    http_requests_total{pod="nginx-4", series="3"} 5+2.4x50`,
 			queryTime: time.Unix(160, 0),
 			query:     `label_replace(http_requests_total, "foo", "$1", "bar", ".*")`,
+		},
+		{
+			name: "nested label_replace reading an earlier destination",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "pod", "nginx-(.*)"),
+  "bar",
+  "p$1",
+  "foo",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_replace with an empty expansion",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "series", "", "pod", "(.*)"),
+  "bar",
+  "$1",
+  "series",
+  "(.*)"
+)`,
+		},
+		{
+			name: "nested label_replace where no rule matches",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40
+			    http_requests_total{pod="nginx-2", series="2"} 2+2.3x50`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_replace(
+  label_replace(http_requests_total, "foo", "$1", "pod", "nomatch"),
+  "bar",
+  "$1",
+  "series",
+  "alsonomatch"
+)`,
+		},
+		{
+			name: "nested label_join with empty sources",
+			load: `load 30s
+			    http_requests_total{pod="nginx-1", series="1"} 1+1.1x40`,
+			queryTime: time.Unix(160, 0),
+			query: `
+label_join(
+  label_join(http_requests_total, "foo", "-", "absent", "alsoabsent"),
+  "bar",
+  "-",
+  "foo",
+  "pod"
+)`,
 		},
 		{
 			name: "topk",

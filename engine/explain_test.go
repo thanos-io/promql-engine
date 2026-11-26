@@ -86,6 +86,28 @@ func TestQueryExplain(t *testing.T) {
 				},
 			},
 		},
+		{
+			query: `label_replace(label_replace(sum(foo), "a", "1", "foo", "(.*)"), "b", "1", "a", "(.*)")`,
+			expected: &engine.ExplainOutputNode{OperatorName: "[duplicateLabelCheck]", Children: []engine.ExplainOutputNode{
+				{
+					OperatorName: "[relabel] 2 rules", Children: []engine.ExplainOutputNode{
+						{
+							OperatorName: "[duplicateLabelCheck]", Children: []engine.ExplainOutputNode{
+								{
+									OperatorName: "[concurrent(buff=2)]", Children: []engine.ExplainOutputNode{
+										{
+											OperatorName: "[aggregate] sum by ([])", Children: []engine.ExplainOutputNode{
+												{OperatorName: "[coalesce]", Children: concurrencyOperators},
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			}},
+		},
 	} {
 		{
 			t.Run(tc.query, func(t *testing.T) {

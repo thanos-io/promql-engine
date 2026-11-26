@@ -892,3 +892,40 @@ func synthesizeLoad(numPods, numContainers, numSteps int) string {
 
 	return sb.String()
 }
+
+func BenchmarkRelabelChain(b *testing.B) {
+	store := setupStorage(b, 1000, 10, 1)
+	defer store.Close()
+
+	queryTime := time.Unix(30, 0)
+	ng := engine.New(engine.Opts{
+		Timeout:    100 * time.Second,
+		MaxSamples: 1e10,
+	})
+
+	for _, depth := range []int{1, 2, 3, 5, 10} {
+		query := deepRelabelChain(depth)
+
+		b.Run(fmt.Sprintf("depth=%d", depth), func(b *testing.B) {
+			ctx := context.Background()
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for b.Loop() {
+				qry, err := ng.NewInstantQuery(ctx, store, nil, query, queryTime)
+				testutil.Ok(b, err)
+				res := qry.Exec(ctx)
+				testutil.Ok(b, res.Err)
+				qry.Close()
+			}
+		})
+	}
+}
+
+func deepRelabelChain(depth int) string {
+	query := `label_replace(http_requests_total, "d0", "$1", "pod", "(.*)")`
+	for i := 1; i < depth; i++ {
+		query = fmt.Sprintf(`label_replace(%s, "d%d", "$1-%d", "d%d", "(.*)")`, query, i, i, i-1)
+	}
+	return query
+}
