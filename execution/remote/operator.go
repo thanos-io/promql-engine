@@ -43,8 +43,20 @@ func NewExecution(query promql.Query, queryRangeStart, queryRangeEnd time.Time, 
 		vectorSelector:  promstorage.NewVectorSelector(storage, opts, 0, 0, false, 0, 1),
 	}
 
-	return telemetry.NewOperator(telemetry.NewTelemetry(oper, opts), oper)
+	if !opts.EnableAnalysis {
+		return telemetry.NewOperator(telemetry.NewNoopTelemetry(oper), oper)
+	}
+	tracked := telemetry.NewTrackedTelemetry(oper, opts, nil)
+	storage.samples = tracked.Samples()
+	return telemetry.NewOperator(&executionTelemetry{tracked}, oper)
 }
+
+type executionTelemetry struct {
+	*telemetry.TrackedTelemetry
+}
+
+// The total and peak come from the child, not from batches of its returned results.
+func (*executionTelemetry) UpdatePeak(int) {}
 
 func (e *Execution) Series(ctx context.Context) ([]labels.Labels, error) {
 	series, err := e.vectorSelector.Series(ctx)
@@ -73,18 +85,11 @@ func (e *Execution) Explain() (next []model.VectorOperator) {
 	return nil
 }
 
-func (e *Execution) Samples() *stats.QuerySamples {
-	if s := e.storage.query.Stats(); s != nil {
-		return s.Samples
-	}
-
-	return nil
-}
-
 type storageAdapter struct {
-	query promql.Query
-	opts  *query.Options
-	lbls  []labels.Labels
+	query   promql.Query
+	opts    *query.Options
+	lbls    []labels.Labels
+	samples *stats.QuerySamples
 
 	once   sync.Once
 	err    error
@@ -118,6 +123,13 @@ func (s *storageAdapter) executeQuery(ctx context.Context) {
 	if result.Err != nil {
 		s.err = errors.Wrapf(result.Err, "remote exec error [%s]", s.lbls)
 		return
+	}
+	if s.samples != nil {
+		if child := s.query.Stats(); child != nil && child.Samples != nil {
+			// A remote query can have different step boundaries. Copy only its totals.
+			s.samples.TotalSamples = child.Samples.TotalSamples
+			s.samples.PeakSamples = child.Samples.PeakSamples
+		}
 	}
 	switch val := result.Value.(type) {
 	case promql.Matrix:
