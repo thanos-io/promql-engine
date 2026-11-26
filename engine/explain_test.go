@@ -6,7 +6,9 @@ package engine_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -482,4 +484,80 @@ func TestAnalyzPeak(t *testing.T) {
 |   |   |   |   |   |---[matrixSelector] rate({[__name__="http_requests_total"]}[10m0s] 1 mod 2): max_series: 1 total_samples: 1010 peak_samples: 200
 `
 	require.EqualValues(t, expected, result)
+}
+
+func TestQueryStatsRepeatedCalls(t *testing.T) {
+	t.Parallel()
+
+	storage := teststorage.LoadedStorage(t, `load 15s
+	    http_requests_total{pod="nginx-1"} 1+2x1000`)
+	defer storage.Close()
+
+	for _, query := range []string{
+		`sum(rate(http_requests_total[1m]))`,
+		`sum_over_time(http_requests_total[5m:1m] @ 1800)`,
+	} {
+		t.Run(query, func(t *testing.T) {
+			ctx := context.Background()
+			ng := engine.New(engine.Opts{
+				Timeout:            time.Minute,
+				MaxSamples:         math.MaxInt64,
+				EnablePerStepStats: true,
+				EnableAnalysis:     true,
+			})
+			qry, err := ng.NewRangeQuery(ctx, storage, nil, query, time.Unix(0, 0), time.Unix(600, 0), time.Minute)
+			testutil.Ok(t, err)
+			testutil.Ok(t, qry.Exec(ctx).Err)
+
+			first := qry.Stats().Samples
+			firstPerStep := slices.Clone(first.TotalSamplesPerStep)
+			firstTotal := first.TotalSamples
+
+			for range 2 {
+				again := qry.Stats().Samples
+				testutil.Equals(t, firstTotal, again.TotalSamples)
+				testutil.Equals(t, firstPerStep, again.TotalSamplesPerStep)
+			}
+
+			// Analyze followed by Stats must not change the numbers either.
+			if analyzable, ok := qry.(engine.ExplainableQuery); ok {
+				_ = analyzable.Analyze()
+				testutil.Equals(t, firstPerStep, qry.Stats().Samples.TotalSamplesPerStep)
+			}
+		})
+	}
+}
+
+func TestQueryStatsStepInvariantTotalWithoutPerStepStats(t *testing.T) {
+	t.Parallel()
+
+	storage := teststorage.LoadedStorage(t, `load 15s
+	    http_requests_total{pod="nginx-1"} 1+2x1000`)
+	defer storage.Close()
+
+	query := `sum_over_time(http_requests_total[5m:1m] @ 1800)`
+	totals := make(map[bool]int64)
+	for _, perStep := range []bool{true, false} {
+		ctx := context.Background()
+		ng := engine.New(engine.Opts{
+			Timeout:            time.Minute,
+			MaxSamples:         math.MaxInt64,
+			EnablePerStepStats: perStep,
+			EnableAnalysis:     true,
+		})
+		qry, err := ng.NewRangeQuery(ctx, storage, nil, query, time.Unix(0, 0), time.Unix(600, 0), time.Minute)
+		testutil.Ok(t, err)
+		testutil.Ok(t, qry.Exec(ctx).Err)
+		totals[perStep] = qry.Stats().Samples.TotalSamples
+	}
+
+	testutil.Assert(t, totals[true] > 0, "expected samples to be counted")
+	testutil.Equals(t, totals[true], totals[false])
+
+	// An instant query counts the invariant samples once.
+	ng := engine.New(engine.Opts{Timeout: time.Minute, MaxSamples: math.MaxInt64, EnableAnalysis: true})
+	qry, err := ng.NewInstantQuery(context.Background(), storage, nil, query, time.Unix(600, 0))
+	testutil.Ok(t, err)
+	testutil.Ok(t, qry.Exec(context.Background()).Err)
+	testutil.Equals(t, int64(5), qry.Stats().Samples.TotalSamples)
 }

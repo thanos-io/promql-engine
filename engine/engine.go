@@ -544,7 +544,7 @@ func (q *Query) Explain() *ExplainOutputNode {
 }
 
 func (q *Query) Analyze() *AnalyzeOutputNode {
-	return analyzeQuery(q.exec)
+	return analyzeQuery(q.exec, numQuerySteps(q.opts))
 }
 
 type compatibilityQuery struct {
@@ -789,4 +789,12 @@ func recoverEngine(logger *slog.Logger, plan logicalplan.Plan, errp *error) {
 		logger.Error("runtime panic in engine", "expr", plan.Root().String(), "err", e, "stacktrace", string(buf))
 		*errp = errors.Wrap(err, "unexpected error")
 	}
+}
+
+// numQuerySteps returns how many evaluation steps the query has: one for an instant query.
+func numQuerySteps(opts *query.Options) int64 {
+	if opts.Step <= 0 {
+		return 1
+	}
+	return int64(opts.End.Sub(opts.Start)/opts.Step) + 1
 }

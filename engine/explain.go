@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -26,6 +27,7 @@ type AnalyzeOutputNode struct {
 	Children          []*AnalyzeOutputNode        `json:"children,omitempty"`
 
 	once                sync.Once
+	numSteps            int64
 	totalSamples        int64
 	peakSamples         int64
 	totalSamplesPerStep []int64
@@ -58,7 +60,9 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 		if nodeSamples := a.OperatorTelemetry.Samples(); nodeSamples != nil {
 			a.totalSamples += nodeSamples.TotalSamples
 			a.peakSamples += int64(nodeSamples.PeakSamples)
-			a.totalSamplesPerStep = nodeSamples.TotalSamplesPerStep
+			// Copy the slice: the children are added into it below and the operator
+			// telemetry must stay untouched, or repeated Analyze calls inflate the stats.
+			a.totalSamplesPerStep = slices.Clone(nodeSamples.TotalSamplesPerStep)
 		}
 
 		for _, child := range a.Children {
@@ -69,9 +73,11 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 			case *logicalplan.Subquery:
 				// Skip aggregating samples for subquery
 			case *logicalplan.StepInvariantExpr:
+				// A step invariant expression is evaluated once and its samples count at every step.
+				// The total must not depend on per-step stats being enabled.
 				childSamples := child.TotalSamples()
+				a.totalSamples += childSamples * a.numSteps
 				for i := range a.totalSamplesPerStep {
-					a.totalSamples += childSamples
 					a.totalSamplesPerStep[i] += childSamples
 				}
 			default:
@@ -84,7 +90,7 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 	})
 }
 
-func analyzeQuery(op model.VectorOperator) *AnalyzeOutputNode {
+func analyzeQuery(op model.VectorOperator, numSteps int64) *AnalyzeOutputNode {
 	var operatorID *uint64
 	if ider, ok := op.(model.OperatorIDer); ok {
 		id := ider.OperatorID()
@@ -98,7 +104,7 @@ func analyzeQuery(op model.VectorOperator) *AnalyzeOutputNode {
 	children := obsv.Explain()
 	var childTelemetry []*AnalyzeOutputNode
 	for _, child := range children {
-		if node := analyzeQuery(child); node != nil {
+		if node := analyzeQuery(child, numSteps); node != nil {
 			childTelemetry = append(childTelemetry, node)
 		}
 	}
@@ -107,6 +113,7 @@ func analyzeQuery(op model.VectorOperator) *AnalyzeOutputNode {
 		OperatorTelemetry: obsv,
 		OperatorID:        operatorID,
 		Children:          childTelemetry,
+		numSteps:          numSteps,
 	}
 }
 
