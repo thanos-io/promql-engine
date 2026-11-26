@@ -333,12 +333,22 @@ var rangeVectorFuncs = map[string]FunctionCall{
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
 		}
+		if f.Anchored {
+			if err := checkNoHistograms(f.Samples); err != nil {
+				return 0, nil, false, 0, err
+			}
+		}
 		start := pickFirstSampleIndex(f)
 		return changes(f.Samples[start:]), nil, true, 0, nil
 	},
 	"resets": func(f FunctionArgs) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
 		if len(f.Samples) == 0 {
 			return 0., nil, false, 0, nil
+		}
+		if f.Anchored {
+			if err := checkNoHistograms(f.Samples); err != nil {
+				return 0, nil, false, 0, err
+			}
 		}
 		start := pickFirstSampleIndex(f)
 		return resets(f.Samples[start:]), nil, true, 0, nil
@@ -783,8 +793,8 @@ func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selec
 		return 0, nil, false, 0, nil
 	}
 
-	if samples[0].V.H != nil {
-		return 0, nil, false, 0, errors.New("native histograms are not supported with anchored/smoothed modifiers")
+	if err := checkNoHistograms(samples); err != nil {
+		return 0, nil, false, 0, err
 	}
 
 	lastSampleIndex := len(samples) - 1
@@ -845,6 +855,21 @@ func extendedRangeRate(samples []Sample, isCounter, isRate bool, stepTime, selec
 	return resultValue, nil, true, 0, nil
 }
 
+// ErrExtendedRangeHistograms is Prometheus' error for anchored and smoothed
+// selectors over native histograms.
+var ErrExtendedRangeHistograms = errors.New("smoothed and anchored modifiers do not work with native histograms")
+
+// checkNoHistograms rejects any native histogram in the range. Checking only
+// the first sample is not enough: later histograms would be read as float 0.
+func checkNoHistograms(samples []Sample) error {
+	for _, s := range samples {
+		if s.V.H != nil {
+			return ErrExtendedRangeHistograms
+		}
+	}
+	return nil
+}
+
 // pickOrInterpolateLeft returns the value at the left boundary of the range.
 // For anchored: uses the real sample value at/before rangeStart.
 // For smoothed: interpolates between the samples bracketing rangeStart, with
@@ -873,7 +898,9 @@ func pickOrInterpolateRight(samples []Sample, last int, rangeEnd int64, smoothed
 // If isCounter is true and there is a counter reset (y2 < y1), it models the
 // counter as starting from 0 post-reset by setting y1 to 0.
 //
-// This matches Prometheus v0.310.0's interpolate function in promql/functions.go.
+// This matches Prometheus' interpolate function in promql/functions.go from
+// v0.310.0 onwards. Earlier versions, including v0.308.0, instead add y1 to y2
+// on the right edge, which counts the pre-reset value as increase.
 func interpolateAt(left, right Sample, timestamp int64, isCounter bool) float64 {
 	y1 := left.V.F
 	y2 := right.V.F

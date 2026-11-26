@@ -23,6 +23,10 @@ type ExtendedRingBuffer struct {
 	extLookback      int64
 	baselines        int
 	metricAppearedTs int64
+	// lastHistogramTs is the newest native histogram offered to Push, even if
+	// it was not retained. Anchored and smoothed selectors reject the range when
+	// it falls within the extended window, as Prometheus does.
+	lastHistogramTs int64
 }
 
 // NewWithExtLookback creates a buffer for an extended range function.
@@ -39,6 +43,7 @@ func NewWithExtLookback(
 		extLookback:       extLookback,
 		baselines:         1,
 		metricAppearedTs:  math.MinInt64,
+		lastHistogramTs:   math.MinInt64,
 	}
 }
 
@@ -88,6 +93,9 @@ func (r *ExtendedRingBuffer) Push(t int64, v Value) {
 	if r.metricAppearedTs == math.MinInt64 || t < r.metricAppearedTs {
 		r.metricAppearedTs = t
 	}
+	if v.H != nil && t > r.lastHistogramTs {
+		r.lastHistogramTs = t
+	}
 
 	if t > r.currentRangeStart {
 		r.GenericRingBuffer.push(t, v)
@@ -130,5 +138,8 @@ func (r *ExtendedRingBuffer) Push(t int64, v Value) {
 }
 
 func (r *ExtendedRingBuffer) Eval(ctx context.Context, scalarArg float64, scalarArg2 float64) (float64, *histogram.FloatHistogram, bool, warnings.Warnings, error) {
+	if (r.anchored || r.smoothed) && r.lastHistogramTs >= r.currentRangeStart-r.extLookback {
+		return 0, nil, false, 0, ErrExtendedRangeHistograms
+	}
 	return r.eval(scalarArg, scalarArg2, r.metricAppearedTs)
 }
