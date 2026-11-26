@@ -291,111 +291,30 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 	tests := []struct {
 		name       string
 		funcName   string
-		args       []Node
 		projection *Projection
 		expected   *Projection
 	}{
 		{
-			name:     "label_replace with destination label needed",
+			name:     "label_replace returns nil projection",
 			funcName: "label_replace",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "replacement"},
-				&StringLiteral{Val: "src_label"},
-				&StringLiteral{Val: "regex"},
-			},
-			projection: &Projection{
-				Labels:  []string{"new_label"},
-				Include: true,
-			},
-			expected: &Projection{
-				Labels:  []string{"new_label", "src_label"},
-				Include: true,
-			},
-		},
-		{
-			name:     "label_replace with destination label not needed",
-			funcName: "label_replace",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "replacement"},
-				&StringLiteral{Val: "src_label"},
-				&StringLiteral{Val: "regex"},
-			},
 			projection: &Projection{
 				Labels:  []string{"other_label"},
 				Include: true,
 			},
-			expected: &Projection{
-				Labels:  []string{"other_label"},
-				Include: true,
-			},
+			expected: nil,
 		},
 		{
-			name:     "label_replace with without clause",
-			funcName: "label_replace",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "replacement"},
-				&StringLiteral{Val: "src_label"},
-				&StringLiteral{Val: "regex"},
-			},
-			projection: &Projection{
-				Labels:  []string{"other_label"},
-				Include: false,
-			},
-			expected: &Projection{
-				Labels:  []string{"other_label"},
-				Include: false,
-			},
-		},
-		{
-			name:     "label_join with destination label needed",
+			name:     "label_join returns nil projection",
 			funcName: "label_join",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "separator"},
-				&StringLiteral{Val: "src_label1"},
-				&StringLiteral{Val: "src_label2"},
-			},
 			projection: &Projection{
-				Labels:  []string{"new_label"},
+				Labels:  []string{"other_label"},
 				Include: true,
 			},
-			expected: &Projection{
-				Labels:  []string{"new_label", "src_label1", "src_label2"},
-				Include: true,
-			},
-		},
-		{
-			name:     "label_join with without clause",
-			funcName: "label_join",
-			args: []Node{
-				&VectorSelector{},
-				&StringLiteral{Val: "new_label"},
-				&StringLiteral{Val: "separator"},
-				&StringLiteral{Val: "src_label1"},
-				&StringLiteral{Val: "src_label2"},
-			},
-			projection: &Projection{
-				Labels:  []string{"new_label"},
-				Include: false,
-			},
-			expected: &Projection{
-				Labels:  []string{"new_label"},
-				Include: false,
-			},
+			expected: nil,
 		},
 		{
 			name:     "scalar function returns empty projection",
 			funcName: "scalar",
-			args: []Node{
-				&VectorSelector{},
-			},
 			projection: &Projection{
 				Labels:  []string{"label1"},
 				Include: true,
@@ -408,9 +327,6 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 		{
 			name:     "absent function returns empty projection",
 			funcName: "absent",
-			args: []Node{
-				&VectorSelector{},
-			},
 			projection: &Projection{
 				Labels:  []string{"label1"},
 				Include: true,
@@ -423,9 +339,6 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 		{
 			name:     "absent_over_time function returns empty projection",
 			funcName: "absent_over_time",
-			args: []Node{
-				&MatrixSelector{},
-			},
 			projection: &Projection{
 				Labels:  []string{"label1"},
 				Include: true,
@@ -438,10 +351,6 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 		{
 			name:     "histogram_quantile function returns nil projection",
 			funcName: "histogram_quantile",
-			args: []Node{
-				&NumberLiteral{Val: 0.9},
-				&VectorSelector{},
-			},
 			projection: &Projection{
 				Labels:  []string{"label1"},
 				Include: true,
@@ -451,7 +360,6 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 		{
 			name:     "unknown function returns original labels",
 			funcName: "unknown_function",
-			args:     []Node{},
 			projection: &Projection{
 				Labels:  []string{"label1"},
 				Include: true,
@@ -465,7 +373,7 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := getFunctionLabelRequirements(tt.funcName, tt.args, tt.projection)
+			result := getFunctionLabelRequirements(tt.funcName, tt.projection)
 
 			// Check if result is nil when expected is nil
 			if tt.expected == nil {
