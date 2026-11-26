@@ -181,7 +181,7 @@ func getFunctionLabelRequirements(funcName string, args []Node, projection *Proj
 			Labels:  []string{},
 			Include: true,
 		}
-	case "histogram_quantile":
+	case "histogram_quantile", "histogram_quantiles":
 		// Unsafe to push projection down for histogram_quantile as it requires le label.
 		return nil
 	case "label_replace":

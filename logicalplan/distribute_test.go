@@ -529,6 +529,25 @@ histogram_quantile(0.5, sum by (le) (dedup(
 )))`,
 		},
 		{
+			name: `histogram quantiles`,
+			expr: `histogram_quantiles(sum by (le) (rate(coredns_dns_request_duration_seconds_bucket[5m])), "quantile", 0.5, 0.9)`,
+			expected: `
+histogram_quantiles(sum by (le) (dedup(
+  remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m]))),
+  remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m])))
+)), "quantile", 0.5, 0.9)`,
+		},
+		{
+			name:       `histogram quantiles rewriting partition label is not distributive`,
+			expr:       `histogram_quantiles(sum by (le) (rate(coredns_dns_request_duration_seconds_bucket[5m])), "region", 0.5)`,
+			expectWarn: true,
+			expected: `
+histogram_quantiles(sum by (le) (dedup(
+  remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m]))),
+  remote(sum by (le, region) (rate(coredns_dns_request_duration_seconds_bucket[5m])))
+)), "region", 0.5)`,
+		},
+		{
 			name:     "binary expression with time",
 			expr:     `time() - max by (foo) (bar)`,
 			expected: `time() - max by (foo) (dedup(remote(max by (foo, region) (bar)), remote(max by (foo, region) (bar))))`,
@@ -825,7 +844,7 @@ count by (cluster) (
 	for _, tcase := range cases {
 		t.Run(tcase.name, func(t *testing.T) {
 			runTest := func(optimizers []Optimizer) {
-				expr, err := parser.NewParser(parser.Options{}).ParseExpr(tcase.expr)
+				expr, err := parser.NewParser(parser.Options{EnableExperimentalFunctions: true}).ParseExpr(tcase.expr)
 				testutil.Ok(t, err)
 
 				plan, _ := NewFromAST(expr, &query.Options{Start: time.Unix(0, 0), End: time.Unix(0, 0)}, PlanOptions{})

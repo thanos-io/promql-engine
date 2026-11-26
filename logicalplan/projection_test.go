@@ -449,6 +449,21 @@ func TestGetFunctionLabelRequirements(t *testing.T) {
 			expected: nil,
 		},
 		{
+			name:     "histogram_quantiles function returns nil projection",
+			funcName: "histogram_quantiles",
+			args: []Node{
+				&VectorSelector{},
+				&StringLiteral{Val: "quantile"},
+				&NumberLiteral{Val: 0.5},
+				&NumberLiteral{Val: 0.9},
+			},
+			projection: &Projection{
+				Labels:  []string{"label1"},
+				Include: true,
+			},
+			expected: nil,
+		},
+		{
 			name:     "unknown function returns original labels",
 			funcName: "unknown_function",
 			args:     []Node{},
