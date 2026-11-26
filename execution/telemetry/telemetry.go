@@ -236,6 +236,12 @@ func (t *Operator) Explain() []model.VectorOperator {
 	return t.inner.Explain()
 }
 
+func (t *Operator) Release() {
+	if r, ok := t.inner.(model.Releaser); ok {
+		r.Release()
+	}
+}
+
 func (t *Operator) String() string {
 	return t.inner.String()
 }

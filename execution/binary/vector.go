@@ -29,15 +29,26 @@ type joinBucket struct {
 	histogramVal *histogram.FloatHistogram
 }
 
+// MaterializedSide identifies the buffered side of a join, which is driven to
+// completion before the other side is touched.
+type MaterializedSide int
+
+const (
+	NoSide MaterializedSide = iota
+	LeftSide
+	RightSide
+)
+
 // vectorOperator evaluates an expression between two step vectors.
 type vectorOperator struct {
-	lhs        model.VectorOperator
-	rhs        model.VectorOperator
-	matching   *parser.VectorMatching
-	opType     parser.ItemType
-	returnBool bool
-	stepsBatch int
-	sigFunc    func(labels.Labels) uint64
+	lhs          model.VectorOperator
+	rhs          model.VectorOperator
+	matching     *parser.VectorMatching
+	opType       parser.ItemType
+	returnBool   bool
+	stepsBatch   int
+	sigFunc      func(labels.Labels) uint64
+	materialized MaterializedSide
 
 	once         sync.Once
 	series       []labels.Labels
@@ -64,16 +75,18 @@ func NewVectorOperator(
 	matching *parser.VectorMatching,
 	opType parser.ItemType,
 	returnBool bool,
+	materialized MaterializedSide,
 	opts *query.Options,
 ) (model.VectorOperator, error) {
 	op := &vectorOperator{
-		lhs:        lhs,
-		rhs:        rhs,
-		matching:   matching,
-		opType:     opType,
-		returnBool: returnBool,
-		sigFunc:    signatureFunc(matching.On, matching.MatchingLabels...),
-		stepsBatch: opts.StepsBatch,
+		lhs:          lhs,
+		rhs:          rhs,
+		matching:     matching,
+		opType:       opType,
+		returnBool:   returnBool,
+		sigFunc:      signatureFunc(matching.On, matching.MatchingLabels...),
+		stepsBatch:   opts.StepsBatch,
+		materialized: materialized,
 	}
 
 	return telemetry.NewOperator(telemetry.NewTelemetry(op, opts), op), nil
@@ -88,6 +101,15 @@ func (o *vectorOperator) String() string {
 
 func (o *vectorOperator) Explain() (next []model.VectorOperator) {
 	return []model.VectorOperator{o.lhs, o.rhs}
+}
+
+// Release drops the scratch buffers and join buckets, which are dead once this
+// operator is drained. Series slices stay: Series would then return nothing.
+func (o *vectorOperator) Release() {
+	o.lhsBuf = nil
+	o.rhsBuf = nil
+	o.lcJoinBuckets = nil
+	o.hcJoinBuckets = nil
 }
 
 func (o *vectorOperator) Series(ctx context.Context) ([]labels.Labels, error) {
@@ -109,24 +131,37 @@ func (o *vectorOperator) Next(ctx context.Context, buf []model.StepVector) (int,
 		return 0, err
 	}
 
-	var lhsN int
-	var lerrChan = make(chan error, 1)
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				lerrChan <- errors.Newf("unexpected panic: %v", r)
-			}
-			close(lerrChan)
-		}()
-		var err error
-		lhsN, err = o.lhs.Next(ctx, o.lhsBuf)
-		if err != nil {
-			lerrChan <- err
-		}
-	}()
+	var lhsN, rhsN int
+	var lerr, rerr error
 
-	rhsN, rerr := o.rhs.Next(ctx, o.rhsBuf)
-	lerr := <-lerrChan
+	switch o.materialized {
+	// Drive the buffered side to completion first; skip the other side if it fails.
+	case RightSide:
+		if rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf); rerr == nil {
+			lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+		}
+	case LeftSide:
+		if lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf); lerr == nil {
+			rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+		}
+	default:
+		var lerrChan = make(chan error, 1)
+		go func() {
+			defer func() {
+				if r := recover(); r != nil {
+					lerrChan <- errors.Newf("unexpected panic: %v", r)
+				}
+				close(lerrChan)
+			}()
+			lhsN, lerr = o.lhs.Next(ctx, o.lhsBuf)
+			if lerr != nil {
+				lerrChan <- lerr
+			}
+		}()
+
+		rhsN, rerr = o.rhs.Next(ctx, o.rhsBuf)
+		lerr = <-lerrChan
+	}
 	if rerr != nil {
 		return 0, rerr
 	}
@@ -161,6 +196,8 @@ func (o *vectorOperator) initOnce(ctx context.Context) error {
 }
 
 func (o *vectorOperator) init(ctx context.Context) error {
+	// Safe to load both sides at once: Series allocates no buffers, and both
+	// sides are needed below anyway.
 	var highCardSide []labels.Labels
 	var errChan = make(chan error, 1)
 	go func() {

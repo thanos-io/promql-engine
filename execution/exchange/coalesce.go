@@ -74,6 +74,13 @@ func (c *coalesce) String() string {
 	return "[coalesce]"
 }
 
+func (c *coalesce) Release() {
+	c.tempBufs = nil
+	for i := range c.inVectors {
+		c.inVectors[i] = nil
+	}
+}
+
 func (c *coalesce) Series(ctx context.Context) ([]labels.Labels, error) {
 	var err error
 	c.once.Do(func() { err = c.loadSeries(ctx) })

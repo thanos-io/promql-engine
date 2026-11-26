@@ -53,3 +53,20 @@ func Unwrap(op VectorOperator) VectorOperator {
 		op = u.Unwrap()
 	}
 }
+
+type Releaser interface {
+	Release()
+}
+
+func ReleaseSubtree(op VectorOperator) {
+	if op == nil {
+		return
+	}
+	op = Unwrap(op)
+	if r, ok := op.(Releaser); ok {
+		r.Release()
+	}
+	for _, child := range op.Explain() {
+		ReleaseSubtree(child)
+	}
+}
