@@ -104,7 +104,7 @@ func NewSumOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTi
 }
 
 func NewAvgOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {
-	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewAvgAcc() })
+	return newOverTimeBuffer(opts, selectRange, offset, func() compute.Accumulator { return compute.NewAvgOverTimeAcc() })
 }
 
 func NewStdDevOverTimeBuffer(opts query.Options, selectRange, offset int64) *OverTimeBuffer {

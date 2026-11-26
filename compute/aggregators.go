@@ -405,6 +405,7 @@ type AvgAcc struct {
 	avg         float64
 	incremental bool
 	count       int64
+	overTime    bool
 	hasError    bool // histogram error occurred; accumulator becomes no-op
 
 	histSum                 *histogram.FloatHistogram
@@ -419,6 +420,10 @@ type AvgAcc struct {
 
 func NewAvgAcc() *AvgAcc {
 	return &AvgAcc{}
+}
+
+func NewAvgOverTimeAcc() *AvgAcc {
+	return &AvgAcc{overTime: true}
 }
 
 func (a *AvgAcc) Add(v float64, h *histogram.FloatHistogram) error {
@@ -587,6 +592,10 @@ func (a *AvgAcc) Value() (float64, *histogram.FloatHistogram) {
 	}
 	if a.incremental {
 		return a.avg + a.kahanC, h
+	}
+	if a.overTime {
+		// Match Prometheus avg_over_time: adding before dividing can round differently.
+		return a.kahanSum/float64(a.count) + a.kahanC/float64(a.count), h
 	}
 	return (a.kahanSum + a.kahanC) / float64(a.count), h
 }
