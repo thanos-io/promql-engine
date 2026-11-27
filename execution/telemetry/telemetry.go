@@ -49,10 +49,27 @@ func NewSubqueryTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTe
 
 func NewStepInvariantTelemetry(operator fmt.Stringer, opts *query.Options) OperatorTelemetry {
 	if opts.EnableAnalysis {
-		return NewTrackedTelemetry(operator, opts, &logicalplan.StepInvariantExpr{})
+		return &stepInvariantTelemetry{
+			TrackedTelemetry: NewTrackedTelemetry(operator, opts, &logicalplan.StepInvariantExpr{}),
+			totalSteps:       opts.TotalSteps(),
+		}
 	}
 	return NewNoopTelemetry(operator)
 }
+
+// StepCounter is implemented by the telemetry of a step invariant operator.
+// It reports how many steps the operator itself is evaluated for, which differs
+// from the top-level query when the operator runs inside a subquery.
+type StepCounter interface {
+	TotalSteps() int
+}
+
+type stepInvariantTelemetry struct {
+	*TrackedTelemetry
+	totalSteps int
+}
+
+func (t *stepInvariantTelemetry) TotalSteps() int { return t.totalSteps }
 
 type NoopTelemetry struct {
 	fmt.Stringer

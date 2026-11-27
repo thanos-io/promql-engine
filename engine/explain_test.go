@@ -561,3 +561,61 @@ func TestQueryStatsStepInvariantTotalWithoutPerStepStats(t *testing.T) {
 	testutil.Ok(t, qry.Exec(context.Background()).Err)
 	testutil.Equals(t, int64(5), qry.Stats().Samples.TotalSamples)
 }
+
+// stepInvariantTotals returns the total samples of every step invariant node in the tree, in tree order.
+func stepInvariantTotals(node *engine.AnalyzeOutputNode) []int64 {
+	var totals []int64
+	if node.OperatorTelemetry.String() == "[stepInvariant]" {
+		totals = append(totals, node.TotalSamples())
+	}
+	for _, child := range node.Children {
+		totals = append(totals, stepInvariantTotals(child)...)
+	}
+	return totals
+}
+
+func analyzeRangeQuery(t *testing.T, storage storage.Queryable, query string, perStep bool) *engine.AnalyzeOutputNode {
+	t.Helper()
+
+	ctx := context.Background()
+	ng := engine.New(engine.Opts{
+		Timeout:            time.Minute,
+		MaxSamples:         math.MaxInt64,
+		EnablePerStepStats: perStep,
+		EnableAnalysis:     true,
+	})
+	qry, err := ng.NewRangeQuery(ctx, storage, nil, query, time.Unix(0, 0), time.Unix(600, 0), time.Minute)
+	testutil.Ok(t, err)
+	testutil.Ok(t, qry.Exec(ctx).Err)
+	return qry.(engine.ExplainableQuery).Analyze()
+}
+
+func TestAnalyzeStepInvariantInsideSubqueryUsesOwnStepCount(t *testing.T) {
+	t.Parallel()
+
+	storage := teststorage.LoadedStorage(t, `load 15s
+	    http_requests_total{pod="nginx-1"} 1+2x1000`)
+	defer storage.Close()
+
+	// The subquery is evaluated over -5m..10m at a 1m resolution, which is 16 steps,
+	// while the outer range query has 11 steps.
+	for _, perStep := range []bool{true, false} {
+		node := analyzeRangeQuery(t, storage, `max_over_time((http_requests_total @ 100)[5m:1m])`, perStep)
+		testutil.Equals(t, []int64{16}, stepInvariantTotals(node))
+	}
+}
+
+func TestAnalyzeStepInvariantOutsideSubqueryUsesQuerySteps(t *testing.T) {
+	t.Parallel()
+
+	storage := teststorage.LoadedStorage(t, `load 15s
+	    http_requests_total{pod="nginx-1"} 1+2x1000`)
+	defer storage.Close()
+
+	// One step invariant node sits inside a subquery (16 steps) and one outside of it (11 steps).
+	query := `max_over_time(sum(http_requests_total @ 100)[5m:1m]) + sum(http_requests_total @ 50)`
+	for _, perStep := range []bool{true, false} {
+		node := analyzeRangeQuery(t, storage, query, perStep)
+		testutil.Equals(t, []int64{16, 11}, stepInvariantTotals(node))
+	}
+}

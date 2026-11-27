@@ -27,7 +27,7 @@ type AnalyzeOutputNode struct {
 	Children          []*AnalyzeOutputNode        `json:"children,omitempty"`
 
 	once                sync.Once
-	numSteps            int64
+	perStepOnce         sync.Once
 	totalSamples        int64
 	peakSamples         int64
 	totalSamplesPerStep []int64
@@ -46,7 +46,7 @@ func (a *AnalyzeOutputNode) TotalSamples() int64 {
 }
 
 func (a *AnalyzeOutputNode) TotalSamplesPerStep() []int64 {
-	a.aggregateSamples()
+	a.aggregatePerStep()
 	return a.totalSamplesPerStep
 }
 
@@ -60,9 +60,6 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 		if nodeSamples := a.OperatorTelemetry.Samples(); nodeSamples != nil {
 			a.totalSamples += nodeSamples.TotalSamples
 			a.peakSamples += int64(nodeSamples.PeakSamples)
-			// Copy the slice: the children are added into it below and the operator
-			// telemetry must stay untouched, or repeated Analyze calls inflate the stats.
-			a.totalSamplesPerStep = slices.Clone(nodeSamples.TotalSamplesPerStep)
 		}
 
 		for _, child := range a.Children {
@@ -75,13 +72,34 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 			case *logicalplan.StepInvariantExpr:
 				// A step invariant expression is evaluated once and its samples count at every step.
 				// The total must not depend on per-step stats being enabled.
+				a.totalSamples += child.TotalSamples() * stepsOf(a)
+			default:
+				a.totalSamples += child.TotalSamples()
+			}
+		}
+	})
+}
+
+// aggregatePerStep builds the per-step samples. It is separate from aggregateSamples so that
+// callers who only need totals or peak do not pay for copying the per-step slices.
+func (a *AnalyzeOutputNode) aggregatePerStep() {
+	a.perStepOnce.Do(func() {
+		if nodeSamples := a.OperatorTelemetry.Samples(); nodeSamples != nil {
+			// Copy the slice: the children are added into it below and the operator
+			// telemetry must stay untouched, or repeated Analyze calls inflate the stats.
+			a.totalSamplesPerStep = slices.Clone(nodeSamples.TotalSamplesPerStep)
+		}
+
+		for _, child := range a.Children {
+			switch a.OperatorTelemetry.LogicalNode().(type) {
+			case *logicalplan.Subquery:
+				// Skip aggregating samples for subquery
+			case *logicalplan.StepInvariantExpr:
 				childSamples := child.TotalSamples()
-				a.totalSamples += childSamples * a.numSteps
 				for i := range a.totalSamplesPerStep {
 					a.totalSamplesPerStep[i] += childSamples
 				}
 			default:
-				a.totalSamples += child.TotalSamples()
 				for i, s := range child.TotalSamplesPerStep() {
 					a.totalSamplesPerStep[i] += s
 				}
@@ -90,7 +108,7 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 	})
 }
 
-func analyzeQuery(op model.VectorOperator, numSteps int64) *AnalyzeOutputNode {
+func analyzeQuery(op model.VectorOperator) *AnalyzeOutputNode {
 	var operatorID *uint64
 	if ider, ok := op.(model.OperatorIDer); ok {
 		id := ider.OperatorID()
@@ -104,7 +122,7 @@ func analyzeQuery(op model.VectorOperator, numSteps int64) *AnalyzeOutputNode {
 	children := obsv.Explain()
 	var childTelemetry []*AnalyzeOutputNode
 	for _, child := range children {
-		if node := analyzeQuery(child, numSteps); node != nil {
+		if node := analyzeQuery(child); node != nil {
 			childTelemetry = append(childTelemetry, node)
 		}
 	}
@@ -113,7 +131,6 @@ func analyzeQuery(op model.VectorOperator, numSteps int64) *AnalyzeOutputNode {
 		OperatorTelemetry: obsv,
 		OperatorID:        operatorID,
 		Children:          childTelemetry,
-		numSteps:          numSteps,
 	}
 }
 
@@ -129,4 +146,17 @@ func explainVector(v model.VectorOperator) *ExplainOutputNode {
 		OperatorName: v.String(),
 		Children:     children,
 	}
+}
+
+// stepsOf returns the number of steps a step invariant node is evaluated for.
+// The operator records its own count, which is correct inside subqueries.
+func stepsOf(node *AnalyzeOutputNode) int64 {
+	tm := node.OperatorTelemetry
+	if op, ok := tm.(*telemetry.Operator); ok {
+		tm = op.OperatorTelemetry
+	}
+	if sc, ok := tm.(telemetry.StepCounter); ok {
+		return int64(sc.TotalSteps())
+	}
+	return int64(len(node.totalSamplesPerStep))
 }
