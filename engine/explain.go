@@ -4,6 +4,7 @@
 package engine
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/thanos-io/promql-engine/execution/model"
@@ -26,6 +27,7 @@ type AnalyzeOutputNode struct {
 	Children          []*AnalyzeOutputNode        `json:"children,omitempty"`
 
 	once                sync.Once
+	perStepOnce         sync.Once
 	totalSamples        int64
 	peakSamples         int64
 	totalSamplesPerStep []int64
@@ -44,7 +46,7 @@ func (a *AnalyzeOutputNode) TotalSamples() int64 {
 }
 
 func (a *AnalyzeOutputNode) TotalSamplesPerStep() []int64 {
-	a.aggregateSamples()
+	a.aggregatePerStep()
 	return a.totalSamplesPerStep
 }
 
@@ -58,7 +60,6 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 		if nodeSamples := a.OperatorTelemetry.Samples(); nodeSamples != nil {
 			a.totalSamples += nodeSamples.TotalSamples
 			a.peakSamples += int64(nodeSamples.PeakSamples)
-			a.totalSamplesPerStep = nodeSamples.TotalSamplesPerStep
 		}
 
 		for _, child := range a.Children {
@@ -69,13 +70,36 @@ func (a *AnalyzeOutputNode) aggregateSamples() {
 			case *logicalplan.Subquery:
 				// Skip aggregating samples for subquery
 			case *logicalplan.StepInvariantExpr:
+				// A step invariant expression is evaluated once and its samples count at every step.
+				// The total must not depend on per-step stats being enabled.
+				a.totalSamples += child.TotalSamples() * stepsOf(a)
+			default:
+				a.totalSamples += child.TotalSamples()
+			}
+		}
+	})
+}
+
+// aggregatePerStep builds the per-step samples. It is separate from aggregateSamples so that
+// callers who only need totals or peak do not pay for copying the per-step slices.
+func (a *AnalyzeOutputNode) aggregatePerStep() {
+	a.perStepOnce.Do(func() {
+		if nodeSamples := a.OperatorTelemetry.Samples(); nodeSamples != nil {
+			// Copy the slice: the children are added into it below and the operator
+			// telemetry must stay untouched, or repeated Analyze calls inflate the stats.
+			a.totalSamplesPerStep = slices.Clone(nodeSamples.TotalSamplesPerStep)
+		}
+
+		for _, child := range a.Children {
+			switch a.OperatorTelemetry.LogicalNode().(type) {
+			case *logicalplan.Subquery:
+				// Skip aggregating samples for subquery
+			case *logicalplan.StepInvariantExpr:
 				childSamples := child.TotalSamples()
 				for i := range a.totalSamplesPerStep {
-					a.totalSamples += childSamples
 					a.totalSamplesPerStep[i] += childSamples
 				}
 			default:
-				a.totalSamples += child.TotalSamples()
 				for i, s := range child.TotalSamplesPerStep() {
 					a.totalSamplesPerStep[i] += s
 				}
@@ -122,4 +146,17 @@ func explainVector(v model.VectorOperator) *ExplainOutputNode {
 		OperatorName: v.String(),
 		Children:     children,
 	}
+}
+
+// stepsOf returns the number of steps a step invariant node is evaluated for.
+// The operator records its own count, which is correct inside subqueries.
+func stepsOf(node *AnalyzeOutputNode) int64 {
+	tm := node.OperatorTelemetry
+	if op, ok := tm.(*telemetry.Operator); ok {
+		tm = op.OperatorTelemetry
+	}
+	if sc, ok := tm.(telemetry.StepCounter); ok {
+		return int64(sc.TotalSteps())
+	}
+	return int64(len(node.totalSamplesPerStep))
 }
